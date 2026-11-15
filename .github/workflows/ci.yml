@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Linux system packages for Tauri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Tauri checks that the sidecar exists, so it is built before any clippy or Tauri run.
+      - name: Prepare sidecar
+        working-directory: src/apps/desktop
+        run: bun scripts/prepare-sidecar.ts
+
+      - name: Rust format and lint
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Boundaries
+        run: |
+          scripts/check-boundaries.sh --self-test
+          scripts/check-boundaries.sh
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Webview lint
+        working-directory: src/apps/desktop
+        run: |
+          pnpm check
+          pnpm lint
+          pnpm format:check
+
+      - name: Webview tests
+        working-directory: src/apps/desktop
+        run: bun test src
+
+      - name: Playwright
+        working-directory: src/apps/desktop
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm e2e
+
+      - name: Tauri build
+        working-directory: src/apps/desktop
+        run: pnpm tauri build --no-bundle

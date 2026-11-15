@@ -1,0 +1,8 @@
+{
+  "name": "office-harness",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "desktop": "pnpm --filter office-harness-desktop"
+  }
+}
