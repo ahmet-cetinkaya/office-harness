@@ -7,6 +7,7 @@ use tauri_build::{AppManifest, Attributes};
 const WEBVIEW_COMMANDS: &[&str] = &[
     "watch_connection",
     "watch_events",
+    "watch_terminal_frames",
     "send_request",
     "retry_connection",
     "start_server",
