@@ -113,6 +113,9 @@ pub struct TerminalSession {
     master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     lifecycle: Mutex<Lifecycle>,
     lifecycle_changed: Condvar,
+    /// Held while a status event is published. It turns true with the
+    /// `Exited` event, so no event of this run follows that one.
+    exit_published: Mutex<bool>,
     sink: Arc<dyn TerminalEventSink>,
     next_subscription: AtomicU64,
 }
@@ -152,6 +155,7 @@ impl TerminalSession {
             master: Mutex::new(Some(pty.master)),
             lifecycle: Mutex::new(Lifecycle::default()),
             lifecycle_changed: Condvar::new(),
+            exit_published: Mutex::new(false),
             sink,
             next_subscription: AtomicU64::new(1),
         });
@@ -323,8 +327,25 @@ impl TerminalSession {
             let _ = self.write_input(&replies);
         }
         for event in events {
+            self.publish_unless_exited(event);
+        }
+    }
+
+    /// The reader may still deliver output after the exit was reported (the
+    /// drain is bounded). That output stays in the screen and the file, but
+    /// it is no longer a status change of a run that has ended.
+    fn publish_unless_exited(&self, event: TerminalEvent) {
+        let exit_published = locked(&self.exit_published);
+        if !*exit_published {
             self.sink.publish(self.agent_id, self.run, event);
         }
+    }
+
+    fn publish_exit(&self, exit_code: u32) {
+        let mut exit_published = locked(&self.exit_published);
+        self.sink
+            .publish(self.agent_id, self.run, TerminalEvent::Exited { exit_code });
+        *exit_published = true;
     }
 
     fn run_waiter(&self, mut child: Box<dyn Child + Send + Sync>) {
@@ -342,8 +363,7 @@ impl TerminalSession {
         }
         locked(&self.lifecycle).exit_code = Some(exit_code);
         self.lifecycle_changed.notify_all();
-        self.sink
-            .publish(self.agent_id, self.run, TerminalEvent::Exited { exit_code });
+        self.publish_exit(exit_code);
     }
 
     fn run_quiet_monitor(&self, quiet_period: Duration) {
@@ -351,8 +371,7 @@ impl TerminalSession {
         while !self.has_exited() {
             thread::sleep(tick);
             if self.take_quiet_period_report(quiet_period) {
-                self.sink
-                    .publish(self.agent_id, self.run, TerminalEvent::QuietPeriod);
+                self.publish_unless_exited(TerminalEvent::QuietPeriod);
             }
         }
     }

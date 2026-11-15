@@ -23,6 +23,7 @@ use support::wire_client::WireClient;
 
 const QUIET_PERIOD_MS: u64 = 400;
 const SNAPSHOT_HEADER_BYTES: usize = 17;
+const MARKER_WAIT: Duration = Duration::from_secs(10);
 
 struct Office {
     serving: ServingOffice,
@@ -157,6 +158,22 @@ async fn status_of(client: &mut WireClient, agent_id: &str) -> String {
 
 fn snapshot_text(frame: &[u8]) -> String {
     String::from_utf8_lossy(&frame[SNAPSHOT_HEADER_BYTES..]).into_owned()
+}
+
+/// The snapshot may come before the agent prints its marker, so this reads
+/// the live frames until `own` shows or `MARKER_WAIT` passes. `other` must
+/// appear nowhere in what it read.
+async fn read_until_marker(client: &mut WireClient, own: &str, other: &str) -> String {
+    let mut text = snapshot_text(&client.receive_binary().await);
+    let deadline = Instant::now() + MARKER_WAIT;
+    loop {
+        assert!(!text.contains(other), "{text}");
+        if text.contains(own) {
+            return text;
+        }
+        assert!(Instant::now() < deadline, "no {own} in time: {text}");
+        text.push_str(&String::from_utf8_lossy(&client.receive_binary().await));
+    }
 }
 
 #[tokio::test]
@@ -586,9 +603,7 @@ async fn two_agents_run_side_by_side_without_interfering() {
         )
         .await;
         assert_eq!(attached["ok"], true, "{attached}");
-        let text = snapshot_text(&observer.receive_binary().await);
-        assert!(text.contains(own), "{text}");
-        assert!(!text.contains(other), "{text}");
+        read_until_marker(&mut observer, own, other).await;
     }
     let stopped = call(&mut client, 6, "agent.stop", json!({"agent_id": first})).await;
     assert_eq!(stopped["ok"], true, "{stopped}");
