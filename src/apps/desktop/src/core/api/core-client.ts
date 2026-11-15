@@ -13,6 +13,11 @@ export interface CoreClient {
   /** Calls back with the current state, then with each change. */
   watchConnection(onState: (state: ConnectionState) => void): Promise<void>;
   watchEvents(onEvent: (event: ServerEvent) => void): Promise<void>;
+  /**
+   * Calls back with each binary terminal frame (contract: "Terminal data
+   * frames"). The core forwards them for every attached agent.
+   */
+  watchTerminalFrames(onFrame: (frame: Uint8Array) => void): Promise<void>;
   sendRequest(kind: string, fields?: Record<string, unknown>): Promise<unknown>;
   /** Resolves once the new server answers; rejects when it does not. */
   startServer(): Promise<void>;

@@ -32,11 +32,14 @@ pub use state::ConnectionState;
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const REQUEST_BACKLOG: usize = 64;
 const EVENT_BACKLOG: usize = 256;
+const FRAME_BACKLOG: usize = 1024;
 
 struct Shared {
     data_folder: DataFolder,
     state: watch::Sender<ConnectionState>,
     events: broadcast::Sender<Value>,
+    /// The binary terminal frames, exactly as the server sent them.
+    frames: broadcast::Sender<Vec<u8>>,
     /// Set while a session runs; requests have nowhere to go otherwise.
     session_requests: Mutex<Option<mpsc::Sender<PendingRequest>>>,
     retry_now: Notify,
@@ -52,11 +55,13 @@ impl Connection {
     pub fn new(data_folder: DataFolder) -> Self {
         let (state, _initial_receiver) = watch::channel(ConnectionState::Loading);
         let (events, _initial_events) = broadcast::channel(EVENT_BACKLOG);
+        let (frames, _initial_frames) = broadcast::channel(FRAME_BACKLOG);
         Self {
             shared: Arc::new(Shared {
                 data_folder,
                 state,
                 events,
+                frames,
                 session_requests: Mutex::new(None),
                 retry_now: Notify::new(),
             }),
@@ -69,6 +74,10 @@ impl Connection {
 
     pub fn subscribe_events(&self) -> broadcast::Receiver<Value> {
         self.shared.events.subscribe()
+    }
+
+    pub fn subscribe_frames(&self) -> broadcast::Receiver<Vec<u8>> {
+        self.shared.frames.subscribe()
     }
 
     /// Skips the wait before the next attempt.
@@ -182,7 +191,7 @@ async fn serve(shared: &Shared, established: Established) {
             .incompatibility
             .map_or(ConnectionState::Connected, ConnectionState::from),
     );
-    run_session(established.socket, receiver, &shared.events).await;
+    run_session(established.socket, receiver, &shared.events, &shared.frames).await;
     shared.set_requests(None);
 }
 

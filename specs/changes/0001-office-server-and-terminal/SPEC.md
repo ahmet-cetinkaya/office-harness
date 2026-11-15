@@ -214,7 +214,7 @@ The fast-access layout for many agents (one list with the last output, the proje
 - **A9:** The desktop app on the same machine gets the office token without a user action, because it runs as the same OS user.
 - **A10:** The office runs only while the user is logged in. Logout or shutdown ends the agents, and the office state stays (FR-003, FR-004). This is an owner decision (see Clarifications).
 - **A11:** The MVP has no automatic update check, because FR-005 forbids outside connections from office-harness.
-- **A12:** The focus shortcut uses a key combination that common agent CLIs do not use, and the user can change it.
+- **A12:** The focus shortcut uses a key combination that common agent CLIs do not use, and the user can change it. The default is `Ctrl+Shift+F12`. KDE, GNOME, Windows, and macOS do not take it globally, so it reaches the app. The earlier choice, `Ctrl+Alt+Escape`, is the global "Kill a window" shortcut on KDE and never reaches the app there.
 - **A13:** Later releases stay open. R5: each agent belongs to a machine, and every client, the desktop app included, uses the office token, so a remote client later needs no second access model. R7 and R8 can use the agents, statuses, and terminals that this change defines.
 
 ## Clarifications

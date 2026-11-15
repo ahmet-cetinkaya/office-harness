@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use serde_json::{Map, Value};
 use tauri::State;
-use tauri::ipc::Channel;
+use tauri::ipc::{Channel, InvokeResponseBody};
 
 use crate::api_error::{ApiError, START_FAILED, START_TIMEOUT};
 use crate::channels;
@@ -29,6 +29,14 @@ pub fn watch_connection(connection: State<'_, Connection>, on_state: Channel<Con
 #[tauri::command]
 pub fn watch_events(connection: State<'_, Connection>, on_event: Channel<Value>) {
     channels::forward_events(connection.subscribe_events(), on_event);
+}
+
+#[tauri::command]
+pub fn watch_terminal_frames(
+    connection: State<'_, Connection>,
+    on_frame: Channel<InvokeResponseBody>,
+) {
+    channels::forward_frames(connection.subscribe_frames(), on_frame);
 }
 
 #[tauri::command]
