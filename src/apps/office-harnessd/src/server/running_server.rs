@@ -18,6 +18,7 @@ use super::server_error::ServerError;
 use super::server_file::write_server_file;
 use super::server_options::ServerOptions;
 use super::server_state::ServerState;
+use super::terminal_requests::TerminalGateway;
 use crate::bootstrap::{ServerLog, Services};
 use crate::config::Config;
 
@@ -63,6 +64,7 @@ impl Server {
             options,
             authentication: services.access.authentication.clone(),
             dispatcher: Arc::new(Dispatcher::new(services.access.handlers.clone())),
+            terminals: Arc::new(TerminalGateway::new(services.terminal.handlers.clone())),
             events,
             token_generations: services.access.token_store.subscribe(),
             shutdown: stopping,

@@ -5,5 +5,6 @@
 //! is the composition root and stays thin.
 
 pub mod bootstrap;
+pub mod bridges;
 pub mod config;
 pub mod server;

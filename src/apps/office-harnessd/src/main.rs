@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// The server has no console window on Windows; messages go to `server.log`
+// and the exit code (D13). Unverified on Windows: the process tests read the
+// second server's stderr, which the parent passes down as an explicit handle.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 use std::env;
 use std::process::ExitCode;
 

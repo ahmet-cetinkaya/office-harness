@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+mod channel_subscriber;
 mod connection;
 mod dispatcher;
 mod event_hub;
@@ -10,6 +11,7 @@ mod server_error;
 mod server_file;
 mod server_options;
 mod server_state;
+mod terminal_requests;
 mod upgrade_check;
 
 pub use running_server::Server;

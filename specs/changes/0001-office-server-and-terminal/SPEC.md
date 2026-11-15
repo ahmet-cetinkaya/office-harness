@@ -239,3 +239,13 @@ The fast-access layout for many agents (one list with the last output, the proje
 - Voice input, screen sharing, and project boards, as `docs/PRD.md` section 6 states.
 - Any office-harness change to a CLI's own configuration files (FR-021).
 - **Split:** done by owner decision on 2026-11-15 (see Clarifications). This change keeps 28 FRs, above the limit of ten, because the owner set its scope.
+
+## Deviations
+
+Recorded by task T5 (terminal module) of the plan, where the build differs from the design text.
+
+- **Windows stop uses `taskkill`, not a Job Object.** Research R2 item 4 asks for a Job Object. The server ends the tree with `taskkill /PID <pid> /T /F` instead, because a Job Object needs `unsafe` code and the workspace forbids it outside `private-fs`. The gap: `/T` follows parent links, so it misses a descendant whose parent already exited. The end runs only while the root child is alive, because a freed process id can belong to an unrelated process. The Windows checks for T5 (f) and (h) stay BLOCKED under PB-3 (no Windows machine) until someone runs them.
+- **The PTY host sets the terminal type.** Every agent starts with `TERM=xterm-256color` and `COLORTERM=truecolor`, set after the login environment and before the office additions, so an addition can replace them. A server started by a service has no terminal to inherit them from, and every terminal emulator sets them for its children.
+- **The login shell starts in its own process group, not its own session.** A new session needs `pre_exec`, which is `unsafe`, and `Command::setsid` is not stable. Forced-interactive bash opens the controlling terminal itself, so a server started from a terminal can see the shell stop on that terminal; the spawn then falls back after the 5-second limit. A server started at login has no controlling terminal and is not affected.
+- **One output file for each agent for now.** `terminal.attach` names the saved output by agent id until sessions exist (task T7).
+- **No console window on Windows** comes from `windows_subsystem = "windows"` in the server's `main.rs`. It is untested on Windows (PB-3).

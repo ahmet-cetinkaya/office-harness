@@ -15,16 +15,21 @@ agent-infrastructure = { path = "../../modules/agent/infrastructure" }
 axum.workspace = true
 directories.workspace = true
 gethostname.workspace = true
+kernel = { path = "../../kernel" }
 private-fs = { path = "../../shared/private-fs" }
 rusqlite.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+terminal-application = { path = "../../modules/terminal/application" }
+terminal-domain = { path = "../../modules/terminal/domain" }
+terminal-infrastructure = { path = "../../modules/terminal/infrastructure" }
+terminal-presentation = { path = "../../modules/terminal/presentation" }
 thiserror.workspace = true
 tokio.workspace = true
 wire = { path = "../../shared/wire" }
 
 [dev-dependencies]
 futures-util.workspace = true
-kernel = { path = "../../kernel" }
 tempfile.workspace = true
 tokio-tungstenite.workspace = true
 tower.workspace = true

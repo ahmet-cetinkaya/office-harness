@@ -75,6 +75,8 @@ These are binary frames: 1 byte kind, 16 bytes agent UUID, then the payload.
 - Kind `0x02` is live output.
 - Kind `0x03` is a notice that older output was dropped.
 
+A client that falls behind on terminal frames is disconnected with close code `1011` and must reconnect and attach again.
+
 ## Terminal queries
 
 The server answers the terminal's cursor-position and device-attribute queries itself, whether or not a client is attached. The client drops xterm.js's own automatic replies to those queries, so a CLI never gets two answers.

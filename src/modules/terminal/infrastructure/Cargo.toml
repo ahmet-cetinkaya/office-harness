@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[package]
+name = "terminal-infrastructure"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+terminal-domain = { path = "../domain" }
+terminal-application = { path = "../application" }
+kernel = { path = "../../../kernel" }
+private-fs = { path = "../../../shared/private-fs" }
+portable-pty.workspace = true
+vt100.workspace = true
+
+# Signals to a process group need no `unsafe` through nix's wrappers.
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["signal"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+# A tiny child program that the integration tests run inside the PTY: it
+# prints, reads keys, draws on the alternate screen, sends terminal queries,
+# and exits with a chosen code. It is a binary of this package, so the tests
+# can find it through CARGO_BIN_EXE_terminal-fixture.
+[[bin]]
+name = "terminal-fixture"
+path = "tests/support/fixture_cli.rs"
+test = false
+
+[lints]
+workspace = true
