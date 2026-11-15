@@ -8,3 +8,4 @@ src/apps/desktop/test-results/
 src/apps/desktop/src-tauri/gen/
 .agents/.claude/
 .agents/.mcp.json
+src/apps/desktop/src-tauri/bindings/
