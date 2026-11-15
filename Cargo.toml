@@ -4,10 +4,10 @@ resolver = "3"
 members = [
     "src/kernel",
     "src/shared/*",
+    "src/modules/*/domain",
     # Module globs stay commented out until the first crate of each layer exists.
-    # "src/modules/*/domain",
     # "src/modules/*/application",
-    # "src/modules/*/infrastructure",
+    "src/modules/*/infrastructure",
     # "src/modules/*/presentation",
     "src/apps/office-harnessd",
     "src/apps/desktop/src-tauri",
@@ -24,6 +24,11 @@ publish = false
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 uuid = { version = "1", features = ["serde", "v4"] }
+rusqlite = { version = "=0.43.0", features = ["bundled"] }
+tokio = { version = "=1.54.1", features = ["macros", "rt-multi-thread", "signal", "sync"] }
+directories = "=6.0.0"
+gethostname = "1"
+tempfile = "3"
 tauri = { version = "=2.12.5", features = [] }
 tauri-build = "=2.7.4"
 tauri-plugin-shell = "=2.6.0"

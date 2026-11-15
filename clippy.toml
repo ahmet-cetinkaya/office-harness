@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Tests fail by panicking, so `expect` and `unwrap` are fine inside them.
+allow-expect-in-tests = true
+allow-unwrap-in-tests = true
