@@ -4,7 +4,7 @@
 //! webview's channels. Each ends when the webview stops listening.
 
 use serde_json::Value;
-use tauri::ipc::Channel;
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tokio::sync::{broadcast, watch};
 
 use crate::connection::ConnectionState;
@@ -32,6 +32,28 @@ pub fn forward_events(mut events: broadcast::Receiver<Value>, channel: Channel<V
             match events.recv().await {
                 Ok(event) => {
                     if channel.send(event).is_err() {
+                        return;
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Closed) => return,
+            }
+        }
+    });
+}
+
+/// Sends each binary terminal frame to the webview as raw bytes. A webview
+/// that falls behind loses the oldest frames and sees a gap; the server's own
+/// slow-client rule disconnects it first in practice.
+pub fn forward_frames(
+    mut frames: broadcast::Receiver<Vec<u8>>,
+    channel: Channel<InvokeResponseBody>,
+) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match frames.recv().await {
+                Ok(frame) => {
+                    if channel.send(InvokeResponseBody::Raw(frame)).is_err() {
                         return;
                     }
                 }

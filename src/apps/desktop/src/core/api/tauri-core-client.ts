@@ -24,6 +24,12 @@ export function createTauriCoreClient(): CoreClient {
       }),
     watchEvents: (onEvent) =>
       call("watch_events", { onEvent: new Channel<ServerEvent>(onEvent) }),
+    watchTerminalFrames: (onFrame) =>
+      call("watch_terminal_frames", {
+        onFrame: new Channel<ArrayBuffer | number[]>((frame) =>
+          onFrame(new Uint8Array(frame)),
+        ),
+      }),
     sendRequest: (kind, fields) => call("send_request", { kind, fields }),
     startServer: () => call("start_server"),
     retryConnection: () => call("retry_connection"),

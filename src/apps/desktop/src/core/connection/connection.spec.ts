@@ -20,6 +20,7 @@ function fakeClient(overrides: Partial<CoreClient> = {}): CoreClient & {
       onState = callback;
     },
     watchEvents: async () => {},
+    watchTerminalFrames: async () => {},
     sendRequest: async () => null,
     startServer: async () => {},
     retryConnection: async () => {},

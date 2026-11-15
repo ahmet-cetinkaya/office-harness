@@ -18,7 +18,8 @@
   let { store }: Props = $props();
 
   const office = $derived(store.snapshot);
-  const controller = store.controller;
+  const controller = $derived(store.controller);
+  const client = $derived(store.client);
   const selectedAgent = $derived(
     office.agents.find((agent) => agent.id === office.selectedAgentId) ?? null,
   );
@@ -96,6 +97,7 @@
           {@const agentId = selectedAgent.id}
           {#key agentId}
             <AgentDetails
+              {client}
               agent={selectedAgent}
               details={office.details}
               statusDetail={office.statusDetails[agentId] ?? null}

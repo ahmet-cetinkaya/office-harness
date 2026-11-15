@@ -6,6 +6,7 @@
   "permissions": [
     "allow-watch-connection",
     "allow-watch-events",
+    "allow-watch-terminal-frames",
     "allow-send-request",
     "allow-retry-connection",
     "allow-start-server"

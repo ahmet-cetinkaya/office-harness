@@ -73,11 +73,12 @@ fn outcome_of(body: &Map<String, Value>) -> Outcome {
 
 /// Serves the webview's requests and forwards the server's events until the
 /// socket ends or the last request sender is dropped. Binary terminal frames
-/// are not forwarded yet (T10 adds their channel).
+/// go to `frames` unchanged; the webview reads their kind and agent.
 pub async fn run_session(
     mut socket: Socket,
     mut requests: mpsc::Receiver<PendingRequest>,
     events: &broadcast::Sender<Value>,
+    frames: &broadcast::Sender<Vec<u8>>,
 ) {
     let mut waiting = WaitingReplies::new();
     let mut next_id: u32 = 1;
@@ -85,6 +86,10 @@ pub async fn run_session(
         tokio::select! {
             inbound = socket.next() => match inbound {
                 Some(Ok(Message::Text(text))) => forward(text.as_str(), &mut waiting, events),
+                Some(Ok(Message::Binary(frame))) => {
+                    // No receiver just means that no terminal is open.
+                    let _ = frames.send(frame.to_vec());
+                }
                 Some(Ok(Message::Close(_) | Message::Frame(_)) | Err(_)) | None => return,
                 Some(Ok(_)) => {}
             },
