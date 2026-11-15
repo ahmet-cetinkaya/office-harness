@@ -205,7 +205,19 @@ fn looking_for_a_session_changes_nothing_in_the_cli_folder() {
 #[test]
 fn a_second_new_session_inside_the_settle_time_makes_the_match_ambiguous() {
     let fixture = fixture();
-    let mut tracking = begin(&fixture);
+    // A settle time far longer than the writer's delay, so a slow test
+    // machine cannot settle on the first file before the second appears.
+    let patient = AttributionTiming {
+        timeout: Duration::from_secs(10),
+        settle: Duration::from_secs(10),
+        ..QUICK
+    };
+    let mut tracking = CodexTracking::begin(
+        fixture.sessions.clone(),
+        &fixture.folder,
+        patient,
+        &fixture.pending,
+    );
     write_session(&fixture, &id(1), &fixture.folder);
 
     let writer = thread::scope(|scope| {
