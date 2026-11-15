@@ -13,7 +13,7 @@ const PROGRAM_NAME: &str = "office-harnessd";
 const PARTIAL_EXTENSION: &str = "partial";
 
 /// Starts a stable copy of the server at login. The copy exists because the
-/// running program may sit in a place that goes away: an AppImage mount, or an
+/// running program may sit in a place that goes away: an `AppImage` mount, or an
 /// app folder that the user moves (research R4).
 pub struct LoginStart<'a> {
     data_folder: &'a Path,

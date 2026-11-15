@@ -13,7 +13,6 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Runs one subcommand against the real login item and reports on standard
 /// output (the result) or standard error (the failure). `rest` holds the
 /// arguments after the subcommand, which are the server's own.
-#[must_use]
 pub fn run(command: Command, rest: &[OsString]) -> ExitCode {
     match execute(command, rest) {
         Ok(code) => code,
