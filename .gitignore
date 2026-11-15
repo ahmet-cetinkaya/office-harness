@@ -1,0 +1,8 @@
+target/
+node_modules/
+dist/
+src/apps/desktop/src-tauri/binaries/
+.agents/work/
+.agents/archive/
+src/apps/desktop/test-results/
+src/apps/desktop/src-tauri/gen/

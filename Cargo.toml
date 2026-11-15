@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[workspace]
+resolver = "3"
+members = [
+    "src/kernel",
+    "src/shared/*",
+    # Module globs stay commented out until the first crate of each layer exists.
+    # "src/modules/*/domain",
+    # "src/modules/*/application",
+    # "src/modules/*/infrastructure",
+    # "src/modules/*/presentation",
+    "src/apps/office-harnessd",
+    "src/apps/desktop/src-tauri",
+]
+default-members = ["src/apps/office-harnessd"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+uuid = { version = "1", features = ["serde", "v4"] }
+tauri = { version = "=2.12.5", features = [] }
+tauri-build = "=2.7.4"
+tauri-plugin-shell = "=2.6.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+todo = "deny"
