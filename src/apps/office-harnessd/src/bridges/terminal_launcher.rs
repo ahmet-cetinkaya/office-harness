@@ -81,7 +81,12 @@ impl TerminalLauncher {
             .map_err(|error| LaunchError::Task(error.to_string()))?
     }
 
-    fn launch_blocking(&self, request: LaunchRequest) -> Result<LaunchOutcome, LaunchError> {
+    /// The same as `launch`, for a caller that already runs on a blocking
+    /// thread.
+    ///
+    /// # Errors
+    /// As `launch`.
+    pub fn launch_blocking(&self, request: LaunchRequest) -> Result<LaunchOutcome, LaunchError> {
         let resolved = self.login_environment.resolve(&self.server_environment);
         let mut environment = resolved.variables;
         // The PTY host names the terminal, as every terminal emulator does; a

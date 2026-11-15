@@ -11,8 +11,8 @@ use axum::Router;
 use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, watch};
 
+use super::agent_requests::AgentGateway;
 use super::dispatcher::Dispatcher;
-use super::event_hub::EventHub;
 use super::router::build_router;
 use super::server_error::ServerError;
 use super::server_file::write_server_file;
@@ -20,6 +20,7 @@ use super::server_options::ServerOptions;
 use super::server_state::ServerState;
 use super::terminal_requests::TerminalGateway;
 use crate::bootstrap::{ServerLog, Services};
+use crate::bridges::AgentStatusBridge;
 use crate::config::Config;
 
 /// The loopback WebSocket server, bound and announced in `server.json` but
@@ -56,8 +57,23 @@ impl Server {
         write_server_file(&announcement_path, port, start_nonce.as_str())
             .map_err(ServerError::ServerFile)?;
 
-        let events = EventHub::new();
+        let events = services.events.clone();
         events.forward_storage_alerts(services.storage_alerts.subscribe());
+        AgentStatusBridge {
+            change_status: services.agent.change_status.clone(),
+            runtime: Arc::clone(&services.terminal.runtime),
+            hub: events.clone(),
+            order: Arc::clone(&services.agent.status_order),
+            alerts: services.storage_alerts.clone(),
+        }
+        .spawn(services.terminal.events.subscribe());
+        let agents = AgentGateway::new(
+            Arc::clone(&services.agent.handlers),
+            services.agent.audit.clone(),
+            events.clone(),
+            services.storage_alerts.clone(),
+            Arc::clone(&services.agent.status_order),
+        );
         let (shutdown, stopping) = watch::channel(false);
         let state = ServerState {
             port,
@@ -65,6 +81,7 @@ impl Server {
             authentication: services.access.authentication.clone(),
             dispatcher: Arc::new(Dispatcher::new(services.access.handlers.clone())),
             terminals: Arc::new(TerminalGateway::new(services.terminal.handlers.clone())),
+            agents,
             events,
             token_generations: services.access.token_store.subscribe(),
             shutdown: stopping,

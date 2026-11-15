@@ -16,6 +16,13 @@ impl SharedConnection {
         Self(Arc::new(Mutex::new(connection)))
     }
 
+    /// The connection itself, for the other modules that the host app gives
+    /// the same database file (each keeps its own tables).
+    #[must_use]
+    pub fn handle(&self) -> Arc<Mutex<Connection>> {
+        Arc::clone(&self.0)
+    }
+
     pub(crate) fn with<T>(
         &self,
         work: impl FnOnce(&mut Connection) -> Result<T, PersistenceError>,

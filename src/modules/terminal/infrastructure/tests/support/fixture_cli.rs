@@ -29,6 +29,7 @@ fn main() {
     match argument(0) {
         "exit" => exit(number(argument(1))),
         "delayed-exit" => delayed_exit(number(argument(1)), number(argument(2))),
+        "pause-resume" => pause_resume(number(argument(1))),
         "counter" => counter(number(argument(1)), number(argument(2))),
         "keys" => keys(),
         "altscreen" => altscreen(),
@@ -73,6 +74,19 @@ fn delayed_exit(milliseconds: u64, code: i32) {
     announce("HELLO\n");
     thread::sleep(Duration::from_millis(milliseconds));
     exit(code);
+}
+
+/// Writes, goes quiet, writes three lines close together, goes quiet again,
+/// and exits with code 0.
+fn pause_resume(pause_milliseconds: u64) {
+    let pause = Duration::from_millis(pause_milliseconds);
+    announce("ONE\n");
+    thread::sleep(pause);
+    for line in ["TWO\n", "THREE\n", "FOUR\n"] {
+        announce(line);
+        thread::sleep(Duration::from_millis(5));
+    }
+    thread::sleep(pause);
 }
 
 fn counter(count: u32, delay_milliseconds: u64) {

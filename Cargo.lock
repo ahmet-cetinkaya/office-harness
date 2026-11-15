@@ -71,12 +71,24 @@ dependencies = [
 name = "agent-infrastructure"
 version = "0.1.0"
 dependencies = [
+ "agent-application",
  "agent-domain",
  "kernel",
  "nix",
  "rusqlite",
  "tempfile",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "agent-presentation"
+version = "0.1.0"
+dependencies = [
+ "agent-application",
+ "agent-domain",
+ "kernel",
+ "serde_json",
+ "wire",
 ]
 
 [[package]]
@@ -178,6 +190,17 @@ dependencies = [
  "audit-domain",
  "kernel",
  "rusqlite",
+]
+
+[[package]]
+name = "audit-presentation"
+version = "0.1.0"
+dependencies = [
+ "audit-application",
+ "audit-domain",
+ "kernel",
+ "serde_json",
+ "wire",
 ]
 
 [[package]]
@@ -2552,8 +2575,14 @@ dependencies = [
  "access-application",
  "access-infrastructure",
  "access-presentation",
+ "agent-application",
  "agent-domain",
  "agent-infrastructure",
+ "agent-presentation",
+ "audit-application",
+ "audit-domain",
+ "audit-infrastructure",
+ "audit-presentation",
  "axum",
  "directories",
  "futures-util",

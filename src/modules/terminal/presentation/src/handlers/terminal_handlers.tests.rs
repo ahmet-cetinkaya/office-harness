@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use terminal_application::common::errors::TerminalRuntimeError;
 use terminal_application::common::models::{
-    Attachment, DeliveryStatus, LiveOutput, SpawnTerminalRequest,
+    Attachment, DeliveryStatus, LiveOutput, RunId, SpawnTerminalRequest,
 };
 
 use super::*;
@@ -57,6 +57,10 @@ impl TerminalRuntime for FakeRuntime {
 
     fn stop(&self, _agent_id: AgentId, _grace: Duration) -> Result<(), TerminalRuntimeError> {
         Ok(())
+    }
+
+    fn current_run(&self, _agent_id: AgentId) -> Option<RunId> {
+        None
     }
 
     fn is_running(&self, _agent_id: AgentId) -> bool {

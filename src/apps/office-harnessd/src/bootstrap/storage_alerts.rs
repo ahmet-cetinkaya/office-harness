@@ -51,10 +51,15 @@ impl StorageAlerts {
     }
 
     fn report(&self, error: &PersistenceError) {
-        if !error.is_storage_failure() {
-            return;
+        if error.is_storage_failure() {
+            self.report_disk_failure(&error.to_string());
         }
-        let message = error.to_string();
+    }
+
+    /// Raises an alert for a failure that a module already classified as the
+    /// disk's: logs it and tells the clients.
+    pub fn report_disk_failure(&self, message: &str) {
+        let message = message.to_owned();
         self.log.error(&format!("{STORAGE_ERROR_EVENT}: {message}"));
         // No subscriber is a normal state: the alert is still in the log.
         let _ = self.sender.send(StorageAlert { message });

@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -11,7 +12,9 @@ use terminal_application::common::errors::TerminalRuntimeError;
 use terminal_application::common::interfaces::{
     OutputSubscriber, TerminalEventSink, TerminalRuntime,
 };
-use terminal_application::common::models::{Attachment, SpawnTerminalRequest, SubscriptionId};
+use terminal_application::common::models::{
+    Attachment, RunId, SpawnTerminalRequest, SubscriptionId,
+};
 use terminal_domain::value_objects::{OutputKey, OutputLimits, TerminalSize};
 
 use crate::services::output_store::OutputStore;
@@ -34,6 +37,7 @@ pub struct PortableTerminalRuntime {
     settings: RuntimeSettings,
     sink: Arc<dyn TerminalEventSink>,
     sessions: Mutex<HashMap<AgentId, Arc<TerminalSession>>>,
+    last_run: AtomicU64,
 }
 
 impl PortableTerminalRuntime {
@@ -43,6 +47,7 @@ impl PortableTerminalRuntime {
             settings,
             sink,
             sessions: Mutex::new(HashMap::new()),
+            last_run: AtomicU64::new(0),
         }
     }
 
@@ -109,6 +114,8 @@ impl TerminalRuntime for PortableTerminalRuntime {
             Err(error) => {
                 // A child that nobody records must not keep running unseen.
                 let _ = pty.child.kill();
+                // Reaping ends the killed child, so it does not stay a zombie.
+                let _ = pty.child.wait();
                 return Err(TerminalRuntimeError::Io(error.to_string()));
             }
         };
@@ -120,6 +127,7 @@ impl TerminalRuntime for PortableTerminalRuntime {
             size: request.size,
             quiet_period: self.settings.quiet_period,
             sink: Arc::clone(&self.sink),
+            run: RunId(self.last_run.fetch_add(1, Ordering::Relaxed) + 1),
         });
         sessions.insert(request.agent_id, session);
         Ok(())
@@ -162,5 +170,9 @@ impl TerminalRuntime for PortableTerminalRuntime {
 
     fn is_running(&self, agent_id: AgentId) -> bool {
         self.running_session(agent_id).is_some()
+    }
+
+    fn current_run(&self, agent_id: AgentId) -> Option<RunId> {
+        self.sessions().get(&agent_id).map(|session| session.run())
     }
 }

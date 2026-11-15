@@ -23,14 +23,33 @@ pub struct TerminalServices {
     pub events: TerminalEvents,
 }
 
-/// Builds the terminal services from the settings and the process
-/// environment.
+/// The environment a launched agent starts from: the server's own, and the
+/// login shell's. Tests give stand-ins.
+pub struct LoginSetup {
+    pub login_environment: Arc<LoginEnvironment>,
+    pub server_environment: Environment,
+}
+
+impl LoginSetup {
+    /// The real login shell of the user and the process environment.
+    #[must_use]
+    pub fn detect() -> Self {
+        let server_environment = process_environment();
+        Self {
+            login_environment: Arc::new(LoginEnvironment::detect(&server_environment)),
+            server_environment,
+        }
+    }
+}
+
+/// Builds the terminal services from the settings and the environment setup.
 ///
 /// # Errors
 /// A setting that is not a valid output limit.
 pub fn build_terminal_services(
     config: &Config,
     settings: &Settings,
+    login: LoginSetup,
 ) -> Result<TerminalServices, TerminalError> {
     let line_limit = usize::try_from(settings.output_line_limit).unwrap_or(usize::MAX);
     let events = TerminalEvents::new();
@@ -42,11 +61,13 @@ pub fn build_terminal_services(
         },
         Arc::new(events.clone()) as Arc<dyn TerminalEventSink>,
     ));
-    let server_environment = process_environment();
-    let login_environment = Arc::new(LoginEnvironment::detect(&server_environment));
     Ok(TerminalServices {
         handlers: Arc::new(TerminalHandlers::new(&runtime)),
-        launcher: TerminalLauncher::new(runtime.clone(), login_environment, server_environment),
+        launcher: TerminalLauncher::new(
+            runtime.clone(),
+            login.login_environment,
+            login.server_environment,
+        ),
         runtime,
         events,
     })
