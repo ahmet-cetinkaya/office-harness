@@ -15,7 +15,7 @@ use super::{LoginItem, LoginItemError};
 const APP_NAME: &str = "office-harnessd";
 
 /// The real login item: a systemd user unit or an XDG autostart entry on
-/// Linux, a LaunchAgent on macOS, and a `Run` registry value on Windows.
+/// Linux, a `LaunchAgent` on macOS, and a `Run` registry value on Windows.
 pub struct SystemLoginItem;
 
 impl LoginItem for SystemLoginItem {
@@ -64,6 +64,7 @@ fn remove_if_enabled(entry: &AutoLaunch) -> Result<(), LoginItemError> {
     Ok(())
 }
 
+#[allow(clippy::needless_pass_by_value)] // Used as a `map_err` callback.
 fn describe(error: auto_launch::Error) -> LoginItemError {
     LoginItemError(error.to_string())
 }
@@ -108,10 +109,11 @@ fn systemd_user_answers() -> bool {
         .is_ok_and(|status| status.success())
 }
 
-/// A LaunchAgent avoids the AppleScript prompt of the other macOS mode; on
+/// A `LaunchAgent` avoids the `AppleScript` prompt of the other macOS mode; on
 /// Windows the entry is a value under the current user's `Run` key.
 #[cfg(not(target_os = "linux"))]
 fn entries_for(program: &Path) -> Result<Vec<AutoLaunch>, LoginItemError> {
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
     let mut builder = new_builder(program)?;
     #[cfg(target_os = "macos")]
     builder.set_macos_launch_mode(MacOSLaunchMode::LaunchAgent);
