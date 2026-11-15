@@ -32,7 +32,9 @@ export function createInputQueue(
 
   return {
     push(bytes) {
-      waiting.push(...bytes);
+      // One push per byte: spreading a large paste into one call passes
+      // more arguments than JavaScriptCore allows.
+      for (const byte of bytes) waiting.push(byte);
       if (!isSending) sendWaiting();
     },
   };

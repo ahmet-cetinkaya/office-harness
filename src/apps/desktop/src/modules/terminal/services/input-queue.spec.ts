@@ -69,4 +69,14 @@ describe("input queue", () => {
     expect(failures).toHaveLength(1);
     expect(sent).toEqual(["a", "b"]);
   });
+  test("keeps a paste larger than the engine's argument limit", () => {
+    const { sent, send } = controlledSend();
+    const queue = createInputQueue(send, () => {});
+    const large = new Uint8Array(200_000).fill(0x61);
+
+    queue.push(large);
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toHaveLength(200_000);
+  });
 });

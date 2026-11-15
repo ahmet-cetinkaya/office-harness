@@ -132,6 +132,7 @@
       // The webview would otherwise move focus on Tab and open its own
       // function-key actions. xterm.js still sends the key's sequence.
       if (
+        isRunning &&
         event.type === "keydown" &&
         (event.key === "Tab" || FUNCTION_KEY.test(event.key))
       ) {
