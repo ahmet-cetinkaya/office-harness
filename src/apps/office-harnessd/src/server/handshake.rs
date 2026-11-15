@@ -50,14 +50,16 @@ pub async fn authenticate(
         .inspect_err(|failure| {
             state
                 .log
-                .info(&format!("connection refused before auth.ok: {failure:?}"));
+                .refusal(&format!("connection refused before auth.ok: {failure:?}"));
         })?;
 
     let grant = state
         .authentication
         .complete(&pending, state.port, &proof)
         .map_err(|_| {
-            state.log.info("connection refused: the proof is not valid");
+            state
+                .log
+                .refusal("connection refused: the proof is not valid");
             HandshakeFailure::Rejected
         })?;
     let accepted = AuthMessage::AuthOk {

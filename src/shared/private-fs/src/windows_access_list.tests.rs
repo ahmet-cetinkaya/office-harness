@@ -14,6 +14,23 @@ fn folder_grants_are_inherited_and_file_grants_are_not() {
     );
 }
 
+#[test]
+fn only_a_full_sid_text_is_accepted() {
+    assert!(is_sid_text("S-1-5-21-1004336348-1177238915-682003330-1001"));
+    assert!(is_sid_text("S-1-5-18"));
+    for text in [
+        "S-",
+        "S-1-",
+        "S-1-5",
+        "S-1-5-",
+        "S-1-5-x",
+        "S-1-5-1)(A;;FA;;;WD",
+        "s-1-5-18",
+    ] {
+        assert!(!is_sid_text(text), "{text}");
+    }
+}
+
 #[cfg(windows)]
 mod windows {
     use super::*;

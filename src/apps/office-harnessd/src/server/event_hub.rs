@@ -5,12 +5,13 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use wire::Event;
 
-use crate::bootstrap::{STORAGE_ERROR_EVENT, StorageAlert};
+use crate::bootstrap::{STORAGE_ERROR_EVENT, ServerLog, StorageAlert};
 
 const EVENT_BACKLOG: usize = 256;
 
 /// Fans server events out to every authenticated connection. A connection
-/// that falls behind by more than the backlog skips the events it missed.
+/// that falls behind by more than the backlog is closed with 1011, so that
+/// its client reconnects and reloads the current state.
 #[derive(Clone)]
 pub struct EventHub {
     sender: broadcast::Sender<Arc<str>>,
@@ -36,13 +37,19 @@ impl EventHub {
 
     /// Publishes each storage alert as a `storage.error` event until the
     /// alert source is dropped.
-    pub fn forward_storage_alerts(&self, mut alerts: broadcast::Receiver<StorageAlert>) {
+    pub fn forward_storage_alerts(
+        &self,
+        mut alerts: broadcast::Receiver<StorageAlert>,
+        log: ServerLog,
+    ) {
         let hub = self.clone();
         tokio::spawn(async move {
             loop {
                 match alerts.recv().await {
                     Ok(alert) => hub.publish(&storage_error_event(alert)),
-                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Lagged(missed)) => {
+                        log.error(&format!("{missed} storage alerts were not sent to clients"));
+                    }
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }

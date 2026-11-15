@@ -53,7 +53,7 @@ async fn upgrade(
     if let Err(refusal) = check_upgrade(&headers, state.port) {
         state
             .log
-            .info(&format!("upgrade refused: {}", refusal.reason()));
+            .refusal(&format!("upgrade refused: {}", refusal.reason()));
         return StatusCode::FORBIDDEN.into_response();
     }
     websocket

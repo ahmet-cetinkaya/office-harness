@@ -6,7 +6,7 @@ use std::time::Duration;
 use axum::extract::ws::{CloseFrame, Message, Utf8Bytes, WebSocket};
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::time::timeout;
-use wire::{CLOSE_UNAUTHORIZED, ErrorCode, Request, Response};
+use wire::{CLOSE_TRY_AGAIN_LATER, CLOSE_UNAUTHORIZED, ErrorCode, Request, Response};
 
 use super::agent_requests::AgentGateway;
 use super::handshake::{HandshakeFailure, authenticate};
@@ -37,8 +37,8 @@ pub async fn serve_connection(mut socket: WebSocket, state: ServerState) {
         let Ok(_permit) = state.handshake_permits.try_acquire() else {
             state
                 .log
-                .info("connection refused: too many handshakes at once");
-            return close_with(&mut socket, CLOSE_UNAUTHORIZED).await;
+                .refusal("connection refused: too many handshakes at once");
+            return close_with(&mut socket, CLOSE_TRY_AGAIN_LATER).await;
         };
         authenticate(&mut socket, &state).await
     };
@@ -113,7 +113,7 @@ async fn session_loop(
             () = &mut stopping => return close_with(&mut socket, CLOSE_GOING_AWAY).await,
             () = &mut overflowed => return close_overflowed(&mut socket).await,
             event = events.recv() => {
-                if forward_event(&mut socket, event).await.is_break() {
+                if forward_event(&mut socket, state, event).await.is_break() {
                     return;
                 }
             }
@@ -146,6 +146,7 @@ async fn session_loop(
 
 async fn forward_event(
     socket: &mut WebSocket,
+    state: &ServerState,
     event: Result<std::sync::Arc<str>, broadcast::error::RecvError>,
 ) -> ControlFlow<()> {
     match event {
@@ -153,8 +154,15 @@ async fn forward_event(
             Ok(()) => ControlFlow::Continue(()),
             Err(Disconnected) => ControlFlow::Break(()),
         },
-        // A slow connection skips the events it missed and keeps going.
-        Err(broadcast::error::RecvError::Lagged(_)) => ControlFlow::Continue(()),
+        // A missed `agent.status` would leave the client with an old status,
+        // so the client must reconnect and reload instead of going on.
+        Err(broadcast::error::RecvError::Lagged(missed)) => {
+            state
+                .log
+                .info(&format!("connection closed: it missed {missed} events"));
+            close_overflowed(socket).await;
+            ControlFlow::Break(())
+        }
         Err(broadcast::error::RecvError::Closed) => ControlFlow::Break(()),
     }
 }

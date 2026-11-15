@@ -42,6 +42,22 @@ const FILE_ACE_FLAGS: &str = "";
 
 /// The SDDL of a protected access list that allows full control to `user_sid`
 /// and to SYSTEM and nothing else. `ace_flags` say whether children inherit.
+/// True for a SID in its text form, `S-1-` and then at least two groups of
+/// digits joined by `-`, so that no other text reaches the SDDL string.
+fn is_sid_text(text: &str) -> bool {
+    let Some(groups) = text.strip_prefix("S-1-") else {
+        return false;
+    };
+    let groups: Vec<&str> = groups.split('-').collect();
+    groups.len() >= MIN_SID_GROUPS
+        && groups
+            .iter()
+            .all(|group| !group.is_empty() && group.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+/// The authority and at least one sub-authority.
+const MIN_SID_GROUPS: usize = 2;
+
 fn owner_only_sddl(user_sid: &str, ace_flags: &str) -> String {
     let allow = |trustee: &str| format!("(A;{ace_flags};{FULL_CONTROL};;;{trustee})");
     format!("D:P{}{}", allow(user_sid), allow(SYSTEM_ALIAS))
@@ -189,7 +205,7 @@ fn current_user_sid() -> io::Result<String> {
         .rsplit(',')
         .next()
         .map(|sid| sid.trim_matches('"').to_owned())
-        .filter(|sid| sid.starts_with("S-"))
+        .filter(|sid| is_sid_text(sid))
         .ok_or_else(|| io::Error::other("whoami did not report the current user SID"))
 }
 

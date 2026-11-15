@@ -145,7 +145,8 @@ mod runs {
             runtime: Arc::new(RunOnly(current)),
             hub: EventHub::new(),
             order: StatusOrder::default(),
-            alerts: StorageAlerts::new(log),
+            alerts: StorageAlerts::new(log.clone()),
+            log,
         };
         (bridge, store)
     }

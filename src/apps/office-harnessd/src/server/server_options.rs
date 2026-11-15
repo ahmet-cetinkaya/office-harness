@@ -11,7 +11,8 @@ pub const MAX_CONCURRENT_HANDSHAKES: usize = 8;
 pub struct ServerOptions {
     /// How long a new connection may take to send its proof.
     pub auth_timeout: Duration,
-    /// A connection that finds no free handshake slot closes with 4401.
+    /// A connection that finds no free handshake slot closes with 1013 (Try
+    /// Again Later).
     pub max_concurrent_handshakes: usize,
 }
 

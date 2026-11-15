@@ -14,6 +14,6 @@ pub use envelope::{ErrorCode, Event, Request, Response};
 pub use handshake::{ClientHandshake, HandshakeError};
 pub use proof::{ProofKeyError, ProofRole, compute_proof, nonce_is_well_formed, proof_is_valid};
 pub use protocol::{
-    AUTH_TIMEOUT, CLOSE_UNAUTHORIZED, HEALTH_PATH, MAX_FRAME_BYTES, NONCE_TEXT_LENGTH,
-    PRE_AUTH_FRAME_LIMIT, PROTOCOL_VERSION, SERVER_FILE_NAME, WS_PATH,
+    AUTH_TIMEOUT, CLOSE_TRY_AGAIN_LATER, CLOSE_UNAUTHORIZED, HEALTH_PATH, MAX_FRAME_BYTES,
+    NONCE_TEXT_LENGTH, PRE_AUTH_FRAME_LIMIT, PROTOCOL_VERSION, SERVER_FILE_NAME, WS_PATH,
 };
