@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use agent_domain::enums::AgentStatus;
+use agent_domain::value_objects::ExitResult;
 use tempfile::TempDir;
 
 use super::*;
@@ -152,4 +153,33 @@ fn a_continue_that_is_refused_leaves_the_running_session_running() {
         office.agents.status_of(agent.id),
         Some(AgentStatus::Working)
     );
+}
+
+#[test]
+fn continuing_after_the_running_child_ended_on_its_own_closes_it_and_starts_the_next() {
+    let office = Office::new();
+    let (agent, first) = ended_session(&office, "Ana", "claude");
+    let running = office
+        .start_new_task()
+        .handle(agent.id)
+        .expect("new task")
+        .session;
+    office
+        .agents
+        .update_status(agent.id, AgentStatus::Working)
+        .expect("status");
+    office.terminals.end_children_on_their_own();
+
+    let outcome = office
+        .continue_session()
+        .handle(first.id)
+        .expect("no false conflict");
+
+    let stored = office
+        .sessions
+        .find(running.id)
+        .expect("find")
+        .expect("stored");
+    assert_eq!(stored.exit_result, Some(ExitResult::Signal));
+    assert_eq!(outcome.session.continued_from, Some(first.id));
 }

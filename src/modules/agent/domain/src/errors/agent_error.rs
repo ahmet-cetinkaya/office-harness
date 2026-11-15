@@ -31,6 +31,8 @@ pub enum AgentError {
     EmptyFlag { index: usize },
     #[error("{field} must not contain a NUL character")]
     ContainsNul { field: String },
+    #[error("{field} must not contain control characters other than tab and line feed")]
+    ContainsControlCharacter { field: String },
     #[error("unknown exit result: {0}")]
     UnknownExitResult(String),
     #[error("unknown agent status: {0}")]

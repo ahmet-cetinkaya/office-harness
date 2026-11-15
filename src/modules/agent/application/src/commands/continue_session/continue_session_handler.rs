@@ -78,8 +78,7 @@ impl ContinueSessionHandler {
         };
         let prepared = self.launcher.prepare(&agent, &kind)?;
         if agent.status.is_running() {
-            self.ender.stop(&mut agent)?;
-            agent = require_agent(&*self.agents, agent.id)?;
+            self.ender.stop_for_restart(&mut agent)?;
         }
         self.launcher.start(&mut agent, &kind, prepared)
     }

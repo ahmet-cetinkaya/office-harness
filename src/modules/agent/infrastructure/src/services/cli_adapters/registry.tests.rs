@@ -14,7 +14,6 @@ fn new_session_arguments(program: &str, prompt: Option<&str>) -> Vec<String> {
         fixed_arguments: &[],
         flags: &flags,
         startup_prompt: prompt,
-        prompt_by_argument: true,
         proposed_cli_session_id: "id-1",
     };
     registry().for_program(program).new_session(&plan).arguments
@@ -25,7 +24,6 @@ fn continue_arguments(program: &str) -> Option<Vec<String>> {
         fixed_arguments: &[],
         flags: &[],
         startup_prompt: Some("ignored"),
-        prompt_by_argument: true,
         proposed_cli_session_id: "id-2",
     };
     registry()
@@ -38,24 +36,37 @@ fn continue_arguments(program: &str) -> Option<Vec<String>> {
 fn each_adapter_builds_its_documented_new_session_command_line() {
     assert_eq!(
         new_session_arguments("claude", Some("say hi")),
-        ["--flag", "--session-id", "id-1", "say hi"]
+        ["--flag", "--session-id", "id-1"]
     );
-    assert_eq!(
-        new_session_arguments("codex", Some("say hi")),
-        ["--flag", "say hi"]
-    );
+    assert_eq!(new_session_arguments("codex", Some("say hi")), ["--flag"]);
     assert_eq!(
         new_session_arguments("gemini", Some("say hi")),
-        ["--flag", "--session-id", "id-1", "-i", "say hi"]
+        ["--flag", "--session-id", "id-1"]
     );
     assert_eq!(
         new_session_arguments("opencode", Some("say hi")),
-        ["--flag", "--session", "id-1", "--prompt", "say hi"]
+        ["--flag", "--session", "id-1"]
     );
     assert_eq!(
         new_session_arguments("some-tool", Some("say hi")),
         ["--flag"]
     );
+}
+
+#[test]
+fn every_adapter_types_the_prompt_in() {
+    for program in ["claude", "codex", "gemini", "opencode", "some-tool"] {
+        let plan = SessionPlan {
+            fixed_arguments: &[],
+            flags: &[],
+            startup_prompt: Some("say hi"),
+            proposed_cli_session_id: "id-1",
+        };
+
+        let command = registry().for_program(program).new_session(&plan);
+
+        assert_eq!(command.typed_input.as_deref(), Some("say hi"), "{program}");
+    }
 }
 
 #[test]
@@ -85,7 +96,6 @@ fn the_generic_adapter_cannot_continue_and_types_the_prompt() {
         fixed_arguments: &[],
         flags: &[],
         startup_prompt: Some("say hi"),
-        prompt_by_argument: true,
         proposed_cli_session_id: "id-1",
     };
 

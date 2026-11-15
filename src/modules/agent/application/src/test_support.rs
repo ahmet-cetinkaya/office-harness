@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 
 use agent_domain::entities::{AdditionsRecord, Agent, Project, Session};
@@ -349,14 +350,10 @@ fn command_line(plan: &SessionPlan<'_>, middle: &[&str], with_prompt: bool) -> S
     let mut arguments: Vec<String> = plan.fixed_arguments.to_vec();
     arguments.extend(plan.flags.iter().cloned());
     arguments.extend(middle.iter().map(|word| (*word).to_owned()));
-    let mut typed_input = None;
-    if let Some(prompt) = plan.startup_prompt.filter(|_| with_prompt) {
-        if plan.prompt_by_argument {
-            arguments.push(prompt.to_owned());
-        } else {
-            typed_input = Some(prompt.to_owned());
-        }
-    }
+    let typed_input = plan
+        .startup_prompt
+        .filter(|_| with_prompt)
+        .map(str::to_owned);
     SessionCommand {
         arguments,
         cli_session_id: None,
@@ -439,6 +436,7 @@ pub struct FakeTerminals {
     unstartable: Mutex<Vec<String>>,
     batch_programs: Mutex<Vec<String>>,
     ended_on_its_own: Mutex<bool>,
+    ignores_stop_requests: Mutex<bool>,
 }
 
 impl FakeTerminals {
@@ -456,6 +454,12 @@ impl FakeTerminals {
     /// exited just before the request.
     pub fn end_children_on_their_own(&self) {
         *locked(&self.ended_on_its_own) = true;
+    }
+
+    /// From now on a stop takes the whole grace period, as when the child
+    /// ignores the request and is forced at the end.
+    pub fn ignore_stop_requests(&self) {
+        *locked(&self.ignores_stop_requests) = true;
     }
 
     pub fn make_unstartable(&self, program: &str) {
@@ -506,6 +510,9 @@ impl TerminalHost for FakeTerminals {
     fn stop(&self, agent_id: AgentId, grace: Duration) -> Result<(), TerminalHostError> {
         if *locked(&self.ended_on_its_own) {
             return Err(TerminalHostError::NotRunning);
+        }
+        if *locked(&self.ignores_stop_requests) {
+            thread::sleep(grace);
         }
         locked(&self.stopped).push((agent_id, grace));
         Ok(())

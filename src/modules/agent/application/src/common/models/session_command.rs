@@ -11,9 +11,6 @@ pub struct SessionPlan<'a> {
     pub flags: &'a [String],
     /// Absent on a continue: the prompt goes only to a new session.
     pub startup_prompt: Option<&'a str>,
-    /// False when the program is a Windows batch script: the prompt is then
-    /// typed in after the start, never put on the command line (D5).
-    pub prompt_by_argument: bool,
     /// An id for a CLI that accepts one at the start.
     pub proposed_cli_session_id: &'a str,
 }

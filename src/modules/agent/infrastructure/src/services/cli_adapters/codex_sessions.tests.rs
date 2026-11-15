@@ -303,3 +303,89 @@ fn listing(folder: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     files.sort();
     files
 }
+
+fn overlap_flag(guard: &PendingGuard) -> bool {
+    guard.ambiguous.load(Ordering::SeqCst)
+}
+
+#[test]
+fn two_registrations_of_the_same_folder_through_a_dot_dot_overlap() {
+    let fixture = fixture();
+    let first = fixture.pending.register(&fixture.folder);
+    let detour = fixture.folder.join("..").join("work");
+
+    let second = fixture.pending.register(&detour);
+
+    assert!(overlap_flag(&first));
+    assert!(overlap_flag(&second));
+}
+
+#[test]
+fn registrations_of_different_folders_do_not_overlap() {
+    let fixture = fixture();
+    let other = fixture.folder.parent().expect("root").join("elsewhere");
+    fs::create_dir_all(&other).expect("other");
+    let first = fixture.pending.register(&fixture.folder);
+
+    let second = fixture.pending.register(&other);
+
+    assert!(!overlap_flag(&first));
+    assert!(!overlap_flag(&second));
+}
+
+#[cfg(unix)]
+#[test]
+fn two_registrations_of_the_same_folder_through_a_symlink_overlap() {
+    let fixture = fixture();
+    let link = fixture.folder.parent().expect("root").join("link");
+    std::os::unix::fs::symlink(&fixture.folder, &link).expect("symlink");
+    let first = fixture.pending.register(&fixture.folder);
+
+    let second = fixture.pending.register(&link);
+
+    assert!(overlap_flag(&first));
+    assert!(overlap_flag(&second));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_folder_or_file_in_the_sessions_folder_is_not_followed() {
+    let fixture = fixture();
+    let outside = fixture.folder.parent().expect("root").join("outside");
+    fs::create_dir_all(&outside).expect("outside");
+    let real_file = outside.join(format!("rollout-{}.jsonl", id(7)));
+    let meta = format!(
+        "{{\"payload\":{{\"id\":\"{}\",\"cwd\":{}}}}}\n",
+        id(7),
+        serde_json::to_string(&fixture.folder.to_string_lossy()).expect("json")
+    );
+    fs::write(&real_file, meta).expect("write");
+    let mut tracking = begin(&fixture);
+    std::os::unix::fs::symlink(&outside, fixture.sessions.join("linked-folder")).expect("link");
+    std::os::unix::fs::symlink(
+        &real_file,
+        fixture.sessions.join(real_file.file_name().expect("name")),
+    )
+    .expect("link");
+
+    let result = tracking.resolve();
+
+    assert!(
+        matches!(&result, TrackedSession::Unmatched(reason) if reason.contains("no new session")),
+        "{result:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_fifo_named_like_a_session_file_is_skipped_and_never_opened() {
+    let fixture = fixture();
+    let fifo = fixture.sessions.join(format!("rollout-{}.jsonl", id(8)));
+    let status = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .expect("mkfifo");
+    assert!(status.success());
+
+    assert!(session_files(&fixture.sessions).is_empty());
+}

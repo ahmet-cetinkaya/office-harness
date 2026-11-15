@@ -3,6 +3,9 @@
 use crate::errors::AgentError;
 use crate::value_objects::EnvEntry;
 
+/// The control characters a pasted prompt may keep: a tab and a line break.
+const ALLOWED_PROMPT_CONTROLS: [char; 2] = ['\t', '\n'];
+
 /// What office-harness adds to one agent's CLI start: extra arguments,
 /// environment variables, and a startup prompt (FR-020, FR-022).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -13,11 +16,15 @@ pub struct OfficeAdditions {
 }
 
 impl OfficeAdditions {
-    /// A blank prompt counts as none.
+    /// A blank prompt counts as none, and a prompt loses its trailing line
+    /// breaks: it is pasted and never submitted, so a final break would only
+    /// leave an empty line.
     ///
     /// # Errors
-    /// `Empty` naming the flag that is empty, and `ContainsNul` for a flag
-    /// or a prompt with a NUL character.
+    /// `EmptyFlag` naming the flag that is empty, `ContainsNul` for a flag
+    /// with a NUL character, and `ContainsControlCharacter` for a prompt
+    /// with a control character other than tab and line feed (an ESC or a
+    /// carriage return would act as a key press in the terminal).
     pub fn new(
         flags: Vec<String>,
         env: Vec<EnvEntry>,
@@ -29,9 +36,11 @@ impl OfficeAdditions {
             }
             reject_nul(flag, || format!("flag {}", index + 1))?;
         }
-        let startup_prompt = startup_prompt.filter(|prompt| !prompt.trim().is_empty());
+        let startup_prompt = startup_prompt
+            .map(|prompt| prompt.trim_end_matches(['\r', '\n']).to_owned())
+            .filter(|prompt| !prompt.trim().is_empty());
         if let Some(prompt) = &startup_prompt {
-            reject_nul(prompt, || "startup prompt".to_owned())?;
+            reject_control_characters(prompt, || "startup prompt".to_owned())?;
         }
         Ok(Self {
             flags,
@@ -59,6 +68,16 @@ impl OfficeAdditions {
 fn reject_nul(text: &str, field: impl FnOnce() -> String) -> Result<(), AgentError> {
     if text.contains('\0') {
         return Err(AgentError::ContainsNul { field: field() });
+    }
+    Ok(())
+}
+
+fn reject_control_characters(text: &str, field: impl FnOnce() -> String) -> Result<(), AgentError> {
+    if text
+        .chars()
+        .any(|character| character.is_control() && !ALLOWED_PROMPT_CONTROLS.contains(&character))
+    {
+        return Err(AgentError::ContainsControlCharacter { field: field() });
     }
     Ok(())
 }
