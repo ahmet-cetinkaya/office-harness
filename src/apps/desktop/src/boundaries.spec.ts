@@ -15,6 +15,9 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 const SELF_FILE_NAME = "boundaries.spec.ts";
 const SOURCE_EXTENSIONS = [".ts", ".svelte"];
 const PUBLIC_FACE_FILES = ["index", "index.ts", "index.js"];
+// `$shared` is the only alias in tsconfig.json and vite.config.ts. Another `$`
+// alias would point past the folder rules below.
+const ALLOWED_ALIAS = /^\$shared(\/|$)/;
 const IMPORT_SPECIFIER =
   /(?:from\s+|import\s*\(\s*|import\s+)["']([^"']+)["']/g;
 
@@ -29,11 +32,13 @@ function listSourceFiles(folder: string): string[] {
   });
 }
 
-function relativeImports(file: string): string[] {
+function importSpecifiers(file: string): string[] {
   const text = readFileSync(file, "utf8");
-  return [...text.matchAll(IMPORT_SPECIFIER)]
-    .map((match) => match[1])
-    .filter((specifier) => specifier.startsWith("."));
+  return [...text.matchAll(IMPORT_SPECIFIER)].map((match) => match[1]);
+}
+
+function isForbiddenAlias(specifier: string): boolean {
+  return specifier.startsWith("$") && !ALLOWED_ALIAS.test(specifier);
 }
 
 function segmentsUnder(sourceRoot: string, path: string): string[] {
@@ -69,7 +74,14 @@ export function findViolations(sourceRoot: string): string[] {
 
   for (const file of listSourceFiles(sourceRoot)) {
     const [area, owner] = segmentsUnder(sourceRoot, file);
-    for (const specifier of relativeImports(file)) {
+    for (const specifier of importSpecifiers(file)) {
+      if (isForbiddenAlias(specifier)) {
+        violations.push(
+          `${relative(sourceRoot, file)} imports ${specifier}: only the $shared alias is allowed`,
+        );
+        continue;
+      }
+      if (!specifier.startsWith(".")) continue;
       const [targetArea, targetModule, ...rest] = segmentsUnder(
         sourceRoot,
         resolve(dirname(file), specifier),
@@ -163,10 +175,57 @@ describe("webview import boundaries", () => {
       );
     });
 
-    test("rejects shared importing core or modules", () => {
+    test("rejects shared importing core", () => {
       withTree(
         { "shared/x.ts": 'import "../core/y";', "core/y.ts": "" },
         (root) => expect(findViolations(root)).toHaveLength(1),
+      );
+    });
+
+    test("rejects shared importing modules", () => {
+      withTree(
+        {
+          "shared/x.ts": 'import "../modules/a/index";',
+          "modules/a/index.ts": "",
+        },
+        (root) =>
+          expect(findViolations(root).join()).toContain(
+            "shared/ must not import core/ or modules/",
+          ),
+      );
+    });
+
+    test("rejects core importing modules", () => {
+      withTree(
+        {
+          "core/x.ts": 'import "../modules/a/index";',
+          "modules/a/index.ts": "",
+        },
+        (root) =>
+          expect(findViolations(root).join()).toContain(
+            "core/ must not import modules/",
+          ),
+      );
+    });
+
+    test("accepts the $shared alias from every area", () => {
+      withTree(
+        {
+          "modules/a/x.ts": 'import "$shared/ui/y";',
+          "core/x.ts": 'import "$shared";',
+          "shared/ui/y.ts": "",
+        },
+        (root) => expect(findViolations(root)).toEqual([]),
+      );
+    });
+
+    test("rejects any alias other than $shared", () => {
+      withTree(
+        {
+          "modules/a/x.ts": 'import "$lib/y";',
+          "core/x.ts": 'import("$sharedish/z");',
+        },
+        (root) => expect(findViolations(root)).toHaveLength(2),
       );
     });
   });
