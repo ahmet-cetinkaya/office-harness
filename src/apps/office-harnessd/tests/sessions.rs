@@ -62,7 +62,8 @@ async fn flags_env_and_the_startup_prompt_reach_the_child_at_the_next_session_an
     let cli_id = first["cli_session_id"].as_str().expect("cli id");
     assert_eq!(
         records[0].arguments,
-        ["--first", "--session-id", cli_id, "prompt one"]
+        ["--first", "--session-id", cli_id],
+        "the prompt is typed in, never an argument"
     );
     assert_eq!(records[0].key, "one");
 
@@ -95,7 +96,8 @@ async fn flags_env_and_the_startup_prompt_reach_the_child_at_the_next_session_an
     let next_id = next["result"]["cli_session_id"].as_str().expect("cli id");
     assert_eq!(
         records[1].arguments,
-        ["--second", "--session-id", next_id, "prompt two"]
+        ["--second", "--session-id", next_id],
+        "the prompt is typed in, never an argument"
     );
     assert_eq!(records[1].key, "two");
     assert_ne!(next_id, cli_id, "a new task is a new session");
@@ -338,7 +340,7 @@ async fn wait_for_session_id(client: &mut support::office_client::Client, agent:
     panic!("the session id was never found");
 }
 
-// (e): the startup prompt for a batch script, pasted and never submitted.
+// (e): the startup prompt, pasted and never submitted.
 
 const SHELL_PROMPT: &str = "echo %PATH% & calc\nsecond line";
 

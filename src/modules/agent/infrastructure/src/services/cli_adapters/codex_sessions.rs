@@ -100,7 +100,12 @@ struct PendingGuard {
 }
 
 impl PendingStarts {
+    /// The folder is compared canonicalized, as the match of a session file
+    /// does, so a symlink or a `..` cannot hide an overlap.
     fn register(self: &Arc<Self>, folder: &Path) -> PendingGuard {
+        let folder = folder
+            .canonicalize()
+            .unwrap_or_else(|_| folder.to_path_buf());
         let ambiguous = Arc::new(AtomicBool::new(false));
         let mut pending = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         let overlaps = pending.iter().any(|other| other.folder == folder);
@@ -111,7 +116,7 @@ impl PendingStarts {
             }
         }
         pending.push(PendingStart {
-            folder: folder.to_path_buf(),
+            folder,
             ambiguous: Arc::clone(&ambiguous),
         });
         PendingGuard {
@@ -245,10 +250,17 @@ fn collect_session_files(folder: &Path, depth: usize, files: &mut Vec<PathBuf>) 
         return;
     };
     for entry in entries.flatten() {
+        // `DirEntry::file_type` does not follow symlinks: a link, a FIFO, or
+        // a device is neither descended into nor read.
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
         let path = entry.path();
-        if path.is_dir() && depth < MAX_DEPTH {
-            collect_session_files(&path, depth + 1, files);
-        } else if is_session_file(&path) {
+        if kind.is_dir() {
+            if depth < MAX_DEPTH {
+                collect_session_files(&path, depth + 1, files);
+            }
+        } else if kind.is_file() && is_session_file(&path) {
             files.push(path);
         }
     }

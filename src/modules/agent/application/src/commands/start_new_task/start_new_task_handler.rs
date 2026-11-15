@@ -61,10 +61,7 @@ impl StartNewTaskHandler {
         // Prepared before the running session ends, so a refusal loses nothing.
         let prepared = self.launcher.prepare(&agent, &LaunchKind::NewTask)?;
         if agent.status.is_running() {
-            self.ender.stop(&mut agent)?;
-            // The stored status is the truth after a stop that found no
-            // child to end.
-            agent = require_agent(&*self.agents, agent.id)?;
+            self.ender.stop_for_restart(&mut agent)?;
         }
         self.launcher
             .start(&mut agent, &LaunchKind::NewTask, prepared)

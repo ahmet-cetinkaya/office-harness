@@ -3,7 +3,7 @@
 use agent_application::common::interfaces::CliAdapter;
 use agent_application::common::models::{SessionCommand, SessionPlan};
 
-use super::command_builder::{PromptStyle, new_session_command};
+use super::command_builder::new_session_command;
 
 /// Any other command: it runs as typed, gets the startup prompt as typed
 /// input after its first output, and cannot continue a session (FR-025).
@@ -15,7 +15,7 @@ impl CliAdapter for GenericAdapter {
     }
 
     fn new_session(&self, plan: &SessionPlan<'_>) -> SessionCommand {
-        new_session_command(plan, &[], PromptStyle::Typed, None)
+        new_session_command(plan, &[], None)
     }
 
     fn continue_session(

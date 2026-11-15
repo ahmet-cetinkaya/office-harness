@@ -10,6 +10,13 @@ use agent_domain::value_objects::ExitResult;
 use crate::common::errors::{ApplicationError, TerminalHostError};
 use crate::common::interfaces::{AgentStore, Clock, SessionStore, SettingsStore, TerminalHost};
 
+/// Whether the terminal still had a child to end.
+#[derive(Debug, PartialEq, Eq)]
+enum ChildEnd {
+    Stopped,
+    AlreadyGone,
+}
+
 /// Ends the running session of an agent on the user's request: the terminal
 /// asks, waits the grace period, then forces (A3).
 #[derive(Clone)]
@@ -47,12 +54,34 @@ impl SessionEnder {
     /// `Internal` when the child cannot be ended, which leaves the status as
     /// it was.
     pub fn stop(&self, agent: &mut Agent) -> Result<(), ApplicationError> {
+        match self.stop_child(agent)? {
+            ChildEnd::Stopped => self.record_stop(agent),
+            ChildEnd::AlreadyGone => Ok(()),
+        }
+    }
+
+    /// As `stop`, for a request that starts the agent again at once. A child
+    /// that ended on its own just before is recorded as stopped here, because
+    /// its exit event waits for this request to finish and the start would
+    /// otherwise find the agent still running.
+    ///
+    /// # Errors
+    /// As `stop`.
+    pub fn stop_for_restart(&self, agent: &mut Agent) -> Result<(), ApplicationError> {
+        self.stop_child(agent)?;
+        self.record_stop(agent)
+    }
+
+    fn stop_child(&self, agent: &Agent) -> Result<ChildEnd, ApplicationError> {
         let grace = Duration::from_millis(self.settings.load()?.stop_grace_ms);
         match self.terminals.stop(agent.id, grace) {
-            Ok(()) => {}
-            Err(TerminalHostError::NotRunning) => return Ok(()),
-            Err(error) => return Err(ApplicationError::Internal(error.to_string())),
+            Ok(()) => Ok(ChildEnd::Stopped),
+            Err(TerminalHostError::NotRunning) => Ok(ChildEnd::AlreadyGone),
+            Err(error) => Err(ApplicationError::Internal(error.to_string())),
         }
+    }
+
+    fn record_stop(&self, agent: &mut Agent) -> Result<(), ApplicationError> {
         agent.apply(StatusEvent::StoppedByUser)?;
         self.agents.update_status(agent.id, agent.status)?;
         self.sessions

@@ -3,10 +3,10 @@
 use agent_application::common::interfaces::CliAdapter;
 use agent_application::common::models::{SessionCommand, SessionPlan};
 
-use super::command_builder::{PromptStyle, continue_command, new_session_command};
+use super::command_builder::{continue_command, new_session_command};
 
 /// `opencode`: `--session <id>` creates the session when it does not exist
-/// and continues it when it does; the prompt is `--prompt`. The id format
+/// and continues it when it does. The id format
 /// that `opencode` accepts is checked by hand in T7(g).
 pub struct OpencodeAdapter;
 
@@ -19,7 +19,6 @@ impl CliAdapter for OpencodeAdapter {
         new_session_command(
             plan,
             &["--session", plan.proposed_cli_session_id],
-            PromptStyle::Flag("--prompt"),
             Some(plan.proposed_cli_session_id.to_owned()),
         )
     }

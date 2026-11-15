@@ -98,3 +98,35 @@ fn a_new_task_that_is_refused_leaves_the_running_session_running() {
         .expect("stored");
     assert_eq!(stored.exit_result, None);
 }
+
+#[test]
+fn a_new_task_after_the_child_ended_on_its_own_closes_that_session_and_starts_the_next() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    let agent = office.add_agent("Ana", "claude", folder.path(), AgentStatus::Stopped);
+    let first = office
+        .start_agent()
+        .handle(agent.id)
+        .expect("start")
+        .session;
+    office
+        .agents
+        .update_status(agent.id, AgentStatus::Working)
+        .expect("status");
+    office.terminals.end_children_on_their_own();
+
+    let outcome = office
+        .start_new_task()
+        .handle(agent.id)
+        .expect("no false conflict");
+
+    let stored = office
+        .sessions
+        .find(first.id)
+        .expect("find")
+        .expect("stored");
+    assert_eq!(stored.exit_result, Some(ExitResult::Signal));
+    assert_eq!(outcome.failure, None);
+    assert_eq!(office.sessions.all().len(), 2);
+    assert_eq!(office.terminals.started().len(), 2);
+}

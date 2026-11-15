@@ -3,7 +3,7 @@
 use agent_application::common::interfaces::CliAdapter;
 use agent_application::common::models::{SessionCommand, SessionPlan};
 
-use super::command_builder::{PromptStyle, continue_command, new_session_command};
+use super::command_builder::{continue_command, new_session_command};
 
 /// `claude`: the id is chosen at the start with `--session-id`, and a
 /// session continues with `--resume <id>` (research R3).
@@ -18,7 +18,6 @@ impl CliAdapter for ClaudeAdapter {
         new_session_command(
             plan,
             &["--session-id", plan.proposed_cli_session_id],
-            PromptStyle::Positional,
             Some(plan.proposed_cli_session_id.to_owned()),
         )
     }

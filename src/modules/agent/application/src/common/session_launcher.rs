@@ -226,7 +226,6 @@ impl SessionLauncher {
             fixed_arguments: &fixed_arguments,
             flags: additions.flags(),
             startup_prompt: additions.startup_prompt(),
-            prompt_by_argument: !launch.is_batch_script,
             proposed_cli_session_id: &proposed_cli_session_id,
         };
         let command = match kind {

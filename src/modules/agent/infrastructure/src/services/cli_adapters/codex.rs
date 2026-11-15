@@ -6,7 +6,7 @@ use agent_application::common::interfaces::{CliAdapter, SessionTracking};
 use agent_application::common::models::{SessionCommand, SessionPlan, TrackingRequest};
 
 use super::codex_sessions::{AttributionTiming, CodexTracking, PendingStarts, sessions_folder};
-use super::command_builder::{PromptStyle, continue_command, new_session_command};
+use super::command_builder::{continue_command, new_session_command};
 
 /// `codex`: it does not take an id at the start, so the id is found by
 /// reading the CLI's session files before and after the start (read only,
@@ -32,7 +32,7 @@ impl CliAdapter for CodexAdapter {
     }
 
     fn new_session(&self, plan: &SessionPlan<'_>) -> SessionCommand {
-        new_session_command(plan, &[], PromptStyle::Positional, None)
+        new_session_command(plan, &[], None)
     }
 
     fn continue_session(

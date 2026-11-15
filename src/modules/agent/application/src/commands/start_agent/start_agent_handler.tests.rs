@@ -216,10 +216,8 @@ fn flags_env_and_the_startup_prompt_reach_the_terminal_and_the_session_records_t
         ["--model", "opus", "--verbose"],
         "fixed arguments first, then the flags"
     );
-    assert_eq!(
-        started.arguments.last().map(String::as_str),
-        Some("do the thing")
-    );
+    assert_eq!(started.typed_input.as_deref(), Some("do the thing"));
+    assert!(!started.arguments.contains(&"do the thing".to_owned()));
     assert!(
         started
             .environment
