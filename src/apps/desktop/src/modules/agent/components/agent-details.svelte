@@ -1,0 +1,161 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<script lang="ts">
+  import Button from "$shared/ui/button.svelte";
+  import FailureMessage from "$shared/ui/failure-message.svelte";
+  import { ActionRecord } from "../../audit";
+  import {
+    isActive,
+    statusText,
+    type Additions,
+    type Agent,
+  } from "../models/agent";
+  import {
+    confirmationText,
+    needsConfirmation,
+    type Confirmation,
+  } from "../services/confirmations";
+  import type { AgentDetails, FailureText } from "../state/office-controller";
+  import AdditionsEditor from "./additions-editor.svelte";
+  import ConfirmDialog from "./confirm-dialog.svelte";
+  import SessionList from "./session-list.svelte";
+
+  interface Props {
+    agent: Agent;
+    details: AgentDetails;
+    /** The text that came with the status, for example why the agent failed. */
+    statusDetail: string | null;
+    projectName: string | null;
+    isBusy: boolean;
+    onstart: () => void;
+    onstop: () => void;
+    onnewtask: () => void;
+    oncontinue: (sessionId: string) => void;
+    ondelete: () => void;
+    onsaveadditions: (additions: Additions) => Promise<FailureText>;
+    onretry: () => void;
+  }
+
+  let {
+    agent,
+    details,
+    statusDetail,
+    projectName,
+    isBusy,
+    onstart,
+    onstop,
+    onnewtask,
+    oncontinue,
+    ondelete,
+    onsaveadditions,
+    onretry,
+  }: Props = $props();
+
+  let confirmation = $state<Confirmation | null>(null);
+  const isRunning = $derived(isActive(agent.status));
+
+  function ask(next: Confirmation): void {
+    if (needsConfirmation(next)) confirmation = next;
+    else run(next);
+  }
+
+  function confirm(): void {
+    if (confirmation === null) return;
+    const confirmed = confirmation;
+    confirmation = null;
+    run(confirmed);
+  }
+
+  function run(chosen: Confirmation): void {
+    if (chosen.kind === "stop") onstop();
+    else if (chosen.kind === "delete") ondelete();
+    else if (chosen.kind === "new_task") onnewtask();
+    else oncontinue(chosen.sessionId);
+  }
+</script>
+
+<section aria-labelledby="details-heading" class="flex flex-col gap-6">
+  <header class="flex flex-col gap-2">
+    <h2 id="details-heading" class="text-2xl font-semibold text-neutral-900">
+      {agent.name}
+    </h2>
+    <dl
+      class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm text-neutral-900"
+    >
+      <dt class="font-medium">Status</dt>
+      <dd>{statusText(agent.status)}</dd>
+      <dt class="font-medium">Command</dt>
+      <dd class="break-all">{agent.command}</dd>
+      <dt class="font-medium">Working folder</dt>
+      <dd class="break-all">{agent.working_folder ?? "The project folder"}</dd>
+      {#if projectName !== null}
+        <dt class="font-medium">Project</dt>
+        <dd>{projectName}</dd>
+      {/if}
+    </dl>
+    {#if statusDetail !== null}
+      <p
+        class="rounded-md border border-neutral-500 bg-neutral-50 p-3 text-sm text-neutral-900"
+      >
+        <strong>Last message:</strong>
+        {statusDetail}
+      </p>
+    {/if}
+    <div class="flex flex-wrap gap-3">
+      {#if isRunning}
+        <Button disabled={isBusy} onclick={() => ask({ kind: "stop" })}>
+          Stop agent
+        </Button>
+      {:else}
+        <Button disabled={isBusy} onclick={onstart}>Start agent</Button>
+      {/if}
+      <Button
+        variant="secondary"
+        disabled={isBusy}
+        onclick={() => ask({ kind: "new_task", isRunning })}
+      >
+        Start new task
+      </Button>
+      <Button
+        variant="secondary"
+        disabled={isBusy}
+        onclick={() => ask({ kind: "delete" })}
+      >
+        Delete agent
+      </Button>
+    </div>
+  </header>
+
+  {#if details.phase === "loading"}
+    <p role="status" class="text-neutral-700">Loading the agent's details.</p>
+  {:else if details.phase === "failed"}
+    <FailureMessage
+      lead="The details did not load."
+      message={details.failure ?? ""}
+    />
+    <div><Button variant="secondary" onclick={onretry}>Try again</Button></div>
+  {:else}
+    {#if details.additions !== null}
+      <AdditionsEditor
+        additions={details.additions}
+        {isRunning}
+        {isBusy}
+        onsave={onsaveadditions}
+      />
+    {/if}
+    <SessionList
+      sessions={details.sessions}
+      {isBusy}
+      oncontinue={(sessionId) =>
+        ask({ kind: "continue", sessionId, isRunning })}
+    />
+    <ActionRecord entries={details.actions} />
+  {/if}
+</section>
+
+{#if confirmation !== null}
+  <ConfirmDialog
+    text={confirmationText(confirmation, agent.name)}
+    onconfirm={confirm}
+    oncancel={() => (confirmation = null)}
+  />
+{/if}

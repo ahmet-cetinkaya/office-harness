@@ -10,14 +10,25 @@
     VersionMismatchView,
   } from "./core/connection";
   import { NotAuthorizedView } from "./modules/access";
+  import { createOfficeStore, OfficeView } from "./modules/agent";
   import FailureMessage from "$shared/ui/failure-message.svelte";
   import StatusPanel from "$shared/ui/status-panel.svelte";
 
-  const connection = createConnectionStore(createTauriCoreClient());
+  const client = createTauriCoreClient();
+  const connection = createConnectionStore(client);
+  const office = createOfficeStore(client);
   const snapshot = $derived(connection.snapshot);
+  const isConnected = $derived(snapshot.state.status === "connected");
 
   onMount(() => {
     void connection.start();
+    void office.controller.watch();
+  });
+
+  // The office is loaded again on each new connection, because events that
+  // arrived while the app was disconnected are lost.
+  $effect(() => {
+    if (isConnected) void office.controller.load();
   });
 </script>
 
@@ -49,11 +60,6 @@
       onrestart={connection.restartServer}
     />
   {:else}
-    <StatusPanel title="office-harness">
-      <p role="status" class="text-neutral-700">
-        Connected to the office server. The agent list arrives with the next
-        change.
-      </p>
-    </StatusPanel>
+    <OfficeView store={office} />
   {/if}
 </main>

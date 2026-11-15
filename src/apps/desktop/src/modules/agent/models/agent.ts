@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+/** The status words the server sends (FR-014). */
+const STATUS_TEXT: Record<string, string> = {
+  starting: "starting",
+  working: "working",
+  waiting_for_input: "waiting for input",
+  exited: "exited",
+  failed: "failed",
+  stopped: "stopped",
+  interrupted: "interrupted",
+};
+
+const ACTIVE_STATUSES: readonly string[] = [
+  "starting",
+  "working",
+  "waiting_for_input",
+];
+
+export interface Agent {
+  id: string;
+  name: string;
+  command: string;
+  working_folder: string | null;
+  project_id: string | null;
+  machine_id: string;
+  status: string;
+  created_at: number;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  folder: string;
+}
+
+export interface EnvironmentEntry {
+  name: string;
+  value: string;
+}
+
+/** What office-harness adds when it starts one agent (FR-022). */
+export interface Additions {
+  flags: string[];
+  env: EnvironmentEntry[];
+  startup_prompt: string | null;
+}
+
+export interface AdditionsView extends Additions {
+  updated_at: number;
+  applies_next_session: boolean;
+}
+
+export interface Session {
+  id: string;
+  agent_id: string;
+  cli_session_id: string | null;
+  continued_from: string | null;
+  additions_snapshot: Additions;
+  started_at: number;
+  ended_at: number | null;
+  exit_result: string | null;
+  can_continue: boolean;
+  reason?: string;
+}
+
+export interface NewAgent {
+  name: string;
+  command: string;
+  working_folder?: string;
+  project_id?: string;
+}
+
+export interface NewProject {
+  name: string;
+  folder: string;
+}
+
+/** A status as text. A word that this app does not know is shown as sent. */
+export function statusText(status: string): string {
+  return STATUS_TEXT[status] ?? status.replaceAll("_", " ");
+}
+
+/** True while a session runs: starting, working, or waiting for input. */
+export function isActive(status: string): boolean {
+  return ACTIVE_STATUSES.includes(status);
+}
+
+/** The accessible name of an agent entry: its name and its status. */
+export function agentEntryName(agent: Agent): string {
+  return `${agent.name}, ${statusText(agent.status)}`;
+}
