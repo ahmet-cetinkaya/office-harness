@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use agent_application::common::errors::PortError;
+use agent_application::common::interfaces::FailureReporter;
 use agent_infrastructure::persistence::PersistenceError;
 use tokio::sync::broadcast;
 
@@ -63,5 +65,19 @@ impl StorageAlerts {
         self.log.error(&format!("{STORAGE_ERROR_EVENT}: {message}"));
         // No subscriber is a normal state: the alert is still in the log.
         let _ = self.sender.send(StorageAlert { message });
+    }
+}
+
+impl FailureReporter for StorageAlerts {
+    fn report(&self, error: &PortError) {
+        match error {
+            PortError::Storage {
+                message,
+                is_disk_failure: true,
+            } => self.report_disk_failure(message),
+            other => self
+                .log
+                .error(&format!("a background write failed: {other}")),
+        }
     }
 }

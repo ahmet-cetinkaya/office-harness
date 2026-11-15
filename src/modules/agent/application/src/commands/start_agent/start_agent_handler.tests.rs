@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use agent_domain::enums::AgentStatus;
+use agent_domain::value_objects::ExitResult;
 use tempfile::TempDir;
 
 use super::*;
+use crate::common::interfaces::SessionStore;
 use crate::test_support::{Office, absolute_folder};
 
 #[test]
@@ -28,7 +30,11 @@ fn a_stopped_agent_moves_to_starting_and_its_command_is_split() {
     let started = office.terminals.started();
     assert_eq!(started.len(), 1);
     assert_eq!(started[0].program, "claude");
-    assert_eq!(started[0].arguments, ["--model", "opus"]);
+    // The adapter adds the office session id after the user's arguments.
+    assert_eq!(
+        started[0].arguments[..3],
+        ["--model", "opus", "--session-id"]
+    );
     assert_eq!(started[0].working_folder, folder.path());
 }
 
@@ -165,7 +171,191 @@ fn a_quoted_argument_with_a_space_reaches_the_terminal_as_one_argument() {
     office.start_agent().handle(agent.id).expect("start");
 
     assert_eq!(
-        office.terminals.started()[0].arguments,
+        office.terminals.started()[0].arguments[..2],
         ["--append-system-prompt", "be brief"]
     );
+}
+
+fn set_additions(office: &Office, agent: AgentId, flags: &[&str], key: &str, prompt: &str) {
+    office
+        .set_additions()
+        .handle(
+            agent,
+            crate::common::additions_input::AdditionsInput {
+                flags: flags.iter().map(|flag| (*flag).to_owned()).collect(),
+                env: vec![(key.to_owned(), "value".to_owned())],
+                startup_prompt: Some(prompt.to_owned()),
+            },
+        )
+        .expect("additions");
+}
+
+#[test]
+fn flags_env_and_the_startup_prompt_reach_the_terminal_and_the_session_records_them() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    let agent = office.add_agent(
+        "Ana",
+        "claude --model opus",
+        folder.path(),
+        AgentStatus::Stopped,
+    );
+    set_additions(
+        &office,
+        agent.id,
+        &["--verbose"],
+        "OFFICE_KEY",
+        "do the thing",
+    );
+
+    let outcome = office.start_agent().handle(agent.id).expect("start");
+
+    let started = &office.terminals.started()[0];
+    assert_eq!(
+        started.arguments[..3],
+        ["--model", "opus", "--verbose"],
+        "fixed arguments first, then the flags"
+    );
+    assert_eq!(
+        started.arguments.last().map(String::as_str),
+        Some("do the thing")
+    );
+    assert!(
+        started
+            .environment
+            .contains(&("OFFICE_KEY".to_owned(), "value".to_owned()))
+    );
+    assert_eq!(started.session_id, outcome.session.id);
+    let snapshot = &outcome.session.additions_snapshot;
+    assert_eq!(snapshot.flags(), ["--verbose"]);
+    assert_eq!(snapshot.startup_prompt(), Some("do the thing"));
+}
+
+#[test]
+fn an_edit_during_a_session_leaves_that_session_unchanged_and_applies_to_the_next() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    let agent = office.add_agent("Ana", "claude", folder.path(), AgentStatus::Stopped);
+    set_additions(&office, agent.id, &["--first"], "FIRST", "one");
+    let running = office
+        .start_agent()
+        .handle(agent.id)
+        .expect("start")
+        .session;
+
+    set_additions(&office, agent.id, &["--second"], "SECOND", "two");
+
+    let still = office
+        .sessions
+        .find(running.id)
+        .expect("find")
+        .expect("stored");
+    assert_eq!(still.additions_snapshot.flags(), ["--first"]);
+    assert_eq!(office.terminals.started().len(), 1);
+    let next = office.start_new_task().handle(agent.id).expect("new task");
+    assert_eq!(next.session.additions_snapshot.flags(), ["--second"]);
+    let second_start = &office.terminals.started()[1];
+    assert!(second_start.arguments.contains(&"--second".to_owned()));
+    assert!(
+        second_start
+            .environment
+            .iter()
+            .any(|(name, _)| name == "SECOND")
+    );
+    assert!(
+        !second_start
+            .environment
+            .iter()
+            .any(|(name, _)| name == "FIRST")
+    );
+}
+
+#[test]
+fn a_flag_or_a_fixed_argument_with_a_percent_is_refused_for_a_batch_script() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    office.terminals.make_batch_script("shim");
+    let by_flag = office.add_agent("Ana", "shim", folder.path(), AgentStatus::Stopped);
+    set_additions(&office, by_flag.id, &["--path=%PATH%"], "K", "p");
+    let by_fixed = office.add_agent(
+        "Ben",
+        "shim --x=%PATH%",
+        folder.path(),
+        AgentStatus::Stopped,
+    );
+
+    for agent in [by_flag.id, by_fixed.id] {
+        let error = office.start_agent().handle(agent).expect_err("refused");
+        assert!(matches!(&error, ApplicationError::Invalid(text) if text.contains('%')));
+        assert_eq!(office.agents.status_of(agent), Some(AgentStatus::Stopped));
+    }
+    assert_eq!(office.terminals.started().len(), 0);
+    assert_eq!(office.sessions.all().len(), 0);
+}
+
+#[test]
+fn a_startup_prompt_is_typed_in_for_a_batch_script_and_never_put_on_the_command_line() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    office.terminals.make_batch_script("shim");
+    let agent = office.add_agent("Ana", "shim", folder.path(), AgentStatus::Stopped);
+    let prompt = "echo %PATH% & calc\nsecond line";
+    set_additions(&office, agent.id, &[], "K", prompt);
+
+    office.start_agent().handle(agent.id).expect("start");
+
+    let started = &office.terminals.started()[0];
+    assert_eq!(started.typed_input.as_deref(), Some(prompt));
+    assert!(
+        started
+            .arguments
+            .iter()
+            .all(|argument| !argument.contains("calc"))
+    );
+}
+
+#[test]
+fn a_command_that_cannot_start_leaves_a_session_that_never_started() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    let agent = office.add_agent("Broken", "nonesuch", folder.path(), AgentStatus::Stopped);
+    office.terminals.make_unstartable("nonesuch");
+
+    let outcome = office.start_agent().handle(agent.id).expect("accepted");
+
+    let stored = office.sessions.all();
+    assert_eq!(stored.len(), 1);
+    assert!(
+        matches!(&stored[0].exit_result, Some(ExitResult::SpawnError(text)) if text.contains("nonesuch"))
+    );
+    assert_eq!(stored[0].id, outcome.session.id);
+    assert!(stored[0].ended_at.is_some());
+}
+
+#[test]
+fn a_cli_that_does_not_take_an_id_learns_it_after_the_start() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    let agent = office.add_agent("Ana", "tracked", folder.path(), AgentStatus::Stopped);
+
+    let outcome = office.start_agent().handle(agent.id).expect("start");
+
+    let stored = office
+        .sessions
+        .find(outcome.session.id)
+        .expect("find")
+        .expect("stored");
+    assert_eq!(stored.cli_session_id.as_deref(), Some("tracked-id"));
+}
+
+#[test]
+fn a_cli_that_takes_an_id_gets_the_one_the_session_records() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    let agent = office.add_agent("Ana", "claude", folder.path(), AgentStatus::Stopped);
+
+    let outcome = office.start_agent().handle(agent.id).expect("start");
+
+    let proposed = outcome.session.cli_session_id.clone().expect("id");
+    assert!(office.terminals.started()[0].arguments.contains(&proposed));
 }

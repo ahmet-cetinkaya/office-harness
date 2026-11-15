@@ -37,3 +37,32 @@ fn a_deleted_event_names_the_agent() {
     assert_eq!(event["type"], "agent.deleted");
     assert_eq!(event["agent_id"], agent_id.to_string());
 }
+
+#[test]
+fn an_additions_event_names_the_agent_and_carries_the_additions() {
+    use agent_domain::entities::AdditionsRecord;
+    use agent_domain::value_objects::{EnvEntry, OfficeAdditions};
+
+    let agent_id = AgentId::generate();
+    let view = AdditionsView {
+        record: AdditionsRecord {
+            additions: OfficeAdditions::new(
+                vec!["--x".to_owned()],
+                vec![EnvEntry::parse("KEY", "v").expect("entry")],
+                Some("go".to_owned()),
+            )
+            .expect("additions"),
+            updated_at: kernel::Timestamp::from_unix_millis(7),
+        },
+        applies_next_session: true,
+    };
+
+    let event = frame(&additions_changed_event(agent_id, &view));
+
+    assert_eq!(event["type"], "agent.additions.changed");
+    assert_eq!(event["agent_id"], agent_id.to_string());
+    assert_eq!(event["additions"]["flags"][0], "--x");
+    assert_eq!(event["additions"]["env"][0]["name"], "KEY");
+    assert_eq!(event["additions"]["startup_prompt"], "go");
+    assert_eq!(event["additions"]["applies_next_session"], true);
+}

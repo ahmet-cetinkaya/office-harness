@@ -2,4 +2,5 @@
 
 mod start_agent_handler;
 
-pub use start_agent_handler::{StartAgentHandler, StartOutcome};
+pub use crate::common::session_launcher::StartOutcome;
+pub use start_agent_handler::StartAgentHandler;

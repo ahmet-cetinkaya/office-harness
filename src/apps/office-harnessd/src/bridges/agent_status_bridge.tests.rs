@@ -41,10 +41,10 @@ mod runs {
 
     use agent_application::commands::change_agent_status::ChangeAgentStatusHandler;
     use agent_application::common::errors::PortError;
-    use agent_application::common::interfaces::AgentStore;
-    use agent_domain::entities::Agent;
+    use agent_application::common::interfaces::{AgentStore, SessionStore};
+    use agent_domain::entities::{Agent, Session};
     use agent_domain::enums::AgentStatus;
-    use agent_domain::value_objects::{AgentCommand, DisplayName, MachineId};
+    use agent_domain::value_objects::{AgentCommand, DisplayName, MachineId, SessionId};
     use kernel::{AgentId, Timestamp};
     use terminal_application::common::errors::TerminalRuntimeError;
     use terminal_application::common::interfaces::{OutputSubscriber, TerminalRuntime};
@@ -77,6 +77,42 @@ mod runs {
 
         fn delete(&self, _id: AgentId) -> Result<(), PortError> {
             Ok(())
+        }
+    }
+
+    /// A session store that keeps the results of the ends it is asked for.
+    #[derive(Default)]
+    struct EndsOnly(Mutex<Vec<ExitResult>>);
+
+    impl SessionStore for EndsOnly {
+        fn insert(&self, _session: &Session) -> Result<(), PortError> {
+            Ok(())
+        }
+
+        fn find(&self, _id: SessionId) -> Result<Option<Session>, PortError> {
+            Ok(None)
+        }
+
+        fn list_for_agent(&self, _agent_id: AgentId) -> Result<Vec<Session>, PortError> {
+            Ok(Vec::new())
+        }
+
+        fn latest_for_agent(&self, _agent_id: AgentId) -> Result<Option<Session>, PortError> {
+            Ok(None)
+        }
+
+        fn set_cli_session_id(&self, _id: SessionId, _text: &str) -> Result<(), PortError> {
+            Ok(())
+        }
+
+        fn end_running(
+            &self,
+            _agent_id: AgentId,
+            result: &ExitResult,
+            _at: Timestamp,
+        ) -> Result<bool, PortError> {
+            self.0.lock().expect("lock").push(result.clone());
+            Ok(true)
         }
     }
 
@@ -133,22 +169,30 @@ mod runs {
         }
     }
 
-    fn bridge_for(agent: &Agent, current: RunId) -> (AgentStatusBridge, Arc<OneAgent>) {
+    fn bridge_for(
+        agent: &Agent,
+        current: RunId,
+    ) -> (AgentStatusBridge, Arc<OneAgent>, Arc<EndsOnly>) {
         let store = Arc::new(OneAgent(Mutex::new(agent.clone())));
         let log_folder = tempfile::tempdir().expect("folder");
         let config = crate::config::Config {
             data_folder: log_folder.path().join("office"),
         };
         let log = crate::bootstrap::open_log(&config).expect("log");
+        let ends = Arc::new(EndsOnly::default());
         let bridge = AgentStatusBridge {
             change_status: ChangeAgentStatusHandler::new(store.clone()),
+            end_session: EndSessionHandler::new(
+                ends.clone(),
+                Arc::new(crate::bridges::SystemClock),
+            ),
             runtime: Arc::new(RunOnly(current)),
             hub: EventHub::new(),
             order: StatusOrder::default(),
             alerts: StorageAlerts::new(log.clone()),
             log,
         };
-        (bridge, store)
+        (bridge, store, ends)
     }
 
     fn running_agent() -> Agent {
@@ -169,7 +213,7 @@ mod runs {
     #[test]
     fn a_late_exit_of_an_earlier_run_does_not_end_the_current_run() {
         let agent = running_agent();
-        let (bridge, store) = bridge_for(&agent, RunId(2));
+        let (bridge, store, ends) = bridge_for(&agent, RunId(2));
 
         bridge.apply(AgentTerminalEvent {
             agent_id: agent.id,
@@ -178,12 +222,13 @@ mod runs {
         });
 
         assert_eq!(store.0.lock().expect("lock").status, AgentStatus::Working);
+        assert!(ends.0.lock().expect("lock").is_empty());
     }
 
     #[test]
     fn an_exit_of_the_current_run_ends_it() {
         let agent = running_agent();
-        let (bridge, store) = bridge_for(&agent, RunId(2));
+        let (bridge, store, ends) = bridge_for(&agent, RunId(2));
 
         bridge.apply(AgentTerminalEvent {
             agent_id: agent.id,
@@ -192,5 +237,20 @@ mod runs {
         });
 
         assert_eq!(store.0.lock().expect("lock").status, AgentStatus::Exited);
+        assert_eq!(*ends.0.lock().expect("lock"), [ExitResult::Code(0)]);
+    }
+
+    #[test]
+    fn the_exit_code_of_a_failed_run_reaches_its_session() {
+        let agent = running_agent();
+        let (bridge, _store, ends) = bridge_for(&agent, RunId(2));
+
+        bridge.apply(AgentTerminalEvent {
+            agent_id: agent.id,
+            run: RunId(2),
+            event: TerminalEvent::Exited { exit_code: 7 },
+        });
+
+        assert_eq!(*ends.0.lock().expect("lock"), [ExitResult::Code(7)]);
     }
 }

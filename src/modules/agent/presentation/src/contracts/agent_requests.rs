@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use agent_application::common::additions_input::AdditionsInput;
 use serde_json::{Map, Value};
 
-use super::Fields;
+use super::{Fields, read_additions};
 
-/// `agent.create`. Office additions (`additions`) arrive with the additions
-/// change; until then the field is not read.
+/// `agent.create`.
 #[derive(Debug)]
 pub struct CreateAgentRequest {
     pub name: String,
     pub command: String,
     pub working_folder: Option<String>,
     pub project_id: Option<String>,
+    pub additions: Option<AdditionsInput>,
 }
 
 impl CreateAgentRequest {
@@ -24,11 +25,16 @@ impl CreateAgentRequest {
             command: fields.required_text("command")?,
             working_folder: fields.optional_text("working_folder")?,
             project_id: fields.optional_text("project_id")?,
+            additions: match body.get("additions") {
+                None | Some(Value::Null) => None,
+                Some(value) => Some(read_additions(value)?),
+            },
         })
     }
 }
 
-/// `agent.delete`, `agent.start`, and `agent.stop`.
+/// `agent.delete`, `agent.start`, `agent.stop`, `agent.new_task`,
+/// `agent.additions.get`, and `session.list`.
 #[derive(Debug)]
 pub struct AgentIdRequest {
     pub agent_id: String,
@@ -108,6 +114,43 @@ impl SettingRequest {
         Ok(Self {
             key: fields.required_text("key")?,
             value: fields.required_text("value")?,
+        })
+    }
+}
+
+/// `agent.additions.set`.
+#[derive(Debug)]
+pub struct AdditionsRequest {
+    pub agent_id: String,
+    pub additions: AdditionsInput,
+}
+
+impl AdditionsRequest {
+    /// # Errors
+    /// The text names the field at fault.
+    pub fn read(body: &Map<String, Value>) -> Result<Self, String> {
+        let additions = body
+            .get("additions")
+            .ok_or_else(|| "additions is required".to_owned())?;
+        Ok(Self {
+            agent_id: Fields(body).required_text("agent_id")?,
+            additions: read_additions(additions)?,
+        })
+    }
+}
+
+/// `session.continue`.
+#[derive(Debug)]
+pub struct SessionIdRequest {
+    pub session_id: String,
+}
+
+impl SessionIdRequest {
+    /// # Errors
+    /// The text names the field at fault.
+    pub fn read(body: &Map<String, Value>) -> Result<Self, String> {
+        Ok(Self {
+            session_id: Fields(body).required_text("session_id")?,
         })
     }
 }

@@ -1,8 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use super::*;
+use crate::common::errors::PortError;
 use crate::common::models::AgentActionEntry;
 use crate::test_support::{Office, absolute_folder, project_named};
+
+struct FailingAdditions;
+
+impl AdditionsStore for FailingAdditions {
+    fn load(&self, _agent_id: AgentId) -> Result<Option<AdditionsRecord>, PortError> {
+        Ok(None)
+    }
+
+    fn save(&self, _agent_id: AgentId, _record: &AdditionsRecord) -> Result<(), PortError> {
+        Err(PortError::Storage {
+            message: "disk full".to_owned(),
+            is_disk_failure: true,
+        })
+    }
+}
 
 fn request(name: &str) -> CreateAgentRequest {
     CreateAgentRequest {
@@ -10,6 +26,7 @@ fn request(name: &str) -> CreateAgentRequest {
         command: "claude".to_owned(),
         working_folder: Some(absolute_folder("work")),
         project_id: None,
+        additions: None,
     }
 }
 
@@ -121,4 +138,66 @@ fn a_command_with_a_quote_that_is_never_closed_is_invalid() {
 
     assert!(matches!(&error, ApplicationError::Invalid(text) if text.contains("command")));
     assert_eq!(office.agents.all().len(), 0);
+}
+
+#[test]
+fn a_malformed_environment_name_is_refused_and_named_and_nothing_is_created() {
+    let office = Office::new();
+    let mut with_bad_entry = request("Ana");
+    with_bad_entry.additions = Some(AdditionsInput {
+        env: vec![("1BAD".to_owned(), "x".to_owned())],
+        ..AdditionsInput::default()
+    });
+
+    let error = office
+        .create_agent()
+        .handle(with_bad_entry)
+        .expect_err("malformed");
+
+    assert!(matches!(&error, ApplicationError::Invalid(text) if text.contains("\"1BAD\"")));
+    assert_eq!(office.agents.all().len(), 0);
+    assert_eq!(office.recorder.entries().len(), 0);
+}
+
+#[test]
+fn the_additions_given_at_creation_are_stored_with_the_agent() {
+    let office = Office::new();
+    let mut with_additions = request("Ana");
+    with_additions.additions = Some(AdditionsInput {
+        flags: vec!["--verbose".to_owned()],
+        env: vec![("KEY".to_owned(), "value".to_owned())],
+        startup_prompt: Some("hello".to_owned()),
+    });
+
+    let agent = office
+        .create_agent()
+        .handle(with_additions)
+        .expect("create");
+
+    let view = office.get_additions().handle(agent.id).expect("additions");
+    assert_eq!(view.record.additions.flags(), ["--verbose"]);
+    assert_eq!(view.record.additions.env()[0].name(), "KEY");
+    assert_eq!(view.record.additions.startup_prompt(), Some("hello"));
+}
+
+#[test]
+fn an_agent_whose_additions_cannot_be_saved_is_not_left_behind() {
+    let office = Office::new();
+    let handler = CreateAgentHandler::new(
+        office.agents.clone(),
+        office.projects.clone(),
+        Arc::new(FailingAdditions),
+        Office::clock(),
+        ActionJournal::new(office.recorder.clone(), Office::clock()),
+        office.machine_id,
+    );
+
+    let error = handler.handle(request("Ana")).expect_err("save fails");
+
+    assert!(
+        matches!(error, ApplicationError::Storage { .. }),
+        "{error:?}"
+    );
+    assert_eq!(office.agents.all().len(), 0);
+    assert_eq!(office.recorder.entries().len(), 0);
 }

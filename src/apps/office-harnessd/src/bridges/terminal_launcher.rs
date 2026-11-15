@@ -30,6 +30,35 @@ pub struct LaunchRequest {
     pub output_key: OutputKey,
 }
 
+/// What finding a program and its environment needs.
+#[derive(Debug, Clone)]
+pub struct PrepareRequest {
+    pub program: String,
+    pub working_folder: PathBuf,
+    /// The office additions' variables.
+    pub additions: Vec<(String, String)>,
+}
+
+/// The program that was found, and the complete environment of the child.
+#[derive(Debug, Clone)]
+pub struct PreparedProgram {
+    pub program: PathBuf,
+    pub environment: Vec<(String, String)>,
+    pub warning: Option<String>,
+}
+
+/// What spawning a prepared program needs.
+#[derive(Debug, Clone)]
+pub struct SpawnRequest {
+    pub agent_id: AgentId,
+    pub program: String,
+    pub arguments: Vec<String>,
+    pub working_folder: PathBuf,
+    pub environment: Vec<(String, String)>,
+    pub size: TerminalSize,
+    pub output_key: OutputKey,
+}
+
 /// A warning about the environment that the agent's details show.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchOutcome {
@@ -87,6 +116,32 @@ impl TerminalLauncher {
     /// # Errors
     /// As `launch`.
     pub fn launch_blocking(&self, request: LaunchRequest) -> Result<LaunchOutcome, LaunchError> {
+        let prepared = self.prepare(&PrepareRequest {
+            program: request.program,
+            working_folder: request.working_folder.clone(),
+            additions: request.additions,
+        })?;
+        self.spawn_prepared(SpawnRequest {
+            agent_id: request.agent_id,
+            program: prepared.program.to_string_lossy().into_owned(),
+            arguments: request.arguments,
+            working_folder: request.working_folder,
+            environment: prepared.environment,
+            size: request.size,
+            output_key: request.output_key,
+        })?;
+        Ok(LaunchOutcome {
+            environment_warning: prepared.warning,
+        })
+    }
+
+    /// Resolves the login environment, applies the additions, and finds the
+    /// program on the resulting `PATH`. It runs a shell, so the caller runs
+    /// on a blocking thread.
+    ///
+    /// # Errors
+    /// `ProgramNotFound`.
+    pub fn prepare(&self, request: &PrepareRequest) -> Result<PreparedProgram, LaunchError> {
         let resolved = self.login_environment.resolve(&self.server_environment);
         let mut environment = resolved.variables;
         // The PTY host names the terminal, as every terminal emulator does; a
@@ -94,20 +149,30 @@ impl TerminalLauncher {
         // additions come after and may replace both.
         environment.insert(TERMINAL_TYPE_VARIABLE.to_owned(), TERMINAL_TYPE.to_owned());
         environment.insert(COLOR_VARIABLE.to_owned(), COLOR_SUPPORT.to_owned());
-        environment.extend(request.additions);
+        environment.extend(request.additions.iter().cloned());
         let program = find_program(&request.program, &environment, &request.working_folder)
             .ok_or_else(|| LaunchError::ProgramNotFound(request.program.clone()))?;
+        Ok(PreparedProgram {
+            program,
+            environment: environment.into_iter().collect(),
+            warning: resolved.warning,
+        })
+    }
+
+    /// Spawns a program that `prepare` found, with its complete environment.
+    ///
+    /// # Errors
+    /// The runtime's error.
+    pub fn spawn_prepared(&self, request: SpawnRequest) -> Result<(), LaunchError> {
         self.runtime.spawn(&SpawnTerminalRequest {
             agent_id: request.agent_id,
-            program: program.to_string_lossy().into_owned(),
+            program: request.program,
             arguments: request.arguments,
             working_folder: request.working_folder,
-            environment: environment.into_iter().collect(),
+            environment: request.environment,
             size: request.size,
             output_key: request.output_key,
         })?;
-        Ok(LaunchOutcome {
-            environment_warning: resolved.warning,
-        })
+        Ok(())
     }
 }

@@ -40,8 +40,6 @@ const FULL_CONTROL: &str = "FA";
 const FOLDER_ACE_FLAGS: &str = "OICI";
 const FILE_ACE_FLAGS: &str = "";
 
-/// The SDDL of a protected access list that allows full control to `user_sid`
-/// and to SYSTEM and nothing else. `ace_flags` say whether children inherit.
 /// True for a SID in its text form, `S-1-` and then at least two groups of
 /// digits joined by `-`, so that no other text reaches the SDDL string.
 fn is_sid_text(text: &str) -> bool {
@@ -58,6 +56,8 @@ fn is_sid_text(text: &str) -> bool {
 /// The authority and at least one sub-authority.
 const MIN_SID_GROUPS: usize = 2;
 
+/// The SDDL of a protected access list that allows full control to `user_sid`
+/// and to SYSTEM and nothing else. `ace_flags` say whether children inherit.
 fn owner_only_sddl(user_sid: &str, ace_flags: &str) -> String {
     let allow = |trustee: &str| format!("(A;{ace_flags};{FULL_CONTROL};;;{trustee})");
     format!("D:P{}{}", allow(user_sid), allow(SYSTEM_ALIAS))

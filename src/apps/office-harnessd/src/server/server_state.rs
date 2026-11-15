@@ -8,6 +8,7 @@ use tokio::sync::{Semaphore, watch};
 use super::agent_requests::AgentGateway;
 use super::dispatcher::Dispatcher;
 use super::event_hub::EventHub;
+use super::restart_signal::RestartSignal;
 use super::server_options::ServerOptions;
 use super::terminal_requests::TerminalGateway;
 use crate::bootstrap::ServerLog;
@@ -22,6 +23,8 @@ pub struct ServerState {
     pub terminals: Arc<TerminalGateway>,
     pub agents: AgentGateway,
     pub events: EventHub,
+    /// Raised by `server.restart`.
+    pub restart: RestartSignal,
     /// The latest token generation. A connection that authenticated with an
     /// older one closes.
     pub token_generations: watch::Receiver<u64>,

@@ -13,6 +13,7 @@ use tokio::sync::{Semaphore, watch};
 
 use super::agent_requests::AgentGateway;
 use super::dispatcher::Dispatcher;
+use super::restart_signal::RestartSignal;
 use super::router::build_router;
 use super::server_error::ServerError;
 use super::server_file::write_server_file;
@@ -61,6 +62,7 @@ impl Server {
         events.forward_storage_alerts(services.storage_alerts.subscribe(), log.clone());
         AgentStatusBridge {
             change_status: services.agent.change_status.clone(),
+            end_session: services.agent.end_session.clone(),
             runtime: Arc::clone(&services.terminal.runtime),
             hub: events.clone(),
             order: Arc::clone(&services.agent.status_order),
@@ -74,6 +76,7 @@ impl Server {
             events.clone(),
             services.storage_alerts.clone(),
             Arc::clone(&services.agent.status_order),
+            Arc::clone(&services.agent.stopping),
         );
         let (shutdown, stopping) = watch::channel(false);
         let state = ServerState {
@@ -81,9 +84,13 @@ impl Server {
             options,
             authentication: services.access.authentication.clone(),
             dispatcher: Arc::new(Dispatcher::new(services.access.handlers.clone())),
-            terminals: Arc::new(TerminalGateway::new(services.terminal.handlers.clone())),
+            terminals: Arc::new(TerminalGateway::new(
+                services.terminal.handlers.clone(),
+                services.agent.saved_outputs.clone(),
+            )),
             agents,
             events,
+            restart: RestartSignal::default(),
             token_generations: services.access.token_store.subscribe(),
             shutdown: stopping,
             handshake_permits: Arc::new(Semaphore::new(options.max_concurrent_handshakes)),
@@ -106,6 +113,12 @@ impl Server {
     #[must_use]
     pub fn port(&self) -> u16 {
         self.address.port()
+    }
+
+    /// Completes when a client sent `server.restart`. Take it before `serve`.
+    #[must_use]
+    pub fn restart_signal(&self) -> RestartSignal {
+        self.state.restart.clone()
     }
 
     /// The routes of this server, for tests that call them without a socket.
