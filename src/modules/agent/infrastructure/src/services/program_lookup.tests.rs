@@ -68,9 +68,15 @@ fn finds_a_cmd_shim_through_pathext() {
     let folder = TempDir::new().expect("temp folder");
     let shim = folder.path().join("claude.cmd");
     fs::write(&shim, "@echo off\r\n").expect("write shim");
-    assert_eq!(
-        find_program("claude", &path_environment(folder.path()), folder.path()),
-        Some(shim)
+    // Windows file names ignore case, and the extension comes from `PATHEXT`
+    // in its own case (`.CMD`), so compare the paths without case.
+    let found = find_program("claude", &path_environment(folder.path()), folder.path())
+        .expect("the shim is found");
+    assert!(
+        found
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&shim.to_string_lossy()),
+        "found {found:?}, expected {shim:?}"
     );
 }
 
