@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::time::Duration;
+
 use agent_domain::enums::AgentStatus;
 use tempfile::TempDir;
 
 use super::*;
+use crate::common::interfaces::SessionStore;
 use crate::test_support::Office;
 
 #[test]
@@ -73,4 +76,28 @@ fn a_child_that_ended_on_its_own_leaves_the_status_to_its_exit_event() {
         Some(AgentStatus::Working)
     );
     assert_eq!(office.recorder.entries()[0].failure, None);
+}
+
+#[test]
+fn a_stop_closes_the_running_session_with_signal() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    let agent = office.add_agent("Ana", "claude", folder.path(), AgentStatus::Stopped);
+    let session = office
+        .start_agent()
+        .handle(agent.id)
+        .expect("start")
+        .session;
+
+    office.stop_agent().handle(agent.id).expect("stop");
+
+    let stored = office
+        .sessions
+        .find(session.id)
+        .expect("find")
+        .expect("stored");
+    assert_eq!(
+        stored.exit_result,
+        Some(agent_domain::value_objects::ExitResult::Signal)
+    );
 }

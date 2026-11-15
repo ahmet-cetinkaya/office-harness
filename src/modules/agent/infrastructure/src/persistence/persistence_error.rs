@@ -20,6 +20,8 @@ pub enum PersistenceError {
     Invalid(#[from] AgentError),
     #[error("invalid data: {0}")]
     InvalidAgentId(#[from] AgentIdError),
+    #[error("invalid data: {0}")]
+    InvalidJson(#[from] serde_json::Error),
     #[error("storage failure: {0}")]
     Storage(#[from] rusqlite::Error),
 }

@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+//! The commands the webview may call. The list is also in `build.rs` and in
+//! `capabilities/default.json`; a command that is in none of them cannot be
+//! called.
+
+// Tauri hands each command its managed state by value.
+#![allow(clippy::needless_pass_by_value)]
+
+use std::time::Duration;
+
+use serde_json::{Map, Value};
+use tauri::State;
+use tauri::ipc::Channel;
+
+use crate::api_error::{ApiError, START_FAILED, START_TIMEOUT};
+use crate::channels;
+use crate::connection::{Connection, ConnectionState};
+use crate::server_process;
+
+/// How long "start server" waits for the new server to answer.
+const START_WAIT: Duration = Duration::from_secs(15);
+
+#[tauri::command]
+pub fn watch_connection(connection: State<'_, Connection>, on_state: Channel<ConnectionState>) {
+    channels::forward_state(connection.subscribe_state(), on_state);
+}
+
+#[tauri::command]
+pub fn watch_events(connection: State<'_, Connection>, on_event: Channel<Value>) {
+    channels::forward_events(connection.subscribe_events(), on_event);
+}
+
+#[tauri::command]
+pub async fn send_request(
+    connection: State<'_, Connection>,
+    kind: String,
+    fields: Option<Map<String, Value>>,
+) -> Result<Value, ApiError> {
+    connection.request(kind, fields.unwrap_or_default()).await
+}
+
+#[tauri::command]
+pub fn retry_connection(connection: State<'_, Connection>) {
+    connection.retry_now();
+}
+
+#[tauri::command]
+pub async fn start_server(connection: State<'_, Connection>) -> Result<(), ApiError> {
+    server_process::start_detached()
+        .map_err(|error| ApiError::new(START_FAILED, error.to_string()))?;
+    connection.retry_now();
+    if connection.wait_until_settled(START_WAIT).await {
+        return Ok(());
+    }
+    Err(ApiError::new(
+        START_TIMEOUT,
+        "The server started but did not answer in time. Its log file in the office data folder says why.",
+    ))
+}

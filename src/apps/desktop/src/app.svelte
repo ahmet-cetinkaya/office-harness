@@ -1,7 +1,59 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
-<main class="mx-auto max-w-3xl p-6">
-  <h1 class="text-2xl font-semibold">office-harness</h1>
-  <p class="mt-2 text-neutral-700">
-    Desktop shell scaffold. No server connection yet.
-  </p>
+<script lang="ts">
+  import { onMount } from "svelte";
+  import { createTauriCoreClient } from "./core/api";
+  import {
+    createConnectionStore,
+    BusyView,
+    LoadingView,
+    NotReachableView,
+    VersionMismatchView,
+  } from "./core/connection";
+  import { NotAuthorizedView } from "./modules/access";
+  import FailureMessage from "$shared/ui/failure-message.svelte";
+  import StatusPanel from "$shared/ui/status-panel.svelte";
+
+  const connection = createConnectionStore(createTauriCoreClient());
+  const snapshot = $derived(connection.snapshot);
+
+  onMount(() => {
+    void connection.start();
+  });
+</script>
+
+<main>
+  {#if snapshot.coreError !== null}
+    <StatusPanel title="The app core did not answer">
+      <FailureMessage
+        lead="No connection to the desktop core."
+        message="Open office-harness from its own window. A browser tab has no desktop core."
+      />
+    </StatusPanel>
+  {:else if snapshot.state.status === "loading"}
+    <LoadingView />
+  {:else if snapshot.state.status === "busy"}
+    <BusyView />
+  {:else if snapshot.state.status === "not_reachable"}
+    <NotReachableView
+      action={snapshot.action}
+      onstart={connection.startServer}
+    />
+  {:else if snapshot.state.status === "not_authorized"}
+    <NotAuthorizedView onretry={connection.retry} />
+  {:else if snapshot.state.status === "version_mismatch"}
+    <VersionMismatchView
+      serverVersion={snapshot.state.server_version}
+      appVersion={snapshot.state.app_version}
+      canRestart={snapshot.state.can_restart}
+      action={snapshot.action}
+      onrestart={connection.restartServer}
+    />
+  {:else}
+    <StatusPanel title="office-harness">
+      <p role="status" class="text-neutral-700">
+        Connected to the office server. The agent list arrives with the next
+        change.
+      </p>
+    </StatusPanel>
+  {/if}
 </main>

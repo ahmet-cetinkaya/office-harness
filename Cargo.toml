@@ -44,7 +44,6 @@ base64 = "0.22"
 nix = { version = "0.28", default-features = false }
 tauri = { version = "=2.12.5", features = [] }
 tauri-build = "=2.7.4"
-tauri-plugin-shell = "=2.6.0"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

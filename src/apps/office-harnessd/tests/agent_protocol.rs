@@ -553,13 +553,19 @@ async fn a_command_that_cannot_start_fails_that_agent_only() {
     let failed = call(&mut client, 3, "agent.start", json!({"agent_id": broken})).await;
 
     assert_eq!(failed["ok"], true, "{failed}");
-    assert_eq!(failed["result"]["status"], "failed");
     assert!(
-        failed["result"]["detail"]
+        failed["result"]["exit_result"]
             .as_str()
-            .expect("detail")
+            .expect("exit result")
+            .starts_with("spawn-error: ")
+    );
+    assert!(
+        failed["result"]["exit_result"]
+            .as_str()
+            .expect("text")
             .contains("no-such-cli")
     );
+    assert_eq!(failed["result"]["can_continue"], false);
     assert_eq!(status_of(&mut client, &broken).await, "failed");
     assert_ne!(status_of(&mut client, &healthy).await, "failed");
     let actions = call(&mut client, 4, "agent.actions", json!({"agent_id": broken})).await;
@@ -630,7 +636,8 @@ async fn the_status_follows_starting_working_waiting_and_exited_or_failed() {
 
     for (id, agent) in [(2, &finishing), (3, &failing)] {
         let started = call(&mut client, id, "agent.start", json!({"agent_id": agent})).await;
-        assert_eq!(started["result"]["status"], "starting", "{started}");
+        assert_eq!(started["ok"], true, "{started}");
+        assert_eq!(started["result"]["ended_at"], Value::Null, "{started}");
     }
 
     let finals = [(finishing.as_str(), "exited"), (failing.as_str(), "failed")];
@@ -669,7 +676,8 @@ async fn a_stopped_agent_shows_stopped_and_can_start_again() {
     assert_eq!(error_text(&idle_stop).0, "conflict");
 
     let again = call(&mut client, 6, "agent.start", json!({"agent_id": agent_id})).await;
-    assert_eq!(again["result"]["status"], "starting", "{again}");
+    assert_eq!(again["ok"], true, "{again}");
+    assert_eq!(again["result"]["ended_at"], Value::Null, "{again}");
     call(&mut client, 7, "agent.stop", json!({"agent_id": agent_id})).await;
     office.serving.stop().await;
 }
@@ -686,7 +694,8 @@ async fn a_cli_only_the_login_path_knows_runs_with_a_clean_environment() {
     let mut observer = office.client().await;
 
     let started = call(&mut client, 2, "agent.start", json!({"agent_id": agent_id})).await;
-    assert_eq!(started["result"]["status"], "starting", "{started}");
+    assert_eq!(started["ok"], true, "{started}");
+    assert_eq!(started["result"]["ended_at"], Value::Null, "{started}");
     let seen = statuses_until(&mut observer, &[(&agent_id, "exited")]).await;
     assert_eq!(seen[&agent_id].last().map(String::as_str), Some("exited"));
 

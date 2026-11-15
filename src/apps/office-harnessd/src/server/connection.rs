@@ -10,6 +10,7 @@ use wire::{CLOSE_TRY_AGAIN_LATER, CLOSE_UNAUTHORIZED, ErrorCode, Request, Respon
 
 use super::agent_requests::AgentGateway;
 use super::handshake::{HandshakeFailure, authenticate};
+use super::restart_signal::RESTART_REQUEST;
 use super::server_state::ServerState;
 use super::terminal_requests::{
     ConnectionTerminals, FRAME_BACKLOG, TERMINAL_PREFIX, TerminalAnswer,
@@ -198,6 +199,14 @@ async fn answer_request(
     let answer = match Request::decode(frame) {
         Some(request) if request.kind.starts_with(TERMINAL_PREFIX) => {
             state.terminals.handle(&request, terminals).await
+        }
+        Some(request) if request.kind == RESTART_REQUEST => {
+            // The answer goes out first; then the server stops, and this
+            // connection closes with 1001 like every other.
+            let answer = Response::success(request.id, serde_json::Value::Null);
+            send_text(socket, &answer.encode()).await?;
+            state.restart.request();
+            return Ok(());
         }
         Some(request) if AgentGateway::accepts(&request.kind) => {
             spawn_agent_request(state.agents.clone(), request, responses.clone());

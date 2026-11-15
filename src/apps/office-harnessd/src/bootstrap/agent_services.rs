@@ -3,24 +3,36 @@
 use std::sync::Arc;
 
 use agent_application::commands::change_agent_status::ChangeAgentStatusHandler;
+use agent_application::commands::continue_session::ContinueSessionHandler;
 use agent_application::commands::create_agent::CreateAgentHandler;
 use agent_application::commands::create_project::CreateProjectHandler;
 use agent_application::commands::delete_agent::DeleteAgentHandler;
 use agent_application::commands::delete_project::DeleteProjectHandler;
+use agent_application::commands::end_session::EndSessionHandler;
+use agent_application::commands::interrupt_agents::InterruptAgentsHandler;
+use agent_application::commands::set_office_additions::SetOfficeAdditionsHandler;
 use agent_application::commands::set_setting::SetSettingHandler;
 use agent_application::commands::start_agent::StartAgentHandler;
+use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
 use agent_application::common::action_journal::ActionJournal;
 use agent_application::common::interfaces::{
-    AgentStore, Clock, ProjectStore, SettingsStore, TerminalHost,
+    AdditionsStore, AgentStore, CliAdapters, Clock, ProjectStore, SessionStore, SettingsStore,
+    TerminalHost,
 };
+use agent_application::common::session_ender::SessionEnder;
+use agent_application::common::session_launcher::{LauncherServices, SessionLauncher};
+use agent_application::queries::get_office_additions::GetOfficeAdditionsHandler;
 use agent_application::queries::get_settings::GetSettingsHandler;
 use agent_application::queries::list_agents::ListAgentsHandler;
 use agent_application::queries::list_projects::ListProjectsHandler;
+use agent_application::queries::list_sessions::ListSessionsHandler;
 use agent_domain::value_objects::MachineId;
 use agent_infrastructure::persistence::{
-    AgentRepository, ProjectRepository, SettingsRepository, SharedConnection,
+    AdditionsRepository, AgentRepository, ProjectRepository, SessionRepository, SettingsRepository,
+    SharedConnection,
 };
+use agent_infrastructure::services::{AttributionTiming, CliAdapterRegistry};
 use agent_presentation::{AgentHandlers, AgentUseCases};
 use audit_application::commands::record_action::RecordActionHandler;
 use audit_application::common::interfaces::ActionLog;
@@ -28,8 +40,10 @@ use audit_application::queries::list_actions::ListActionsHandler;
 use audit_infrastructure::persistence::ActionRepository;
 use audit_presentation::AuditHandlers;
 
-use super::{StorageAlerts, TerminalServices};
-use crate::bridges::{ActionRecorderBridge, StatusOrder, SystemClock, TerminalHostBridge};
+use super::{ServerLog, StorageAlerts, TerminalServices};
+use crate::bridges::{
+    ActionRecorderBridge, SavedOutputs, StatusOrder, StoppingFlag, SystemClock, TerminalHostBridge,
+};
 
 /// The agent and audit modules, wired: the use cases behind their handlers,
 /// and the handler that terminal events use to change a status.
@@ -37,8 +51,31 @@ pub struct AgentServices {
     pub handlers: Arc<AgentHandlers>,
     pub audit: AuditHandlers,
     pub change_status: ChangeAgentStatusHandler,
+    /// Closes a session when its terminal reports an exit.
+    pub end_session: EndSessionHandler,
+    /// Ends the running agents when the server stops.
+    pub interrupt_agents: InterruptAgentsHandler,
+    /// Names the output file that `terminal.attach` shows for an agent that
+    /// does not run.
+    pub saved_outputs: SavedOutputs,
     /// Orders `agent.start` before the statuses its terminal causes.
     pub status_order: StatusOrder,
+    /// Set by the interrupt at stop, so no start follows it.
+    pub stopping: StoppingFlag,
+}
+
+/// The stores and services that the use cases share.
+struct Wiring {
+    agents: Arc<dyn AgentStore>,
+    projects: Arc<dyn ProjectStore>,
+    settings: Arc<dyn SettingsStore>,
+    additions: Arc<dyn AdditionsStore>,
+    sessions: Arc<dyn SessionStore>,
+    adapters: Arc<dyn CliAdapters>,
+    clock: Arc<dyn Clock>,
+    terminals: Arc<dyn TerminalHost>,
+    journal: ActionJournal,
+    alerts: StorageAlerts,
 }
 
 /// Joins the agent use cases to the SQLite stores, the terminal, the clock,
@@ -49,59 +86,132 @@ pub fn build_agent_services(
     machine_id: MachineId,
     terminal: &TerminalServices,
     alerts: &StorageAlerts,
+    attribution: AttributionTiming,
+    log: &ServerLog,
 ) -> AgentServices {
-    let agents: Arc<dyn AgentStore> = Arc::new(AgentRepository::new(connection.clone()));
-    let projects: Arc<dyn ProjectStore> = Arc::new(ProjectRepository::new(connection.clone()));
-    let settings: Arc<dyn SettingsStore> = Arc::new(SettingsRepository::new(connection.clone()));
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
-    let terminals: Arc<dyn TerminalHost> = Arc::new(TerminalHostBridge::new(
-        terminal.launcher.clone(),
-        Arc::clone(&terminal.runtime),
-    ));
     let action_log: Arc<dyn ActionLog> = Arc::new(ActionRepository::new(connection.handle()));
     let recorder = Arc::new(ActionRecorderBridge::new(
         RecordActionHandler::new(Arc::clone(&action_log)),
         alerts.clone(),
     ));
-    let journal = ActionJournal::new(recorder, Arc::clone(&clock));
+    let wiring = Wiring {
+        agents: Arc::new(AgentRepository::new(connection.clone())),
+        projects: Arc::new(ProjectRepository::new(connection.clone())),
+        settings: Arc::new(SettingsRepository::new(connection.clone())),
+        additions: Arc::new(AdditionsRepository::new(connection.clone())),
+        sessions: Arc::new(SessionRepository::new(connection.clone())),
+        adapters: Arc::new(CliAdapterRegistry::new(attribution)),
+        terminals: Arc::new(TerminalHostBridge::new(
+            terminal.launcher.clone(),
+            Arc::clone(&terminal.runtime),
+            terminal.events.clone(),
+            log.clone(),
+        )),
+        journal: ActionJournal::new(recorder, Arc::clone(&clock)),
+        alerts: alerts.clone(),
+        clock,
+    };
+    AgentServices {
+        handlers: Arc::new(AgentHandlers::new(use_cases(&wiring, machine_id))),
+        audit: AuditHandlers::new(ListActionsHandler::new(action_log)),
+        change_status: ChangeAgentStatusHandler::new(Arc::clone(&wiring.agents)),
+        end_session: EndSessionHandler::new(
+            Arc::clone(&wiring.sessions),
+            Arc::clone(&wiring.clock),
+        ),
+        interrupt_agents: InterruptAgentsHandler::new(
+            Arc::clone(&wiring.agents),
+            Arc::clone(&wiring.settings),
+            Arc::clone(&wiring.sessions),
+            Arc::clone(&wiring.terminals),
+            Arc::clone(&wiring.clock),
+        ),
+        saved_outputs: SavedOutputs::new(wiring.sessions),
+        status_order: StatusOrder::default(),
+        stopping: StoppingFlag::default(),
+    }
+}
 
-    let use_cases = AgentUseCases {
+fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
+    let ender = SessionEnder::new(
+        Arc::clone(&wiring.agents),
+        Arc::clone(&wiring.settings),
+        Arc::clone(&wiring.sessions),
+        Arc::clone(&wiring.terminals),
+        Arc::clone(&wiring.clock),
+    );
+    let launcher = SessionLauncher::new(
+        Arc::clone(&wiring.agents),
+        Arc::clone(&wiring.projects),
+        Arc::clone(&wiring.additions),
+        Arc::clone(&wiring.sessions),
+        LauncherServices {
+            terminals: Arc::clone(&wiring.terminals),
+            adapters: Arc::clone(&wiring.adapters),
+            clock: Arc::clone(&wiring.clock),
+            failures: Arc::new(wiring.alerts.clone()),
+        },
+    );
+    let journal = &wiring.journal;
+    AgentUseCases {
         create_agent: CreateAgentHandler::new(
-            Arc::clone(&agents),
-            Arc::clone(&projects),
-            clock,
+            Arc::clone(&wiring.agents),
+            Arc::clone(&wiring.projects),
+            Arc::clone(&wiring.additions),
+            Arc::clone(&wiring.clock),
             journal.clone(),
             machine_id,
         ),
         delete_agent: DeleteAgentHandler::new(
-            Arc::clone(&agents),
-            Arc::clone(&settings),
-            Arc::clone(&terminals),
+            Arc::clone(&wiring.agents),
+            Arc::clone(&wiring.settings),
+            Arc::clone(&wiring.terminals),
             journal.clone(),
         ),
         start_agent: StartAgentHandler::new(
-            Arc::clone(&agents),
-            Arc::clone(&projects),
-            Arc::clone(&terminals),
+            Arc::clone(&wiring.agents),
+            launcher.clone(),
             journal.clone(),
         ),
         stop_agent: StopAgentHandler::new(
-            Arc::clone(&agents),
-            Arc::clone(&settings),
-            terminals,
-            journal,
+            Arc::clone(&wiring.agents),
+            ender.clone(),
+            journal.clone(),
         ),
-        list_agents: ListAgentsHandler::new(Arc::clone(&agents)),
-        create_project: CreateProjectHandler::new(Arc::clone(&projects)),
-        delete_project: DeleteProjectHandler::new(Arc::clone(&projects)),
-        list_projects: ListProjectsHandler::new(projects),
-        set_setting: SetSettingHandler::new(Arc::clone(&settings)),
-        get_settings: GetSettingsHandler::new(settings),
-    };
-    AgentServices {
-        handlers: Arc::new(AgentHandlers::new(use_cases)),
-        audit: AuditHandlers::new(ListActionsHandler::new(action_log)),
-        change_status: ChangeAgentStatusHandler::new(agents),
-        status_order: StatusOrder::default(),
+        start_new_task: StartNewTaskHandler::new(
+            Arc::clone(&wiring.agents),
+            ender.clone(),
+            launcher.clone(),
+            journal.clone(),
+        ),
+        continue_session: ContinueSessionHandler::new(
+            Arc::clone(&wiring.agents),
+            Arc::clone(&wiring.sessions),
+            Arc::clone(&wiring.adapters),
+            ender,
+            launcher,
+            journal.clone(),
+        ),
+        set_office_additions: SetOfficeAdditionsHandler::new(
+            Arc::clone(&wiring.agents),
+            Arc::clone(&wiring.additions),
+            Arc::clone(&wiring.clock),
+        ),
+        get_office_additions: GetOfficeAdditionsHandler::new(
+            Arc::clone(&wiring.agents),
+            Arc::clone(&wiring.additions),
+        ),
+        list_sessions: ListSessionsHandler::new(
+            Arc::clone(&wiring.agents),
+            Arc::clone(&wiring.sessions),
+            Arc::clone(&wiring.adapters),
+        ),
+        list_agents: ListAgentsHandler::new(Arc::clone(&wiring.agents)),
+        create_project: CreateProjectHandler::new(Arc::clone(&wiring.projects)),
+        delete_project: DeleteProjectHandler::new(Arc::clone(&wiring.projects)),
+        list_projects: ListProjectsHandler::new(Arc::clone(&wiring.projects)),
+        set_setting: SetSettingHandler::new(Arc::clone(&wiring.settings)),
+        get_settings: GetSettingsHandler::new(Arc::clone(&wiring.settings)),
     }
 }

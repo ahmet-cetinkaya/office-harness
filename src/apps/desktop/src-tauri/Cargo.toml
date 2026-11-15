@@ -10,8 +10,20 @@ publish.workspace = true
 tauri-build.workspace = true
 
 [dependencies]
+directories.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 tauri.workspace = true
-tauri-plugin-shell.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+# Exports the contract types to the webview (research R8, plan D14).
+ts-rs = "=12.0.1"
+wire = { path = "../../../shared/wire" }
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

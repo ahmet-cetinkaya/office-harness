@@ -3,5 +3,7 @@
 mod entities;
 mod events;
 
-pub use entities::{agent_json, project_json, setting_json};
-pub use events::{agent_changed_event, agent_deleted_event, agent_status_event};
+pub use entities::{additions_json, agent_json, project_json, session_json, setting_json};
+pub use events::{
+    additions_changed_event, agent_changed_event, agent_deleted_event, agent_status_event,
+};

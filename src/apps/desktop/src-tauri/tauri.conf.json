@@ -10,13 +10,27 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "title": "office-harness", "width": 1100, "height": 720 }],
-    "security": { "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'" }
+    "windows": [
+      {
+        "title": "office-harness",
+        "width": 1100,
+        "height": 720
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "devCsp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    }
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.png", "icons/icon.ico"],
-    "externalBin": ["binaries/office-harnessd"]
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/office-harnessd"
+    ]
   }
 }
