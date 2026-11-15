@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Starts the office server so that it outlives the app (FR-001, FR-026).
-//! Starting through the login item and running `register` arrive in T11.
+//! Starts the office server so that it outlives the app (FR-001, FR-026), and
+//! asks the sidecar to register itself as a login item (FR-002, plan D13).
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -9,8 +9,11 @@ use std::process::{Command, Stdio};
 use std::thread;
 
 use thiserror::Error;
+use wire::LOGIN_START_NOT_REGISTERED_EXIT_CODE;
 
 const SIDECAR_NAME: &str = "office-harnessd";
+const REGISTER_ARGUMENT: &str = "register";
+const STATUS_ARGUMENT: &str = "status";
 
 #[derive(Debug, Error)]
 pub enum StartServerError {
@@ -20,13 +23,26 @@ pub enum StartServerError {
     Spawn(io::Error),
 }
 
+#[derive(Debug, Error)]
+pub enum LoginStartError {
+    #[error("the app cannot find its own folder: {0}")]
+    NoAppFolder(io::Error),
+    #[error("the server program could not be run: {0}")]
+    Run(io::Error),
+    #[error("the server program could not change the login item: {0}")]
+    Failed(String),
+}
+
+/// The sidecar sits next to the app. The app may be started through a
+/// symlink, so the path comes from the real file.
+fn locate_sidecar() -> io::Result<PathBuf> {
+    let app = std::env::current_exe().and_then(std::fs::canonicalize)?;
+    Ok(sidecar_path(&app))
+}
+
 /// Starts the sidecar that sits next to the app, as a process of its own.
 pub fn start_detached() -> Result<(), StartServerError> {
-    // The app may be started through a symlink; the sidecar sits next to the real file.
-    let app = std::env::current_exe()
-        .and_then(std::fs::canonicalize)
-        .map_err(StartServerError::NoAppFolder)?;
-    let mut command = Command::new(sidecar_path(&app));
+    let mut command = Command::new(locate_sidecar().map_err(StartServerError::NoAppFolder)?);
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -37,6 +53,62 @@ pub fn start_detached() -> Result<(), StartServerError> {
     // status of a server that stops while the app is still open.
     thread::spawn(move || child.wait());
     Ok(())
+}
+
+/// Asks the sidecar to copy itself to a stable place and start that copy at
+/// login. It is safe to repeat, and a new app version makes a new copy.
+pub fn register_login_start() -> Result<(), LoginStartError> {
+    let answer = run_sidecar(REGISTER_ARGUMENT)?;
+    answer_to_success(&answer)
+}
+
+/// Whether a login item for the server exists.
+pub fn is_login_start_registered() -> Result<bool, LoginStartError> {
+    let answer = run_sidecar(STATUS_ARGUMENT)?;
+    answer_to_registered(&answer)
+}
+
+/// What a finished sidecar left behind.
+struct SidecarAnswer {
+    exit_code: Option<i32>,
+    stderr: String,
+}
+
+fn run_sidecar(argument: &str) -> Result<SidecarAnswer, LoginStartError> {
+    let program = locate_sidecar().map_err(LoginStartError::NoAppFolder)?;
+    let output = Command::new(program)
+        .arg(argument)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(LoginStartError::Run)?;
+    Ok(SidecarAnswer {
+        exit_code: output.status.code(),
+        stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+    })
+}
+
+fn answer_to_success(answer: &SidecarAnswer) -> Result<(), LoginStartError> {
+    if answer.exit_code == Some(0) {
+        return Ok(());
+    }
+    Err(failure(answer))
+}
+
+fn answer_to_registered(answer: &SidecarAnswer) -> Result<bool, LoginStartError> {
+    match answer.exit_code {
+        Some(0) => Ok(true),
+        Some(code) if code == i32::from(LOGIN_START_NOT_REGISTERED_EXIT_CODE) => Ok(false),
+        _ => Err(failure(answer)),
+    }
+}
+
+fn failure(answer: &SidecarAnswer) -> LoginStartError {
+    let reason = if answer.stderr.is_empty() {
+        "it gave no reason"
+    } else {
+        &answer.stderr
+    };
+    LoginStartError::Failed(reason.to_owned())
 }
 
 fn sidecar_path(app: &Path) -> PathBuf {

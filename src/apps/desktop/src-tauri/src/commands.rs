@@ -13,10 +13,10 @@ use serde_json::{Map, Value};
 use tauri::State;
 use tauri::ipc::{Channel, InvokeResponseBody};
 
-use crate::api_error::{ApiError, START_FAILED, START_TIMEOUT};
+use crate::api_error::{ApiError, LOGIN_START_FAILED, START_FAILED, START_TIMEOUT};
 use crate::channels;
 use crate::connection::{Connection, ConnectionState};
-use crate::server_process;
+use crate::server_process::{self, LoginStartError};
 
 /// How long "start server" waits for the new server to answer.
 const START_WAIT: Duration = Duration::from_secs(15);
@@ -65,4 +65,25 @@ pub async fn start_server(connection: State<'_, Connection>) -> Result<(), ApiEr
         START_TIMEOUT,
         "The server started but did not answer in time. Its log file in the office data folder says why.",
     ))
+}
+
+/// The sidecar runs for a moment and may touch the OS, so it must not hold
+/// up the command threads of the UI.
+async fn run_login_start<Answer: Send + 'static>(
+    work: fn() -> Result<Answer, LoginStartError>,
+) -> Result<Answer, ApiError> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|error| ApiError::new(LOGIN_START_FAILED, error.to_string()))?
+        .map_err(|error| ApiError::new(LOGIN_START_FAILED, error.to_string()))
+}
+
+#[tauri::command]
+pub async fn register_login_start() -> Result<(), ApiError> {
+    run_login_start(server_process::register_login_start).await
+}
+
+#[tauri::command]
+pub async fn login_start_status() -> Result<bool, ApiError> {
+    run_login_start(server_process::is_login_start_registered).await
 }

@@ -6,6 +6,7 @@ use ts_rs::TS;
 pub const NOT_CONNECTED: &str = "not_connected";
 pub const START_FAILED: &str = "start_failed";
 pub const START_TIMEOUT: &str = "start_timeout";
+pub const LOGIN_START_FAILED: &str = "login_start_failed";
 
 /// The failure of a command, as the webview receives it. The code is one of
 /// the server's error codes or one of the codes above, which the core raises

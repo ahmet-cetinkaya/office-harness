@@ -50,6 +50,8 @@ function fakeClient(handler: Handler = () => undefined) {
       return handler(kind, fields);
     },
     startServer: async () => {},
+    registerLoginStart: async () => {},
+    loginStartStatus: async () => false,
     retryConnection: async () => {},
   };
   return { client, requests, push: (event: ServerEvent) => onEvent(event) };
