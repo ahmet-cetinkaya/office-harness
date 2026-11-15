@@ -45,14 +45,34 @@ pub fn open_private_file(path: &Path, options: &mut OpenOptions) -> io::Result<F
 /// sees the old file or the new one, never a partial one.
 ///
 /// # Errors
-/// Returns the I/O error of the write or of the rename.
+/// Returns the I/O error of the write, of the rename, or of the folder sync.
 pub fn replace_private_file(path: &Path, contents: &[u8]) -> io::Result<()> {
     let sibling = sibling_path(path);
     let mut file = open_private_file(&sibling, OpenOptions::new().write(true).truncate(true))?;
     file.write_all(contents)?;
     file.sync_all()?;
     drop(file);
-    fs::rename(&sibling, path)
+    fs::rename(&sibling, path)?;
+    sync_parent_folder(path)
+}
+
+/// Writes the folder entry of the rename to disk, so that after a crash the
+/// new file cannot roll back to the old one.
+#[cfg(unix)]
+fn sync_parent_folder(path: &Path) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|folder| !folder.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    File::open(parent)?.sync_all()
+}
+
+/// Windows has no folder sync; `MoveFileExW` with write-through is not used
+/// because `fs::rename` does not offer it.
+#[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
+fn sync_parent_folder(_path: &Path) -> io::Result<()> {
+    Ok(())
 }
 
 fn sibling_path(path: &Path) -> PathBuf {

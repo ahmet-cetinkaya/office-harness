@@ -10,7 +10,7 @@ use terminal_domain::events::TerminalEvent;
 use tokio::sync::broadcast::{self, error::RecvError};
 
 use super::terminal_events::AgentTerminalEvent;
-use crate::bootstrap::StorageAlerts;
+use crate::bootstrap::{ServerLog, StorageAlerts};
 use crate::server::EventHub;
 
 /// Held while `agent.start` runs and publishes its `agent.status` event, and
@@ -28,6 +28,7 @@ pub struct AgentStatusBridge {
     pub hub: EventHub,
     pub order: StatusOrder,
     pub alerts: StorageAlerts,
+    pub log: ServerLog,
 }
 
 impl AgentStatusBridge {
@@ -41,7 +42,10 @@ impl AgentStatusBridge {
                         // The store write blocks, so it leaves the async threads.
                         let _ = tokio::task::spawn_blocking(move || bridge.apply(item)).await;
                     }
-                    Err(RecvError::Lagged(_)) => {}
+                    Err(RecvError::Lagged(missed)) => self.log.error(&format!(
+                        "the status bridge missed {missed} terminal events; \
+                         agent statuses may be stale until the next event"
+                    )),
                     Err(RecvError::Closed) => break,
                 }
             }

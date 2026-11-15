@@ -140,6 +140,7 @@ The fast-access layout for many agents (one list with the last output, the proje
 | Error: server not reachable | The server is not reachable, with an action that starts it. | FR-026 |
 | Error: agent failed | The agent shows `failed` with the CLI's last output, for example "command not found". | FR-014, Edge cases |
 | Unauthorized | The token was rejected, with the steps to give the app a valid token. | FR-027, US1 scenario 5 |
+| Server busy | The server refused the connection because all handshake slots were busy (close code `1013`). The app retries and never shows the unauthorized state for it. | FR-027, FR-026 |
 | Agent statuses | `starting`, `working`, `waiting for input`, `exited`, `failed`, `stopped`, `interrupted`. | FR-014 |
 
 **Design:** no fixed design exists. The plan must not add visuals beyond this flow without a design that the owner approves.
@@ -255,3 +256,4 @@ Recorded by task T6 (agent and project API) of the plan. Each is a decision of T
 - **`settings.set` for the quiet period and the output limit applies after a server restart.** A1 and A2 say the user can change them, and they are stored at once, but the terminal runtime reads them when the server starts. The stop grace period (A3) and the focus shortcut apply at once. A live change for new sessions can be added later without a protocol change.
 - **`agent.start` returns the agent's status, not a session.** The contract says the result is a session. Sessions arrive with task T7, so until then the result is `{agent_id, status, detail?}`. This is a known gap.
 - **Agent requests that change a status or a terminal run one at a time.** `agent.start`, `agent.stop`, and `agent.delete` take one lock that the status bridge also takes. A stop that waits for its grace period (A3, 10 seconds by default) therefore delays the status events of other agents for that time.
+- **A status bridge that falls behind logs the gap but does not resync yet.** If the terminal module produces more than 256 events before the status bridge reads them, the bridge writes an error line to `server.log`, and an agent status can stay old until its next event. A resync of the statuses from the running terminals follows with task T7. Clients that fall behind are closed with `1011` and reload, so they do not keep an old status.

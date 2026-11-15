@@ -14,7 +14,9 @@ use serde_json::{Value, json};
 use support::running_office::{bind_office, serve_office};
 use support::wire_client::{HandshakeFailure, Received, WireClient};
 use tower::ServiceExt;
-use wire::{AuthMessage, CLOSE_UNAUTHORIZED, ClientHandshake, PRE_AUTH_FRAME_LIMIT};
+use wire::{
+    AuthMessage, CLOSE_TRY_AGAIN_LATER, CLOSE_UNAUTHORIZED, ClientHandshake, PRE_AUTH_FRAME_LIMIT,
+};
 
 use office_harnessd::server::ServerOptions;
 
@@ -378,7 +380,7 @@ async fn stopping_the_server_closes_connections_and_removes_server_json() {
 }
 
 #[tokio::test]
-async fn a_connection_without_a_free_handshake_slot_is_closed_with_4401() {
+async fn a_connection_without_a_free_handshake_slot_is_closed_with_try_again_later() {
     let options = ServerOptions {
         max_concurrent_handshakes: 1,
         ..ServerOptions::default()
@@ -389,6 +391,6 @@ async fn a_connection_without_a_free_handshake_slot_is_closed_with_4401() {
 
     let mut refused = WireClient::connect(port).await.expect("upgrade");
 
-    assert_eq!(refused.expect_close().await, Some(CLOSE_UNAUTHORIZED));
+    assert_eq!(refused.expect_close().await, Some(CLOSE_TRY_AGAIN_LATER));
     drop(holder);
 }

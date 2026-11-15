@@ -58,13 +58,14 @@ impl Server {
             .map_err(ServerError::ServerFile)?;
 
         let events = services.events.clone();
-        events.forward_storage_alerts(services.storage_alerts.subscribe());
+        events.forward_storage_alerts(services.storage_alerts.subscribe(), log.clone());
         AgentStatusBridge {
             change_status: services.agent.change_status.clone(),
             runtime: Arc::clone(&services.terminal.runtime),
             hub: events.clone(),
             order: Arc::clone(&services.agent.status_order),
             alerts: services.storage_alerts.clone(),
+            log: log.clone(),
         }
         .spawn(services.terminal.events.subscribe());
         let agents = AgentGateway::new(

@@ -9,6 +9,10 @@ pub const PROTOCOL_VERSION: u16 = 1;
 /// replaced token.
 pub const CLOSE_UNAUTHORIZED: u16 = 4401;
 
+/// The WebSocket close code (Try Again Later) when every handshake slot is
+/// busy. It is not an authentication failure, so the client retries.
+pub const CLOSE_TRY_AGAIN_LATER: u16 = 1013;
+
 /// The largest frame the server accepts before `auth.ok`.
 pub const PRE_AUTH_FRAME_LIMIT: usize = 1024;
 
