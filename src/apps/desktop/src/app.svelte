@@ -9,7 +9,7 @@
     NotReachableView,
     VersionMismatchView,
   } from "./core/connection";
-  import { NotAuthorizedView } from "./modules/access";
+  import { LoginStartPanel, NotAuthorizedView } from "./modules/access";
   import { createOfficeStore, OfficeView } from "./modules/agent";
   import FailureMessage from "$shared/ui/failure-message.svelte";
   import StatusPanel from "$shared/ui/status-panel.svelte";
@@ -61,5 +61,6 @@
     />
   {:else}
     <OfficeView store={office} />
+    <LoginStartPanel {client} />
   {/if}
 </main>

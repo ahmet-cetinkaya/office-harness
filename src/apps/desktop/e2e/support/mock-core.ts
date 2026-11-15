@@ -31,6 +31,11 @@ export interface MockCoreOptions {
   startServer?:
     | { outcome: "ok"; stateAfterStart: ConnectionState }
     | { outcome: "fail"; code: string; message: string };
+  /** The login item. Not registered, and registering works, when left out. */
+  loginStart?: {
+    registered?: boolean;
+    failure?: { code: string; message: string };
+  };
 }
 
 export interface RecordedCall {
@@ -69,6 +74,7 @@ export async function installMockCore(
     const calls: RecordedCall[] = [];
     let nextCallbackId = 1;
     let current = mock.initialState;
+    let loginStartRegistered = mock.loginStart?.registered ?? false;
 
     const send = (channelId: number, message: unknown) => {
       const index = nextIndex.get(channelId) ?? 0;
@@ -339,6 +345,12 @@ export async function installMockCore(
             if (mock.startServer?.outcome === "ok") {
               push(mock.startServer.stateAfterStart);
             }
+            return undefined;
+          case "login_start_status":
+            return loginStartRegistered;
+          case "register_login_start":
+            if (mock.loginStart?.failure) throw mock.loginStart.failure;
+            loginStartRegistered = true;
             return undefined;
           default:
             return undefined;

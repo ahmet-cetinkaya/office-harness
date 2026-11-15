@@ -12,12 +12,23 @@ mod server_process;
 use connection::{Connection, DataFolder};
 use tauri::Manager;
 
+/// A failure here must not stop the app; the access panel shows the state
+/// and offers the action again.
+fn register_login_start_quietly() {
+    if let Err(error) = server_process::register_login_start() {
+        eprintln!("office-harness could not register the server for login: {error}");
+    }
+}
+
 fn main() {
     let result = tauri::Builder::default()
         .setup(|app| {
             let connection = Connection::new(DataFolder::locate()?);
             app.manage(connection.clone());
             tauri::async_runtime::spawn(connection.run());
+            // Each start refreshes the login item, which also covers the
+            // first start and an upgrade (plan D13); the UI does not wait.
+            tauri::async_runtime::spawn_blocking(register_login_start_quietly);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -27,6 +38,8 @@ fn main() {
             commands::send_request,
             commands::retry_connection,
             commands::start_server,
+            commands::register_login_start,
+            commands::login_start_status,
         ])
         .run(tauri::generate_context!());
     if let Err(error) = result {

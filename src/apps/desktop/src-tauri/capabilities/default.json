@@ -9,6 +9,8 @@
     "allow-watch-terminal-frames",
     "allow-send-request",
     "allow-retry-connection",
-    "allow-start-server"
+    "allow-start-server",
+    "allow-register-login-start",
+    "allow-login-start-status"
   ]
 }
