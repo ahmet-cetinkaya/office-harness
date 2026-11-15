@@ -3,10 +3,18 @@
 use std::io;
 use std::path::PathBuf;
 
+use access_application::common::errors::AccessError;
 use agent_infrastructure::persistence::PersistenceError;
 use thiserror::Error;
 
 use crate::config::ConfigError;
+use crate::server::ServerError;
+
+/// The exit code of a server that finds another one running for the same data
+/// folder, so that a launcher can tell it from a real failure.
+pub const ALREADY_RUNNING_EXIT_CODE: u8 = 75;
+
+const FAILURE_EXIT_CODE: u8 = 1;
 
 #[derive(Debug, Error)]
 pub enum StartupError {
@@ -16,6 +24,8 @@ pub enum StartupError {
     AlreadyRunning(PathBuf),
     #[error("cannot prepare the data folder or its files: {0}")]
     DataFolder(#[from] io::Error),
+    #[error("cannot install the shutdown signal handler: {0}")]
+    SignalHandler(io::Error),
     #[error("database failure: {0}")]
     Database(#[from] rusqlite::Error),
     #[error("{ledger} migration failed at version {version}: {source}")]
@@ -36,4 +46,19 @@ pub enum StartupError {
     InvalidLedgerName(String),
     #[error(transparent)]
     Persistence(#[from] PersistenceError),
+    #[error(transparent)]
+    Access(#[from] AccessError),
+    #[error(transparent)]
+    Server(#[from] ServerError),
+}
+
+impl StartupError {
+    /// The process exit code that reports this error.
+    #[must_use]
+    pub fn exit_code(&self) -> u8 {
+        match self {
+            Self::AlreadyRunning(_) => ALREADY_RUNNING_EXIT_CODE,
+            _ => FAILURE_EXIT_CODE,
+        }
+    }
 }

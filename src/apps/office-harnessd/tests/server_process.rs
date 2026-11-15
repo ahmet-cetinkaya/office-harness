@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use agent_domain::enums::AgentStatus;
 use agent_infrastructure::persistence::{AgentRepository, MachineRepository, SharedConnection};
+use office_harnessd::bootstrap::ALREADY_RUNNING_EXIT_CODE;
 use office_harnessd::config::Config;
 use rusqlite::Connection;
 use support::{agent_named, config_in};
@@ -79,7 +80,10 @@ fn a_second_server_exits_with_a_log_line_and_the_first_keeps_running() {
         .wait_with_output()
         .expect("second server");
 
-    assert!(!second.status.success());
+    assert_eq!(
+        second.status.code(),
+        Some(i32::from(ALREADY_RUNNING_EXIT_CODE))
+    );
     assert!(String::from_utf8_lossy(&second.stderr).contains(ALREADY_RUNNING_LINE));
     assert!(log_text(&config).contains(ALREADY_RUNNING_LINE));
     assert!(

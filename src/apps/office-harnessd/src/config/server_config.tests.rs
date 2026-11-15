@@ -17,6 +17,8 @@ fn the_flag_chooses_the_data_folder() {
     assert_eq!(config.database_path(), data_folder.join("office.db"));
     assert_eq!(config.lock_path(), data_folder.join("server.lock"));
     assert_eq!(config.log_path(), data_folder.join("server.log"));
+    assert_eq!(config.token_path(), data_folder.join("token"));
+    assert_eq!(config.server_file_path(), data_folder.join("server.json"));
 }
 
 #[test]

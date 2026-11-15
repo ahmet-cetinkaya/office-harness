@@ -3,9 +3,9 @@
 //! Files and folders that only the owner can read: mode 0600/0700 on Unix and
 //! a protected access list on Windows.
 
-use std::fs::{File, OpenOptions};
-use std::io;
-use std::path::Path;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 #[cfg(any(windows, test))]
 mod windows_access_list;
@@ -38,6 +38,27 @@ pub fn open_private_file(path: &Path, options: &mut OpenOptions) -> io::Result<F
     let file = options.open(path)?;
     platform::restrict_file(path)?;
     Ok(file)
+}
+
+/// Replaces the file with `contents` in one step: the bytes go to an
+/// owner-only sibling file that then takes the place of `path`, so a reader
+/// sees the old file or the new one, never a partial one.
+///
+/// # Errors
+/// Returns the I/O error of the write or of the rename.
+pub fn replace_private_file(path: &Path, contents: &[u8]) -> io::Result<()> {
+    let sibling = sibling_path(path);
+    let mut file = open_private_file(&sibling, OpenOptions::new().write(true).truncate(true))?;
+    file.write_all(contents)?;
+    file.sync_all()?;
+    drop(file);
+    fs::rename(&sibling, path)
+}
+
+fn sibling_path(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(".new");
+    PathBuf::from(name)
 }
 
 #[cfg(test)]

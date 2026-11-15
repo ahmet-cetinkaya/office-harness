@@ -7,7 +7,10 @@ use agent_infrastructure::persistence::{
 };
 use gethostname::gethostname;
 
-use super::{ServerLog, StartupError, StorageAlerts, open_database, run_migrations};
+use super::{
+    AccessServices, ServerLog, StartupError, StorageAlerts, build_access_services, open_database,
+    run_migrations,
+};
 use crate::config::Config;
 
 const FALLBACK_HOST_NAME: &str = "localhost";
@@ -19,10 +22,12 @@ pub struct Services {
     pub projects: ProjectRepository,
     pub settings: SettingsRepository,
     pub storage_alerts: StorageAlerts,
+    pub access: AccessServices,
 }
 
 /// Startup steps 3 to 6: run each module's migrations, mark the agents of an
-/// unclean stop as `interrupted` (FR-004), and build the adapters.
+/// unclean stop as `interrupted` (FR-004), and build the adapters, the office
+/// token included.
 ///
 /// # Errors
 /// Any database, migration, or persistence failure.
@@ -44,6 +49,7 @@ pub fn start(config: &Config, log: &ServerLog) -> Result<Services, StartupError>
         projects: ProjectRepository::new(connection.clone()),
         settings: SettingsRepository::new(connection),
         storage_alerts: StorageAlerts::new(log.clone()),
+        access: build_access_services(config)?,
     })
 }
 

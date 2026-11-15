@@ -22,7 +22,7 @@ The token itself never travels over the socket. A stale `server.json` can point 
 1. **Upgrade checks.** The server refuses the WebSocket upgrade when:
    - the `Host` header is not `127.0.0.1:<port>` (this blocks DNS rebinding);
    - the request carries an `Origin` header (browsers always send one, and the 0001 client is not a browser).
-2. **Challenge.** After the upgrade, the server sends `{"type":"auth.challenge","nonce":"<32 random bytes, hex>"}`.
+2. **Challenge.** After the upgrade, the server sends `{"type":"auth.challenge","nonce":"<32 random bytes, hex>"}`. The nonce is exactly 64 lowercase hex characters, and the client refuses any other, because the proof joins its parts without separators.
 3. **Client proof.** The client answers `{"type":"auth","proof":"<hex HMAC-SHA256(token, nonce || port || "client")>"}`. `port` is the decimal port from `server.json`. Binding the proof to the port stops a process on a stale port from relaying the proof to the real server.
 4. **Server proof.** The server checks the proof in constant time. If it is right, the server answers `{"type":"auth.ok","proof":"<hex HMAC-SHA256(token, nonce || port || "server")>"}`. The client checks this proof and closes the connection if it is wrong. A client never sends requests to a server that has not proven itself.
 5. **Failure.** The server closes with code `4401` when the proof is wrong, when any other frame comes first, when a frame before `auth.ok` is larger than 1 KiB, or when no proof arrives within 5 seconds.

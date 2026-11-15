@@ -14,6 +14,7 @@ const APPLICATION: &str = "office-harness";
 const DATABASE_FILE: &str = "office.db";
 const LOCK_FILE: &str = "server.lock";
 const LOG_FILE: &str = "server.log";
+const TOKEN_FILE: &str = "token";
 
 /// Where the server keeps its state.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +56,16 @@ impl Config {
     #[must_use]
     pub fn lock_path(&self) -> PathBuf {
         self.data_folder.join(LOCK_FILE)
+    }
+
+    #[must_use]
+    pub fn token_path(&self) -> PathBuf {
+        self.data_folder.join(TOKEN_FILE)
+    }
+
+    #[must_use]
+    pub fn server_file_path(&self) -> PathBuf {
+        self.data_folder.join(wire::SERVER_FILE_NAME)
     }
 
     #[must_use]
