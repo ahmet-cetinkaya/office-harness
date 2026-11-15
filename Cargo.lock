@@ -2906,6 +2906,7 @@ name = "private-fs"
 version = "0.1.0"
 dependencies = [
  "tempfile",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
