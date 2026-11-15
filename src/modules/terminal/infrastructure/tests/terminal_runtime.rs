@@ -123,6 +123,20 @@ fn output_is_recorded_without_a_client_and_survives_a_server_restart() {
     assert!(text.contains("DONE") && text.contains("L049."));
 }
 
+/// ConPTY writes screen or cursor sequences when the child exits, and that
+/// counts as output after the quiet period. It is real platform behavior, so
+/// Windows accepts one `OutputResumed` directly before `Exited`.
+fn without_exit_output_on_windows(mut events: Vec<TerminalEvent>) -> Vec<TerminalEvent> {
+    let exit_position = events.len().saturating_sub(1);
+    if cfg!(windows)
+        && exit_position > 0
+        && events[exit_position - 1] == TerminalEvent::OutputResumed
+    {
+        events.remove(exit_position - 1);
+    }
+    events
+}
+
 #[test]
 fn events_follow_the_child() {
     let folder = TempDir::new().expect("temp folder");
@@ -131,7 +145,7 @@ fn events_follow_the_child() {
     spawn_fixture(&runtime, agent, &["delayed-exit", "600", "7"]);
     wait_until("the exit", || sink.has_exited());
     assert_eq!(
-        sink.events(),
+        without_exit_output_on_windows(sink.events()),
         [
             TerminalEvent::FirstOutput,
             TerminalEvent::QuietPeriod,
@@ -148,7 +162,7 @@ fn output_after_a_quiet_period_is_reported_once_for_the_change_not_for_each_chun
     spawn_fixture(&runtime, agent, &["pause-resume", "700"]);
     wait_until("the exit", || sink.has_exited());
     assert_eq!(
-        sink.events(),
+        without_exit_output_on_windows(sink.events()),
         [
             TerminalEvent::FirstOutput,
             TerminalEvent::QuietPeriod,
