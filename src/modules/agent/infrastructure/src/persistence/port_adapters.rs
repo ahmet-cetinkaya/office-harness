@@ -3,14 +3,17 @@
 //! The repositories as the stores that the agent use cases declare.
 
 use agent_application::common::errors::PortError;
-use agent_application::common::interfaces::{AgentStore, ProjectStore, SettingsStore};
-use agent_domain::entities::{Agent, Project};
+use agent_application::common::interfaces::{
+    AdditionsStore, AgentStore, ProjectStore, SessionStore, SettingsStore,
+};
+use agent_domain::entities::{AdditionsRecord, Agent, Project, Session};
 use agent_domain::enums::AgentStatus;
-use agent_domain::value_objects::{ProjectId, Settings};
-use kernel::AgentId;
+use agent_domain::value_objects::{ExitResult, ProjectId, SessionId, Settings};
+use kernel::{AgentId, Timestamp};
 
 use crate::persistence::{
-    AgentRepository, PersistenceError, ProjectRepository, SettingsRepository,
+    AdditionsRepository, AgentRepository, PersistenceError, ProjectRepository, SessionRepository,
+    SettingsRepository,
 };
 
 impl From<PersistenceError> for PortError {
@@ -22,11 +25,11 @@ impl From<PersistenceError> for PortError {
             PersistenceError::ProjectInUse { project, agents } => {
                 Self::ProjectInUse { project, agents }
             }
-            PersistenceError::Invalid(_) | PersistenceError::InvalidAgentId(_) => {
-                Self::InvalidData {
-                    message: error.to_string(),
-                }
-            }
+            PersistenceError::Invalid(_)
+            | PersistenceError::InvalidAgentId(_)
+            | PersistenceError::InvalidJson(_) => Self::InvalidData {
+                message: error.to_string(),
+            },
             PersistenceError::Storage(_) => Self::Storage {
                 message: error.to_string(),
                 is_disk_failure,
@@ -82,6 +85,47 @@ impl SettingsStore for SettingsRepository {
 
     fn save(&self, settings: &Settings) -> Result<(), PortError> {
         Ok(Self::save(self, settings)?)
+    }
+}
+
+impl AdditionsStore for AdditionsRepository {
+    fn load(&self, agent_id: AgentId) -> Result<Option<AdditionsRecord>, PortError> {
+        Ok(Self::load(self, agent_id)?)
+    }
+
+    fn save(&self, agent_id: AgentId, record: &AdditionsRecord) -> Result<(), PortError> {
+        Ok(Self::save(self, agent_id, record)?)
+    }
+}
+
+impl SessionStore for SessionRepository {
+    fn insert(&self, session: &Session) -> Result<(), PortError> {
+        Ok(Self::insert(self, session)?)
+    }
+
+    fn find(&self, id: SessionId) -> Result<Option<Session>, PortError> {
+        Ok(Self::find(self, id)?)
+    }
+
+    fn list_for_agent(&self, agent_id: AgentId) -> Result<Vec<Session>, PortError> {
+        Ok(Self::list_for_agent(self, agent_id)?)
+    }
+
+    fn latest_for_agent(&self, agent_id: AgentId) -> Result<Option<Session>, PortError> {
+        Ok(Self::latest_for_agent(self, agent_id)?)
+    }
+
+    fn set_cli_session_id(&self, id: SessionId, cli_session_id: &str) -> Result<(), PortError> {
+        Ok(Self::set_cli_session_id(self, id, cli_session_id)?)
+    }
+
+    fn end_running(
+        &self,
+        agent_id: AgentId,
+        result: &ExitResult,
+        at: Timestamp,
+    ) -> Result<bool, PortError> {
+        Ok(Self::end_running(self, agent_id, result, at)?)
     }
 }
 

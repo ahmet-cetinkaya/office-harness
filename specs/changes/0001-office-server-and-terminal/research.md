@@ -43,7 +43,7 @@ Decisions for change 0001 that needed research. Date: 2026-11-15. Version number
   - **`opencode`:** it continues with `opencode --session <id>`. It finds the id with the CLI's own session list command, read-only.
   - **Other commands:** they run without session continuation (FR-025).
   - **Attribution:** an id is matched by working folder, start time, and process id, with a bounded retry, because some CLIs write their session only after the first prompt. When the match is ambiguous (for example, two agents of one CLI in one folder start at once), the session gets no id and `can_continue=false` with a reason. The adapter never guesses.
-  - **Startup prompt:** it is passed only when a new session starts, not on continue. A generic agent gets it as typed input after the first output.
+  - **Startup prompt:** it is passed only when a new session starts, not on continue. Every CLI gets it as typed input after the first output (pasted, never submitted), not as an argument; the prompt forms in the R3 table are what each CLI accepts, and office-harness does not use them.
 - **Rationale:** FR-021 forbids create, change, and delete in CLI configuration folders, but not read. Only `claude` lets the caller choose the id up front. Serves FR-024, FR-025, and SC-002.
 - **Alternatives considered:**
   - Pointing each CLI at a private config folder: this breaks FR-020 (the user's own configuration).

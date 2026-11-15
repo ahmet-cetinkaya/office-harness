@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use agent_domain::value_objects::Settings;
-use agent_infrastructure::services::{Environment, LoginEnvironment};
+use agent_infrastructure::services::{AttributionTiming, Environment, LoginEnvironment};
 use terminal_application::common::interfaces::{TerminalEventSink, TerminalRuntime};
 use terminal_domain::errors::TerminalError;
 use terminal_domain::value_objects::OutputLimits;
@@ -24,10 +24,12 @@ pub struct TerminalServices {
 }
 
 /// The environment a launched agent starts from: the server's own, and the
-/// login shell's. Tests give stand-ins.
+/// login shell's, and how long to look for the session id of a CLI that does
+/// not take one. Tests give stand-ins.
 pub struct LoginSetup {
     pub login_environment: Arc<LoginEnvironment>,
     pub server_environment: Environment,
+    pub attribution: AttributionTiming,
 }
 
 impl LoginSetup {
@@ -38,6 +40,7 @@ impl LoginSetup {
         Self {
             login_environment: Arc::new(LoginEnvironment::detect(&server_environment)),
             server_environment,
+            attribution: AttributionTiming::default(),
         }
     }
 }
@@ -51,6 +54,11 @@ pub fn build_terminal_services(
     settings: &Settings,
     login: LoginSetup,
 ) -> Result<TerminalServices, TerminalError> {
+    let LoginSetup {
+        login_environment,
+        server_environment,
+        ..
+    } = login;
     let line_limit = usize::try_from(settings.output_line_limit).unwrap_or(usize::MAX);
     let events = TerminalEvents::new();
     let runtime: Arc<dyn TerminalRuntime> = Arc::new(PortableTerminalRuntime::new(
@@ -63,11 +71,7 @@ pub fn build_terminal_services(
     ));
     Ok(TerminalServices {
         handlers: Arc::new(TerminalHandlers::new(&runtime)),
-        launcher: TerminalLauncher::new(
-            runtime.clone(),
-            login.login_environment,
-            login.server_environment,
-        ),
+        launcher: TerminalLauncher::new(runtime.clone(), login_environment, server_environment),
         runtime,
         events,
     })

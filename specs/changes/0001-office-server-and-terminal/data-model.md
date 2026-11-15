@@ -51,7 +51,7 @@ Each agent has exactly one row, and the row is deleted together with its agent.
 |---|---|---|
 | flags | Ordered list of extra arguments | Each item is a non-empty string. |
 | env | Ordered list of name and value pairs | A name matches `[A-Za-z_][A-Za-z0-9_]*`. A malformed entry is refused and named. |
-| startup_prompt | Text, optional | Passed as the CLI's initial prompt through the adapter. |
+| startup_prompt | Text, optional | Pasted into the terminal after the first output of a new session, never submitted and never passed as an argument. |
 | updated_at | Time | When an edit lands on a running agent, it applies to the next session (FR-023). |
 
 ## Session

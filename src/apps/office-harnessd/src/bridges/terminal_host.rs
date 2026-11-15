@@ -5,13 +5,20 @@ use std::time::Duration;
 
 use agent_application::common::errors::TerminalHostError;
 use agent_application::common::interfaces::TerminalHost;
-use agent_application::common::models::StartTerminal;
+use agent_application::common::models::{PrepareLaunch, PreparedLaunch, StartTerminal};
 use kernel::AgentId;
 use terminal_application::common::errors::TerminalRuntimeError;
 use terminal_application::common::interfaces::TerminalRuntime;
+use terminal_domain::errors::TerminalError;
+use terminal_domain::services::{
+    first_unsafe_batch_argument, first_unsafe_batch_character, is_batch_script,
+};
 use terminal_domain::value_objects::{OutputKey, TerminalSize};
 
-use super::terminal_launcher::{LaunchError, LaunchRequest, TerminalLauncher};
+use super::terminal_events::TerminalEvents;
+use super::terminal_launcher::{LaunchError, PrepareRequest, SpawnRequest, TerminalLauncher};
+use super::typed_input::type_after_first_output;
+use crate::bootstrap::ServerLog;
 
 /// The size of a terminal until the first client attaches and resizes it.
 const DEFAULT_COLUMNS: u16 = 120;
@@ -22,38 +29,105 @@ const DEFAULT_ROWS: u16 = 30;
 pub struct TerminalHostBridge {
     launcher: TerminalLauncher,
     runtime: Arc<dyn TerminalRuntime>,
+    events: TerminalEvents,
+    log: ServerLog,
 }
 
 impl TerminalHostBridge {
     #[must_use]
-    pub fn new(launcher: TerminalLauncher, runtime: Arc<dyn TerminalRuntime>) -> Self {
-        Self { launcher, runtime }
+    pub fn new(
+        launcher: TerminalLauncher,
+        runtime: Arc<dyn TerminalRuntime>,
+        events: TerminalEvents,
+        log: ServerLog,
+    ) -> Self {
+        Self {
+            launcher,
+            runtime,
+            events,
+            log,
+        }
     }
 }
 
+fn failed(error: &dyn std::fmt::Display) -> TerminalHostError {
+    TerminalHostError::Failed(error.to_string())
+}
+
 impl TerminalHost for TerminalHostBridge {
+    fn prepare(&self, request: &PrepareLaunch) -> Result<PreparedLaunch, TerminalHostError> {
+        let prepared = self
+            .launcher
+            .prepare(&PrepareRequest {
+                program: request.program.clone(),
+                working_folder: request.working_folder.clone(),
+                additions: request.environment_additions.clone(),
+            })
+            .map_err(|error| failed(&error))?;
+        let program = prepared.program.to_string_lossy().into_owned();
+        Ok(PreparedLaunch {
+            is_batch_script: is_batch_script(&program),
+            program,
+            environment: prepared.environment,
+        })
+    }
+
+    fn validate_arguments(
+        &self,
+        prepared: &PreparedLaunch,
+        arguments: &[String],
+    ) -> Result<(), TerminalHostError> {
+        if !prepared.is_batch_script {
+            return Ok(());
+        }
+        if let Some(character) = first_unsafe_batch_character(&prepared.program) {
+            return Err(refused(&TerminalError::UnsafeBatchProgram { character }));
+        }
+        match first_unsafe_batch_argument(arguments) {
+            Some((index, character)) => Err(refused(&TerminalError::UnsafeBatchArgument {
+                index,
+                character,
+            })),
+            None => Ok(()),
+        }
+    }
+
     fn start(&self, request: &StartTerminal) -> Result<(), TerminalHostError> {
-        let failed = |error: &dyn std::fmt::Display| TerminalHostError::Failed(error.to_string());
         let size = TerminalSize::new(DEFAULT_COLUMNS, DEFAULT_ROWS).map_err(|e| failed(&e))?;
-        // One output file for each agent until sessions exist (change 0001, T7).
-        let output_key = OutputKey::parse(&request.agent_id.to_string()).map_err(|e| failed(&e))?;
+        // The session's output file is named by its id.
+        let output_key =
+            OutputKey::parse(&request.session_id.to_string()).map_err(|e| failed(&e))?;
+        // Subscribed before the start, so the first output is not missed.
+        let first_output = request
+            .typed_input
+            .as_ref()
+            .map(|_| self.events.subscribe());
         self.launcher
-            .launch_blocking(LaunchRequest {
+            .spawn_prepared(SpawnRequest {
                 agent_id: request.agent_id,
                 program: request.program.clone(),
                 arguments: request.arguments.clone(),
                 working_folder: request.working_folder.clone(),
-                additions: Vec::new(),
+                environment: request.environment.clone(),
                 size,
                 output_key,
             })
-            .map(|_| ())
             .map_err(|error| match error {
                 LaunchError::Runtime(TerminalRuntimeError::AlreadyRunning(_)) => {
                     TerminalHostError::AlreadyRunning
                 }
                 other => failed(&other),
-            })
+            })?;
+        if let (Some(text), Some(events)) = (request.typed_input.clone(), first_output) {
+            type_after_first_output(
+                Arc::clone(&self.runtime),
+                events,
+                request.agent_id,
+                text,
+                self.log.clone(),
+            );
+        }
+        Ok(())
     }
 
     fn stop(&self, agent_id: AgentId, grace: Duration) -> Result<(), TerminalHostError> {
@@ -64,4 +138,8 @@ impl TerminalHost for TerminalHostBridge {
                 other => TerminalHostError::Failed(other.to_string()),
             })
     }
+}
+
+fn refused(error: &TerminalError) -> TerminalHostError {
+    TerminalHostError::Refused(error.to_string())
 }

@@ -132,10 +132,10 @@ fn a_database_newer_than_the_server_is_refused() {
         matches!(
             error,
             StartupError::DatabaseTooNew {
-                found: 2,
+                found,
                 supported: 1,
                 ..
-            }
+            } if usize::try_from(found).is_ok_and(|found| found == SCRIPTS.len())
         ),
         "{error}"
     );

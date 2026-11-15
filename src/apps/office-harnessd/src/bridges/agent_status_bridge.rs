@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use agent_application::commands::change_agent_status::ChangeAgentStatusHandler;
+use agent_application::commands::end_session::EndSessionHandler;
 use agent_domain::enums::StatusEvent;
+use agent_domain::value_objects::ExitResult;
 use agent_presentation::agent_status_event;
 use terminal_application::common::interfaces::TerminalRuntime;
 use terminal_domain::events::TerminalEvent;
@@ -18,12 +21,18 @@ use crate::server::EventHub;
 /// `starting` is never announced after the `working` that follows it.
 pub type StatusOrder = Arc<Mutex<()>>;
 
+/// Set, while `StatusOrder` is held, when the server begins to stop: a
+/// request that would start a child must then be refused, or the child
+/// would outlive the interrupt of the running agents.
+pub type StoppingFlag = Arc<AtomicBool>;
+
 /// Turns the terminal module's events into agent status changes (FR-014) and
 /// tells every client. An event of an earlier start of the terminal is
 /// dropped, so a late exit never ends the run that replaced it.
 #[derive(Clone)]
 pub struct AgentStatusBridge {
     pub change_status: ChangeAgentStatusHandler,
+    pub end_session: EndSessionHandler,
     pub runtime: Arc<dyn TerminalRuntime>,
     pub hub: EventHub,
     pub order: StatusOrder,
@@ -69,6 +78,9 @@ impl AgentStatusBridge {
         let Some((event, detail)) = status_event(item.event) else {
             return;
         };
+        if let TerminalEvent::Exited { exit_code } = item.event {
+            self.end_session(item.agent_id, exit_code);
+        }
         match self.change_status.handle(item.agent_id, event) {
             Ok(Some(agent)) => self.hub.publish(&agent_status_event(
                 agent.id,
@@ -77,6 +89,19 @@ impl AgentStatusBridge {
             )),
             Ok(None) => {}
             Err(error) => self.alerts.report_disk_failure(&error.to_string()),
+        }
+    }
+}
+
+impl AgentStatusBridge {
+    /// Closes the session that the child's exit ends. A stop that already
+    /// closed it leaves nothing to do.
+    fn end_session(&self, agent_id: kernel::AgentId, exit_code: u32) {
+        if let Err(error) = self
+            .end_session
+            .handle(agent_id, &ExitResult::Code(exit_code))
+        {
+            self.alerts.report_disk_failure(&error.to_string());
         }
     }
 }

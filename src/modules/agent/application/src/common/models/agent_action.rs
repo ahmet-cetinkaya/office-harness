@@ -9,6 +9,8 @@ pub enum AgentAction {
     Start,
     Stop,
     Delete,
+    NewTask,
+    Continue,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

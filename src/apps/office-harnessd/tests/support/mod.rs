@@ -4,6 +4,8 @@
 
 #[cfg(unix)]
 pub mod fake_cli;
+#[cfg(unix)]
+pub mod office_client;
 pub mod running_office;
 pub mod wire_client;
 

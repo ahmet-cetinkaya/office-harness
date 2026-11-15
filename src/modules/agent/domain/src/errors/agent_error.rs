@@ -22,6 +22,19 @@ pub enum AgentError {
     InvalidNumber { field: &'static str, text: String },
     #[error("{field} must be greater than zero")]
     NotPositive { field: &'static str },
+    #[error(
+        "environment entry {name:?} is malformed: a name starts with a letter or an underscore \
+         and holds only letters, digits, and underscores"
+    )]
+    InvalidEnvName { name: String },
+    #[error("flag {} must not be empty", .index + 1)]
+    EmptyFlag { index: usize },
+    #[error("{field} must not contain a NUL character")]
+    ContainsNul { field: String },
+    #[error("{field} must not contain control characters other than tab and line feed")]
+    ContainsControlCharacter { field: String },
+    #[error("unknown exit result: {0}")]
+    UnknownExitResult(String),
     #[error("unknown agent status: {0}")]
     UnknownStatus(String),
     #[error("unknown setting: {0}")]

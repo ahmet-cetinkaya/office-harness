@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use agent_application::common::interfaces::Clock;
 use agent_domain::entities::Machine;
 use agent_infrastructure::persistence::{
     AgentRepository, LEDGER_TABLE, MachineRepository, ProjectRepository, SCRIPTS,
-    SettingsRepository, SharedConnection,
+    SessionRepository, SettingsRepository, SharedConnection,
 };
 use audit_infrastructure::persistence::{
     LEDGER_TABLE as AUDIT_LEDGER_TABLE, SCRIPTS as AUDIT_SCRIPTS,
@@ -15,6 +16,7 @@ use super::{
     TerminalServices, build_access_services, build_agent_services, build_terminal_services,
     open_database, run_migrations,
 };
+use crate::bridges::SystemClock;
 use crate::config::Config;
 use crate::server::EventHub;
 
@@ -60,16 +62,25 @@ pub fn start_with(
     let connection = SharedConnection::new(connection);
     let agents = AgentRepository::new(connection.clone());
     let interrupted = agents.mark_running_as_interrupted()?;
+    SessionRepository::new(connection.clone()).mark_running_as_interrupted(SystemClock.now())?;
     log.info(&format!(
         "agents marked interrupted at start: {interrupted}"
     ));
 
     let machine = MachineRepository::new(connection.clone()).ensure_local(&host_name())?;
     let settings = SettingsRepository::new(connection.clone());
+    let attribution = login.attribution;
     let terminal = build_terminal_services(config, &settings.load()?, login)?;
     let events = EventHub::new();
     let storage_alerts = StorageAlerts::new(log.clone());
-    let agent = build_agent_services(&connection, machine.id, &terminal, &storage_alerts);
+    let agent = build_agent_services(
+        &connection,
+        machine.id,
+        &terminal,
+        &storage_alerts,
+        attribution,
+        log,
+    );
     Ok(Services {
         machine,
         agents,
