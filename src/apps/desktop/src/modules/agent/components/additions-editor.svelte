@@ -37,8 +37,6 @@
     promptText = additions.startup_prompt ?? "";
   });
 
-  const appliesLater = $derived(isRunning || additions.applies_next_session);
-
   async function save(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     isSaved = false;
@@ -68,7 +66,7 @@
     office-harness adds these when it starts this agent. It never writes the
     CLI's own configuration files.
   </p>
-  {#if appliesLater}
+  {#if isRunning}
     <p
       role="status"
       class="rounded-md border border-neutral-500 bg-neutral-50 p-3 text-sm text-neutral-900"

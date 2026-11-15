@@ -129,9 +129,14 @@
     </div>
   </header>
 
-  {#if isRunning}
-    <TerminalView {client} agentId={agent.id} agentName={agent.name} />
-  {/if}
+  {#key isRunning}
+    <TerminalView
+      {client}
+      agentId={agent.id}
+      agentName={agent.name}
+      {isRunning}
+    />
+  {/key}
 
   {#if details.phase === "loading"}
     <p role="status" class="text-neutral-700">Loading the agent's details.</p>

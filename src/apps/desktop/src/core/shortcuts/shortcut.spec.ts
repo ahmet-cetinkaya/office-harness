@@ -35,9 +35,27 @@ describe("parseShortcut", () => {
     expect(parseShortcut("Ctrl+Space")?.key).toBe(" ");
   });
 
+  test("reads function keys with Shift", () => {
+    expect(parseShortcut("Ctrl+Shift+F12")).toEqual({
+      ctrl: true,
+      alt: false,
+      shift: true,
+      meta: false,
+      key: "f12",
+    });
+    expect(parseShortcut("f1")?.key).toBe("f1");
+  });
+
   test("refuses text without a key", () => {
     expect(parseShortcut("")).toBeNull();
     expect(parseShortcut("Ctrl+")).toBeNull();
+  });
+
+  test("refuses text whose last part is a modifier", () => {
+    expect(parseShortcut("Ctrl")).toBeNull();
+    expect(parseShortcut("Ctrl+Alt")).toBeNull();
+    expect(parseShortcut("Shift+Control")).toBeNull();
+    expect(parseShortcut("Meta")).toBeNull();
   });
 });
 
@@ -47,14 +65,13 @@ describe("matchesShortcut", () => {
   test("matches the default only with its exact modifiers", () => {
     expect(shortcut).not.toBeNull();
     if (shortcut === null) return;
-    const pressed = keyEvent({ key: "Escape", ctrlKey: true, altKey: true });
+    const pressed = keyEvent({ key: "F12", ctrlKey: true, shiftKey: true });
     expect(matchesShortcut(shortcut, pressed)).toBe(true);
-    expect(matchesShortcut(shortcut, { ...pressed, shiftKey: true })).toBe(
+    expect(matchesShortcut(shortcut, { ...pressed, altKey: true })).toBe(false);
+    expect(matchesShortcut(shortcut, { ...pressed, shiftKey: false })).toBe(
       false,
     );
-    expect(matchesShortcut(shortcut, { ...pressed, altKey: false })).toBe(
-      false,
-    );
+    expect(matchesShortcut(shortcut, { ...pressed, key: "F11" })).toBe(false);
   });
 
   test("does not match other keys, including a bare Escape and Ctrl+C", () => {

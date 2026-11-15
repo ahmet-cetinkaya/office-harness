@@ -10,6 +10,11 @@ export const EVENT_AGENT_DELETED = "agent.deleted";
 export const EVENT_ADDITIONS_CHANGED = "agent.additions.changed";
 export const EVENT_ACTION_RECORDED = "action.recorded";
 export const EVENT_STORAGE_ERROR = "storage.error";
+/**
+ * Made by the desktop core, never by the server: the webview missed events
+ * and must reload. Its `client.` prefix cannot clash with a contract event.
+ */
+export const EVENT_CLIENT_RESYNC = "client.resync";
 
 export function upsertAgent(agents: Agent[], agent: Agent): Agent[] {
   const exists = agents.some((known) => known.id === agent.id);

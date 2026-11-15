@@ -252,6 +252,22 @@ test("deleting an agent asks first and then removes it", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("after deleting an agent focus moves to the agents heading", async ({
+  page,
+}) => {
+  await openOffice(page, {
+    agents: [agent(), agent({ id: "agent-bob", name: "Bob" })],
+  });
+  await page.getByRole("button", { name: "Ada, stopped" }).click();
+
+  await pressOn(page, "Delete agent");
+  await page.getByRole("button", { name: "Delete agent" }).last().click();
+
+  await expect(
+    page.getByRole("heading", { name: "Agents", exact: true }),
+  ).toBeFocused();
+});
+
 test("the action record shows what was done to the agent", async ({ page }) => {
   await openOffice(page, { agents: [agent()] });
   await page.getByRole("button", { name: "Ada, stopped" }).click();

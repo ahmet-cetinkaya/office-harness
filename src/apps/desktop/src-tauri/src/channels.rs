@@ -24,8 +24,29 @@ pub fn forward_state(
     });
 }
 
-/// A webview that falls behind loses the oldest events; it reloads its data
-/// whenever the state becomes connected again.
+/// Not a server event: the webview missed events and must reload. The
+/// `client.` prefix cannot clash with a contract event name.
+const RESYNC_EVENT_TYPE: &str = "client.resync";
+
+/// The server's dropped-output frame kind (client protocol, terminal frames).
+const FRAME_KIND_DROPPED: u8 = 0x03;
+const AGENT_ID_BYTES: usize = 16;
+
+/// A dropped-output frame for the nil agent id, which the webview delivers to
+/// every open terminal because the lost frames name no agent.
+fn lagged_frame() -> Vec<u8> {
+    let mut frame = vec![0; 1 + AGENT_ID_BYTES];
+    frame[0] = FRAME_KIND_DROPPED;
+    frame
+}
+
+fn resync_event() -> Value {
+    serde_json::json!({ "type": RESYNC_EVENT_TYPE })
+}
+
+/// A webview that falls behind loses the oldest events; it gets a resync event
+/// and reloads its data, and it also reloads whenever the state becomes
+/// connected again.
 pub fn forward_events(mut events: broadcast::Receiver<Value>, channel: Channel<Value>) {
     tauri::async_runtime::spawn(async move {
         loop {
@@ -35,7 +56,11 @@ pub fn forward_events(mut events: broadcast::Receiver<Value>, channel: Channel<V
                         return;
                     }
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    if channel.send(resync_event()).is_err() {
+                        return;
+                    }
+                }
                 Err(broadcast::error::RecvError::Closed) => return,
             }
         }
@@ -43,8 +68,8 @@ pub fn forward_events(mut events: broadcast::Receiver<Value>, channel: Channel<V
 }
 
 /// Sends each binary terminal frame to the webview as raw bytes. A webview
-/// that falls behind loses the oldest frames and sees a gap; the server's own
-/// slow-client rule disconnects it first in practice.
+/// that falls behind loses the oldest frames and gets a dropped-output frame,
+/// so its open terminals show the dropped-output notice.
 pub fn forward_frames(
     mut frames: broadcast::Receiver<Vec<u8>>,
     channel: Channel<InvokeResponseBody>,
@@ -57,9 +82,18 @@ pub fn forward_frames(
                         return;
                     }
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    let notice = InvokeResponseBody::Raw(lagged_frame());
+                    if channel.send(notice).is_err() {
+                        return;
+                    }
+                }
                 Err(broadcast::error::RecvError::Closed) => return,
             }
         }
     });
 }
+
+#[cfg(test)]
+#[path = "channels.tests.rs"]
+mod tests;

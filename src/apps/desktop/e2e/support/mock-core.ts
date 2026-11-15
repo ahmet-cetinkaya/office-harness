@@ -285,7 +285,7 @@ export async function installMockCore(
         case "settings.get":
           return {
             key: fields.key,
-            value: mock.office?.focusShortcut ?? "Ctrl+Alt+Escape",
+            value: mock.office?.focusShortcut ?? "Ctrl+Shift+F12",
           };
         case "agent.actions":
           return office.actions.filter(
