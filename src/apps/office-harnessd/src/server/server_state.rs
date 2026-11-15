@@ -8,6 +8,7 @@ use tokio::sync::{Semaphore, watch};
 use super::dispatcher::Dispatcher;
 use super::event_hub::EventHub;
 use super::server_options::ServerOptions;
+use super::terminal_requests::TerminalGateway;
 use crate::bootstrap::ServerLog;
 
 /// What every connection needs; cloned for each of them.
@@ -17,6 +18,7 @@ pub struct ServerState {
     pub options: ServerOptions,
     pub authentication: AuthenticationHandler,
     pub dispatcher: Arc<Dispatcher>,
+    pub terminals: Arc<TerminalGateway>,
     pub events: EventHub,
     /// The latest token generation. A connection that authenticated with an
     /// older one closes.

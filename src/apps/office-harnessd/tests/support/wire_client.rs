@@ -2,6 +2,7 @@
 
 #![allow(clippy::expect_used, reason = "tests fail by panicking")]
 
+use std::collections::VecDeque;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
@@ -27,6 +28,8 @@ pub enum Received {
 /// A test client for the office protocol, built on the `wire` handshake.
 pub struct WireClient {
     stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
+    /// Binary frames that arrived while the test waited for a text answer.
+    queued_binary: VecDeque<Vec<u8>>,
 }
 
 impl WireClient {
@@ -47,7 +50,10 @@ impl WireClient {
                 .insert(*name, HeaderValue::from_str(value).expect("header value"));
         }
         let (stream, _) = connect_async(request).await?;
-        Ok(Self { stream })
+        Ok(Self {
+            stream,
+            queued_binary: VecDeque::new(),
+        })
     }
 
     /// The whole handshake: it answers the challenge for `claimed_port`, and
@@ -117,12 +123,41 @@ impl WireClient {
         }
     }
 
-    /// The next message, which must be text, as JSON.
+    /// The next binary frame, in the order the server sent them.
+    pub async fn receive_binary(&mut self) -> Vec<u8> {
+        if let Some(frame) = self.queued_binary.pop_front() {
+            return frame;
+        }
+        match self.next_message().await {
+            Some(Ok(Message::Binary(bytes))) => bytes.to_vec(),
+            other => panic!("expected a binary frame, got {other:?}"),
+        }
+    }
+
+    async fn next_message(&mut self) -> Option<Result<Message, Error>> {
+        timeout(WAIT, self.stream.next())
+            .await
+            .expect("the server answers in time")
+    }
+
+    /// Sends a request with fields and returns the answer with the same id.
+    pub async fn request_with(&mut self, body: Value) -> Value {
+        self.send_text(&body.to_string()).await;
+        self.receive_json().await
+    }
+
+    /// The next text message as JSON. Binary frames that come first are kept
+    /// for `receive_binary`.
     pub async fn receive_json(&mut self) -> Value {
-        let Received::Text(text) = self.receive().await else {
-            panic!("expected a text frame");
-        };
-        serde_json::from_str(&text).expect("json")
+        loop {
+            match self.next_message().await {
+                Some(Ok(Message::Text(text))) => {
+                    return serde_json::from_str(text.as_str()).expect("json");
+                }
+                Some(Ok(Message::Binary(bytes))) => self.queued_binary.push_back(bytes.to_vec()),
+                other => panic!("expected a text frame, got {other:?}"),
+            }
+        }
     }
 
     /// The next message must be the close frame; returns its code.

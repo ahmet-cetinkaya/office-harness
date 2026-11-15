@@ -9,6 +9,7 @@ mod services;
 mod shutdown_signal;
 mod startup_error;
 mod storage_alerts;
+mod terminal_services;
 
 pub use access_services::{AccessServices, build_access_services};
 pub use database::open_database;
@@ -19,3 +20,4 @@ pub use services::{Services, start};
 pub use shutdown_signal::wait_for_shutdown_signal;
 pub use startup_error::{ALREADY_RUNNING_EXIT_CODE, StartupError};
 pub use storage_alerts::{STORAGE_ERROR_EVENT, StorageAlert, StorageAlerts};
+pub use terminal_services::{TerminalServices, build_terminal_services};

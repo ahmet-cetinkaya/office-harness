@@ -4,14 +4,19 @@ use std::ops::ControlFlow;
 use std::time::Duration;
 
 use axum::extract::ws::{CloseFrame, Message, Utf8Bytes, WebSocket};
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio::time::timeout;
 use wire::{CLOSE_UNAUTHORIZED, ErrorCode, Request, Response};
 
 use super::handshake::{HandshakeFailure, authenticate};
 use super::server_state::ServerState;
+use super::terminal_requests::{
+    ConnectionTerminals, FRAME_BACKLOG, TERMINAL_PREFIX, TerminalAnswer,
+};
 
 const CLOSE_REPLY_WAIT: Duration = Duration::from_secs(1);
+/// How long the close of a connection that fell behind may take in all.
+const OVERFLOW_CLOSE_LIMIT: Duration = Duration::from_secs(2);
 const CLOSE_GOING_AWAY: u16 = 1001;
 const CLOSE_INTERNAL_ERROR: u16 = 1011;
 /// The `id` of the answer to a frame that has none.
@@ -49,23 +54,59 @@ pub async fn send_text(socket: &mut WebSocket, text: &str) -> Result<(), Disconn
         .map_err(|_| Disconnected)
 }
 
-async fn run_session(mut socket: WebSocket, state: ServerState, generation: u64) {
+async fn send_binary(socket: &mut WebSocket, frame: Vec<u8>) -> Result<(), Disconnected> {
+    socket
+        .send(Message::Binary(frame.into()))
+        .await
+        .map_err(|_| Disconnected)
+}
+
+async fn run_session(socket: WebSocket, state: ServerState, generation: u64) {
+    let (frames_sender, frames) = mpsc::channel(FRAME_BACKLOG);
+    let mut terminals = ConnectionTerminals::new(frames_sender);
+    session_loop(socket, &state, generation, frames, &mut terminals).await;
+    state.terminals.release(terminals).await;
+}
+
+async fn session_loop(
+    mut socket: WebSocket,
+    state: &ServerState,
+    generation: u64,
+    mut frames: mpsc::Receiver<Vec<u8>>,
+    terminals: &mut ConnectionTerminals,
+) {
     let mut events = state.events.subscribe();
     let token_replaced = token_replaced(state.token_generations.clone(), generation);
     let stopping = server_stopping(state.shutdown.clone());
-    tokio::pin!(token_replaced, stopping);
+    let overflow = terminals.overflow_signal();
+    let overflowed = overflow.notified();
+    tokio::pin!(token_replaced, stopping, overflowed);
     loop {
         tokio::select! {
             biased;
             () = &mut token_replaced => return close_with(&mut socket, CLOSE_UNAUTHORIZED).await,
             () = &mut stopping => return close_with(&mut socket, CLOSE_GOING_AWAY).await,
+            () = &mut overflowed => return close_overflowed(&mut socket).await,
             event = events.recv() => {
                 if forward_event(&mut socket, event).await.is_break() {
                     return;
                 }
             }
+            Some(frame) = frames.recv() => {
+                // A client that stops reading blocks this send, and its
+                // frames pile up behind it, so the overflow signal also ends
+                // the wait.
+                let sent = tokio::select! {
+                    biased;
+                    () = &mut overflowed => return close_overflowed(&mut socket).await,
+                    sent = send_binary(&mut socket, frame) => sent,
+                };
+                if sent.is_err() {
+                    return;
+                }
+            }
             incoming = socket.recv() => {
-                if handle_incoming(&mut socket, &state, incoming).await.is_break() {
+                if handle_incoming(&mut socket, state, terminals, incoming).await.is_break() {
                     return;
                 }
             }
@@ -91,13 +132,16 @@ async fn forward_event(
 async fn handle_incoming(
     socket: &mut WebSocket,
     state: &ServerState,
+    terminals: &mut ConnectionTerminals,
     incoming: Option<Result<Message, axum::Error>>,
 ) -> ControlFlow<()> {
     match incoming {
-        Some(Ok(Message::Text(text))) => match answer_request(socket, state, text.as_str()).await {
-            Ok(()) => ControlFlow::Continue(()),
-            Err(Disconnected) => ControlFlow::Break(()),
-        },
+        Some(Ok(Message::Text(text))) => {
+            match answer_request(socket, state, terminals, text.as_str()).await {
+                Ok(()) => ControlFlow::Continue(()),
+                Err(Disconnected) => ControlFlow::Break(()),
+            }
+        }
         Some(Ok(Message::Binary(_) | Message::Ping(_) | Message::Pong(_))) => {
             ControlFlow::Continue(())
         }
@@ -108,17 +152,31 @@ async fn handle_incoming(
 async fn answer_request(
     socket: &mut WebSocket,
     state: &ServerState,
+    terminals: &mut ConnectionTerminals,
     frame: &str,
 ) -> Result<(), Disconnected> {
-    let response = match Request::decode(frame) {
-        Some(request) => state.dispatcher.dispatch(&request),
-        None => Response::failure(
-            UNKNOWN_REQUEST_ID,
-            ErrorCode::Invalid,
-            "the frame is not a request with an id and a type",
-        ),
+    let answer = match Request::decode(frame) {
+        Some(request) if request.kind.starts_with(TERMINAL_PREFIX) => {
+            state.terminals.handle(&request, terminals).await
+        }
+        Some(request) => TerminalAnswer {
+            response: state.dispatcher.dispatch(&request),
+            snapshot_frame: None,
+        },
+        None => TerminalAnswer {
+            response: Response::failure(
+                UNKNOWN_REQUEST_ID,
+                ErrorCode::Invalid,
+                "the frame is not a request with an id and a type",
+            ),
+            snapshot_frame: None,
+        },
     };
-    send_text(socket, &response.encode()).await
+    send_text(socket, &answer.response.encode()).await?;
+    match answer.snapshot_frame {
+        Some(snapshot) => send_binary(socket, snapshot).await,
+        None => Ok(()),
+    }
 }
 
 /// Resolves when a newer token generation than `generation` exists. Checking
@@ -137,6 +195,16 @@ async fn token_replaced(mut generations: watch::Receiver<u64>, generation: u64) 
 async fn server_stopping(mut shutdown: watch::Receiver<bool>) {
     // A dropped sender also means the server is going away.
     let _ = shutdown.wait_for(|stopping| *stopping).await;
+}
+
+/// Closes a connection that fell behind, with 1011, so the client reconnects
+/// and attaches again. The peer may not read at all, so the close is bounded.
+async fn close_overflowed(socket: &mut WebSocket) {
+    let _ = timeout(
+        OVERFLOW_CLOSE_LIMIT,
+        close_with(socket, CLOSE_INTERNAL_ERROR),
+    )
+    .await;
 }
 
 async fn close_with(socket: &mut WebSocket, code: u16) {

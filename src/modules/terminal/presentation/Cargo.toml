@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[package]
+name = "terminal-presentation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+terminal-domain = { path = "../domain" }
+terminal-application = { path = "../application" }
+kernel = { path = "../../../kernel" }
+serde.workspace = true
+uuid.workspace = true
+# The input body carries keys as base64 (client protocol, terminal.input).
+base64.workspace = true
+
+[lints]
+workspace = true

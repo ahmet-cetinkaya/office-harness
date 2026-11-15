@@ -20,9 +20,10 @@ Decisions for change 0001 that needed research. Date: 2026-11-15. Version number
   2. Reading output may never reach the end after the child exits. The server waits on the child in its own thread and then drops the PTY master.
   3. Resizing to the current size repaints the whole screen. The server skips resizes that do not change the size.
   4. Grandchild processes can keep the PTY open. On stop (A3), the server ends the whole process tree: a Job Object on Windows, and the process group and then the remaining descendants on Unix.
-  5. npm-installed CLIs are `.cmd` shims on Windows, and `cmd.exe` cannot safely escape `%`, `!`, `"`, or line breaks (the CVE-2024-24576 class of flaw). `portable-pty` builds the command line itself, so the Rust standard library's protection does not apply. For a `.cmd` or `.bat` target, the server therefore:
+  5. npm-installed CLIs are `.cmd` shims on Windows, and `cmd.exe` cannot safely escape its special characters (the CVE-2024-24576 class of flaw). `portable-pty` builds the command line itself, and its `append_quoted` (`cmdbuilder.rs`, 0.9.0) wraps an argument in double quotes only when it is empty or holds a space, a tab, a line feed, a vertical tab, or a double quote. Any other character reaches `cmd.exe` as written, so the Rust standard library's protection does not apply. For a `.cmd` or `.bat` target, the server therefore:
+     - starts it as `%SystemRoot%\System32\cmd.exe /d /c <script> <arguments>`;
      - sends the startup prompt as typed input after the first output, the same way it does for generic agents, and wraps it in bracketed paste when the CLI has turned that mode on, so that a line break does not submit early;
-     - refuses any flag or fixed command argument that contains `%`, `!`, `"`, CR, or LF, with an `invalid` error that names the flag.
+     - refuses a script path or a flag or fixed command argument that contains any of `% ! " & | < > ^ ( )`, CR, or LF, with an `invalid` error that names the argument. The check runs in the terminal runtime's `spawn`, on the resolved script path, so no caller can skip it.
   6. The server binary uses the Windows GUI subsystem, so no console window appears.
 - **Rationale:** portable-pty comes from WezTerm and supports all three OSes. Serves FR-006 and FR-015.
 - **Alternatives considered:**

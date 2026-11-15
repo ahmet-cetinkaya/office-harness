@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use access_application::common::errors::AccessError;
 use agent_infrastructure::persistence::PersistenceError;
+use terminal_domain::errors::TerminalError;
 use thiserror::Error;
 
 use crate::config::ConfigError;
@@ -48,6 +49,8 @@ pub enum StartupError {
     Persistence(#[from] PersistenceError),
     #[error(transparent)]
     Access(#[from] AccessError),
+    #[error("terminal setting: {0}")]
+    Terminal(#[from] TerminalError),
     #[error(transparent)]
     Server(#[from] ServerError),
 }

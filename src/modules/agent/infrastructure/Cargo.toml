@@ -12,6 +12,11 @@ kernel = { path = "../../../kernel" }
 rusqlite.workspace = true
 thiserror.workspace = true
 
+# Account record of the current user, and the process-group kill that ends a
+# login shell which does not answer. Safe wrappers, so no `unsafe` code.
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["user", "signal"] }
+
 [dev-dependencies]
 tempfile.workspace = true
 
