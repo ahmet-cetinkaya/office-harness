@@ -12,7 +12,8 @@
 
   let { title, onclose, initialFocus = null, children }: Props = $props();
 
-  const titleId = `${$props.id()}-title`;
+  const uid = $props.id();
+  const titleId = `${uid}-title`;
   let dialog = $state<HTMLDialogElement | null>(null);
 
   // showModal makes the page behind the dialog inert, so Tab stays inside it.
