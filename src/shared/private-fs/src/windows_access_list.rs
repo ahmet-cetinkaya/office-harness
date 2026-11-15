@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! Owner-only access on Windows through the system `icacls` tool: it breaks
-//! inheritance and grants full control to the current user and to SYSTEM only.
-//! The crate stays free of `unsafe` code this way.
+//! inheritance, removes every remaining entry, and grants full control to the
+//! current user and to SYSTEM only. The crate stays free of `unsafe` code this
+//! way.
 
 #[cfg(windows)]
 use std::ffi::OsStr;
@@ -20,6 +21,10 @@ const FOLDER_INHERITANCE: &str = "(OI)(CI)";
 const FILE_INHERITANCE: &str = "";
 const FULL_CONTROL: &str = "F";
 
+/// The number of entries an owner-only access list holds: the user and SYSTEM.
+#[cfg(windows)]
+const OWNER_ONLY_ENTRIES: usize = 2;
+
 /// The `icacls` arguments that replace the access list of `path`.
 fn restrict_arguments(path: &str, user_sid: &str, inheritance: &str) -> Vec<String> {
     let grant = |sid: &str| format!("*{sid}:{inheritance}{FULL_CONTROL}");
@@ -31,6 +36,19 @@ fn restrict_arguments(path: &str, user_sid: &str, inheritance: &str) -> Vec<Stri
         "/grant:r".to_owned(),
         grant(SYSTEM_SID),
     ]
+}
+
+/// The account names in the output of `icacls <path>`, one per access entry.
+/// Names are read as `icacls` prints them, so they may be localized.
+fn access_list_principals(icacls_output: &str, path: &str) -> Vec<String> {
+    icacls_output
+        .lines()
+        .map(|line| line.strip_prefix(path).unwrap_or(line).trim())
+        .filter_map(|line| {
+            line.split_once(":(")
+                .map(|(principal, _)| principal.to_owned())
+        })
+        .collect()
 }
 
 #[cfg(windows)]
@@ -51,10 +69,40 @@ pub fn restrict_file(path: &Path) -> io::Result<()> {
     restrict(path, FILE_INHERITANCE)
 }
 
+/// Replaces the access list of `path` with the current user and SYSTEM only.
+/// `/grant:r` replaces only the entries it names, so an explicit entry that a
+/// new file or folder gets from the creating token (for example
+/// `BUILTIN\Administrators` under an elevated account) is removed first. The
+/// result is read back, and anything other than the two entries is an error.
 #[cfg(windows)]
 fn restrict(path: &Path, inheritance: &str) -> io::Result<()> {
-    let arguments = restrict_arguments(&path.to_string_lossy(), &current_user_sid()?, inheritance);
-    run_system_tool("icacls.exe", &arguments).map(drop)
+    let path_text = path.to_string_lossy();
+    run_system_tool("icacls.exe", &[path_text.as_ref(), "/inheritance:r"])?;
+    remove_every_entry(&path_text)?;
+    let arguments = restrict_arguments(&path_text, &current_user_sid()?, inheritance);
+    run_system_tool("icacls.exe", &arguments)?;
+    ensure_owner_only(&path_text)
+}
+
+#[cfg(windows)]
+fn remove_every_entry(path: &str) -> io::Result<()> {
+    let listing = run_system_tool("icacls.exe", &[path])?;
+    for principal in access_list_principals(&listing, path) {
+        run_system_tool("icacls.exe", &[path, "/remove:g", principal.as_str()])?;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn ensure_owner_only(path: &str) -> io::Result<()> {
+    let listing = run_system_tool("icacls.exe", &[path])?;
+    let entries = access_list_principals(&listing, path).len();
+    if entries != OWNER_ONLY_ENTRIES || listing.contains("(I)") {
+        return Err(io::Error::other(format!(
+            "the access list of {path} is not owner-only after the change"
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
