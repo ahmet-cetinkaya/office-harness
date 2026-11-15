@@ -140,6 +140,7 @@ The fast-access layout for many agents (one list with the last output, the proje
 | Error: server not reachable | The server is not reachable, with an action that starts it. | FR-026 |
 | Error: agent failed | The agent shows `failed` with the CLI's last output, for example "command not found". | FR-014, Edge cases |
 | Unauthorized | The token was rejected, with the steps to give the app a valid token. | FR-027, US1 scenario 5 |
+| Server busy | The server refused the connection because all handshake slots were busy (close code `1013`). The app retries and never shows the unauthorized state for it. | FR-027, FR-026 |
 | Agent statuses | `starting`, `working`, `waiting for input`, `exited`, `failed`, `stopped`, `interrupted`. | FR-014 |
 
 **Design:** no fixed design exists. The plan must not add visuals beyond this flow without a design that the owner approves.
@@ -239,3 +240,20 @@ The fast-access layout for many agents (one list with the last output, the proje
 - Voice input, screen sharing, and project boards, as `docs/PRD.md` section 6 states.
 - Any office-harness change to a CLI's own configuration files (FR-021).
 - **Split:** done by owner decision on 2026-11-15 (see Clarifications). This change keeps 28 FRs, above the limit of ten, because the owner set its scope.
+
+## Deviations
+
+Recorded by task T5 (terminal module) of the plan, where the build differs from the design text.
+
+- **Windows stop uses `taskkill`, not a Job Object.** Research R2 item 4 asks for a Job Object. The server ends the tree with `taskkill /PID <pid> /T /F` instead, because a Job Object needs `unsafe` code and the workspace forbids it outside `private-fs`. The gap: `/T` follows parent links, so it misses a descendant whose parent already exited. The end runs only while the root child is alive, because a freed process id can belong to an unrelated process. The Windows checks for T5 (f) and (h) stay BLOCKED under PB-3 (no Windows machine) until someone runs them. Accepted for now on 2026-11-15; the project owner may revisit it. The Job Object decision waits for Windows QA (PB-3).
+- **The PTY host sets the terminal type.** Every agent starts with `TERM=xterm-256color` and `COLORTERM=truecolor`, set after the login environment and before the office additions, so an addition can replace them. A server started by a service has no terminal to inherit them from, and every terminal emulator sets them for its children. Accepted on 2026-11-15; the project owner may revisit it.
+- **The login shell starts in its own process group, not its own session.** A new session needs `pre_exec`, which is `unsafe`, and `Command::setsid` is not stable. Forced-interactive bash opens the controlling terminal itself, so a server started from a terminal can see the shell stop on that terminal; the spawn then falls back after the 5-second limit. A server started at login has no controlling terminal and is not affected. Accepted on 2026-11-15; the project owner may revisit it.
+- **One output file for each agent for now.** `terminal.attach` names the saved output by agent id until sessions exist (task T7).
+- **No console window on Windows** comes from `windows_subsystem = "windows"` in the server's `main.rs`. It is untested on Windows (PB-3).
+
+Recorded by task T6 (agent and project API) of the plan. Each is a decision of T6 that waits for acceptance.
+
+- **`settings.set` for the quiet period and the output limit applies after a server restart.** A1 and A2 say the user can change them, and they are stored at once, but the terminal runtime reads them when the server starts. The stop grace period (A3) and the focus shortcut apply at once. A live change for new sessions can be added later without a protocol change.
+- **`agent.start` returns the agent's status, not a session.** The contract says the result is a session. Sessions arrive with task T7, so until then the result is `{agent_id, status, detail?}`. This is a known gap.
+- **Agent requests that change a status or a terminal run one at a time.** `agent.start`, `agent.stop`, and `agent.delete` take one lock that the status bridge also takes. A stop that waits for its grace period (A3, 10 seconds by default) therefore delays the status events of other agents for that time.
+- **A status bridge that falls behind logs the gap but does not resync yet.** If the terminal module produces more than 256 events before the status bridge reads them, the bridge writes an error line to `server.log`, and an agent status can stay old until its next event. A resync of the statuses from the running terminals follows with task T7. Clients that fall behind are closed with `1011` and reload, so they do not keep an old status.

@@ -6,3 +6,5 @@ src/apps/desktop/src-tauri/binaries/
 .agents/archive/
 src/apps/desktop/test-results/
 src/apps/desktop/src-tauri/gen/
+.agents/.claude/
+.agents/.mcp.json

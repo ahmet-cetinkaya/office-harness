@@ -6,5 +6,39 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[dependencies]
+access-application = { path = "../../modules/access/application" }
+access-infrastructure = { path = "../../modules/access/infrastructure" }
+access-presentation = { path = "../../modules/access/presentation" }
+agent-application = { path = "../../modules/agent/application" }
+agent-domain = { path = "../../modules/agent/domain" }
+agent-infrastructure = { path = "../../modules/agent/infrastructure" }
+agent-presentation = { path = "../../modules/agent/presentation" }
+audit-application = { path = "../../modules/audit/application" }
+audit-domain = { path = "../../modules/audit/domain" }
+audit-infrastructure = { path = "../../modules/audit/infrastructure" }
+audit-presentation = { path = "../../modules/audit/presentation" }
+axum.workspace = true
+directories.workspace = true
+gethostname.workspace = true
+kernel = { path = "../../kernel" }
+private-fs = { path = "../../shared/private-fs" }
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+terminal-application = { path = "../../modules/terminal/application" }
+terminal-domain = { path = "../../modules/terminal/domain" }
+terminal-infrastructure = { path = "../../modules/terminal/infrastructure" }
+terminal-presentation = { path = "../../modules/terminal/presentation" }
+thiserror.workspace = true
+tokio.workspace = true
+wire = { path = "../../shared/wire" }
+
+[dev-dependencies]
+futures-util.workspace = true
+tempfile.workspace = true
+tokio-tungstenite.workspace = true
+tower.workspace = true
+
 [lints]
 workspace = true
