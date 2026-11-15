@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[package]
+name = "access-infrastructure"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+access-application = { path = "../application" }
+access-domain = { path = "../domain" }
+getrandom.workspace = true
+private-fs = { path = "../../../shared/private-fs" }
+tokio.workspace = true
+wire = { path = "../../../shared/wire" }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

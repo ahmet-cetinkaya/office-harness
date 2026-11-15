@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+#![allow(dead_code, reason = "each test binary uses a part of the helpers")]
+
+pub mod running_office;
+pub mod wire_client;
+
 use agent_domain::entities::Agent;
 use agent_domain::value_objects::{AgentCommand, DisplayName, MachineId};
 use kernel::{AgentId, Timestamp};
