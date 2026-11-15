@@ -387,5 +387,5 @@ fn a_fifo_named_like_a_session_file_is_skipped_and_never_opened() {
         .expect("mkfifo");
     assert!(status.success());
 
-    assert!(session_files(&fixture.sessions).is_empty());
+    assert_eq!(session_files(&fixture.sessions), Vec::<PathBuf>::new());
 }
