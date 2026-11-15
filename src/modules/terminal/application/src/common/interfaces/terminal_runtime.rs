@@ -8,7 +8,7 @@ use terminal_domain::value_objects::{OutputKey, TerminalSize};
 
 use crate::common::errors::TerminalRuntimeError;
 use crate::common::interfaces::OutputSubscriber;
-use crate::common::models::{Attachment, SpawnTerminalRequest, SubscriptionId};
+use crate::common::models::{Attachment, RunId, SpawnTerminalRequest, SubscriptionId};
 
 /// The process side of the terminal module: one PTY and child per agent.
 /// Operations block, so an async caller runs them on a blocking thread.
@@ -65,4 +65,8 @@ pub trait TerminalRuntime: Send + Sync {
     fn stop(&self, agent_id: AgentId, grace: Duration) -> Result<(), TerminalRuntimeError>;
 
     fn is_running(&self, agent_id: AgentId) -> bool;
+
+    /// The run of the agent's latest start, also after its child exited, or
+    /// `None` when it never started.
+    fn current_run(&self, agent_id: AgentId) -> Option<RunId>;
 }

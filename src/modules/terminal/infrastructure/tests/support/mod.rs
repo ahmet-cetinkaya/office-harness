@@ -14,7 +14,7 @@ use terminal_application::common::interfaces::{
     OutputSubscriber, TerminalEventSink, TerminalRuntime,
 };
 use terminal_application::common::models::{
-    DeliveryStatus, LiveOutput, SpawnTerminalRequest, SubscriptionId,
+    DeliveryStatus, LiveOutput, RunId, SpawnTerminalRequest, SubscriptionId,
 };
 use terminal_domain::events::TerminalEvent;
 use terminal_domain::value_objects::{OutputKey, OutputLimits, TerminalSize};
@@ -46,11 +46,17 @@ pub fn size(columns: u16, rows: u16) -> TerminalSize {
 #[derive(Default)]
 pub struct RecordingSink {
     events: Mutex<Vec<TerminalEvent>>,
+    runs: Mutex<Vec<RunId>>,
 }
 
 impl RecordingSink {
     pub fn events(&self) -> Vec<TerminalEvent> {
         locked(&self.events).clone()
+    }
+
+    /// The run named by each event, in order.
+    pub fn runs(&self) -> Vec<RunId> {
+        locked(&self.runs).clone()
     }
 
     pub fn has_exited(&self) -> bool {
@@ -61,7 +67,8 @@ impl RecordingSink {
 }
 
 impl TerminalEventSink for RecordingSink {
-    fn publish(&self, _agent_id: AgentId, event: TerminalEvent) {
+    fn publish(&self, _agent_id: AgentId, run: RunId, event: TerminalEvent) {
+        locked(&self.runs).push(run);
         locked(&self.events).push(event);
     }
 }

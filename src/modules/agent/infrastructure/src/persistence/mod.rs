@@ -2,6 +2,7 @@
 
 mod migrations;
 mod persistence_error;
+mod port_adapters;
 mod repositories;
 mod shared_connection;
 

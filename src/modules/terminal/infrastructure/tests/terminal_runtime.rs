@@ -140,6 +140,25 @@ fn events_follow_the_child() {
     );
 }
 
+#[test]
+fn output_after_a_quiet_period_is_reported_once_for_the_change_not_for_each_chunk() {
+    let folder = TempDir::new().expect("temp folder");
+    let (runtime, sink) = runtime_in(folder.path(), limits(1000));
+    let agent = AgentId::generate();
+    spawn_fixture(&runtime, agent, &["pause-resume", "700"]);
+    wait_until("the exit", || sink.has_exited());
+    assert_eq!(
+        sink.events(),
+        [
+            TerminalEvent::FirstOutput,
+            TerminalEvent::QuietPeriod,
+            TerminalEvent::OutputResumed,
+            TerminalEvent::QuietPeriod,
+            TerminalEvent::Exited { exit_code: 0 }
+        ]
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn stop_ends_a_child_that_ignores_the_request_and_its_grandchild() {
@@ -303,4 +322,29 @@ fn the_runtime_refuses_an_unsafe_batch_script_whoever_calls_it() {
         runtime.spawn(&request),
         Err(terminal_application::common::errors::TerminalRuntimeError::Invalid(_))
     ));
+}
+
+#[test]
+fn each_start_has_a_new_run_and_its_events_name_it() {
+    let folder = TempDir::new().expect("temp folder");
+    let (runtime, sink) = runtime_in(folder.path(), limits(1000));
+    let agent = AgentId::generate();
+    assert_eq!(runtime.current_run(agent), None);
+
+    spawn_fixture(&runtime, agent, &["exit", "0"]);
+    wait_until("the first exit", || sink.has_exited());
+    let first = runtime.current_run(agent).expect("first run");
+    assert!(sink.runs().iter().all(|run| *run == first));
+
+    let events_before = sink.events().len();
+    spawn_fixture(&runtime, agent, &["exit", "0"]);
+    wait_until("the second exit", || sink.events().len() > events_before);
+    let second = runtime.current_run(agent).expect("second run");
+
+    assert!(second > first);
+    assert!(
+        sink.runs()[events_before..]
+            .iter()
+            .all(|run| *run == second)
+    );
 }

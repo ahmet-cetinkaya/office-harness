@@ -2,6 +2,8 @@
 
 #![allow(dead_code, reason = "each test binary uses a part of the helpers")]
 
+#[cfg(unix)]
+pub mod fake_cli;
 pub mod running_office;
 pub mod wire_client;
 

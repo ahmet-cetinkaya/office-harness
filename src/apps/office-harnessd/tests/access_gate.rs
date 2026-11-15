@@ -49,7 +49,7 @@ async fn a_client_with_the_token_authenticates_and_the_first_frame_is_the_challe
     assert_eq!(nonce.len(), 64);
 
     let mut client = WireClient::authenticate_ok(port, &serving.office.token()).await;
-    let answer = client.request(1, "agent.list").await;
+    let answer = client.request(1, "nonesuch.list").await;
     assert_eq!(answer["id"], 1);
     assert_eq!(answer["ok"], false);
     assert_eq!(answer["error"]["code"], "not_found");

@@ -8,6 +8,9 @@ pub enum TerminalEvent {
     FirstOutput,
     /// The child wrote output, and then nothing for the quiet period.
     QuietPeriod,
+    /// The child wrote output again after a `QuietPeriod`. It is sent once for
+    /// each change from quiet to active, not for each chunk of output.
+    OutputResumed,
     /// The child ended with this exit code.
     Exited { exit_code: u32 },
     /// The output file could not be written. The child keeps running.

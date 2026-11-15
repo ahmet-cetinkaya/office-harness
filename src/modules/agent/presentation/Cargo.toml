@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[package]
+name = "agent-presentation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+agent-application = { path = "../application" }
+agent-domain = { path = "../domain" }
+kernel = { path = "../../../kernel" }
+serde_json.workspace = true
+wire = { path = "../../../shared/wire" }
+
+[lints]
+workspace = true

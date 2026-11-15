@@ -2,6 +2,7 @@
 
 use kernel::AgentId;
 use terminal_application::common::interfaces::TerminalEventSink;
+use terminal_application::common::models::RunId;
 use terminal_domain::events::TerminalEvent;
 use tokio::sync::broadcast;
 
@@ -11,6 +12,8 @@ const EVENT_BACKLOG: usize = 256;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AgentTerminalEvent {
     pub agent_id: AgentId,
+    /// The start of the terminal that produced the event.
+    pub run: RunId,
     pub event: TerminalEvent,
 }
 
@@ -41,8 +44,12 @@ impl Default for TerminalEvents {
 }
 
 impl TerminalEventSink for TerminalEvents {
-    fn publish(&self, agent_id: AgentId, event: TerminalEvent) {
+    fn publish(&self, agent_id: AgentId, run: RunId, event: TerminalEvent) {
         // No subscriber is a normal state: nobody listens yet.
-        let _ = self.sender.send(AgentTerminalEvent { agent_id, event });
+        let _ = self.sender.send(AgentTerminalEvent {
+            agent_id,
+            run,
+            event,
+        });
     }
 }

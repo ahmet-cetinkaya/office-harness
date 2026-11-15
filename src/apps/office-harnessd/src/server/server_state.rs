@@ -5,6 +5,7 @@ use std::sync::Arc;
 use access_application::commands::authenticate_connection::AuthenticationHandler;
 use tokio::sync::{Semaphore, watch};
 
+use super::agent_requests::AgentGateway;
 use super::dispatcher::Dispatcher;
 use super::event_hub::EventHub;
 use super::server_options::ServerOptions;
@@ -19,6 +20,7 @@ pub struct ServerState {
     pub authentication: AuthenticationHandler,
     pub dispatcher: Arc<Dispatcher>,
     pub terminals: Arc<TerminalGateway>,
+    pub agents: AgentGateway,
     pub events: EventHub,
     /// The latest token generation. A connection that authenticated with an
     /// older one closes.

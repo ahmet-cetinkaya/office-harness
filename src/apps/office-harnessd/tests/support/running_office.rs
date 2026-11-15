@@ -4,7 +4,11 @@
 
 use std::path::PathBuf;
 
-use office_harnessd::bootstrap::{self, ServerLog, Services};
+use agent_domain::value_objects::SettingKey;
+use agent_infrastructure::persistence::{
+    LEDGER_TABLE, SCRIPTS, SettingsRepository, SharedConnection,
+};
+use office_harnessd::bootstrap::{self, LoginSetup, ServerLog, Services};
 use office_harnessd::config::Config;
 use office_harnessd::server::{Server, ServerOptions};
 use tempfile::TempDir;
@@ -29,12 +33,25 @@ pub struct ServingOffice {
 }
 
 pub async fn bind_office(options: ServerOptions) -> RunningOffice {
+    bind_office_with(options, LoginSetup::detect(), None).await
+}
+
+/// Binds with the given login environment, and with the quiet period (in
+/// milliseconds) stored as a setting before the server starts, when given.
+pub async fn bind_office_with(
+    options: ServerOptions,
+    login: LoginSetup,
+    quiet_period_ms: Option<u64>,
+) -> RunningOffice {
     let folder = tempfile::tempdir().expect("folder");
     let config = Config {
         data_folder: folder.path().join("office"),
     };
     let log = bootstrap::open_log(&config).expect("log");
-    let services = bootstrap::start(&config, &log).expect("start");
+    if let Some(quiet_period_ms) = quiet_period_ms {
+        store_quiet_period(&config, quiet_period_ms);
+    }
+    let services = bootstrap::start_with(&config, &log, login).expect("start");
     let server = Server::bind(&config, &services, &log, options)
         .await
         .expect("bind");
@@ -48,9 +65,32 @@ pub async fn bind_office(options: ServerOptions) -> RunningOffice {
     }
 }
 
+fn store_quiet_period(config: &Config, quiet_period_ms: u64) {
+    let mut connection = bootstrap::open_database(&config.database_path()).expect("database");
+    bootstrap::run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS).expect("migrations");
+    let settings = SettingsRepository::new(SharedConnection::new(connection));
+    let mut stored = settings.load().expect("settings");
+    stored
+        .set_from_text(SettingKey::QuietPeriodMs, &quiet_period_ms.to_string())
+        .expect("quiet period");
+    settings.save(&stored).expect("save");
+}
+
 /// Binds and starts serving.
 pub async fn serve_office(options: ServerOptions) -> ServingOffice {
-    let mut office = bind_office(options).await;
+    serve_bound(bind_office(options).await)
+}
+
+/// Binds with the given login environment and starts serving.
+pub async fn serve_office_with(
+    options: ServerOptions,
+    login: LoginSetup,
+    quiet_period_ms: Option<u64>,
+) -> ServingOffice {
+    serve_bound(bind_office_with(options, login, quiet_period_ms).await)
+}
+
+fn serve_bound(mut office: RunningOffice) -> ServingOffice {
     let server = office.server.take().expect("bound server");
     let (stop, stopped) = oneshot::channel::<()>();
     let task = tokio::spawn(async move {

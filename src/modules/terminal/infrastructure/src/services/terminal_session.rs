@@ -11,7 +11,7 @@ use portable_pty::{Child, MasterPty};
 use terminal_application::common::errors::TerminalRuntimeError;
 use terminal_application::common::interfaces::{OutputSubscriber, TerminalEventSink};
 use terminal_application::common::models::{
-    Attachment, DeliveryStatus, LiveOutput, SubscriptionId,
+    Attachment, DeliveryStatus, LiveOutput, RunId, SubscriptionId,
 };
 use terminal_domain::events::TerminalEvent;
 use terminal_domain::value_objects::TerminalSize;
@@ -98,6 +98,7 @@ pub struct SessionParts {
     pub size: TerminalSize,
     pub quiet_period: Duration,
     pub sink: Arc<dyn TerminalEventSink>,
+    pub run: RunId,
 }
 
 /// One running child in a PTY with its screen, its output file, and its
@@ -105,6 +106,7 @@ pub struct SessionParts {
 /// the exit, and one watches for the quiet period.
 pub struct TerminalSession {
     agent_id: AgentId,
+    run: RunId,
     process_id: Option<u32>,
     core: Mutex<SessionCore>,
     writer: Mutex<Box<dyn Write + Send>>,
@@ -117,6 +119,11 @@ pub struct TerminalSession {
 
 impl TerminalSession {
     #[must_use]
+    pub fn run(&self) -> RunId {
+        self.run
+    }
+
+    #[must_use]
     pub fn start(parts: SessionParts) -> Arc<Self> {
         let SessionParts {
             agent_id,
@@ -126,9 +133,11 @@ impl TerminalSession {
             size,
             quiet_period,
             sink,
+            run,
         } = parts;
         let session = Arc::new(Self {
             agent_id,
+            run,
             process_id: pty.child.process_id(),
             core: Mutex::new(SessionCore {
                 emulator,
@@ -302,6 +311,9 @@ impl TerminalSession {
                 core.output_seen = true;
                 events.push(TerminalEvent::FirstOutput);
             }
+            if core.quiet_reported {
+                events.push(TerminalEvent::OutputResumed);
+            }
             core.last_output = Instant::now();
             core.quiet_reported = false;
             replies
@@ -311,7 +323,7 @@ impl TerminalSession {
             let _ = self.write_input(&replies);
         }
         for event in events {
-            self.sink.publish(self.agent_id, event);
+            self.sink.publish(self.agent_id, self.run, event);
         }
     }
 
@@ -331,7 +343,7 @@ impl TerminalSession {
         locked(&self.lifecycle).exit_code = Some(exit_code);
         self.lifecycle_changed.notify_all();
         self.sink
-            .publish(self.agent_id, TerminalEvent::Exited { exit_code });
+            .publish(self.agent_id, self.run, TerminalEvent::Exited { exit_code });
     }
 
     fn run_quiet_monitor(&self, quiet_period: Duration) {
@@ -339,7 +351,8 @@ impl TerminalSession {
         while !self.has_exited() {
             thread::sleep(tick);
             if self.take_quiet_period_report(quiet_period) {
-                self.sink.publish(self.agent_id, TerminalEvent::QuietPeriod);
+                self.sink
+                    .publish(self.agent_id, self.run, TerminalEvent::QuietPeriod);
             }
         }
     }

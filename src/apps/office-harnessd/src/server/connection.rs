@@ -8,12 +8,15 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::time::timeout;
 use wire::{CLOSE_UNAUTHORIZED, ErrorCode, Request, Response};
 
+use super::agent_requests::AgentGateway;
 use super::handshake::{HandshakeFailure, authenticate};
 use super::server_state::ServerState;
 use super::terminal_requests::{
     ConnectionTerminals, FRAME_BACKLOG, TERMINAL_PREFIX, TerminalAnswer,
 };
 
+/// How many answers of agent requests may wait for one connection to send them.
+const RESPONSE_BACKLOG: usize = 64;
 const CLOSE_REPLY_WAIT: Duration = Duration::from_secs(1);
 /// How long the close of a connection that fell behind may take in all.
 const OVERFLOW_CLOSE_LIMIT: Duration = Duration::from_secs(2);
@@ -64,17 +67,39 @@ async fn send_binary(socket: &mut WebSocket, frame: Vec<u8>) -> Result<(), Disco
 async fn run_session(socket: WebSocket, state: ServerState, generation: u64) {
     let (frames_sender, frames) = mpsc::channel(FRAME_BACKLOG);
     let mut terminals = ConnectionTerminals::new(frames_sender);
-    session_loop(socket, &state, generation, frames, &mut terminals).await;
+    // Agent requests can take long (a stop waits for its grace period), so
+    // they run in their own tasks and answer through this channel. The loop
+    // keeps serving terminal input and output meanwhile. Answers carry the
+    // request id, so they may arrive out of order.
+    let (responses_sender, responses) = mpsc::channel(RESPONSE_BACKLOG);
+    let channels = SessionChannels {
+        frames,
+        responses,
+        responses_sender,
+    };
+    session_loop(socket, &state, generation, channels, &mut terminals).await;
     state.terminals.release(terminals).await;
+}
+
+/// The channels that feed one connection's loop.
+struct SessionChannels {
+    frames: mpsc::Receiver<Vec<u8>>,
+    responses: mpsc::Receiver<String>,
+    responses_sender: mpsc::Sender<String>,
 }
 
 async fn session_loop(
     mut socket: WebSocket,
     state: &ServerState,
     generation: u64,
-    mut frames: mpsc::Receiver<Vec<u8>>,
+    channels: SessionChannels,
     terminals: &mut ConnectionTerminals,
 ) {
+    let SessionChannels {
+        mut frames,
+        mut responses,
+        responses_sender,
+    } = channels;
     let mut events = state.events.subscribe();
     let token_replaced = token_replaced(state.token_generations.clone(), generation);
     let stopping = server_stopping(state.shutdown.clone());
@@ -105,8 +130,13 @@ async fn session_loop(
                     return;
                 }
             }
+            Some(answer) = responses.recv() => {
+                if send_text(&mut socket, &answer).await.is_err() {
+                    return;
+                }
+            }
             incoming = socket.recv() => {
-                if handle_incoming(&mut socket, state, terminals, incoming).await.is_break() {
+                if handle_incoming(&mut socket, state, terminals, &responses_sender, incoming).await.is_break() {
                     return;
                 }
             }
@@ -133,11 +163,12 @@ async fn handle_incoming(
     socket: &mut WebSocket,
     state: &ServerState,
     terminals: &mut ConnectionTerminals,
+    responses: &mpsc::Sender<String>,
     incoming: Option<Result<Message, axum::Error>>,
 ) -> ControlFlow<()> {
     match incoming {
         Some(Ok(Message::Text(text))) => {
-            match answer_request(socket, state, terminals, text.as_str()).await {
+            match answer_request(socket, state, terminals, responses, text.as_str()).await {
                 Ok(()) => ControlFlow::Continue(()),
                 Err(Disconnected) => ControlFlow::Break(()),
             }
@@ -153,11 +184,16 @@ async fn answer_request(
     socket: &mut WebSocket,
     state: &ServerState,
     terminals: &mut ConnectionTerminals,
+    responses: &mpsc::Sender<String>,
     frame: &str,
 ) -> Result<(), Disconnected> {
     let answer = match Request::decode(frame) {
         Some(request) if request.kind.starts_with(TERMINAL_PREFIX) => {
             state.terminals.handle(&request, terminals).await
+        }
+        Some(request) if AgentGateway::accepts(&request.kind) => {
+            spawn_agent_request(state.agents.clone(), request, responses.clone());
+            return Ok(());
         }
         Some(request) => TerminalAnswer {
             response: state.dispatcher.dispatch(&request),
@@ -177,6 +213,16 @@ async fn answer_request(
         Some(snapshot) => send_binary(socket, snapshot).await,
         None => Ok(()),
     }
+}
+
+/// Runs an agent request apart from the connection loop and queues its
+/// encoded answer for the loop to send.
+fn spawn_agent_request(gateway: AgentGateway, request: Request, responses: mpsc::Sender<String>) {
+    tokio::spawn(async move {
+        let answer = gateway.handle(request).await.encode();
+        // The connection may be gone by now; the request still ran.
+        let _ = responses.send(answer).await;
+    });
 }
 
 /// Resolves when a newer token generation than `generation` exists. Checking
