@@ -7,7 +7,7 @@ const previewUrl = "http://localhost:4173";
 export default defineConfig({
   testDir: "e2e",
   webServer: {
-    command: "pnpm build && pnpm preview",
+    command: "bun run build && bun run preview",
     url: previewUrl,
     reuseExistingServer: !process.env.CI,
   },

@@ -1,8 +1,11 @@
 {
   "name": "office-harness",
   "private": true,
+  "workspaces": [
+    "src/apps/desktop"
+  ],
   "license": "AGPL-3.0-or-later",
   "scripts": {
-    "desktop": "pnpm --filter office-harness-desktop"
+    "desktop": "bun --filter office-harness-desktop"
   }
 }

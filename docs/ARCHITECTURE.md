@@ -98,7 +98,7 @@ The R7 office scene is a webview module that reads the same entities. It needs n
 ```text
 office-harness/
 ├── Cargo.toml                                  # workspace root
-├── package.json, pnpm-workspace.yaml           # JavaScript workspace (desktop webview)
+├── package.json, bun.lock                      # JavaScript workspace (desktop webview)
 ├── docs/                                       # PRD.md, ARCHITECTURE.md
 ├── specs/changes/                              # change specs and their design
 └── src/

@@ -1,5 +1,5 @@
 dist
 src-tauri
 node_modules
-pnpm-lock.yaml
+bun.lock
 test-results

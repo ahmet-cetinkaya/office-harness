@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "dev.office-harness.desktop",
   "build": {
-    "beforeDevCommand": "bun scripts/prepare-sidecar.ts && pnpm dev",
-    "beforeBuildCommand": "bun scripts/prepare-sidecar.ts --release && pnpm build",
+    "beforeDevCommand": "bun scripts/prepare-sidecar.ts && bun run dev",
+    "beforeBuildCommand": "bun scripts/prepare-sidecar.ts --release && bun run build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },

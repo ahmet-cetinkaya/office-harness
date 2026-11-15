@@ -33,6 +33,8 @@ Decisions for change 0001 that needed research. Date: 2026-11-15. Version number
 
 ## R3: How does the server learn a CLI's session id without writing the CLI's files?
 
+> Superseded in part by "T1 verification", section "R3: CLI session flags", below. Read that section for the verified answer.
+
 - **Decision:** each supported CLI has an adapter with three operations: start a new session, continue a session, and find the session id.
   - **`claude`:** office-harness generates a UUID and starts `claude --session-id <uuid>`. To continue, it runs `claude -r <uuid>`.
   - **`codex`:** it continues with `codex resume <id>`. It finds the id by listing the CLI's session files before and after start, read-only.
@@ -49,6 +51,8 @@ Decisions for change 0001 that needed research. Date: 2026-11-15. Version number
 - **Risk:** the `codex` and `opencode` flags come from secondary sources. T1 checks each CLI's `--help` on the installed version and records the result here. The Gemini CLI documentation says that Antigravity CLI replaced Gemini CLI on 2026-06-18 for some account tiers. The owner may need to decide whether `gemini` stays in SC-002 (see PB-1 in the plan).
 
 ## R4: How does the server start at login without the desktop app?
+
+> Superseded in part by "T1 verification", section "R4: auto-launch", below. Read that section for the verified answer.
 
 - **Decision:** on `register`, the server copies itself to a stable per-user folder, because an AppImage path is a temporary mount and a moved app bundle breaks a registered path. It then registers that copy as a login item for the current user with the `auto-launch` crate:
   - Linux: a systemd user unit.
