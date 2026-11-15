@@ -2,18 +2,6 @@
 
 use super::*;
 
-/// The account names in the output of `icacls <path>`, one per access entry.
-fn access_list_principals(icacls_output: &str, path: &str) -> Vec<String> {
-    icacls_output
-        .lines()
-        .map(|line| line.strip_prefix(path).unwrap_or(line).trim())
-        .filter_map(|line| {
-            line.split_once(":(")
-                .map(|(principal, _)| principal.to_owned())
-        })
-        .collect()
-}
-
 #[test]
 fn folder_grants_are_inherited_and_file_grants_are_not() {
     let folder = restrict_arguments("C:\\data", "S-1-5-21-1", FOLDER_INHERITANCE);
