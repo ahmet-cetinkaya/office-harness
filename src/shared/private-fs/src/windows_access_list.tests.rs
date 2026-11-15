@@ -17,9 +17,12 @@ fn folder_grants_are_inherited_and_file_grants_are_not() {
 #[cfg(windows)]
 mod windows {
     use super::*;
+    use std::ffi::OsStr;
     use windows_sys::Win32::Security::Authorization::{
-        ConvertSecurityDescriptorToStringSecurityDescriptorW, GetNamedSecurityInfoW,
+        ConvertSecurityDescriptorToStringSecurityDescriptorW, ConvertStringSidToSidW,
+        GetNamedSecurityInfoW,
     };
+    use windows_sys::Win32::Security::EqualSid;
 
     /// The SDDL of the access list of `path`, read back by SID.
     fn read_dacl_sddl(path: &Path) -> String {
@@ -73,8 +76,42 @@ mod windows {
         assert!(sddl.starts_with("D:P"), "must be protected: {sddl}");
         assert_eq!(sddl.matches('(').count(), 2, "two entries only: {sddl}");
         assert_eq!(sddl.matches("(A;").count(), 2, "allow entries only: {sddl}");
-        assert!(sddl.contains(&format!(";;;{user_sid})")), "user: {sddl}");
-        assert!(sddl.contains(";;;SY)"), "SYSTEM: {sddl}");
+        let trustees = entry_trustees(&sddl);
+        assert!(
+            trustees
+                .iter()
+                .any(|trustee| same_account(trustee, &user_sid)),
+            "user: {sddl}"
+        );
+        assert!(trustees.contains(&"SY"), "SYSTEM: {sddl}");
+    }
+
+    /// The trustee of each entry, the last field of `(type;flags;rights;;;trustee)`.
+    /// Windows may print a well-known account by its SDDL alias (for example
+    /// `LA` for the built-in Administrator), so compare trustees as SIDs.
+    fn entry_trustees(sddl: &str) -> Vec<&str> {
+        sddl.split('(')
+            .skip(1)
+            .filter_map(|entry| entry.trim_end_matches(')').rsplit(';').next())
+            .collect()
+    }
+
+    fn same_account(first: &str, second: &str) -> bool {
+        let first = sid_from_text(first);
+        let second = sid_from_text(second);
+        // SAFETY: both pointers are valid SIDs that the guards keep alive.
+        unsafe { EqualSid(first.0, second.0) != 0 }
+    }
+
+    /// A SID from its text form or its SDDL alias, released by the guard.
+    fn sid_from_text(text: &str) -> LocalAllocation {
+        let wide_text = to_wide(OsStr::new(text));
+        let mut sid: *mut c_void = ptr::null_mut();
+        // SAFETY: `wide_text` is NUL-terminated and outlives the call, and
+        // `sid` is a valid out pointer that the guard releases.
+        let converted = unsafe { ConvertStringSidToSidW(wide_text.as_ptr(), &raw mut sid) };
+        assert_ne!(converted, 0, "not a SID: {text}");
+        LocalAllocation(sid)
     }
 
     fn grant_users_group(path: &Path) {
