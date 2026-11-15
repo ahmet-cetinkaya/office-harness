@@ -96,8 +96,7 @@ impl LoginEnvironment {
                 account: account_shell,
                 account_variables: account
                     .as_ref()
-                    .map(login_shell::Account::variables)
-                    .unwrap_or_default(),
+                    .map_or_else(Default::default, login_shell::Account::variables),
                 timeout: SHELL_TIMEOUT,
             },
         }
