@@ -169,6 +169,24 @@ test("a stopped agent shows its last output and takes no input", async ({
   expect(await sentInputs(page)).toEqual([]);
 });
 
+test("Tab moves past the terminal of a stopped agent", async ({ page }) => {
+  await installMockCore(page, {
+    initialState: { status: "connected" },
+    office: {
+      agents: [{ ...runningAgent(), status: "stopped" }],
+      snapshots: { [AGENT_ID]: "saved output" },
+    },
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Ada, stopped" }).click();
+  const input = page.getByLabel("Terminal of Ada", { exact: true });
+  await input.focus();
+
+  await page.keyboard.press("Tab");
+
+  await expect(input).not.toBeFocused();
+});
+
 test("a configured shortcut replaces the default", async ({ page }) => {
   await openTerminal(page, { focusShortcut: "Ctrl+Shift+K" });
   const input = page.getByLabel("Terminal of Ada", { exact: true });
