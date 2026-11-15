@@ -23,6 +23,7 @@ import {
   EVENT_AGENT_CHANGED,
   EVENT_AGENT_DELETED,
   EVENT_AGENT_STATUS,
+  EVENT_CLIENT_RESYNC,
   EVENT_STORAGE_ERROR,
   readActionRecorded,
   readAdditionsChanged,
@@ -238,6 +239,8 @@ export function createOfficeController(
           actions: actionRecord.merge(details.actions, entry),
         });
       }
+      case EVENT_CLIENT_RESYNC:
+        return void load();
       case EVENT_STORAGE_ERROR:
         return update({
           notice: {

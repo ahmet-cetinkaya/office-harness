@@ -16,7 +16,11 @@
 </script>
 
 <section aria-labelledby="agents-heading" class="flex flex-col gap-2">
-  <h2 id="agents-heading" class="text-lg font-semibold text-neutral-900">
+  <h2
+    id="agents-heading"
+    tabindex="-1"
+    class="text-lg font-semibold text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+  >
     Agents
   </h2>
   <ul class="flex flex-col gap-2">

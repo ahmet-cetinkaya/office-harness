@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import {
   dropQueryReplies,
   encodeBinaryInput,
+  filterEmittedData,
   encodeInput,
   parseFrame,
 } from "./terminal";
@@ -49,6 +50,19 @@ describe("dropQueryReplies", () => {
 
   test("drops only the replies from a mixed chunk", () => {
     expect(dropQueryReplies(`ab${ESC}[3;7Rcd${ESC}[?1;2c\r`)).toBe("abcd\r");
+  });
+});
+
+describe("filterEmittedData", () => {
+  const CTRL_F3 = `${ESC}[1;5R`;
+
+  test("lets a typed Ctrl+F3 through, though it looks like a reply", () => {
+    expect(filterEmittedData(CTRL_F3, true)).toBe(CTRL_F3);
+  });
+
+  test("drops the same bytes when no key made them", () => {
+    expect(filterEmittedData(CTRL_F3, false)).toBe("");
+    expect(filterEmittedData("x", false)).toBe("x");
   });
 });
 

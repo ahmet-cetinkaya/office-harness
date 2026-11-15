@@ -69,6 +69,15 @@ export function dropQueryReplies(chunk: string): string {
     .replace(DEVICE_ATTRIBUTES_REPLY, "");
 }
 
+/**
+ * What to send for data that xterm.js emitted. A keystroke's data goes
+ * through whole (Ctrl+F3 has the same bytes as a cursor-position reply); data
+ * that comes without a key is an automatic reply, which is filtered.
+ */
+export function filterEmittedData(text: string, isTypingKey: boolean): string {
+  return isTypingKey ? text : dropQueryReplies(text);
+}
+
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
   for (let start = 0; start < bytes.length; start += BASE64_CHUNK_BYTES) {
@@ -79,14 +88,27 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** The bytes of text that xterm.js emits. */
+export function textBytes(text: string): Uint8Array {
+  return new TextEncoder().encode(text);
+}
+
+/** The bytes of xterm.js's binary input (mouse reports): one per char. */
+export function binaryBytes(text: string): Uint8Array {
+  return Uint8Array.from(text, (character) => character.charCodeAt(0));
+}
+
+/** The `data` field of `terminal.input`. */
+export function encodeBytes(bytes: Uint8Array): string {
+  return toBase64(bytes);
+}
+
 /** The `data` field of `terminal.input` for text that xterm.js emits. */
 export function encodeInput(text: string): string {
-  return toBase64(new TextEncoder().encode(text));
+  return encodeBytes(textBytes(text));
 }
 
 /** The same for xterm.js's binary input (mouse reports): one byte per char. */
 export function encodeBinaryInput(text: string): string {
-  return toBase64(
-    Uint8Array.from(text, (character) => character.charCodeAt(0)),
-  );
+  return encodeBytes(binaryBytes(text));
 }

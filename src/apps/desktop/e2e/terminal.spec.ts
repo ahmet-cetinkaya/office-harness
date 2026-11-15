@@ -8,6 +8,7 @@ const AGENT_ID = "11111111-2222-4333-8444-555555555555";
 const KIND_OUTPUT = 2;
 const KIND_DROPPED = 3;
 const SCREEN = ".xterm-accessibility-tree";
+const RENDERED_ROWS = ".xterm-rows";
 
 function runningAgent(): Agent {
   return {
@@ -49,10 +50,20 @@ async function terminalRequests(page: Page) {
     .filter((request) => request.kind.startsWith("terminal."));
 }
 
+async function sentInputs(page: Page): Promise<string[]> {
+  const inputs = (await terminalRequests(page)).filter(
+    (request) => request.kind === "terminal.input",
+  );
+  return inputs.map((request) =>
+    Buffer.from(String(request.fields.data), "base64").toString(),
+  );
+}
+
 test("attaching shows the saved output, then live output", async ({ page }) => {
   await openTerminal(page);
 
   await expect(page.locator(SCREEN)).toContainText("saved output");
+  await expect(page.locator(RENDERED_ROWS)).toContainText("saved output");
   const attach = (await terminalRequests(page)).find(
     (request) => request.kind === "terminal.attach",
   );
@@ -81,16 +92,8 @@ test("typing goes out as terminal.input", async ({ page }) => {
   await page.keyboard.type("hi");
   await page.keyboard.press("Enter");
 
-  await expect
-    .poll(async () => {
-      const inputs = (await terminalRequests(page)).filter(
-        (request) => request.kind === "terminal.input",
-      );
-      return inputs.map((request) =>
-        Buffer.from(String(request.fields.data), "base64").toString(),
-      );
-    })
-    .toEqual(["h", "i", "\r"]);
+  // One request is in flight at a time, so fast typing may share a request.
+  await expect.poll(async () => (await sentInputs(page)).join("")).toBe("hi\r");
 });
 
 test("the focus shortcut leaves the terminal and is the only key held back", async ({
@@ -99,9 +102,9 @@ test("the focus shortcut leaves the terminal and is the only key held back", asy
   await openTerminal(page);
   const input = page.getByLabel("Terminal of Ada", { exact: true });
   await expect(input).toBeFocused();
-  await expect(page.getByText("Ctrl+Alt+Escape")).toBeVisible();
+  await expect(page.getByText("Ctrl+Shift+F12")).toBeVisible();
 
-  await page.keyboard.press("Control+Alt+Escape");
+  await page.keyboard.press("Control+Shift+F12");
 
   await expect(input).not.toBeFocused();
   await expect(
@@ -111,6 +114,59 @@ test("the focus shortcut leaves the terminal and is the only key held back", asy
     (request) => request.kind === "terminal.input",
   );
   expect(sent).toEqual([]);
+});
+
+test("Shift+Tab goes to the agent and keeps focus in the terminal", async ({
+  page,
+}) => {
+  await openTerminal(page);
+  const input = page.getByLabel("Terminal of Ada", { exact: true });
+  await expect(input).toBeFocused();
+
+  await page.keyboard.press("Shift+Tab");
+
+  await expect
+    .poll(async () => (await sentInputs(page)).join(""))
+    .toBe("\u001b[Z");
+  await expect(input).toBeFocused();
+});
+
+test("queries in live output get no reply from the view", async ({ page }) => {
+  await openTerminal(page);
+  await expect(page.locator(RENDERED_ROWS)).toContainText("saved output");
+
+  await page.evaluate(
+    ([kind, id]) =>
+      window.__mockCore.pushTerminalFrame(
+        kind as number,
+        id as string,
+        "\r\nquery\u001b[c\u001b[6n",
+      ),
+    [KIND_OUTPUT, AGENT_ID],
+  );
+  await expect(page.locator(RENDERED_ROWS)).toContainText("query");
+  await page.keyboard.type("x");
+
+  // Requests keep their order, so a reply to a query would come before "x".
+  await expect.poll(() => sentInputs(page)).toEqual(["x"]);
+});
+
+test("a stopped agent shows its last output and takes no input", async ({
+  page,
+}) => {
+  await installMockCore(page, {
+    initialState: { status: "connected" },
+    office: {
+      agents: [{ ...runningAgent(), status: "stopped" }],
+      snapshots: { [AGENT_ID]: "saved output" },
+    },
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Ada, stopped" }).click();
+
+  await expect(page.locator(RENDERED_ROWS)).toContainText("saved output");
+  await page.getByLabel("Terminal of Ada", { exact: true }).press("x");
+  expect(await sentInputs(page)).toEqual([]);
 });
 
 test("a configured shortcut replaces the default", async ({ page }) => {
@@ -135,6 +191,22 @@ test("dropped output is announced in text", async ({ page }) => {
   );
 
   await expect(page.getByText("Some output was dropped.")).toBeVisible();
+});
+
+test("a renamed agent updates the terminal label", async ({ page }) => {
+  await openTerminal(page);
+  await expect(
+    page.getByLabel("Terminal of Ada", { exact: true }),
+  ).toBeFocused();
+
+  await page.evaluate(
+    (agent) => window.__mockCore.pushEvent({ type: "agent.changed", agent }),
+    { ...runningAgent(), name: "Grace" },
+  );
+
+  await expect(
+    page.getByLabel("Terminal of Grace", { exact: true }),
+  ).toHaveCount(1);
 });
 
 test("a deleted agent closes the terminal with a message", async ({ page }) => {

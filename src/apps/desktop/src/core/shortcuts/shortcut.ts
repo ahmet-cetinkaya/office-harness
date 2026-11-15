@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /** The server's default for the `focus_shortcut` setting (A12). */
-export const DEFAULT_FOCUS_SHORTCUT = "Ctrl+Alt+Escape";
+export const DEFAULT_FOCUS_SHORTCUT = "Ctrl+Shift+F12";
 
 const SEPARATOR = "+";
+const MODIFIER_NAMES = ["ctrl", "control", "alt", "shift", "meta"];
 const KEY_ALIASES: Record<string, string> = { esc: "escape", space: " " };
 
 export interface Shortcut {
@@ -21,13 +22,15 @@ export type ShortcutEvent = Pick<
 >;
 
 /**
- * Reads text such as "Ctrl+Alt+Escape": modifiers first, the key last.
- * Returns null when the text names no key.
+ * Reads text such as "Ctrl+Shift+F12": modifiers first, the key last.
+ * Returns null when the text names no key, or only a modifier.
  */
 export function parseShortcut(text: string): Shortcut | null {
   const parts = text.split(SEPARATOR).map((part) => part.trim().toLowerCase());
   const key = parts.pop();
-  if (key === undefined || key === "") return null;
+  if (key === undefined || key === "" || MODIFIER_NAMES.includes(key)) {
+    return null;
+  }
   return {
     ctrl: parts.includes("ctrl"),
     alt: parts.includes("alt"),

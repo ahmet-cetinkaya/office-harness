@@ -117,6 +117,22 @@ describe("office controller", () => {
     expect(state().failure).toBe("no server");
   });
 
+  test("a resync event reloads the office", async () => {
+    let agents = [agent("a")];
+    const { client, push } = fakeClient((kind, fields) =>
+      officeHandler(agents)(kind, fields),
+    );
+    const { controller, state } = observe(client);
+    await controller.watch();
+    await controller.load();
+
+    agents = [agent("a"), agent("b")];
+    push({ type: "client.resync" });
+    await settle();
+
+    expect(state().agents.map((known) => known.id)).toEqual(["a", "b"]);
+  });
+
   test("a status event changes the status and keeps its detail", async () => {
     const { client, push } = fakeClient(officeHandler([agent("a")]));
     const { controller, state } = observe(client);

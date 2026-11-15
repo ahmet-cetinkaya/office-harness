@@ -8,7 +8,7 @@ fn defaults_follow_the_data_model() {
     assert_eq!(settings.quiet_period_ms, 5_000);
     assert_eq!(settings.output_line_limit, 10_000);
     assert_eq!(settings.stop_grace_ms, 10_000);
-    assert_eq!(settings.focus_shortcut, "Ctrl+Alt+Escape");
+    assert_eq!(settings.focus_shortcut, "Ctrl+Shift+F12");
 }
 
 #[test]

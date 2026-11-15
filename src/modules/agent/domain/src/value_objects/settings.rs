@@ -7,7 +7,7 @@ use crate::errors::AgentError;
 const DEFAULT_QUIET_PERIOD_MS: u64 = 5_000;
 const DEFAULT_OUTPUT_LINE_LIMIT: u64 = 10_000;
 const DEFAULT_STOP_GRACE_MS: u64 = 10_000;
-const DEFAULT_FOCUS_SHORTCUT: &str = "Ctrl+Alt+Escape";
+const DEFAULT_FOCUS_SHORTCUT: &str = "Ctrl+Shift+F12";
 
 /// The office settings, stored as key and value rows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

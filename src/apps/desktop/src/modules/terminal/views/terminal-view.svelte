@@ -12,10 +12,11 @@
     loadFocusShortcut,
     type FocusShortcut,
   } from "../services/focus-shortcut";
+  import { createInputQueue } from "../services/input-queue";
   import {
-    dropQueryReplies,
-    encodeBinaryInput,
-    encodeInput,
+    binaryBytes,
+    filterEmittedData,
+    textBytes,
     type TerminalFrame,
   } from "../services/terminal";
   import { terminalFeedFor } from "../services/terminal-feed";
@@ -24,13 +25,16 @@
     client: CoreClient;
     agentId: string;
     agentName: string;
+    /** A stopped agent shows the output of its last session and takes no input. */
+    isRunning: boolean;
   }
 
-  let { client, agentId, agentName }: Props = $props();
+  let { client, agentId, agentName, isRunning }: Props = $props();
 
   const RESIZE_DEBOUNCE_MS = 100;
   const SCROLLBACK_LINES = 10_000;
   // Light grey on near black is 15:1, well above the 4.5:1 that text needs.
+  const FUNCTION_KEY = /^F\d{1,2}$/;
   const THEME = { background: "#111827", foreground: "#f3f4f6" };
 
   let host: HTMLDivElement;
@@ -38,6 +42,11 @@
   let focusShortcut = $state<FocusShortcut | null>(null);
   let hasDroppedOutput = $state(false);
   let problem = $state<string | null>(null);
+  let terminalInput = $state<HTMLTextAreaElement | null>(null);
+
+  $effect(() => {
+    terminalInput?.setAttribute("aria-label", `Terminal of ${agentName}`);
+  });
 
   onMount(() => {
     const terminal = new Terminal({
@@ -45,12 +54,15 @@
       scrollback: SCROLLBACK_LINES,
       // Puts the screen text in the page for screen readers.
       screenReaderMode: true,
+      disableStdin: !isRunning,
     });
     const fit = new FitAddon();
     let isDisposed = false;
     let isTypingKey = false;
     // The server refuses a resize before the attach, which sends the size.
     let isAttached = false;
+    // Output that comes before the snapshot belongs to the screen it replaces.
+    let hasSnapshot = false;
     let stopListening = () => {};
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -60,11 +72,31 @@
       });
     }
 
-    function sendInput(encoded: string): void {
-      report(
+    const input = createInputQueue(
+      (encoded) =>
         client.sendRequest("terminal.input", {
           agent_id: agentId,
           data: encoded,
+        }),
+      (failure) => {
+        problem = toCoreRequestError(failure).message;
+      },
+    );
+
+    function isEditable(element: Element | null): boolean {
+      return (
+        element instanceof HTMLElement &&
+        (element.matches("input, textarea, select") ||
+          element.isContentEditable)
+      );
+    }
+
+    function requestResize(cols: number, rows: number): void {
+      report(
+        client.sendRequest("terminal.resize", {
+          agent_id: agentId,
+          cols,
+          rows,
         }),
       );
     }
@@ -74,7 +106,12 @@
         hasDroppedOutput = true;
         return;
       }
-      if (frame.kind === "snapshot") terminal.reset();
+      if (frame.kind === "snapshot") {
+        terminal.reset();
+        hasSnapshot = true;
+      } else if (!hasSnapshot) {
+        return;
+      }
       terminal.write(frame.payload);
     }
 
@@ -84,8 +121,21 @@
         focusShortcut !== null &&
         matchesShortcut(focusShortcut.shortcut, event)
       ) {
-        if (event.type === "keydown") heading.focus();
+        if (event.type === "keydown") {
+          // The webview would otherwise run its own action for the key,
+          // such as the developer tools on F12.
+          event.preventDefault();
+          heading.focus();
+        }
         return false;
+      }
+      // The webview would otherwise move focus on Tab and open its own
+      // function-key actions. xterm.js still sends the key's sequence.
+      if (
+        event.type === "keydown" &&
+        (event.key === "Tab" || FUNCTION_KEY.test(event.key))
+      ) {
+        event.preventDefault();
       }
       // xterm.js emits a keystroke's data inside this call. Only data that
       // comes later is an automatic reply, which dropQueryReplies removes.
@@ -95,6 +145,9 @@
     }
 
     function loadRenderer(): void {
+      // Headless automation gets xterm's DOM renderer, which draws text that
+      // tests and screenshots can see; WebGL draws an empty canvas there.
+      if (navigator.webdriver) return;
       try {
         const webgl = new WebglAddon();
         webgl.onContextLoss(() => webgl.dispose());
@@ -121,34 +174,32 @@
       }
       stopListening = release;
       fit.fit();
-      isAttached = true;
+      const { cols, rows } = terminal;
       await client.sendRequest("terminal.attach", {
         agent_id: agentId,
-        cols: terminal.cols,
-        rows: terminal.rows,
+        cols,
+        rows,
       });
-      terminal.focus();
+      isAttached = true;
+      // A resize during the attach had nowhere to go, so send the final size.
+      if (terminal.cols !== cols || terminal.rows !== rows) {
+        requestResize(terminal.cols, terminal.rows);
+      }
+      if (isRunning && !isEditable(document.activeElement)) terminal.focus();
     }
 
     terminal.loadAddon(fit);
     terminal.open(host);
-    terminal.textarea?.setAttribute("aria-label", `Terminal of ${agentName}`);
+    terminalInput = terminal.textarea ?? null;
     loadRenderer();
     terminal.attachCustomKeyEventHandler(handleKey);
     terminal.onData((text) => {
-      const forwarded = isTypingKey ? text : dropQueryReplies(text);
-      if (forwarded !== "") sendInput(encodeInput(forwarded));
+      const forwarded = filterEmittedData(text, isTypingKey);
+      if (forwarded !== "") input.push(textBytes(forwarded));
     });
-    terminal.onBinary((text) => sendInput(encodeBinaryInput(text)));
+    terminal.onBinary((text) => input.push(binaryBytes(text)));
     terminal.onResize(({ cols, rows }) => {
-      if (!isAttached) return;
-      report(
-        client.sendRequest("terminal.resize", {
-          agent_id: agentId,
-          cols,
-          rows,
-        }),
-      );
+      if (isAttached) requestResize(cols, rows);
     });
     const observer = new ResizeObserver(scheduleFit);
     observer.observe(host);
@@ -156,6 +207,7 @@
 
     return () => {
       isDisposed = true;
+      terminalInput = null;
       clearTimeout(resizeTimer);
       observer.disconnect();
       stopListening();
@@ -178,7 +230,9 @@
     Terminal
   </h3>
   <p class="text-sm text-neutral-900">
-    {#if focusShortcut !== null}
+    {#if !isRunning}
+      The agent is stopped. The terminal shows the output of its last session.
+    {:else if focusShortcut !== null}
       Every key goes to the agent, except
       <kbd class="font-mono font-medium">{focusShortcut.label}</kbd>, which
       moves focus out of the terminal back to the app.

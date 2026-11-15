@@ -3,6 +3,9 @@
 import type { CoreClient } from "../../../core/api";
 import { parseFrame, type TerminalFrame } from "./terminal";
 
+/** The core's dropped frame for output it lost, which names no one agent. */
+const ALL_AGENTS_ID = "00000000-0000-0000-0000-000000000000";
+
 export type FrameListener = (frame: TerminalFrame) => void;
 
 export interface TerminalFeed {
@@ -22,6 +25,12 @@ export function createTerminalFeed(client: CoreClient): TerminalFeed {
   function dispatch(bytes: Uint8Array): void {
     const frame = parseFrame(bytes);
     if (frame === null) return;
+    if (frame.kind === "dropped" && frame.agentId === ALL_AGENTS_ID) {
+      listeners.forEach((forAgent) =>
+        forAgent.forEach((listener) => listener(frame)),
+      );
+      return;
+    }
     listeners.get(frame.agentId)?.forEach((listener) => listener(frame));
   }
 

@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
+  import { tick } from "svelte";
   import Button from "$shared/ui/button.svelte";
   import FailureMessage from "$shared/ui/failure-message.svelte";
   import type { Project } from "../models/agent";
@@ -28,9 +29,22 @@
       ?.name ?? null,
   );
 
+  const AGENTS_HEADING_ID = "agents-heading";
+  const EMPTY_HEADING_ID = "empty-heading";
+
   let isCreatingAgent = $state(false);
   let isCreatingProject = $state(false);
   let projectToDelete = $state<Project | null>(null);
+
+  // The deleted agent's controls are gone, so focus would fall to the page.
+  async function deleteAgent(agentId: string): Promise<void> {
+    await controller.deleteAgent(agentId);
+    await tick();
+    if (office.agents.some((agent) => agent.id === agentId)) return;
+    const headingId =
+      office.agents.length > 0 ? AGENTS_HEADING_ID : EMPTY_HEADING_ID;
+    document.getElementById(headingId)?.focus();
+  }
 
   function deleteProject(): void {
     if (projectToDelete === null) return;
@@ -75,7 +89,11 @@
         aria-labelledby="empty-heading"
         class="flex flex-col items-start gap-3"
       >
-        <h2 id="empty-heading" class="text-xl font-semibold text-neutral-900">
+        <h2
+          id="empty-heading"
+          tabindex="-1"
+          class="text-xl font-semibold text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+        >
           The office is empty
         </h2>
         <p class="text-neutral-700">
@@ -108,7 +126,7 @@
               onnewtask={() => void controller.startNewTask(agentId)}
               oncontinue={(sessionId) =>
                 void controller.continueSession(agentId, sessionId)}
-              ondelete={() => void controller.deleteAgent(agentId)}
+              ondelete={() => void deleteAgent(agentId)}
               onsaveadditions={(additions) =>
                 controller.saveAdditions(agentId, additions)}
               onretry={controller.retryDetails}
