@@ -1,40 +1,32 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use agent_domain::entities::Agent;
-use agent_domain::enums::StatusEvent;
 use kernel::AgentId;
 
 use crate::common::action_journal::ActionJournal;
-use crate::common::errors::{ApplicationError, TerminalHostError};
-use crate::common::interfaces::{AgentStore, SettingsStore, TerminalHost};
+use crate::common::errors::ApplicationError;
+use crate::common::interfaces::AgentStore;
 use crate::common::lookup::require_agent;
 use crate::common::models::AgentAction;
+use crate::common::session_ender::SessionEnder;
 
 /// Stops a running agent (`agent.stop`, FR-012): the terminal asks, waits the
 /// grace period, then forces.
 #[derive(Clone)]
 pub struct StopAgentHandler {
     agents: Arc<dyn AgentStore>,
-    settings: Arc<dyn SettingsStore>,
-    terminals: Arc<dyn TerminalHost>,
+    ender: SessionEnder,
     journal: ActionJournal,
 }
 
 impl StopAgentHandler {
     #[must_use]
-    pub fn new(
-        agents: Arc<dyn AgentStore>,
-        settings: Arc<dyn SettingsStore>,
-        terminals: Arc<dyn TerminalHost>,
-        journal: ActionJournal,
-    ) -> Self {
+    pub fn new(agents: Arc<dyn AgentStore>, ender: SessionEnder, journal: ActionJournal) -> Self {
         Self {
             agents,
-            settings,
-            terminals,
+            ender,
             journal,
         }
     }
@@ -61,18 +53,7 @@ impl StopAgentHandler {
                 agent.name, agent.status
             )));
         }
-        let grace = Duration::from_millis(self.settings.load()?.stop_grace_ms);
-        match self.terminals.stop(agent.id, grace) {
-            Ok(()) => {}
-            // The child ended on its own a moment ago. Its exit event sets
-            // the final status (exited or failed), so the stop changes
-            // nothing and the user still gets what they asked for.
-            Err(TerminalHostError::NotRunning) => return Ok(()),
-            Err(error) => return Err(ApplicationError::Internal(error.to_string())),
-        }
-        agent.apply(StatusEvent::StoppedByUser)?;
-        self.agents.update_status(agent.id, agent.status)?;
-        Ok(())
+        self.ender.stop(agent)
     }
 }
 

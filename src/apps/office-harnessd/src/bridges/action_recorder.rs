@@ -71,5 +71,7 @@ fn action_kind(action: AgentAction) -> ActionKind {
         AgentAction::Start => ActionKind::Start,
         AgentAction::Stop => ActionKind::Stop,
         AgentAction::Delete => ActionKind::Delete,
+        AgentAction::NewTask => ActionKind::NewTask,
+        AgentAction::Continue => ActionKind::Continue,
     }
 }

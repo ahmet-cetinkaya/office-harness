@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use agent_application::commands::continue_session::ContinueSessionHandler;
 use agent_application::commands::create_agent::{
     CreateAgentHandler, CreateAgentRequest as CreateAgent,
 };
@@ -10,30 +11,35 @@ use agent_application::commands::create_project::{
 };
 use agent_application::commands::delete_agent::DeleteAgentHandler;
 use agent_application::commands::delete_project::DeleteProjectHandler;
+use agent_application::commands::set_office_additions::SetOfficeAdditionsHandler;
 use agent_application::commands::set_setting::SetSettingHandler;
-use agent_application::commands::start_agent::StartAgentHandler;
+use agent_application::commands::start_agent::{StartAgentHandler, StartOutcome};
+use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
+use agent_application::common::continuation::fresh_session_view;
+use agent_application::queries::get_office_additions::GetOfficeAdditionsHandler;
 use agent_application::queries::get_settings::GetSettingsHandler;
 use agent_application::queries::list_agents::ListAgentsHandler;
 use agent_application::queries::list_projects::ListProjectsHandler;
-use agent_domain::value_objects::{ProjectId, SettingKey};
+use agent_application::queries::list_sessions::ListSessionsHandler;
+use agent_domain::value_objects::{ProjectId, SessionId, SettingKey};
 use kernel::AgentId;
 use serde_json::Value;
 use wire::{Event, Request, Response};
 
 use super::handler_error::HandlerError;
 use crate::contracts::{
-    AgentIdRequest, CreateAgentRequest, CreateProjectRequest, ProjectIdRequest, SettingKeyRequest,
-    SettingRequest,
+    AdditionsRequest, AgentIdRequest, CreateAgentRequest, CreateProjectRequest, ProjectIdRequest,
+    SessionIdRequest, SettingKeyRequest, SettingRequest,
 };
 use crate::mappings::{
-    agent_changed_event, agent_deleted_event, agent_json, agent_status_event, project_json,
-    setting_json,
+    additions_changed_event, additions_json, agent_changed_event, agent_deleted_event, agent_json,
+    agent_status_event, project_json, session_json, setting_json,
 };
 
 /// The host sends every request whose type starts with one of these to
 /// `AgentHandlers`, except `agent.actions`.
-pub const REQUEST_PREFIXES: [&str; 3] = ["agent.", "project.", "settings."];
+pub const REQUEST_PREFIXES: [&str; 4] = ["agent.", "project.", "session.", "settings."];
 
 /// The use cases that the handlers call.
 pub struct AgentUseCases {
@@ -41,6 +47,11 @@ pub struct AgentUseCases {
     pub delete_agent: DeleteAgentHandler,
     pub start_agent: StartAgentHandler,
     pub stop_agent: StopAgentHandler,
+    pub start_new_task: StartNewTaskHandler,
+    pub continue_session: ContinueSessionHandler,
+    pub set_office_additions: SetOfficeAdditionsHandler,
+    pub get_office_additions: GetOfficeAdditionsHandler,
+    pub list_sessions: ListSessionsHandler,
     pub list_agents: ListAgentsHandler,
     pub create_project: CreateProjectHandler,
     pub delete_project: DeleteProjectHandler,
@@ -121,6 +132,11 @@ impl AgentHandlers {
             "agent.delete" => self.delete_agent(request),
             "agent.start" => self.start_agent(request),
             "agent.stop" => self.stop_agent(request),
+            "agent.new_task" => self.start_new_task(request),
+            "agent.additions.get" => self.get_additions(request),
+            "agent.additions.set" => self.set_additions(request),
+            "session.list" => self.list_sessions(request),
+            "session.continue" => self.continue_session(request),
             "settings.get" => self.get_setting(request),
             "settings.set" => self.set_setting(request),
             other => Err(HandlerError::not_found(format!(
@@ -169,6 +185,7 @@ impl AgentHandlers {
             command: body.command,
             working_folder: body.working_folder.map(PathBuf::from),
             project_id,
+            additions: body.additions,
         })?;
         Ok(Success::result(agent_json(&agent)).with_event(agent_changed_event(&agent)))
     }
@@ -182,16 +199,44 @@ impl AgentHandlers {
     fn start_agent(&self, request: &Request) -> Result<Success, HandlerError> {
         let agent_id = parse_agent_id(request)?;
         let outcome = self.use_cases.start_agent.handle(agent_id)?;
-        let status = outcome.agent.status;
-        let detail = outcome.failure.as_deref();
-        let mut result = serde_json::json!({
-            "agent_id": agent_id.to_string(),
-            "status": status.as_str(),
-        });
-        if let Some(detail) = detail {
-            result["detail"] = Value::String(detail.to_owned());
-        }
-        Ok(Success::result(result).with_event(agent_status_event(agent_id, status, detail)))
+        Ok(started_session(outcome))
+    }
+
+    fn start_new_task(&self, request: &Request) -> Result<Success, HandlerError> {
+        let agent_id = parse_agent_id(request)?;
+        let outcome = self.use_cases.start_new_task.handle(agent_id)?;
+        Ok(started_session(outcome))
+    }
+
+    fn continue_session(&self, request: &Request) -> Result<Success, HandlerError> {
+        let body = SessionIdRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        let session_id: SessionId = parse_id("session_id", &body.session_id)?;
+        let outcome = self.use_cases.continue_session.handle(session_id)?;
+        Ok(started_session(outcome))
+    }
+
+    fn list_sessions(&self, request: &Request) -> Result<Success, HandlerError> {
+        let agent_id = parse_agent_id(request)?;
+        let views = self.use_cases.list_sessions.handle(agent_id)?;
+        let sessions = views.iter().map(session_json).collect();
+        Ok(Success::result(Value::Array(sessions)))
+    }
+
+    fn get_additions(&self, request: &Request) -> Result<Success, HandlerError> {
+        let agent_id = parse_agent_id(request)?;
+        let view = self.use_cases.get_office_additions.handle(agent_id)?;
+        Ok(Success::result(additions_json(&view)))
+    }
+
+    fn set_additions(&self, request: &Request) -> Result<Success, HandlerError> {
+        let body = AdditionsRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        let agent_id: AgentId = parse_id("agent_id", &body.agent_id)?;
+        let view = self
+            .use_cases
+            .set_office_additions
+            .handle(agent_id, body.additions)?;
+        Ok(Success::result(additions_json(&view))
+            .with_event(additions_changed_event(agent_id, &view)))
     }
 
     fn stop_agent(&self, request: &Request) -> Result<Success, HandlerError> {
@@ -221,6 +266,15 @@ impl AgentHandlers {
             &settings.value_of(key),
         )))
     }
+}
+
+/// The session that a start made, and the status event of its agent.
+fn started_session(outcome: StartOutcome) -> Success {
+    let status = outcome.agent.status;
+    let detail = outcome.failure.as_deref();
+    let event = agent_status_event(outcome.agent.id, status, detail);
+    let view = fresh_session_view(outcome.session);
+    Success::result(session_json(&view)).with_event(event)
 }
 
 fn parse_agent_id(request: &Request) -> Result<AgentId, HandlerError> {

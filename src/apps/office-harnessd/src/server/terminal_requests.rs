@@ -7,7 +7,6 @@ use kernel::AgentId;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use terminal_application::common::models::SubscriptionId;
-use terminal_domain::value_objects::OutputKey;
 use terminal_presentation::contracts::{AttachRequest, DetachRequest, InputRequest, ResizeRequest};
 use terminal_presentation::handlers::{ErrorKind, HandlerError, TerminalHandlers};
 use tokio::sync::{Notify, mpsc};
@@ -15,6 +14,7 @@ use tokio::task::spawn_blocking;
 use wire::{ErrorCode, Request, Response};
 
 use super::channel_subscriber::ChannelSubscriber;
+use crate::bridges::SavedOutputs;
 
 /// The host sends every request whose type starts with this to the module.
 pub const TERMINAL_PREFIX: &str = "terminal.";
@@ -74,12 +74,16 @@ impl TerminalAnswer {
 /// blocking thread.
 pub struct TerminalGateway {
     handlers: Arc<TerminalHandlers>,
+    saved_outputs: SavedOutputs,
 }
 
 impl TerminalGateway {
     #[must_use]
-    pub fn new(handlers: Arc<TerminalHandlers>) -> Self {
-        Self { handlers }
+    pub fn new(handlers: Arc<TerminalHandlers>, saved_outputs: SavedOutputs) -> Self {
+        Self {
+            handlers,
+            saved_outputs,
+        }
     }
 
     pub async fn handle(
@@ -121,16 +125,24 @@ impl TerminalGateway {
         if let Some(previous) = connection.subscriptions.remove(&agent_id) {
             self.detach_agent(agent_id, previous).await;
         }
-        // One output file for each agent until sessions exist (change 0001, T7).
-        let saved_output = OutputKey::parse(&agent_id.to_string())?;
         let subscriber = Arc::new(ChannelSubscriber::new(
             agent_id,
             connection.frames.clone(),
             Arc::clone(&connection.overflow),
         ));
         let handlers = Arc::clone(&self.handlers);
-        let attached =
-            run_blocking(move || handlers.attach(&body, Some(&saved_output), subscriber)).await?;
+        let saved_outputs = self.saved_outputs.clone();
+        let attached = run_blocking(move || {
+            // The output of the agent's last session, shown when it does not run.
+            let saved_output = saved_outputs
+                .last_session_output(agent_id)
+                .map_err(|error| HandlerError {
+                    kind: ErrorKind::Internal,
+                    message: error.to_string(),
+                })?;
+            handlers.attach(&body, saved_output.as_ref(), subscriber)
+        })
+        .await?;
         if let Some(subscription) = attached.subscription {
             connection.subscriptions.insert(agent_id, subscription);
         }

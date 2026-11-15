@@ -6,21 +6,35 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use agent_domain::entities::{Agent, Project};
+use agent_domain::entities::{AdditionsRecord, Agent, Project, Session};
 use agent_domain::enums::AgentStatus;
-use agent_domain::value_objects::{AgentCommand, DisplayName, MachineId, ProjectId, Settings};
+use agent_domain::value_objects::{
+    AgentCommand, DisplayName, ExitResult, MachineId, ProjectId, SessionId, Settings,
+};
 use kernel::{AgentId, Timestamp};
 
+use crate::commands::continue_session::ContinueSessionHandler;
 use crate::commands::create_agent::CreateAgentHandler;
 use crate::commands::delete_agent::DeleteAgentHandler;
+use crate::commands::end_session::EndSessionHandler;
+use crate::commands::set_office_additions::SetOfficeAdditionsHandler;
 use crate::commands::start_agent::StartAgentHandler;
+use crate::commands::start_new_task::StartNewTaskHandler;
 use crate::commands::stop_agent::StopAgentHandler;
 use crate::common::action_journal::ActionJournal;
 use crate::common::errors::{PortError, TerminalHostError};
 use crate::common::interfaces::{
-    ActionRecorder, AgentStore, Clock, ProjectStore, SettingsStore, TerminalHost,
+    ActionRecorder, AdditionsStore, AgentStore, CliAdapter, CliAdapters, Clock, FailureReporter,
+    ProjectStore, SessionStore, SessionTracking, SettingsStore, TerminalHost,
 };
-use crate::common::models::{AgentActionEntry, StartTerminal};
+use crate::common::models::{
+    AgentActionEntry, PrepareLaunch, PreparedLaunch, SessionCommand, SessionPlan, StartTerminal,
+    TrackedSession, TrackingRequest,
+};
+use crate::common::session_ender::SessionEnder;
+use crate::common::session_launcher::{LauncherServices, SessionLauncher};
+use crate::queries::get_office_additions::GetOfficeAdditionsHandler;
+use crate::queries::list_sessions::ListSessionsHandler;
 
 const NOW_MILLIS: i64 = 1_700_000_000_000;
 
@@ -221,6 +235,176 @@ impl SettingsStore for MemorySettings {
     }
 }
 
+/// Sessions in memory.
+#[derive(Default)]
+pub struct MemorySessions(Mutex<Vec<Session>>);
+
+impl MemorySessions {
+    #[must_use]
+    pub fn all(&self) -> Vec<Session> {
+        locked(&self.0).clone()
+    }
+}
+
+impl SessionStore for MemorySessions {
+    fn insert(&self, session: &Session) -> Result<(), PortError> {
+        locked(&self.0).push(session.clone());
+        Ok(())
+    }
+
+    fn find(&self, id: SessionId) -> Result<Option<Session>, PortError> {
+        Ok(locked(&self.0)
+            .iter()
+            .find(|session| session.id == id)
+            .cloned())
+    }
+
+    fn list_for_agent(&self, agent_id: AgentId) -> Result<Vec<Session>, PortError> {
+        let mut sessions: Vec<Session> = locked(&self.0)
+            .iter()
+            .filter(|session| session.agent_id == agent_id)
+            .cloned()
+            .collect();
+        sessions.reverse();
+        Ok(sessions)
+    }
+
+    fn latest_for_agent(&self, agent_id: AgentId) -> Result<Option<Session>, PortError> {
+        Ok(self.list_for_agent(agent_id)?.into_iter().next())
+    }
+
+    fn set_cli_session_id(&self, id: SessionId, cli_session_id: &str) -> Result<(), PortError> {
+        let mut sessions = locked(&self.0);
+        let session = sessions
+            .iter_mut()
+            .find(|session| session.id == id)
+            .ok_or_else(|| PortError::NotFound {
+                what: format!("session {id}"),
+            })?;
+        session.cli_session_id = Some(cli_session_id.to_owned());
+        Ok(())
+    }
+
+    fn end_running(
+        &self,
+        agent_id: AgentId,
+        result: &ExitResult,
+        at: Timestamp,
+    ) -> Result<bool, PortError> {
+        let mut sessions = locked(&self.0);
+        let running = sessions
+            .iter_mut()
+            .find(|session| session.agent_id == agent_id && session.is_running());
+        Ok(running
+            .map(|session| session.end(result.clone(), at))
+            .is_some())
+    }
+}
+
+#[derive(Default)]
+pub struct MemoryAdditions(Mutex<Vec<(AgentId, AdditionsRecord)>>);
+
+impl AdditionsStore for MemoryAdditions {
+    fn load(&self, agent_id: AgentId) -> Result<Option<AdditionsRecord>, PortError> {
+        Ok(locked(&self.0)
+            .iter()
+            .find(|(id, _)| *id == agent_id)
+            .map(|(_, record)| record.clone()))
+    }
+
+    fn save(&self, agent_id: AgentId, record: &AdditionsRecord) -> Result<(), PortError> {
+        let mut rows = locked(&self.0);
+        rows.retain(|(id, _)| *id != agent_id);
+        rows.push((agent_id, record.clone()));
+        Ok(())
+    }
+}
+
+/// Reports nothing: the tests that need no background failure.
+struct IgnoredFailures;
+
+impl FailureReporter for IgnoredFailures {
+    fn report(&self, _error: &PortError) {}
+}
+
+/// Adapters that build recognizable command lines. A program named `generic`
+/// cannot continue, and a program named `tracked` learns its id after the
+/// start, as `codex` does.
+pub struct FakeAdapters;
+
+struct FakeAdapter {
+    supports_continue: bool,
+    tracked_id: Option<&'static str>,
+}
+
+struct ImmediateTracking(&'static str);
+
+impl SessionTracking for ImmediateTracking {
+    fn follow(self: Box<Self>, report: Box<dyn FnOnce(TrackedSession) + Send>) {
+        report(TrackedSession::Found(self.0.to_owned()));
+    }
+}
+
+fn command_line(plan: &SessionPlan<'_>, middle: &[&str], with_prompt: bool) -> SessionCommand {
+    let mut arguments: Vec<String> = plan.fixed_arguments.to_vec();
+    arguments.extend(plan.flags.iter().cloned());
+    arguments.extend(middle.iter().map(|word| (*word).to_owned()));
+    let mut typed_input = None;
+    if let Some(prompt) = plan.startup_prompt.filter(|_| with_prompt) {
+        if plan.prompt_by_argument {
+            arguments.push(prompt.to_owned());
+        } else {
+            typed_input = Some(prompt.to_owned());
+        }
+    }
+    SessionCommand {
+        arguments,
+        cli_session_id: None,
+        typed_input,
+    }
+}
+
+impl CliAdapter for FakeAdapter {
+    fn supports_continue(&self) -> bool {
+        self.supports_continue
+    }
+
+    fn new_session(&self, plan: &SessionPlan<'_>) -> SessionCommand {
+        if self.tracked_id.is_some() {
+            return command_line(plan, &[], true);
+        }
+        let mut command = command_line(plan, &["--session-id", plan.proposed_cli_session_id], true);
+        command.cli_session_id = Some(plan.proposed_cli_session_id.to_owned());
+        command
+    }
+
+    fn continue_session(
+        &self,
+        plan: &SessionPlan<'_>,
+        cli_session_id: &str,
+    ) -> Option<SessionCommand> {
+        self.supports_continue
+            .then(|| command_line(plan, &["--resume", cli_session_id], false))
+    }
+
+    fn track_new_session(
+        &self,
+        _request: &TrackingRequest<'_>,
+    ) -> Option<Box<dyn SessionTracking>> {
+        self.tracked_id
+            .map(|id| Box::new(ImmediateTracking(id)) as Box<dyn SessionTracking>)
+    }
+}
+
+impl CliAdapters for FakeAdapters {
+    fn for_program(&self, program: &str) -> Arc<dyn CliAdapter> {
+        Arc::new(FakeAdapter {
+            supports_continue: program != "generic",
+            tracked_id: (program == "tracked").then_some("tracked-id"),
+        })
+    }
+}
+
 struct FixedClock;
 
 impl Clock for FixedClock {
@@ -253,6 +437,7 @@ pub struct FakeTerminals {
     started: Mutex<Vec<StartTerminal>>,
     stopped: Mutex<Vec<(AgentId, Duration)>>,
     unstartable: Mutex<Vec<String>>,
+    batch_programs: Mutex<Vec<String>>,
     ended_on_its_own: Mutex<bool>,
 }
 
@@ -276,16 +461,44 @@ impl FakeTerminals {
     pub fn make_unstartable(&self, program: &str) {
         locked(&self.unstartable).push(program.to_owned());
     }
+
+    /// The program counts as a Windows batch script: arguments with `%` are
+    /// refused.
+    pub fn make_batch_script(&self, program: &str) {
+        locked(&self.batch_programs).push(program.to_owned());
+    }
 }
 
 impl TerminalHost for FakeTerminals {
-    fn start(&self, request: &StartTerminal) -> Result<(), TerminalHostError> {
+    fn prepare(&self, request: &PrepareLaunch) -> Result<PreparedLaunch, TerminalHostError> {
         if locked(&self.unstartable).contains(&request.program) {
             return Err(TerminalHostError::Failed(format!(
                 "the command {} was not found on the login PATH",
                 request.program
             )));
         }
+        Ok(PreparedLaunch {
+            program: request.program.clone(),
+            environment: request.environment_additions.clone(),
+            is_batch_script: locked(&self.batch_programs).contains(&request.program),
+        })
+    }
+
+    fn validate_arguments(
+        &self,
+        prepared: &PreparedLaunch,
+        arguments: &[String],
+    ) -> Result<(), TerminalHostError> {
+        let unsafe_argument = arguments.iter().position(|argument| argument.contains('%'));
+        match unsafe_argument {
+            Some(index) if prepared.is_batch_script => Err(TerminalHostError::Refused(format!(
+                "argument {index} contains '%', which a batch script cannot receive safely"
+            ))),
+            _ => Ok(()),
+        }
+    }
+
+    fn start(&self, request: &StartTerminal) -> Result<(), TerminalHostError> {
         locked(&self.started).push(request.clone());
         Ok(())
     }
@@ -303,6 +516,8 @@ impl TerminalHost for FakeTerminals {
 pub struct Office {
     pub agents: Arc<MemoryAgents>,
     pub projects: Arc<MemoryProjects>,
+    pub sessions: Arc<MemorySessions>,
+    pub additions: Arc<MemoryAdditions>,
     pub settings: Arc<MemorySettings>,
     pub recorder: Arc<RecordingRecorder>,
     pub terminals: Arc<FakeTerminals>,
@@ -316,6 +531,8 @@ impl Office {
         Self {
             projects: Arc::new(MemoryProjects::new(agents.clone())),
             agents,
+            sessions: Arc::new(MemorySessions::default()),
+            additions: Arc::new(MemoryAdditions::default()),
             settings: Arc::new(MemorySettings::default()),
             recorder: Arc::new(RecordingRecorder::default()),
             terminals: Arc::new(FakeTerminals::default()),
@@ -332,6 +549,7 @@ impl Office {
         CreateAgentHandler::new(
             self.agents.clone(),
             self.projects.clone(),
+            self.additions.clone(),
             Arc::new(FixedClock),
             self.journal(),
             self.machine_id,
@@ -339,22 +557,92 @@ impl Office {
     }
 
     #[must_use]
-    pub fn start_agent(&self) -> StartAgentHandler {
-        StartAgentHandler::new(
+    pub fn clock() -> Arc<dyn Clock> {
+        Arc::new(FixedClock)
+    }
+
+    fn ender(&self) -> SessionEnder {
+        SessionEnder::new(
+            self.agents.clone(),
+            self.settings.clone(),
+            self.sessions.clone(),
+            self.terminals.clone(),
+            Arc::new(FixedClock),
+        )
+    }
+
+    fn launcher(&self) -> SessionLauncher {
+        SessionLauncher::new(
             self.agents.clone(),
             self.projects.clone(),
-            self.terminals.clone(),
+            self.additions.clone(),
+            self.sessions.clone(),
+            LauncherServices {
+                terminals: self.terminals.clone(),
+                adapters: Arc::new(FakeAdapters),
+                clock: Arc::new(FixedClock),
+                failures: Arc::new(IgnoredFailures),
+            },
+        )
+    }
+
+    #[must_use]
+    pub fn start_agent(&self) -> StartAgentHandler {
+        StartAgentHandler::new(self.agents.clone(), self.launcher(), self.journal())
+    }
+
+    #[must_use]
+    pub fn start_new_task(&self) -> StartNewTaskHandler {
+        StartNewTaskHandler::new(
+            self.agents.clone(),
+            self.ender(),
+            self.launcher(),
+            self.journal(),
+        )
+    }
+
+    #[must_use]
+    pub fn continue_session(&self) -> ContinueSessionHandler {
+        ContinueSessionHandler::new(
+            self.agents.clone(),
+            self.sessions.clone(),
+            Arc::new(FakeAdapters),
+            self.ender(),
+            self.launcher(),
             self.journal(),
         )
     }
 
     #[must_use]
     pub fn stop_agent(&self) -> StopAgentHandler {
-        StopAgentHandler::new(
+        StopAgentHandler::new(self.agents.clone(), self.ender(), self.journal())
+    }
+
+    #[must_use]
+    pub fn end_session(&self) -> EndSessionHandler {
+        EndSessionHandler::new(self.sessions.clone(), Arc::new(FixedClock))
+    }
+
+    #[must_use]
+    pub fn set_additions(&self) -> SetOfficeAdditionsHandler {
+        SetOfficeAdditionsHandler::new(
             self.agents.clone(),
-            self.settings.clone(),
-            self.terminals.clone(),
-            self.journal(),
+            self.additions.clone(),
+            Arc::new(FixedClock),
+        )
+    }
+
+    #[must_use]
+    pub fn get_additions(&self) -> GetOfficeAdditionsHandler {
+        GetOfficeAdditionsHandler::new(self.agents.clone(), self.additions.clone())
+    }
+
+    #[must_use]
+    pub fn list_sessions(&self) -> ListSessionsHandler {
+        ListSessionsHandler::new(
+            self.agents.clone(),
+            self.sessions.clone(),
+            Arc::new(FakeAdapters),
         )
     }
 
