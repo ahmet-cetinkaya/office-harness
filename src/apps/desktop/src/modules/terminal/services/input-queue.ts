@@ -8,6 +8,12 @@ export interface InputQueue {
 }
 
 /**
+ * The most bytes in one request. Base64 makes them a third larger, so a
+ * request stays well under the server's 1 MiB frame limit.
+ */
+export const MAX_REQUEST_BYTES = 256 * 1024;
+
+/**
  * Keeps one input request in flight. Bytes that come meanwhile wait and go
  * out as one request, so a slow server sees a bounded number of requests.
  */
@@ -20,8 +26,8 @@ export function createInputQueue(
 
   function sendWaiting(): void {
     isSending = true;
-    const batch = Uint8Array.from(waiting);
-    waiting = [];
+    const batch = Uint8Array.from(waiting.slice(0, MAX_REQUEST_BYTES));
+    waiting = waiting.slice(MAX_REQUEST_BYTES);
     send(encodeBytes(batch))
       .catch(onFailure)
       .finally(() => {
