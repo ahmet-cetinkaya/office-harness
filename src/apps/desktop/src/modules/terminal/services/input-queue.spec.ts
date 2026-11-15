@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, test } from "bun:test";
-import { createInputQueue } from "./input-queue";
+import { createInputQueue, MAX_REQUEST_BYTES } from "./input-queue";
 import { textBytes } from "./terminal";
 
 function decode(encoded: string): string {
@@ -78,5 +78,20 @@ describe("input queue", () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0]).toHaveLength(200_000);
+  });
+
+  test("splits a paste above the request limit into requests in order", async () => {
+    const { sent, send, finishOldest } = controlledSend();
+    const queue = createInputQueue(send, () => {});
+    const large = new Uint8Array(MAX_REQUEST_BYTES + 10).fill(0x62);
+
+    queue.push(large);
+    finishOldest();
+    await settle();
+
+    expect(sent.map((request) => request.length)).toEqual([
+      MAX_REQUEST_BYTES,
+      10,
+    ]);
   });
 });
