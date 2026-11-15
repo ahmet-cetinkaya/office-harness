@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[package]
+name = "agent-infrastructure"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+agent-application = { path = "../application" }
+agent-domain = { path = "../domain" }
+kernel = { path = "../../../kernel" }
+rusqlite.workspace = true
+thiserror.workspace = true
+
+# Account record of the current user, and the process-group kill that ends a
+# login shell which does not answer. Safe wrappers, so no `unsafe` code.
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["user", "signal"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
