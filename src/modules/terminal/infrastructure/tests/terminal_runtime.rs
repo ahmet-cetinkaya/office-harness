@@ -123,7 +123,7 @@ fn output_is_recorded_without_a_client_and_survives_a_server_restart() {
     assert!(text.contains("DONE") && text.contains("L049."));
 }
 
-/// ConPTY writes screen or cursor sequences when the child exits, and that
+/// `ConPTY` writes screen or cursor sequences when the child exits, and that
 /// counts as output after the quiet period. It is real platform behavior, so
 /// Windows accepts one `OutputResumed` directly before `Exited`.
 fn without_exit_output_on_windows(mut events: Vec<TerminalEvent>) -> Vec<TerminalEvent> {
