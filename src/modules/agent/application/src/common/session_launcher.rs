@@ -361,8 +361,7 @@ impl SessionLauncher {
         let stored = self
             .additions
             .load(agent.id)?
-            .map(|record| record.additions)
-            .unwrap_or_default();
+            .map_or_default(|record| record.additions);
         match kind {
             LaunchKind::NewTask => Ok(stored),
             LaunchKind::Continue { .. } => Ok(OfficeAdditions::new(
