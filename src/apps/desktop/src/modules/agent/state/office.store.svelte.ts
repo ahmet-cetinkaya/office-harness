@@ -24,6 +24,7 @@ export function createOfficeStore(client: CoreClient) {
       return snapshot;
     },
     controller,
+    client,
   };
 }
 

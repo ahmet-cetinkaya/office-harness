@@ -23,6 +23,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::watch_connection,
             commands::watch_events,
+            commands::watch_terminal_frames,
             commands::send_request,
             commands::retry_connection,
             commands::start_server,

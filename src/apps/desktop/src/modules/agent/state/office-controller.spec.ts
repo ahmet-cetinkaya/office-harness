@@ -44,6 +44,7 @@ function fakeClient(handler: Handler = () => undefined) {
     watchEvents: async (callback) => {
       onEvent = callback;
     },
+    watchTerminalFrames: async () => {},
     sendRequest: async (kind, fields) => {
       requests.push({ kind, fields });
       return handler(kind, fields);

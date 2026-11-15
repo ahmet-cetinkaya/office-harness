@@ -16,6 +16,10 @@ export interface OfficeSeed {
   projects?: Project[];
   sessions?: Record<string, Session[]>;
   additions?: Record<string, AdditionsView>;
+  /** The text of the snapshot frame that follows `terminal.attach`. */
+  snapshots?: Record<string, string>;
+  /** The `focus_shortcut` setting. The server's default when left out. */
+  focusShortcut?: string;
 }
 
 export interface MockCoreOptions {
@@ -40,6 +44,8 @@ declare global {
       push(state: ConnectionState): void;
       /** Sends a server event to the webview, as the core forwards it. */
       pushEvent(event: ServerEvent): void;
+      /** Sends a binary terminal frame: kind 1 snapshot, 2 output, 3 dropped. */
+      pushTerminalFrame(kind: number, agentId: string, text: string): void;
       calls: RecordedCall[];
     };
   }
@@ -59,6 +65,7 @@ export async function installMockCore(
     const nextIndex = new Map<number, number>();
     const stateChannels: number[] = [];
     const eventChannels: number[] = [];
+    const terminalChannels: number[] = [];
     const calls: RecordedCall[] = [];
     let nextCallbackId = 1;
     let current = mock.initialState;
@@ -92,6 +99,19 @@ export async function installMockCore(
     }
     const pushEvent = (event: ServerEvent) => {
       eventChannels.forEach((id) => send(id, event));
+    };
+    // The contract's frame: 1 byte kind, 16 bytes agent UUID, then the payload.
+    const pushTerminalFrame = (kind: number, agentId: string, text: string) => {
+      const uuid = agentId.replaceAll("-", "").match(/../g) ?? [];
+      const payload = new TextEncoder().encode(text);
+      const frame = new Uint8Array(17 + payload.length);
+      frame[0] = kind;
+      frame.set(
+        uuid.map((byte) => Number.parseInt(byte, 16)),
+        1,
+      );
+      frame.set(payload, 17);
+      terminalChannels.forEach((id) => send(id, frame.buffer));
     };
     const refuse = (code: string, message: string): never => {
       throw { code, message };
@@ -252,6 +272,21 @@ export async function installMockCore(
         }
         case "session.list":
           return office.sessions[String(fields.agent_id)] ?? [];
+        case "terminal.attach": {
+          const agent = findAgent(fields.agent_id);
+          const text = mock.office?.snapshots?.[agent.id] ?? "";
+          setTimeout(() => pushTerminalFrame(1, agent.id, text), 0);
+          return null;
+        }
+        case "terminal.input":
+        case "terminal.resize":
+        case "terminal.detach":
+          return null;
+        case "settings.get":
+          return {
+            key: fields.key,
+            value: mock.office?.focusShortcut ?? "Ctrl+Alt+Escape",
+          };
         case "agent.actions":
           return office.actions.filter(
             (entry) => entry.agent_id === fields.agent_id,
@@ -284,6 +319,11 @@ export async function installMockCore(
             eventChannels.push(id);
             return undefined;
           }
+          case "watch_terminal_frames": {
+            const { id } = args.onFrame as { id: number };
+            terminalChannels.push(id);
+            return undefined;
+          }
           case "send_request":
             return answer(
               args.kind as string,
@@ -307,7 +347,7 @@ export async function installMockCore(
     };
     Object.assign(window, {
       __TAURI_INTERNALS__: internals,
-      __mockCore: { push, pushEvent, calls },
+      __mockCore: { push, pushEvent, pushTerminalFrame, calls },
     });
   }, options);
 }

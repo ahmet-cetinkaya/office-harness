@@ -2,7 +2,9 @@
 <script lang="ts">
   import Button from "$shared/ui/button.svelte";
   import FailureMessage from "$shared/ui/failure-message.svelte";
+  import type { CoreClient } from "../../../core/api";
   import { ActionRecord } from "../../audit";
+  import { TerminalView } from "../../terminal";
   import {
     isActive,
     statusText,
@@ -20,6 +22,7 @@
   import SessionList from "./session-list.svelte";
 
   interface Props {
+    client: CoreClient;
     agent: Agent;
     details: AgentDetails;
     /** The text that came with the status, for example why the agent failed. */
@@ -36,6 +39,7 @@
   }
 
   let {
+    client,
     agent,
     details,
     statusDetail,
@@ -124,6 +128,10 @@
       </Button>
     </div>
   </header>
+
+  {#if isRunning}
+    <TerminalView {client} agentId={agent.id} agentName={agent.name} />
+  {/if}
 
   {#if details.phase === "loading"}
     <p role="status" class="text-neutral-700">Loading the agent's details.</p>
