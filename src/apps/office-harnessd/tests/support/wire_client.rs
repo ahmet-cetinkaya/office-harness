@@ -30,6 +30,9 @@ pub struct WireClient {
     stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
     /// Binary frames that arrived while the test waited for a text answer.
     queued_binary: VecDeque<Vec<u8>>,
+    /// Text messages (events) that arrived while the test waited for a
+    /// binary frame.
+    queued_text: VecDeque<String>,
 }
 
 impl WireClient {
@@ -53,6 +56,7 @@ impl WireClient {
         Ok(Self {
             stream,
             queued_binary: VecDeque::new(),
+            queued_text: VecDeque::new(),
         })
     }
 
@@ -110,6 +114,9 @@ impl WireClient {
     }
 
     pub async fn receive(&mut self) -> Received {
+        if let Some(text) = self.queued_text.pop_front() {
+            return Received::Text(text);
+        }
         match timeout(WAIT, self.stream.next())
             .await
             .expect("the server answers in time")
@@ -128,9 +135,14 @@ impl WireClient {
         if let Some(frame) = self.queued_binary.pop_front() {
             return frame;
         }
-        match self.next_message().await {
-            Some(Ok(Message::Binary(bytes))) => bytes.to_vec(),
-            other => panic!("expected a binary frame, got {other:?}"),
+        loop {
+            match self.next_message().await {
+                Some(Ok(Message::Binary(bytes))) => return bytes.to_vec(),
+                Some(Ok(Message::Text(text))) => {
+                    self.queued_text.push_back(text.as_str().to_owned())
+                }
+                other => panic!("expected a binary frame, got {other:?}"),
+            }
         }
     }
 
@@ -149,6 +161,9 @@ impl WireClient {
     /// The next text message as JSON. Binary frames that come first are kept
     /// for `receive_binary`.
     pub async fn receive_json(&mut self) -> Value {
+        if let Some(text) = self.queued_text.pop_front() {
+            return serde_json::from_str(&text).expect("json");
+        }
         loop {
             match self.next_message().await {
                 Some(Ok(Message::Text(text))) => {

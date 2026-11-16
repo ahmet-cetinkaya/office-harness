@@ -8,24 +8,24 @@ const CLASSIC: &str = "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\n
 
 const NEWER: &str = "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\r\nSET \"_prog=node\"\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & \"%_prog%\"  \"%dp0%\\node_modules\\x\\cli.js\" %*\r\n";
 
-fn script_target(interpreters: Vec<Interpreter>, script: &str) -> Option<ShimTarget> {
-    Some(ShimTarget::Script {
+fn script_target(interpreters: Vec<Interpreter>, script: &str) -> ShimTarget {
+    ShimTarget::Script {
         interpreters,
         script: script.to_owned(),
-    })
+    }
 }
 
 #[test]
 fn the_classic_shim_tries_its_own_node_and_then_node_on_the_path() {
     assert_eq!(
         parse_npm_shim(SHIM, CLASSIC),
-        script_target(
+        Some(script_target(
             vec![
                 Interpreter::Path("C:\\npm\\\\node.exe".to_owned()),
                 Interpreter::Name("node".to_owned()),
             ],
             "C:\\npm\\\\node_modules\\@x\\cli\\cli.js",
-        )
+        ))
     );
 }
 
@@ -33,10 +33,10 @@ fn the_classic_shim_tries_its_own_node_and_then_node_on_the_path() {
 fn the_newer_shim_uses_node_on_the_path() {
     assert_eq!(
         parse_npm_shim(SHIM, NEWER),
-        script_target(
+        Some(script_target(
             vec![Interpreter::Name("node".to_owned())],
             "C:\\npm\\\\node_modules\\x\\cli.js",
-        )
+        ))
     );
 }
 
@@ -45,18 +45,18 @@ fn a_quoted_interpreter_and_a_bare_word_are_read_without_the_variable() {
     let quoted = "\"%~dp0\\bun.exe\"  \"%~dp0\\app\\run.mjs\" %*";
     assert_eq!(
         parse_npm_shim(SHIM, quoted),
-        script_target(
+        Some(script_target(
             vec![Interpreter::Path("C:\\npm\\\\bun.exe".to_owned())],
             "C:\\npm\\\\app\\run.mjs",
-        )
+        ))
     );
     let bare = "@deno \"%dp0%\\app\\run.cjs\" %*";
     assert_eq!(
         parse_npm_shim(SHIM, bare),
-        script_target(
+        Some(script_target(
             vec![Interpreter::Name("deno".to_owned())],
             "C:\\npm\\\\app\\run.cjs",
-        )
+        ))
     );
 }
 
