@@ -139,7 +139,7 @@ impl WireClient {
             match self.next_message().await {
                 Some(Ok(Message::Binary(bytes))) => return bytes.to_vec(),
                 Some(Ok(Message::Text(text))) => {
-                    self.queued_text.push_back(text.as_str().to_owned())
+                    self.queued_text.push_back(text.as_str().to_owned());
                 }
                 other => panic!("expected a binary frame, got {other:?}"),
             }
