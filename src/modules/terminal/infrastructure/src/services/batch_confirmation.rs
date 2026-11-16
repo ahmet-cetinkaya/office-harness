@@ -13,6 +13,17 @@ pub fn confirmation_answer(line: &str) -> Option<char> {
     single_letter(yes)
 }
 
+/// The answer for the line at the cursor after the interrupt key, only when
+/// the line changed since before the key. A question that was already on the
+/// screen belongs to the program itself, so it never gets an answer.
+#[must_use]
+pub fn answer_after_interrupt(line_before_interrupt: &str, line: &str) -> Option<char> {
+    if line == line_before_interrupt {
+        return None;
+    }
+    confirmation_answer(line)
+}
+
 fn single_letter(text: &str) -> Option<char> {
     let mut characters = text.chars();
     let letter = characters

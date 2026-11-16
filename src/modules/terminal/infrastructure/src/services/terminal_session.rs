@@ -16,7 +16,7 @@ use terminal_application::common::models::{
 use terminal_domain::events::TerminalEvent;
 use terminal_domain::value_objects::TerminalSize;
 
-use crate::services::batch_confirmation::confirmation_answer;
+use crate::services::batch_confirmation::answer_after_interrupt;
 use crate::services::output_store::OutputStore;
 use crate::services::process_tree;
 use crate::services::pty_host::{SpawnedPty, pty_size};
@@ -260,9 +260,10 @@ impl TerminalSession {
         if cfg!(windows) {
             // The interrupt key is the only end request that reaches a
             // console child. A write that fails means the child is gone.
+            let line_before_interrupt = locked(&self.core).emulator.cursor_line();
             let _ = self.write_input(&[CTRL_C]);
             if self.runs_through_batch_interpreter {
-                self.answer_batch_question(QUESTION_WINDOW.min(grace));
+                self.answer_batch_question(&line_before_interrupt, QUESTION_WINDOW.min(grace));
             }
         }
         self.wait_for_exit(grace);
@@ -284,15 +285,16 @@ impl TerminalSession {
     /// A batch file that is not resolved to its program answers the interrupt
     /// key with "Terminate batch job (Y/N)?" and waits. This types the
     /// "yes" letter once, only when the screen shows such a question at the
-    /// cursor, so no key is ever typed blindly.
-    fn answer_batch_question(&self, window: Duration) {
+    /// cursor and that line changed after the key, so no key is ever typed
+    /// blindly or into the program's own question.
+    fn answer_batch_question(&self, line_before_interrupt: &str, window: Duration) {
         let deadline = Instant::now() + window;
         while Instant::now() < deadline {
             if self.wait_for_exit(QUESTION_POLL) {
                 return;
             }
             let line = locked(&self.core).emulator.cursor_line();
-            if let Some(letter) = confirmation_answer(&line) {
+            if let Some(letter) = answer_after_interrupt(line_before_interrupt, &line) {
                 // A failed write means the child is gone; the waiter reports it.
                 let _ = self.write_input(format!("{letter}{ENTER}").as_bytes());
                 return;
