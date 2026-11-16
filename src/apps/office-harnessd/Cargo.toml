@@ -24,6 +24,7 @@ directories.workspace = true
 gethostname.workspace = true
 kernel = { path = "../../kernel" }
 private-fs = { path = "../../shared/private-fs" }
+console-control = { path = "../../shared/console-control" }
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
