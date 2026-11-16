@@ -28,6 +28,10 @@ pub const HEALTH_PATH: &str = "/v1/health";
 /// The file in the data folder that tells clients where the server listens.
 pub const SERVER_FILE_NAME: &str = "server.json";
 
+/// The exit code of `office-harnessd status` when no login item is
+/// registered, so that the desktop core can tell "no" from a failure.
+pub const LOGIN_START_NOT_REGISTERED_EXIT_CODE: u8 = 3;
+
 /// A challenge nonce is exactly this many lowercase hex characters (32 bytes).
 /// The proof joins the nonce, the port, and the role without separators, so a
 /// nonce of any other length would let a port be shifted into it.

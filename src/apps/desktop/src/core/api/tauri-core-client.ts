@@ -32,6 +32,8 @@ export function createTauriCoreClient(): CoreClient {
       }),
     sendRequest: (kind, fields) => call("send_request", { kind, fields }),
     startServer: () => call("start_server"),
+    registerLoginStart: () => call("register_login_start"),
+    loginStartStatus: () => call("login_start_status"),
     retryConnection: () => call("retry_connection"),
   };
 }

@@ -21,6 +21,10 @@ export interface CoreClient {
   sendRequest(kind: string, fields?: Record<string, unknown>): Promise<unknown>;
   /** Resolves once the new server answers; rejects when it does not. */
   startServer(): Promise<void>;
+  /** Asks the server program to start at each login; safe to repeat. */
+  registerLoginStart(): Promise<void>;
+  /** Whether the server program is registered to start at login. */
+  loginStartStatus(): Promise<boolean>;
   /** Skips the wait before the next connection attempt. */
   retryConnection(): Promise<void>;
 }

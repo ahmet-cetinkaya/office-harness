@@ -9,12 +9,17 @@ use std::env;
 use std::process::ExitCode;
 
 use office_harnessd::bootstrap::{self, ServerLog, Services, StartupError};
+use office_harnessd::cli;
 use office_harnessd::config::Config;
 use office_harnessd::server::{RestartSignal, Server, ServerOptions};
 use tokio::sync::oneshot;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    let arguments: Vec<_> = env::args_os().skip(1).collect();
+    if let Some((command, rest)) = cli::split_command(&arguments) {
+        return cli::run(command, rest);
+    }
     match run().await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

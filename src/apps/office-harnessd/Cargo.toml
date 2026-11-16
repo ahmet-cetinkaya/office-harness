@@ -18,6 +18,7 @@ audit-application = { path = "../../modules/audit/application" }
 audit-domain = { path = "../../modules/audit/domain" }
 audit-infrastructure = { path = "../../modules/audit/infrastructure" }
 audit-presentation = { path = "../../modules/audit/presentation" }
+auto-launch.workspace = true
 axum.workspace = true
 directories.workspace = true
 gethostname.workspace = true

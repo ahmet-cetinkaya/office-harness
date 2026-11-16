@@ -23,6 +23,8 @@ function fakeClient(overrides: Partial<CoreClient> = {}): CoreClient & {
     watchTerminalFrames: async () => {},
     sendRequest: async () => null,
     startServer: async () => {},
+    registerLoginStart: async () => {},
+    loginStartStatus: async () => false,
     retryConnection: async () => {},
     ...overrides,
     push: (state) => onState(state),
