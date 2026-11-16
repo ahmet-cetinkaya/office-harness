@@ -19,7 +19,7 @@
 
 - The automated tests use fake CLIs, not the real `claude`, `codex`, `gemini`, or `opencode`.
 - A PASS (automated) row shows that the code does what the criterion says. It does not replace a hands-on run with the real surface.
-- CI run 43780798038 at commit 264148efcbff1e7c7d2aee5127be0620f97590fc passed on Linux, macOS, and Windows. It ran every named test; `tests/sessions.rs` runs only on Linux and macOS (`#![cfg(unix)]`). A later commit that changes only this file does not change the tested code.
+- CI run 43780798038 at commit 264148efcbff1e7c7d2aee5127be0620f97590fc passed on Linux, macOS, and Windows. It ran every named test; `tests/sessions.rs` runs only on Linux and macOS (`#![cfg(unix)]`). The SC-005 and SC-009 tests moved to `tests/sessions_portable.rs`, which also runs on Windows; the Windows rows below wait for a green CI run of that change. A later commit that changes only this file does not change the tested code.
 
 ### What a person must run
 
@@ -35,7 +35,7 @@
 
 **On macOS and Windows only**
 
-- Every row of SC-005, SC-006, and SC-009 (there is no hands-on or automated evidence for these OSes yet).
+- Every row of SC-006 (there is no hands-on or automated evidence for these OSes yet), and the macOS rows of SC-005 and SC-009. The Windows rows of SC-005 and SC-009 have automated evidence once CI is green.
 
 **On Linux only**
 
@@ -78,9 +78,9 @@
 
 | SC | OS | Method | Measured value | Verdict | Evidence |
 |---|---|---|---|---|---|
-| SC-005 | Linux | Create, start, continue, edit additions, stop, and delete an agent for each of the four CLI names, with fake CLIs that write nothing. Compare size, modification time, and content hash of the home folder and the XDG folders before and after. | 0 files changed (per the test assertion; confirm in CI run) | PASS (automated) | `src/apps/office-harnessd/tests/sessions.rs`, test `create_start_continue_edit_stop_and_delete_change_nothing_in_the_cli_configuration`. The file runs on Unix only. It uses fake CLIs, which matches the criterion's CLI that writes nothing itself. |
+| SC-005 | Linux | Create, start, continue, edit additions, stop, and delete an agent for each of the four CLI names, with fake CLIs that write nothing. Compare size, modification time, and content hash of the home folder and the XDG folders before and after. | 0 files changed (per the test assertion; confirm in CI run) | PASS (automated) | `src/apps/office-harnessd/tests/sessions_portable.rs`, test `create_start_continue_edit_stop_and_delete_change_nothing_in_the_cli_configuration`. The file runs on Linux, macOS, and Windows. It uses fake CLIs, which matches the criterion's CLI that writes nothing itself. |
 | SC-005 | macOS | Same as Linux, by hand or with the Unix test | Not measured | BLOCKED | Needs a person on macOS with the installer from the `release` workflow. The same test file builds for macOS in CI, but nobody has recorded a result for this build. |
-| SC-005 | Windows | Compare the CLI configuration folders before and after a session | Not measured | BLOCKED | Needs a person on Windows with the installer from the `release` workflow. The test file `sessions.rs` does not build for Windows (`#![cfg(unix)]`). |
+| SC-005 | Windows | Same test as Linux, with fake `.cmd` CLIs and a fixed environment: `USERPROFILE`, `APPDATA`, and `LOCALAPPDATA` point into a temporary fake home. | 0 files changed (per the test assertion; confirm in CI run) | PASS (automated) pending CI | `src/apps/office-harnessd/tests/sessions_portable.rs`, test `create_start_continue_edit_stop_and_delete_change_nothing_in_the_cli_configuration`. It uses fake CLIs, not the real ones. |
 
 ## SC-006: Connections without a valid token are refused, and none from another machine succeeds
 
@@ -110,7 +110,7 @@
 
 | SC | OS | Method | Measured value | Verdict | Evidence |
 |---|---|---|---|---|---|
-| SC-009 | Linux | Edit flags, environment variables, and the startup prompt of a running agent. Check that the running session keeps the old values and the next session gets the new ones. | Next session has the new values; running session unchanged (per the test assertions; confirm in CI run) | PASS (automated) | Server: `src/apps/office-harnessd/tests/sessions.rs`, test `flags_env_and_the_startup_prompt_reach_the_child_at_the_next_session_and_an_edit_leaves_the_running_one`. Webview: `src/apps/desktop/e2e/office.spec.ts`, test `a running agent's additions edit applies to the next session, and another client's save refreshes the editor`. The webview test runs against a mock core, so it covers the screen only. |
+| SC-009 | Linux | Edit flags, environment variables, and the startup prompt of a running agent. Check that the running session keeps the old values and the next session gets the new ones. | Next session has the new values; running session unchanged (per the test assertions; confirm in CI run) | PASS (automated) | Server: `src/apps/office-harnessd/tests/sessions_portable.rs`, test `flags_env_and_the_startup_prompt_reach_the_child_at_the_next_session_and_an_edit_leaves_the_running_one`. Webview: `src/apps/desktop/e2e/office.spec.ts`, test `a running agent's additions edit applies to the next session, and another client's save refreshes the editor`. The webview test runs against a mock core, so it covers the screen only. |
 | SC-009 | macOS | Same as Linux | Not measured | BLOCKED | Needs a person on macOS with the installer from the `release` workflow. |
-| SC-009 | Windows | Same as Linux | Not measured | BLOCKED | Needs a person on Windows with the installer from the `release` workflow. |
+| SC-009 | Windows | Same test as Linux, with fake `.cmd` CLIs. A batch file cannot record typed input, so the test proves the startup prompt by its echo in the terminal output. | Next session has the new values; running session unchanged (per the test assertions; confirm in CI run) | PASS (automated) pending CI | `src/apps/office-harnessd/tests/sessions_portable.rs`, test `flags_env_and_the_startup_prompt_reach_the_child_at_the_next_session_and_an_edit_leaves_the_running_one`. It uses fake CLIs, not the real ones. |
 

@@ -18,6 +18,9 @@ use super::wire_client::WireClient;
 const QUIET_PERIOD_MS: u64 = 400;
 const WAIT_LIMIT: Duration = Duration::from_secs(20);
 const POLL: Duration = Duration::from_millis(25);
+/// A batch file's `echo` ends the value with a line ending; a shell's `printf`
+/// does not.
+const LINE_ENDINGS: [char; 2] = ['\r', '\n'];
 
 pub struct Office {
     pub serving: ServingOffice,
@@ -169,6 +172,24 @@ impl Client {
     }
 }
 
+/// The additions that the first session of a test starts with.
+pub fn first_additions() -> Value {
+    json!({
+        "flags": ["--first"],
+        "env": [{"name": "OFFICE_KEY", "value": "one"}],
+        "startup_prompt": "prompt one",
+    })
+}
+
+/// The additions that an edit gives, for the next session.
+pub fn second_additions() -> Value {
+    json!({
+        "flags": ["--second"],
+        "env": [{"name": "OFFICE_KEY", "value": "two"}],
+        "startup_prompt": "prompt two",
+    })
+}
+
 pub fn error_text(answer: &Value) -> (&str, &str) {
     (
         answer["error"]["code"].as_str().expect("code"),
@@ -198,10 +219,24 @@ pub struct Record {
 
 /// The fake script body that writes a `Record` and then runs `rest`. The
 /// arguments file comes last, so its existence means the record is whole.
+#[cfg(unix)]
 pub fn recording_body(records: &Path, rest: &str) -> String {
     let folder = records.display();
     format!(
         "printf '%s' \"$OFFICE_KEY\" > {folder}/key-$$\nprintf '%s\\n' \"$@\" > {folder}/args-$$\n{rest}"
+    )
+}
+
+/// As on Unix, for a batch file. A batch file has no process id, so a random
+/// number names the record. It writes each argument on its own line to a
+/// temporary file and moves that file into place, so the arguments file
+/// appears whole. A redirection comes first in each command, so a digit that
+/// ends a value is never read as a handle number.
+#[cfg(windows)]
+pub fn recording_body(records: &Path, rest: &str) -> String {
+    let folder = records.display();
+    format!(
+        "set RECORD=%RANDOM%%RANDOM%\n>\"{folder}\\key-%RECORD%\" echo %OFFICE_KEY%\nfor %%a in (%*) do >>\"{folder}\\partial-%RECORD%\" echo %%a\nmove /y \"{folder}\\partial-%RECORD%\" \"{folder}\\args-%RECORD%\" >nul\n{rest}"
     )
 }
 
@@ -236,7 +271,10 @@ pub fn records_of(records: &Path) -> Vec<Record> {
                     .lines()
                     .map(str::to_owned)
                     .collect(),
-                key: std::fs::read_to_string(records.join(format!("key-{pid}"))).expect("key"),
+                key: std::fs::read_to_string(records.join(format!("key-{pid}")))
+                    .expect("key")
+                    .trim_end_matches(LINE_ENDINGS)
+                    .to_owned(),
             }
         })
         .collect()
