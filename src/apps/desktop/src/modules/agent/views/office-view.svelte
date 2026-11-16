@@ -109,6 +109,7 @@
         <AgentList
           agents={office.agents}
           selectedAgentId={office.selectedAgentId}
+          stoppingAgentIds={office.stoppingAgentIds}
           onselect={controller.select}
         />
         {#if selectedAgent !== null && office.details !== null}
@@ -121,6 +122,7 @@
               statusDetail={office.statusDetails[agentId] ?? null}
               projectName={selectedProjectName}
               isBusy={office.isBusy}
+              isStopping={office.stoppingAgentIds.has(agentId)}
               onstart={() => void controller.startAgent(agentId)}
               onstop={() => void controller.stopAgent(agentId)}
               onnewtask={() => void controller.startNewTask(agentId)}

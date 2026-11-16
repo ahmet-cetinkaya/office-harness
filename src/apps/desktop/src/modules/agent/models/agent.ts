@@ -86,7 +86,15 @@ export function isActive(status: string): boolean {
   return ACTIVE_STATUSES.includes(status);
 }
 
-/** The accessible name of an agent entry: its name and its status. */
-export function agentEntryName(agent: Agent): string {
-  return `${agent.name}, ${statusText(agent.status)}`;
+/** What the app shows for an agent while its stop request is open. */
+export const STOPPING_TEXT = "Stopping";
+
+/** The status text to show: "Stopping" while a stop request is open. */
+export function shownStatusText(agent: Agent, isStopping: boolean): string {
+  return isStopping ? STOPPING_TEXT : statusText(agent.status);
+}
+
+/** The accessible name of an agent entry: its name and its shown status. */
+export function agentEntryName(agent: Agent, isStopping: boolean): string {
+  return `${agent.name}, ${shownStatusText(agent, isStopping)}`;
 }

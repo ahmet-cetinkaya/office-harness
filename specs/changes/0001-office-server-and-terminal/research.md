@@ -150,3 +150,20 @@ Checked by running only `--version` and `--help` for the four CLIs (no session w
 - **Watch items:**
   - `rusqlite` 0.43.0 was published today. If it breaks the T2 build, T2 falls back to the previous minor version and records why.
   - The xterm addons declare no peer dependency. T2 checks that they load with xterm 6.
+
+## R8: Stopping a CLI that npm installed on Windows (2026-11-16)
+
+**Question:** npm installs `claude`, `codex`, `gemini`, and `opencode` on Windows as `.cmd` shims. The server runs a shim through `cmd.exe` and stops an agent with Ctrl+C. `cmd.exe` then asks "Terminate batch job (Y/N)?" and waits, so every stop takes the full grace period (A3, 10 seconds by default). The automated Windows tests found this. How does a stop end quickly and end the whole tree?
+
+**Options:**
+
+- **Answer the question.** After the Ctrl+C, the server types the answer to the `cmd.exe` question. The question and its letters depend on the Windows language. If the CLI handles Ctrl+C itself and does not exit, a blind answer becomes input to the CLI.
+- **Skip the Ctrl+C.** The server ends the tree at once. The CLI then gets no chance to end its own work.
+- **Start the CLI without `cmd.exe`.** An npm shim is a short batch file with a fixed shape. Its last line that holds `%*` starts an interpreter (`node`, `bun`, or `deno`) with a script, and `%dp0%` names the shim's folder. The server can read that line and start the interpreter directly, with the script and the arguments. Then `cmd.exe` asks no question, and the CLI is the root of the tree.
+
+**Decision:**
+
+1. The server resolves an npm shim to its interpreter and script, and starts them without `cmd.exe`. Ctrl+C then reaches the CLI itself, and the tree end covers the CLI's children. A shim that the server does not understand falls back to `cmd.exe`.
+2. A `.cmd` file that still runs through `cmd.exe` gets an answer only when the line at the cursor ends in a `(X/Y)?` question. The server answers with the first of the two letters, which works in every language (Turkish Windows shows `(E/H)?`). It never types blindly.
+3. The forced tree end after the grace period stays as the fallback.
+4. The desktop app shows "Stopping" while the stop request is open.

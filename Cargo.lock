@@ -575,6 +575,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "console-control"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2617,6 +2624,7 @@ dependencies = [
  "audit-presentation",
  "auto-launch",
  "axum",
+ "console-control",
  "directories",
  "futures-util",
  "gethostname",

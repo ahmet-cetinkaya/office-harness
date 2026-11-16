@@ -57,8 +57,8 @@ office-harness is not a new coding agent. It runs the CLIs that the user already
 
 | Tool | What it does well | Why it does not cover the need |
 | --- | --- | --- |
-| Munder Difflin | Several agents on one floor, with an orchestrator | Limited to 12 agents. No hierarchy or teams. Each floor opens a new window. No self-hosting. No machines. Overrides some local CLI configuration. |
-| agent-office | Feature-rich 3D office, meeting rooms with presets | You must walk to an agent to see its result, and moving between projects is slow. office-harness may use it only as an example, not as a fork. |
+| A desktop office app for agents | Several agents on one floor, with an orchestrator | Limited to 12 agents. No hierarchy or teams. Each floor opens a new window. No self-hosting. No machines. Overrides some local CLI configuration. |
+| A 3D office app for agents | Feature-rich 3D office, meeting rooms with presets | You must walk to an agent to see its result, and moving between projects is slow. office-harness may use it only as an example, not as a fork. |
 | Terminal multiplexers (tmux and similar) | Persistent terminals | No company structure, no agent status, no single panel across projects. |
 
 ## 3. Users and daily needs
@@ -223,7 +223,7 @@ Approving this PRD does not start development. Each change starts when its spec 
 
 ## 12. Non-goals
 
-- A fork of agent-office.
+- A fork of another agent office app.
 - A new coding agent, or changes to how a CLI works inside.
 - Features that the owner did not ask for: voice input, screen sharing, and project boards on walls.
 - A hosted service run by anyone other than the user.

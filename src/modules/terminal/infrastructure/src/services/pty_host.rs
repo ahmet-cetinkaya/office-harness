@@ -8,6 +8,8 @@ use terminal_application::common::models::SpawnTerminalRequest;
 use terminal_domain::services::is_batch_script;
 use terminal_domain::value_objects::TerminalSize;
 
+use crate::services::npm_shim::resolve_npm_shim;
+
 const BATCH_INTERPRETER: &str = "cmd.exe";
 const SYSTEM_ROOT_VARIABLE: &str = "SystemRoot";
 const SYSTEM_FOLDER: &str = "System32";
@@ -20,6 +22,9 @@ pub struct SpawnedPty {
     pub child: Box<dyn Child + Send + Sync>,
     pub reader: Box<dyn Read + Send>,
     pub writer: Box<dyn Write + Send>,
+    /// True when `cmd.exe` runs the program, which asks a question when the
+    /// interrupt key reaches a batch file.
+    pub runs_through_batch_interpreter: bool,
 }
 
 /// Starts the command in a new PTY with exactly the environment of the
@@ -31,11 +36,8 @@ pub fn spawn_in_pty(request: &SpawnTerminalRequest) -> Result<SpawnedPty, Termin
     let pair = native_pty_system()
         .openpty(pty_size(request.size))
         .map_err(spawn_failed)?;
-    let (program, arguments) = launch_line(
-        &request.program,
-        &request.arguments,
-        cfg!(windows).then(|| batch_interpreter(&request.environment)),
-    );
+    let (program, arguments) = launch_command(request);
+    let runs_through_batch_interpreter = is_batch_interpreter(&program);
     let mut builder = CommandBuilder::new(program);
     builder.args(arguments);
     builder.cwd(&request.working_folder);
@@ -54,7 +56,34 @@ pub fn spawn_in_pty(request: &SpawnTerminalRequest) -> Result<SpawnedPty, Termin
         child,
         reader,
         writer,
+        runs_through_batch_interpreter,
     })
+}
+
+/// On Windows an npm shim starts its interpreter directly when it can, so no
+/// `cmd.exe` stands between the stop key and the CLI. Everything else follows
+/// `launch_line`.
+fn launch_command(request: &SpawnTerminalRequest) -> (String, Vec<String>) {
+    let is_batch_on_windows = cfg!(windows) && is_batch_script(&request.program);
+    let direct = if is_batch_on_windows {
+        resolve_npm_shim(&request.program, &request.arguments, &request.environment)
+    } else {
+        None
+    };
+    if let Some(launch) = direct {
+        return launch;
+    }
+    launch_line(
+        &request.program,
+        &request.arguments,
+        cfg!(windows).then(|| batch_interpreter(&request.environment)),
+    )
+}
+
+/// The batch route starts `cmd.exe` by its path; a resolved npm shim and
+/// every other program start as themselves.
+fn is_batch_interpreter(program: &str) -> bool {
+    program.to_ascii_lowercase().ends_with(BATCH_INTERPRETER)
 }
 
 #[must_use]
