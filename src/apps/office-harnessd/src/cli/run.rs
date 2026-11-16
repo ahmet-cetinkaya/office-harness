@@ -9,8 +9,8 @@ use super::{CliError, Command, LoginStart, SystemLoginItem};
 use crate::config::Config;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-/// Used by the app at each start; see `LoginStart::register_unless_turned_off`.
-const UNLESS_TURNED_OFF_FLAG: &str = "--unless-turned-off";
+/// Used by the app at each start; see `LoginStart::register_at_app_start`.
+const AT_APP_START_FLAG: &str = "--at-app-start";
 
 /// Runs one subcommand against the real login item and reports on standard
 /// output (the result) or standard error (the failure). `rest` holds the
@@ -26,7 +26,7 @@ pub fn run(command: Command, rest: &[OsString]) -> ExitCode {
 }
 
 fn execute(command: Command, rest: &[OsString]) -> Result<ExitCode, CliError> {
-    let unless_turned_off = read_options(command, rest)?;
+    let at_app_start = read_options(command, rest)?;
     // The default folder only: the login item starts the server without arguments.
     let config = Config::load(std::iter::empty())?;
     let login_item = SystemLoginItem;
@@ -34,14 +34,14 @@ fn execute(command: Command, rest: &[OsString]) -> Result<ExitCode, CliError> {
     match command {
         Command::Register => {
             let running = std::env::current_exe().map_err(CliError::NoRunningProgram)?;
-            let installed = if unless_turned_off {
-                login_start.register_unless_turned_off(&running)?
+            let installed = if at_app_start {
+                login_start.register_at_app_start(&running)?
             } else {
                 Some(login_start.register(&running)?)
             };
             match installed {
                 Some(installed) => println!("registered: {}", installed.display()),
-                None => println!("not registered: login start was turned off with unregister"),
+                None => println!("unchanged: this version is registered, or login start is off"),
             }
             Ok(ExitCode::SUCCESS)
         }
@@ -61,11 +61,11 @@ fn execute(command: Command, rest: &[OsString]) -> Result<ExitCode, CliError> {
     }
 }
 
-/// Whether `register` got `--unless-turned-off`; every other argument is refused.
+/// Whether `register` got `--at-app-start`; every other argument is refused.
 fn read_options(command: Command, rest: &[OsString]) -> Result<bool, CliError> {
     match (command, rest) {
         (_, []) => Ok(false),
-        (Command::Register, [flag]) if flag == UNLESS_TURNED_OFF_FLAG => Ok(true),
+        (Command::Register, [flag]) if flag == AT_APP_START_FLAG => Ok(true),
         (_, [unknown, ..]) => Err(CliError::UnknownArgument(
             unknown.to_string_lossy().into_owned(),
         )),

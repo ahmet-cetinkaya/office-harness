@@ -26,9 +26,8 @@ fn main() {
             let connection = Connection::new(DataFolder::locate()?);
             app.manage(connection.clone());
             tauri::async_runtime::spawn(connection.run());
-            // Each start refreshes the login item unless the user turned it
-            // off, which covers the first start and an upgrade (plan D13);
-            // the UI does not wait.
+            // Registers on the first start and after an upgrade, unless the
+            // user turned login start off (plan D13); the UI does not wait.
             tauri::async_runtime::spawn_blocking(refresh_login_start_quietly);
             Ok(())
         })

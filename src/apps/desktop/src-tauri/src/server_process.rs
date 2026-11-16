@@ -13,8 +13,9 @@ use wire::LOGIN_START_NOT_REGISTERED_EXIT_CODE;
 
 const SIDECAR_NAME: &str = "office-harnessd";
 const REGISTER_ARGUMENT: &str = "register";
-/// Keeps the app's start from undoing the user's `unregister`.
-const UNLESS_TURNED_OFF_ARGUMENT: &str = "--unless-turned-off";
+/// Registers only on a first start or a new version, and never after the
+/// user's `unregister` (plan D13).
+const AT_APP_START_ARGUMENT: &str = "--at-app-start";
 const STATUS_ARGUMENT: &str = "status";
 
 #[derive(Debug, Error)]
@@ -64,11 +65,10 @@ pub fn register_login_start() -> Result<(), LoginStartError> {
     answer_to_success(&answer)
 }
 
-/// As `register_login_start`, unless the user turned login start off with
-/// `office-harnessd unregister`. The app runs it at each start, which covers
-/// the first start and an upgrade (plan D13).
+/// As `register_login_start`, but only on the first start of the app or of a
+/// new version, and not after `office-harnessd unregister` (plan D13).
 pub fn refresh_login_start() -> Result<(), LoginStartError> {
-    let answer = run_sidecar(&[REGISTER_ARGUMENT, UNLESS_TURNED_OFF_ARGUMENT])?;
+    let answer = run_sidecar(&[REGISTER_ARGUMENT, AT_APP_START_ARGUMENT])?;
     answer_to_success(&answer)
 }
 

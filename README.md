@@ -42,7 +42,7 @@ The app has no screen to change the focus shortcut. The server stores it as the 
 
 The server runs only while you are logged in. Agents end when you log out or shut the machine down. After the next login the server starts again, and the agents that were running show `interrupted`. No agent starts without your action.
 
-The app registers the server for login on every start, so you do not need to do it yourself. After you run `office-harnessd unregister`, the app no longer does this; the button below or `office-harnessd register` turns it on again. The app also shows a "Server at login" section with the button "Start the server at login".
+The app registers the server for login on its first start and on the first start after an upgrade, so you do not need to do it yourself. After you run `office-harnessd unregister`, the app does not register it again; the button below or `office-harnessd register` turns login start on again. The app also shows a "Server at login" section with the button "Start the server at login".
 
 You can also register it from a terminal. `office-harnessd` has three subcommands:
 
@@ -58,7 +58,7 @@ office-harnessd status
 
 The subcommands always use the default data folder, because the login item starts the server without arguments. On Linux, run them in your desktop session: without a `systemctl --user` connection they do not see a systemd user unit. On Windows the program does not open a console, so redirect the output to read it, for example `office-harnessd status > status.txt`.
 
-The login item is a systemd user unit (or an XDG autostart entry when `systemctl --user` does not answer) on Linux, a LaunchAgent on macOS, and a value under the current user's `Run` registry key on Windows.
+The login item is a systemd user unit (or an XDG autostart entry when `systemctl --user` does not answer) on Linux, a LaunchAgent on macOS, and a value under the current user's `Run` registry key on Windows. On Linux, `register` refuses a program path that contains `"`, `\`, `$`, `` ` ``, or `%`, because the login item would read them as special characters. The systemd unit restarts the server after a failure, but not after exit code 75, which means that a server already runs.
 
 Exit codes:
 
