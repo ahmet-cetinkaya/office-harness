@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+mod batch_confirmation;
+mod npm_shim;
 mod output_store;
 mod portable_terminal_runtime;
 mod process_tree;

@@ -31,6 +31,9 @@ export interface MockCoreOptions {
   startServer?:
     | { outcome: "ok"; stateAfterStart: ConnectionState }
     | { outcome: "fail"; code: string; message: string };
+  /** Milliseconds that "agent.stop" waits before it answers, as a CLI that
+   * takes its time to end. Answers at once when left out. */
+  stopDelayMs?: number;
   /** The login item. Not registered, and registering works, when left out. */
   loginStart?: {
     registered?: boolean;
@@ -173,7 +176,10 @@ export async function installMockCore(
 
     // The requests that the real server answers, in the shapes of the
     // contract. Each change also sends the events that the server sends.
-    const answer = (kind: string, fields: Record<string, unknown>): unknown => {
+    const answer = async (
+      kind: string,
+      fields: Record<string, unknown>,
+    ): Promise<unknown> => {
       switch (kind) {
         case "project.list":
           return office.projects;
@@ -244,6 +250,11 @@ export async function installMockCore(
         }
         case "agent.stop": {
           const agent = findAgent(fields.agent_id);
+          if (mock.stopDelayMs) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, mock.stopDelayMs),
+            );
+          }
           endSessions(agent.id);
           setStatus(agent, "stopped");
           record(agent.id, "stop");
@@ -332,7 +343,7 @@ export async function installMockCore(
             return undefined;
           }
           case "send_request":
-            return answer(
+            return await answer(
               args.kind as string,
               (args.fields as Record<string, unknown>) ?? {},
             );

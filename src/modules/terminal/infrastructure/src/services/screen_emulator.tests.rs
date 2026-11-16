@@ -61,3 +61,14 @@ fn a_resize_changes_the_snapshot_size() {
     screen.process(b"x");
     assert_eq!(screen.size, TerminalSize::new(100, 30).expect("valid size"));
 }
+
+#[test]
+fn the_cursor_line_is_the_row_where_the_cursor_stands() {
+    let mut screen = emulator(40, 5);
+    screen.process(b"first\r\nTerminate batch job (Y/N)? ");
+    assert!(
+        screen
+            .cursor_line()
+            .starts_with("Terminate batch job (Y/N)?")
+    );
+}
