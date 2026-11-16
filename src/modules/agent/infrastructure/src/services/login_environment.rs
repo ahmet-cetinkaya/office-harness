@@ -68,6 +68,8 @@ pub struct ResolvedEnvironment {
 pub struct LoginEnvironment {
     #[cfg(unix)]
     shells: ShellChoice,
+    /// Set by `fixed` only: the environment to give, whatever the OS holds.
+    fixed: Option<Environment>,
 }
 
 #[cfg(unix)]
@@ -99,6 +101,7 @@ impl LoginEnvironment {
                     .map_or_else(Default::default, login_shell::Account::variables),
                 timeout: SHELL_TIMEOUT,
             },
+            fixed: None,
         }
     }
 
@@ -117,21 +120,48 @@ impl LoginEnvironment {
                 account_variables: Vec::new(),
                 timeout,
             },
+            fixed: None,
         }
     }
 
     #[cfg(windows)]
     #[must_use]
     pub fn detect(_server_environment: &Environment) -> Self {
-        Self {}
+        Self { fixed: None }
+    }
+
+    /// Always resolves to `environment`, on any OS; for tests. The Windows
+    /// registry holds the user's real `PATH` and profile folders, which a
+    /// test cannot replace.
+    #[must_use]
+    pub fn fixed(environment: Environment) -> Self {
+        Self {
+            #[cfg(unix)]
+            shells: ShellChoice {
+                interactive: None,
+                account: None,
+                account_variables: Vec::new(),
+                timeout: SHELL_TIMEOUT,
+            },
+            fixed: Some(environment),
+        }
+    }
+
+    /// The fixed environment when there is one, otherwise the one the OS
+    /// gives.
+    #[must_use]
+    pub fn resolve(&self, server_environment: &Environment) -> ResolvedEnvironment {
+        match &self.fixed {
+            Some(environment) => resolved(environment, None),
+            None => self.resolve_from_system(server_environment),
+        }
     }
 
     /// Resolves the environment, falling back from the interactive login
     /// shell to the account shell and then to the server's own environment.
     /// The server's own variables are removed from every result.
     #[cfg(unix)]
-    #[must_use]
-    pub fn resolve(&self, server_environment: &Environment) -> ResolvedEnvironment {
+    fn resolve_from_system(&self, server_environment: &Environment) -> ResolvedEnvironment {
         let mut own = without_server_variables(server_environment);
         for (name, value) in &self.shells.account_variables {
             own.entry(name.clone()).or_insert_with(|| value.clone());
@@ -161,8 +191,11 @@ impl LoginEnvironment {
     /// Builds the environment from the machine and user entries of the
     /// registry, on top of the server's own environment.
     #[cfg(windows)]
-    #[must_use]
-    pub fn resolve(&self, server_environment: &Environment) -> ResolvedEnvironment {
+    #[allow(
+        clippy::unused_self,
+        reason = "the registry environment holds no state of its own"
+    )]
+    fn resolve_from_system(&self, server_environment: &Environment) -> ResolvedEnvironment {
         use crate::services::registry_environment;
 
         let own = without_server_variables(server_environment);
