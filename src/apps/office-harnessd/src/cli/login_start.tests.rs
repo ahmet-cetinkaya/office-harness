@@ -183,14 +183,14 @@ fn unregister_with_nothing_registered_succeeds() {
 }
 
 #[test]
-fn the_app_start_registers_when_login_start_was_never_turned_off() {
+fn the_first_app_start_registers() {
     let data = TempDir::new().expect("data folder");
     let source = TempDir::new().expect("source folder");
     let login_item = FakeLoginItem::default();
     let login_start = LoginStart::new(data.path(), VERSION, &login_item);
 
     let installed = login_start
-        .register_unless_turned_off(&running_program(&source, b"server"))
+        .register_at_app_start(&running_program(&source, b"server"))
         .expect("register at the app start");
 
     assert_eq!(installed, Some(login_start.installed_program()));
@@ -208,7 +208,7 @@ fn the_app_start_does_not_undo_an_unregister() {
     login_start.unregister().expect("unregister");
 
     let installed = login_start
-        .register_unless_turned_off(&program)
+        .register_at_app_start(&program)
         .expect("app start");
 
     assert_eq!(installed, None);
@@ -230,7 +230,7 @@ fn an_explicit_register_turns_login_start_on_again() {
         .disable()
         .expect("the user removes the entry by hand");
     let installed = login_start
-        .register_unless_turned_off(&program)
+        .register_at_app_start(&program)
         .expect("app start");
 
     assert!(installed.is_some());

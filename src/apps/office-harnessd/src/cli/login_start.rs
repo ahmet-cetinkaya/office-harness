@@ -53,21 +53,18 @@ impl<'a> LoginStart<'a> {
         self.install(running_program)
     }
 
-    /// Registers as `register` does, unless the user turned login start off
-    /// with `unregister`; then nothing changes and `None` is returned. The
-    /// app runs this at each start, which covers the first start and an upgrade.
+    /// Registers as `register` does on the first start of the app and on the
+    /// first start of a new version, which is when this version has no copy
+    /// yet (plan D13). Nothing changes, and `None` is returned, when the copy
+    /// exists or the user turned login start off with `unregister`.
     ///
     /// # Errors
     /// As `register`.
-    pub fn register_unless_turned_off(
+    pub fn register_at_app_start(
         &self,
         running_program: &Path,
     ) -> Result<Option<PathBuf>, CliError> {
-        let marker = self.turned_off_marker();
-        if marker.try_exists().map_err(|source| CliError::Files {
-            path: marker,
-            source,
-        })? {
+        if path_exists(self.turned_off_marker())? || path_exists(self.installed_program())? {
             return Ok(None);
         }
         self.install(running_program).map(Some)
@@ -122,6 +119,11 @@ impl<'a> LoginStart<'a> {
             source,
         })
     }
+}
+
+fn path_exists(path: PathBuf) -> Result<bool, CliError> {
+    path.try_exists()
+        .map_err(|source| CliError::Files { path, source })
 }
 
 fn write_marker(data_folder: &Path, marker: &Path) -> io::Result<()> {
