@@ -16,6 +16,7 @@ use terminal_application::common::models::{
 use terminal_domain::events::TerminalEvent;
 use terminal_domain::value_objects::TerminalSize;
 
+use crate::services::batch_confirmation::confirmation_answer;
 use crate::services::output_store::OutputStore;
 use crate::services::process_tree;
 use crate::services::pty_host::{SpawnedPty, pty_size};
@@ -30,6 +31,11 @@ const FORCE_GRACE: Duration = Duration::from_secs(3);
 const MIN_MONITOR_TICK: Duration = Duration::from_millis(10);
 const MAX_MONITOR_TICK: Duration = Duration::from_millis(250);
 const CTRL_C: u8 = 0x03;
+/// How long after the interrupt key a stop looks for the question that
+/// `cmd.exe` asks of a batch file, and how often.
+const QUESTION_WINDOW: Duration = Duration::from_secs(2);
+const QUESTION_POLL: Duration = Duration::from_millis(50);
+const ENTER: char = '\r';
 const PASTE_START: &[u8] = b"\x1b[200~";
 const PASTE_END: &[u8] = b"\x1b[201~";
 /// Reported when the wait on the child itself fails.
@@ -108,6 +114,7 @@ pub struct TerminalSession {
     agent_id: AgentId,
     run: RunId,
     process_id: Option<u32>,
+    runs_through_batch_interpreter: bool,
     core: Mutex<SessionCore>,
     writer: Mutex<Box<dyn Write + Send>>,
     master: Mutex<Option<Box<dyn MasterPty + Send>>>,
@@ -142,6 +149,7 @@ impl TerminalSession {
             agent_id,
             run,
             process_id: pty.child.process_id(),
+            runs_through_batch_interpreter: pty.runs_through_batch_interpreter,
             core: Mutex::new(SessionCore {
                 emulator,
                 store: Some(store),
@@ -253,6 +261,9 @@ impl TerminalSession {
             // The interrupt key is the only end request that reaches a
             // console child. A write that fails means the child is gone.
             let _ = self.write_input(&[CTRL_C]);
+            if self.runs_through_batch_interpreter {
+                self.answer_batch_question(QUESTION_WINDOW.min(grace));
+            }
         }
         self.wait_for_exit(grace);
         // Forced even after a clean exit: a grandchild may have outlived its
@@ -267,6 +278,25 @@ impl TerminalSession {
             Ok(())
         } else {
             Err(TerminalRuntimeError::StopFailed)
+        }
+    }
+
+    /// A batch file that is not resolved to its program answers the interrupt
+    /// key with "Terminate batch job (Y/N)?" and waits. This types the
+    /// "yes" letter once, only when the screen shows such a question at the
+    /// cursor, so no key is ever typed blindly.
+    fn answer_batch_question(&self, window: Duration) {
+        let deadline = Instant::now() + window;
+        while Instant::now() < deadline {
+            if self.wait_for_exit(QUESTION_POLL) {
+                return;
+            }
+            let line = locked(&self.core).emulator.cursor_line();
+            if let Some(letter) = confirmation_answer(&line) {
+                // A failed write means the child is gone; the waiter reports it.
+                let _ = self.write_input(format!("{letter}{ENTER}").as_bytes());
+                return;
+            }
         }
     }
 

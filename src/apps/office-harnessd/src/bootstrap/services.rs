@@ -55,6 +55,14 @@ pub fn start_with(
     log: &ServerLog,
     login: LoginSetup,
 ) -> Result<Services, StartupError> {
+    // Before any agent starts: a stop sends Ctrl+C first, and a server that a
+    // parent started in a new process group would pass "ignore Ctrl+C" on to
+    // every agent. The forced end after the grace period stays the fallback.
+    if let Err(reason) = console_control::enable_interrupt_for_children() {
+        log.error(&format!(
+            "warning: Ctrl+C stays off for the agents; a stop waits for the grace period: {reason}"
+        ));
+    }
     let mut connection = open_database(&config.database_path())?;
     run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS)?;
     run_migrations(&mut connection, AUDIT_LEDGER_TABLE, AUDIT_SCRIPTS)?;
