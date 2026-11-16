@@ -42,7 +42,7 @@ The app has no screen to change the focus shortcut. The server stores it as the 
 
 The server runs only while you are logged in. Agents end when you log out or shut the machine down. After the next login the server starts again, and the agents that were running show `interrupted`. No agent starts without your action.
 
-The app registers the server for login on every start, so you do not need to do it yourself. The app also shows a "Server at login" section with the button "Start the server at login".
+The app registers the server for login on every start, so you do not need to do it yourself. After you run `office-harnessd unregister`, the app no longer does this; the button below or `office-harnessd register` turns it on again. The app also shows a "Server at login" section with the button "Start the server at login".
 
 You can also register it from a terminal. `office-harnessd` has three subcommands:
 
@@ -53,8 +53,10 @@ office-harnessd status
 ```
 
 - `register` copies the server program to `<data folder>/bin/<version>/` and points the login item at that copy. The copy is stable if the app moves or an AppImage unmounts. Each version gets its own folder. Running `register` again gives the same result.
-- `unregister` removes the login item and every copy in `<data folder>/bin`. The other files in the data folder stay.
+- `unregister` removes the login item and every copy in `<data folder>/bin`, and records in the data folder that login start is off. The other files in the data folder stay. On Windows, stop the server first: Windows does not delete the file of a running program, so the command exits with code 1 when the server runs.
 - `status` prints `registered` or `not registered`.
+
+The subcommands always use the default data folder, because the login item starts the server without arguments. On Linux, run them in your desktop session: without a `systemctl --user` connection they do not see a systemd user unit. On Windows the program does not open a console, so redirect the output to read it, for example `office-harnessd status > status.txt`.
 
 The login item is a systemd user unit (or an XDG autostart entry when `systemctl --user` does not answer) on Linux, a LaunchAgent on macOS, and a value under the current user's `Run` registry key on Windows.
 
@@ -64,7 +66,7 @@ Exit codes:
 | ---- | ----------------------------------------------------------------- |
 | 0    | The command worked. For `status`, the server is registered.       |
 | 1    | The command failed, for example a file or the OS refused it.      |
-| 2    | An argument is wrong. The only argument is `--data-folder <path>`. |
+| 2    | An argument is wrong. The subcommands take no arguments.          |
 | 3    | `status` only: the server is not registered.                      |
 
 The program is in the folder where the installer put the app (the app calls it the sidecar), and a registered copy is in the data folder.
@@ -81,7 +83,7 @@ The server keeps its state in your local application data folder:
 
 The folder holds `office.db` (the office), `token` (the office token), `server.json` (the port of the running server), `server.lock`, `server.log`, `output/` (one capped output file for each session), and `bin/` (the login copies). The token file and the stored output are readable only by your OS user.
 
-The server accepts `--data-folder <path>` to use another folder.
+The server accepts `--data-folder <path>` to use another folder. A server started at login always uses the default folder.
 
 ## Regenerate the token
 

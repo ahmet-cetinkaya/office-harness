@@ -181,3 +181,78 @@ fn unregister_with_nothing_registered_succeeds() {
         .unregister()
         .expect("nothing to remove");
 }
+
+#[test]
+fn the_app_start_registers_when_login_start_was_never_turned_off() {
+    let data = TempDir::new().expect("data folder");
+    let source = TempDir::new().expect("source folder");
+    let login_item = FakeLoginItem::default();
+    let login_start = LoginStart::new(data.path(), VERSION, &login_item);
+
+    let installed = login_start
+        .register_unless_turned_off(&running_program(&source, b"server"))
+        .expect("register at the app start");
+
+    assert_eq!(installed, Some(login_start.installed_program()));
+    assert!(login_start.is_registered().expect("status"));
+}
+
+#[test]
+fn the_app_start_does_not_undo_an_unregister() {
+    let data = TempDir::new().expect("data folder");
+    let source = TempDir::new().expect("source folder");
+    let login_item = FakeLoginItem::default();
+    let login_start = LoginStart::new(data.path(), VERSION, &login_item);
+    let program = running_program(&source, b"server");
+    login_start.register(&program).expect("register");
+    login_start.unregister().expect("unregister");
+
+    let installed = login_start
+        .register_unless_turned_off(&program)
+        .expect("app start");
+
+    assert_eq!(installed, None);
+    assert!(!login_start.is_registered().expect("status"));
+    assert!(!data.path().join("bin").exists());
+}
+
+#[test]
+fn an_explicit_register_turns_login_start_on_again() {
+    let data = TempDir::new().expect("data folder");
+    let source = TempDir::new().expect("source folder");
+    let login_item = FakeLoginItem::default();
+    let login_start = LoginStart::new(data.path(), VERSION, &login_item);
+    let program = running_program(&source, b"server");
+    login_start.unregister().expect("unregister");
+
+    login_start.register(&program).expect("register");
+    login_item
+        .disable()
+        .expect("the user removes the entry by hand");
+    let installed = login_start
+        .register_unless_turned_off(&program)
+        .expect("app start");
+
+    assert!(installed.is_some());
+    assert!(login_start.is_registered().expect("status"));
+}
+
+#[test]
+fn a_leftover_partial_copy_does_not_block_the_next_register() {
+    let data = TempDir::new().expect("data folder");
+    let source = TempDir::new().expect("source folder");
+    let login_item = FakeLoginItem::default();
+    let login_start = LoginStart::new(data.path(), VERSION, &login_item);
+    let partial = login_start
+        .installed_program()
+        .with_extension(format!("{}.partial", std::process::id()));
+    fs::create_dir_all(partial.parent().expect("version folder")).expect("folder");
+    fs::write(&partial, b"half").expect("leftover");
+
+    let installed = login_start
+        .register(&running_program(&source, b"server"))
+        .expect("register");
+
+    assert_eq!(fs::read(installed).expect("copy"), b"server");
+    assert!(!partial.exists());
+}

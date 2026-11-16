@@ -13,6 +13,8 @@ use wire::LOGIN_START_NOT_REGISTERED_EXIT_CODE;
 
 const SIDECAR_NAME: &str = "office-harnessd";
 const REGISTER_ARGUMENT: &str = "register";
+/// Keeps the app's start from undoing the user's `unregister`.
+const UNLESS_TURNED_OFF_ARGUMENT: &str = "--unless-turned-off";
 const STATUS_ARGUMENT: &str = "status";
 
 #[derive(Debug, Error)]
@@ -58,13 +60,21 @@ pub fn start_detached() -> Result<(), StartServerError> {
 /// Asks the sidecar to copy itself to a stable place and start that copy at
 /// login. It is safe to repeat, and a new app version makes a new copy.
 pub fn register_login_start() -> Result<(), LoginStartError> {
-    let answer = run_sidecar(REGISTER_ARGUMENT)?;
+    let answer = run_sidecar(&[REGISTER_ARGUMENT])?;
+    answer_to_success(&answer)
+}
+
+/// As `register_login_start`, unless the user turned login start off with
+/// `office-harnessd unregister`. The app runs it at each start, which covers
+/// the first start and an upgrade (plan D13).
+pub fn refresh_login_start() -> Result<(), LoginStartError> {
+    let answer = run_sidecar(&[REGISTER_ARGUMENT, UNLESS_TURNED_OFF_ARGUMENT])?;
     answer_to_success(&answer)
 }
 
 /// Whether a login item for the server exists.
 pub fn is_login_start_registered() -> Result<bool, LoginStartError> {
-    let answer = run_sidecar(STATUS_ARGUMENT)?;
+    let answer = run_sidecar(&[STATUS_ARGUMENT])?;
     answer_to_registered(&answer)
 }
 
@@ -74,10 +84,10 @@ struct SidecarAnswer {
     stderr: String,
 }
 
-fn run_sidecar(argument: &str) -> Result<SidecarAnswer, LoginStartError> {
+fn run_sidecar(arguments: &[&str]) -> Result<SidecarAnswer, LoginStartError> {
     let program = locate_sidecar().map_err(LoginStartError::NoAppFolder)?;
     let output = Command::new(program)
-        .arg(argument)
+        .args(arguments)
         .stdin(Stdio::null())
         .output()
         .map_err(LoginStartError::Run)?;

@@ -53,6 +53,10 @@ jobs:
       - name: Install JavaScript dependencies
         run: bun install --frozen-lockfile
 
+      # The installers ship exactly the crates in Cargo.lock.
+      - name: Fetch the locked Rust dependencies
+        run: cargo fetch --locked
+
       # `beforeBuildCommand` builds the release sidecar before the bundle.
       - name: Build the installers
         working-directory: src/apps/desktop

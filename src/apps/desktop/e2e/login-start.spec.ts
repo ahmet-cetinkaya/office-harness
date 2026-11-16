@@ -69,3 +69,23 @@ test("says in text when the registration failed", async ({ page }) => {
   ).toBeEnabled();
   await expectNoAccessibilityViolations(page);
 });
+
+test("says in text when the status could not be read", async ({ page }) => {
+  await openConnected(page, {
+    statusFailure: {
+      code: "login_start_failed",
+      message: "login item: no answer",
+    },
+  });
+
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText(
+    "The login start status could not be read.",
+  );
+  await expect(alert).toContainText("login item: no answer");
+  await expect(alert).not.toContainText("The server was not registered.");
+  await expect(
+    page.getByText("It is not known whether the server starts at login."),
+  ).toBeVisible();
+  await expectNoAccessibilityViolations(page);
+});

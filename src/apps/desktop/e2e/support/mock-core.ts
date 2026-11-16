@@ -35,6 +35,7 @@ export interface MockCoreOptions {
   loginStart?: {
     registered?: boolean;
     failure?: { code: string; message: string };
+    statusFailure?: { code: string; message: string };
   };
 }
 
@@ -347,6 +348,9 @@ export async function installMockCore(
             }
             return undefined;
           case "login_start_status":
+            if (mock.loginStart?.statusFailure) {
+              throw mock.loginStart.statusFailure;
+            }
             return loginStartRegistered;
           case "register_login_start":
             if (mock.loginStart?.failure) throw mock.loginStart.failure;
