@@ -19,7 +19,7 @@
 
 - The automated tests use fake CLIs, not the real `claude`, `codex`, `gemini`, or `opencode`.
 - A PASS (automated) row shows that the code does what the criterion says. It does not replace a hands-on run with the real surface.
-- The result of each named test must be confirmed in a green CI run of this build before this report is final. This draft names the tests. It does not record a run.
+- CI run 43780798038 at commit 264148efcbff1e7c7d2aee5127be0620f97590fc passed on Linux, macOS, and Windows. It ran every named test; `tests/sessions.rs` runs only on Linux and macOS (`#![cfg(unix)]`). A later commit that changes only this file does not change the tested code.
 
 ### What a person must run
 
