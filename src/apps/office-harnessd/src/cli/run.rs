@@ -9,10 +9,12 @@ use super::{CliError, Command, LoginStart, SystemLoginItem};
 use crate::config::Config;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Used by the app at each start; see `LoginStart::register_unless_turned_off`.
+const UNLESS_TURNED_OFF_FLAG: &str = "--unless-turned-off";
 
 /// Runs one subcommand against the real login item and reports on standard
 /// output (the result) or standard error (the failure). `rest` holds the
-/// arguments after the subcommand, which are the server's own.
+/// arguments after the subcommand.
 pub fn run(command: Command, rest: &[OsString]) -> ExitCode {
     match execute(command, rest) {
         Ok(code) => code,
@@ -24,14 +26,23 @@ pub fn run(command: Command, rest: &[OsString]) -> ExitCode {
 }
 
 fn execute(command: Command, rest: &[OsString]) -> Result<ExitCode, CliError> {
-    let config = Config::load(rest.iter().cloned())?;
+    let unless_turned_off = read_options(command, rest)?;
+    // The default folder only: the login item starts the server without arguments.
+    let config = Config::load(std::iter::empty())?;
     let login_item = SystemLoginItem;
     let login_start = LoginStart::new(&config.data_folder, VERSION, &login_item);
     match command {
         Command::Register => {
             let running = std::env::current_exe().map_err(CliError::NoRunningProgram)?;
-            let installed = login_start.register(&running)?;
-            println!("registered: {}", installed.display());
+            let installed = if unless_turned_off {
+                login_start.register_unless_turned_off(&running)?
+            } else {
+                Some(login_start.register(&running)?)
+            };
+            match installed {
+                Some(installed) => println!("registered: {}", installed.display()),
+                None => println!("not registered: login start was turned off with unregister"),
+            }
             Ok(ExitCode::SUCCESS)
         }
         Command::Unregister => {
@@ -47,5 +58,16 @@ fn execute(command: Command, rest: &[OsString]) -> Result<ExitCode, CliError> {
             println!("not registered");
             Ok(ExitCode::from(LOGIN_START_NOT_REGISTERED_EXIT_CODE))
         }
+    }
+}
+
+/// Whether `register` got `--unless-turned-off`; every other argument is refused.
+fn read_options(command: Command, rest: &[OsString]) -> Result<bool, CliError> {
+    match (command, rest) {
+        (_, []) => Ok(false),
+        (Command::Register, [flag]) if flag == UNLESS_TURNED_OFF_FLAG => Ok(true),
+        (_, [unknown, ..]) => Err(CliError::UnknownArgument(
+            unknown.to_string_lossy().into_owned(),
+        )),
     }
 }

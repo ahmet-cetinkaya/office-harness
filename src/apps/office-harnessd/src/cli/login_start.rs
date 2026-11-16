@@ -11,6 +11,9 @@ use super::{CliError, LoginItem};
 const COPIES_FOLDER: &str = "bin";
 const PROGRAM_NAME: &str = "office-harnessd";
 const PARTIAL_EXTENSION: &str = "partial";
+/// Written by `unregister`, so that the app's start does not undo it; an
+/// explicit `register` removes it.
+const TURNED_OFF_MARKER: &str = "login-start-off";
 
 /// Starts a stable copy of the server at login. The copy exists because the
 /// running program may sit in a place that goes away: an `AppImage` mount, or an
@@ -46,6 +49,31 @@ impl<'a> LoginStart<'a> {
     /// # Errors
     /// The copy cannot be written, or the operating system refuses the entry.
     pub fn register(&self, running_program: &Path) -> Result<PathBuf, CliError> {
+        self.files(remove_if_present(&self.turned_off_marker()))?;
+        self.install(running_program)
+    }
+
+    /// Registers as `register` does, unless the user turned login start off
+    /// with `unregister`; then nothing changes and `None` is returned. The
+    /// app runs this at each start, which covers the first start and an upgrade.
+    ///
+    /// # Errors
+    /// As `register`.
+    pub fn register_unless_turned_off(
+        &self,
+        running_program: &Path,
+    ) -> Result<Option<PathBuf>, CliError> {
+        let marker = self.turned_off_marker();
+        if marker.try_exists().map_err(|source| CliError::Files {
+            path: marker,
+            source,
+        })? {
+            return Ok(None);
+        }
+        self.install(running_program).map(Some)
+    }
+
+    fn install(&self, running_program: &Path) -> Result<PathBuf, CliError> {
         let installed = self.installed_program();
         copy_when_different(running_program, &installed).map_err(|source| CliError::Files {
             path: installed.clone(),
@@ -55,16 +83,19 @@ impl<'a> LoginStart<'a> {
         Ok(installed)
     }
 
-    /// Removes the login item and every copy. The data folder's other files stay.
+    /// Removes the login item and every copy, and records that login start
+    /// is off. The data folder's other files stay.
     ///
     /// # Errors
     /// The operating system refuses to remove the entry, or a copy cannot be
     /// deleted (Windows keeps the file of a running program).
     pub fn unregister(&self) -> Result<(), CliError> {
         self.login_item.disable()?;
-        match fs::remove_dir_all(self.copies_folder()) {
+        self.files(write_marker(self.data_folder, &self.turned_off_marker()))?;
+        let copies = self.copies_folder();
+        match fs::remove_dir_all(&copies) {
             Err(error) if error.kind() != io::ErrorKind::NotFound => Err(CliError::Files {
-                path: self.copies_folder(),
+                path: copies,
                 source: error,
             }),
             _ => Ok(()),
@@ -80,6 +111,29 @@ impl<'a> LoginStart<'a> {
     fn copies_folder(&self) -> PathBuf {
         self.data_folder.join(COPIES_FOLDER)
     }
+
+    fn turned_off_marker(&self) -> PathBuf {
+        self.data_folder.join(TURNED_OFF_MARKER)
+    }
+
+    fn files(&self, outcome: io::Result<()>) -> Result<(), CliError> {
+        outcome.map_err(|source| CliError::Files {
+            path: self.data_folder.to_path_buf(),
+            source,
+        })
+    }
+}
+
+fn write_marker(data_folder: &Path, marker: &Path) -> io::Result<()> {
+    private_fs::create_private_dir_all(data_folder)?;
+    fs::write(marker, b"")
+}
+
+fn remove_if_present(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
+        _ => Ok(()),
+    }
 }
 
 fn copy_when_different(source: &Path, target: &Path) -> io::Result<()> {
@@ -89,11 +143,29 @@ fn copy_when_different(source: &Path, target: &Path) -> io::Result<()> {
     let folder = target
         .parent()
         .ok_or_else(|| io::Error::other("the copy has no folder"))?;
-    fs::create_dir_all(folder)?;
-    // A copy that stops halfway must never be the file that login starts.
-    let partial = target.with_extension(PARTIAL_EXTENSION);
-    fs::copy(source, &partial)?;
-    fs::rename(&partial, target)
+    private_fs::create_private_dir_all(folder)?;
+    // A copy that stops halfway must never be the file that login starts. The
+    // process id keeps two `register` runs (the app's start and the button)
+    // from writing into one file.
+    let partial = target.with_extension(format!("{}.{PARTIAL_EXTENSION}", std::process::id()));
+    remove_if_present(&partial)?;
+    let copied = write_partial(source, &partial).and_then(|()| fs::rename(&partial, target));
+    if copied.is_err() {
+        // The copy's own error is the one to report; a leftover is replaced next time.
+        let _ = fs::remove_file(&partial);
+    }
+    copied
+}
+
+/// `create_new` refuses a file or a link that is already at the path.
+fn write_partial(source: &Path, partial: &Path) -> io::Result<()> {
+    let mut writer = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(partial)?;
+    io::copy(&mut fs::File::open(source)?, &mut writer)?;
+    writer.sync_all()?;
+    fs::set_permissions(partial, fs::metadata(source)?.permissions())
 }
 
 /// Copying a file onto itself would empty it, so the same file counts as installed.

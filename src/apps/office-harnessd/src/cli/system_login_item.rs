@@ -74,8 +74,23 @@ fn new_builder(program: &Path) -> Result<AutoLaunchBuilder, LoginItemError> {
         .to_str()
         .ok_or_else(|| LoginItemError("the program path is not valid UTF-8".to_owned()))?;
     let mut builder = AutoLaunchBuilder::new();
-    builder.set_app_name(APP_NAME).set_app_path(path);
+    builder
+        .set_app_name(APP_NAME)
+        .set_app_path(&command_line_path(path));
     Ok(builder)
+}
+
+/// The Linux unit and desktop entry and the Windows `Run` value are command
+/// lines that the crate writes without quotes, so a space in the home folder
+/// would split the path. The macOS property list holds the path as is.
+#[cfg(not(target_os = "macos"))]
+fn command_line_path(path: &str) -> String {
+    format!("\"{path}\"")
+}
+
+#[cfg(target_os = "macos")]
+fn command_line_path(path: &str) -> String {
+    path.to_owned()
 }
 
 /// The modes that can hold an entry for this user, the preferred one first.

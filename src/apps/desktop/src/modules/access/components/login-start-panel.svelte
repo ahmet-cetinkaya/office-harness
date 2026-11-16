@@ -15,10 +15,13 @@
   let isRegistered = $state<boolean | null>(null);
   let isRegistering = $state(false);
   let failure = $state<string | null>(null);
+  let statusFailure = $state<string | null>(null);
 
   const statusText = $derived(
     isRegistered === null
-      ? "Checking whether the server starts at login."
+      ? statusFailure === null
+        ? "Checking whether the server starts at login."
+        : "It is not known whether the server starts at login."
       : isRegistered
         ? "The server starts when you log in."
         : "The server does not start when you log in.",
@@ -28,7 +31,7 @@
     try {
       isRegistered = await client.loginStartStatus();
     } catch (rejection) {
-      failure = toCoreRequestError(rejection).message;
+      statusFailure = toCoreRequestError(rejection).message;
     }
   }
 
@@ -60,6 +63,12 @@
     it running without this app, from your next login on.
   </p>
   <p aria-live="polite" class="text-sm text-neutral-700">{statusText}</p>
+  {#if statusFailure !== null && isRegistered === null}
+    <FailureMessage
+      lead="The login start status could not be read."
+      message={statusFailure}
+    />
+  {/if}
   {#if failure !== null}
     <FailureMessage lead="The server was not registered." message={failure} />
   {/if}

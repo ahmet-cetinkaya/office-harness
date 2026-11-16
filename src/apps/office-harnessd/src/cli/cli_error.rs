@@ -15,6 +15,10 @@ const USAGE_EXIT_CODE: u8 = 2;
 pub enum CliError {
     #[error(transparent)]
     Config(#[from] ConfigError),
+    /// The login item always serves the default data folder, so the
+    /// subcommands take no folder of their own.
+    #[error("unknown argument for this subcommand: {0}")]
+    UnknownArgument(String),
     #[error("the running program cannot be found: {0}")]
     NoRunningProgram(io::Error),
     #[error("cannot install or remove {}: {source}", .path.display())]
@@ -29,7 +33,7 @@ impl CliError {
     #[must_use]
     pub fn exit_code(&self) -> u8 {
         match self {
-            Self::Config(_) => USAGE_EXIT_CODE,
+            Self::Config(_) | Self::UnknownArgument(_) => USAGE_EXIT_CODE,
             _ => FAILURE_EXIT_CODE,
         }
     }
