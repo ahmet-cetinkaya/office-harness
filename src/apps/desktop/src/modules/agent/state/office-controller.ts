@@ -57,6 +57,8 @@ export interface OfficeSnapshot {
   projects: Project[];
   /** The text that came with a status, for example why an agent failed. */
   statusDetails: Record<string, string>;
+  /** Agents with a stop request that the server has not answered yet. */
+  stoppingAgentIds: ReadonlySet<string>;
   selectedAgentId: string | null;
   details: AgentDetails | null;
   notice: Notice | null;
@@ -72,6 +74,7 @@ export const INITIAL_OFFICE: OfficeSnapshot = {
   agents: [],
   projects: [],
   statusDetails: {},
+  stoppingAgentIds: new Set(),
   selectedAgentId: null,
   details: null,
   notice: null,
@@ -327,8 +330,18 @@ export function createOfficeController(
         await refreshSessions(agentId);
       }),
 
-    stopAgent: (agentId: string): Promise<void> =>
-      perform("The agent did not stop.", () => service.stopAgent(agentId)),
+    stopAgent: async (agentId: string): Promise<void> => {
+      if (snapshot.stoppingAgentIds.has(agentId)) return;
+      update({
+        stoppingAgentIds: new Set(snapshot.stoppingAgentIds).add(agentId),
+      });
+      await perform("The agent did not stop.", () =>
+        service.stopAgent(agentId),
+      );
+      const stillStopping = new Set(snapshot.stoppingAgentIds);
+      stillStopping.delete(agentId);
+      update({ stoppingAgentIds: stillStopping });
+    },
 
     startNewTask: (agentId: string): Promise<void> =>
       perform("The new task did not start.", async () => {

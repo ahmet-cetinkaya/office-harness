@@ -54,6 +54,10 @@ pub struct FakeClis {
     /// How long the stand-in login shell takes to answer, in seconds.
     #[cfg(unix)]
     login_delay_seconds: u32,
+    /// Folders after the tool folder on the fixed `PATH`, such as the one of
+    /// `node.exe`.
+    #[cfg(windows)]
+    extra_path_folders: Vec<PathBuf>,
     attribution: AttributionTiming,
 }
 
@@ -77,12 +81,20 @@ impl FakeClis {
             tool_folder,
             #[cfg(unix)]
             login_delay_seconds: 0,
+            #[cfg(windows)]
+            extra_path_folders: Vec::new(),
             attribution: AttributionTiming {
                 poll_interval: ATTRIBUTION_POLL,
                 timeout: ATTRIBUTION_TIMEOUT,
                 settle: ATTRIBUTION_POLL,
             },
         }
+    }
+
+    /// The folder that holds the fake CLIs, the first one on the login `PATH`.
+    #[must_use]
+    pub fn tool_folder(&self) -> &Path {
+        &self.tool_folder
     }
 
     /// The fake home folder that every fake CLI sees as `HOME`.
@@ -109,6 +121,14 @@ impl FakeClis {
     #[must_use]
     pub fn with_attribution_timeout(mut self, timeout: Duration) -> Self {
         self.attribution.timeout = timeout;
+        self
+    }
+
+    /// Puts `folder` on the fixed login `PATH`, after the tool folder.
+    #[cfg(windows)]
+    #[must_use]
+    pub fn with_path_folder(mut self, folder: PathBuf) -> Self {
+        self.extra_path_folders.push(folder);
         self
     }
 
@@ -162,10 +182,14 @@ impl FakeClis {
     #[cfg(windows)]
     fn login_environment(&self) -> LoginEnvironment {
         let system_root = std::env::var(SYSTEM_ROOT_VARIABLE).expect("the system root");
-        let path = std::env::join_paths([
-            self.tool_folder.clone(),
-            Path::new(&system_root).join(SYSTEM_FOLDER),
-        ])
+        let path = std::env::join_paths(
+            [
+                self.tool_folder.clone(),
+                Path::new(&system_root).join(SYSTEM_FOLDER),
+            ]
+            .into_iter()
+            .chain(self.extra_path_folders.iter().cloned()),
+        )
         .expect("path entries");
         let home = self.home_folder();
         let [config, data, state, cache] = self.xdg_folders();

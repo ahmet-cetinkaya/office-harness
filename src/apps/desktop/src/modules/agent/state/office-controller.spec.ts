@@ -135,6 +135,46 @@ describe("office controller", () => {
     expect(state().agents.map((known) => known.id)).toEqual(["a", "b"]);
   });
 
+  test("an agent is stopping from the stop request until its answer", async () => {
+    let answerStop: () => void = () => {};
+    const { client, requests } = fakeClient((kind, fields) =>
+      kind === "agent.stop"
+        ? new Promise<null>((resolve) => {
+            answerStop = () => resolve(null);
+          })
+        : officeHandler([agent("a", "working")])(kind, fields),
+    );
+    const { controller, state } = observe(client);
+    await controller.load();
+
+    const stopping = controller.stopAgent("a");
+    const repeated = controller.stopAgent("a");
+
+    expect(state().stoppingAgentIds.has("a")).toBe(true);
+    answerStop();
+    await Promise.all([stopping, repeated]);
+    expect(state().stoppingAgentIds.has("a")).toBe(false);
+    expect(requests.filter((sent) => sent.kind === "agent.stop")).toHaveLength(
+      1,
+    );
+  });
+
+  test("a failed stop is no longer stopping and shows the notice", async () => {
+    const { client } = fakeClient((kind, fields) => {
+      if (kind === "agent.stop") {
+        throw new CoreRequestError("stop_failed", "still alive");
+      }
+      return officeHandler([agent("a", "working")])(kind, fields);
+    });
+    const { controller, state } = observe(client);
+    await controller.load();
+
+    await controller.stopAgent("a");
+
+    expect(state().stoppingAgentIds.size).toBe(0);
+    expect(state().notice?.message).toBe("still alive");
+  });
+
   test("a status event changes the status and keeps its detail", async () => {
     const { client, push } = fakeClient(officeHandler([agent("a")]));
     const { controller, state } = observe(client);

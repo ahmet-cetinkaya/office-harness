@@ -51,6 +51,15 @@ impl ScreenEmulator {
         self.parser.screen().bracketed_paste()
     }
 
+    /// The text of the row where the cursor stands.
+    #[must_use]
+    pub fn cursor_line(&self) -> String {
+        let screen = self.parser.screen();
+        let (row, _) = screen.cursor_position();
+        let columns = screen.size().1.get();
+        screen.contents_between(row, 0, row, columns)
+    }
+
     /// Terminal bytes that redraw this screen on an empty terminal: the
     /// scrollback rows, the switch to the alternate screen when it is in use,
     /// then the screen and the input modes (cursor keys, bracketed paste,
