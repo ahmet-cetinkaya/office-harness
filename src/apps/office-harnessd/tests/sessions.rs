@@ -8,105 +8,20 @@
 
 mod support;
 
-use std::collections::BTreeMap;
 use std::fs;
-use std::hash::{DefaultHasher, Hash, Hasher};
-use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::path::PathBuf;
+use std::time::Duration;
 
-use serde_json::{Value, json};
-use support::fake_cli::FakeClis;
+use serde_json::json;
+use support::fake_cli::SHORT_ATTRIBUTION;
 use support::office_client::{
-    Office, error_text, recording_body, records_of, wait_for, wait_for_records,
+    Office, error_text, first_additions, recording_body, wait_for, wait_for_records,
 };
 
 const BRACKETED_PASTE_ON: &str = r"printf '\033[?2004h'";
 const PASTE_START: &str = "\u{1b}[200~";
 const PASTE_END: &str = "\u{1b}[201~";
 const SNAPSHOT_HEADER_BYTES: usize = 17;
-const SHORT_ATTRIBUTION: Duration = Duration::from_millis(600);
-
-fn first_additions() -> Value {
-    json!({
-        "flags": ["--first"],
-        "env": [{"name": "OFFICE_KEY", "value": "one"}],
-        "startup_prompt": "prompt one",
-    })
-}
-
-fn second_additions() -> Value {
-    json!({
-        "flags": ["--second"],
-        "env": [{"name": "OFFICE_KEY", "value": "two"}],
-        "startup_prompt": "prompt two",
-    })
-}
-
-// (a), (c): additions reach the child at the next session only.
-
-#[tokio::test]
-async fn flags_env_and_the_startup_prompt_reach_the_child_at_the_next_session_and_an_edit_leaves_the_running_one()
- {
-    let office = Office::open().await;
-    office.clis.add(
-        "claude",
-        &recording_body(office.records_path(), "echo ready; sleep 30"),
-    );
-    let mut client = office.client().await;
-    let mut observer = office.client().await;
-    let agent = client
-        .create_agent(&office, "Ana", "claude", Some(first_additions()))
-        .await;
-    let first = client.start(&agent).await;
-    let records = wait_for_records(office.records_path(), 1).await;
-    let cli_id = first["cli_session_id"].as_str().expect("cli id");
-    assert_eq!(
-        records[0].arguments,
-        ["--first", "--session-id", cli_id],
-        "the prompt is typed in, never an argument"
-    );
-    assert_eq!(records[0].key, "one");
-
-    let edited = client
-        .ask(
-            "agent.additions.set",
-            json!({"agent_id": agent, "additions": second_additions()}),
-        )
-        .await;
-
-    assert_eq!(edited["ok"], true, "{edited}");
-    assert_eq!(edited["result"]["applies_next_session"], true);
-    let event = observer.next_event("agent.additions.changed").await;
-    assert_eq!(event["agent_id"], agent.as_str());
-    assert_eq!(event["additions"]["flags"][0], "--second");
-    let sessions = client.sessions(&agent).await;
-    assert_eq!(sessions.len(), 1);
-    assert_eq!(sessions[0]["additions_snapshot"]["flags"][0], "--first");
-    assert_eq!(
-        records_of(office.records_path()).len(),
-        1,
-        "the running child is untouched"
-    );
-
-    let next = client
-        .ask("agent.new_task", json!({"agent_id": agent}))
-        .await;
-    assert_eq!(next["ok"], true, "{next}");
-    let records = wait_for_records(office.records_path(), 2).await;
-    let next_id = next["result"]["cli_session_id"].as_str().expect("cli id");
-    assert_eq!(
-        records[1].arguments,
-        ["--second", "--session-id", next_id],
-        "the prompt is typed in, never an argument"
-    );
-    assert_eq!(records[1].key, "two");
-    assert_ne!(next_id, cli_id, "a new task is a new session");
-    let sessions = client.sessions(&agent).await;
-    assert_eq!(sessions[0]["additions_snapshot"]["flags"][0], "--second");
-    assert_eq!(sessions[1]["exit_result"], "signal");
-    client.ask("agent.stop", json!({"agent_id": agent})).await;
-    office.serving.stop().await;
-}
 
 #[tokio::test]
 async fn a_malformed_environment_name_is_refused_and_named_at_create_and_at_edit() {
@@ -418,108 +333,5 @@ async fn a_flag_or_a_fixed_argument_with_a_percent_is_refused_for_a_batch_cli() 
         assert_eq!(client.status_of(agent).await, "stopped");
         assert_eq!(client.sessions(agent).await.len(), 0);
     }
-    office.serving.stop().await;
-}
-
-// (f): the CLI's own configuration is never written.
-
-/// File list, size, modification time, and a hash of the content, for every
-/// file under the folders.
-fn snapshot(folders: &[PathBuf]) -> BTreeMap<PathBuf, (u64, SystemTime, u64)> {
-    let mut files = BTreeMap::new();
-    for folder in folders {
-        collect(folder, &mut files);
-    }
-    files
-}
-
-fn collect(folder: &Path, files: &mut BTreeMap<PathBuf, (u64, SystemTime, u64)>) {
-    for entry in fs::read_dir(folder).expect("folder").flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            files.insert(path.clone(), (0, SystemTime::UNIX_EPOCH, 0));
-            collect(&path, files);
-            continue;
-        }
-        let bytes = fs::read(&path).expect("read");
-        let mut hasher = DefaultHasher::new();
-        bytes.hash(&mut hasher);
-        let modified = entry
-            .metadata()
-            .and_then(|meta| meta.modified())
-            .expect("mtime");
-        files.insert(path, (bytes.len() as u64, modified, hasher.finish()));
-    }
-}
-
-fn plant_fake_configuration(clis: &FakeClis) {
-    let home = clis.home_folder();
-    let [config, data, _, _] = clis.xdg_folders();
-    for (path, content) in [
-        (
-            home.join(".claude").join("settings.json"),
-            "{\"theme\":\"dark\"}",
-        ),
-        (home.join(".codex").join("config.toml"), "model = \"x\""),
-        (
-            home.join(".codex")
-                .join("sessions")
-                .join("2026")
-                .join("01")
-                .join("01")
-                .join("rollout-old.jsonl"),
-            "{}",
-        ),
-        (home.join(".gemini").join("settings.json"), "{}"),
-        (config.join("opencode").join("opencode.json"), "{}"),
-        (data.join("opencode").join("storage.json"), "{}"),
-    ] {
-        fs::create_dir_all(path.parent().expect("parent")).expect("folder");
-        fs::write(path, content).expect("file");
-    }
-}
-
-#[tokio::test]
-async fn create_start_continue_edit_stop_and_delete_change_nothing_in_the_cli_configuration() {
-    let clis = FakeClis::new().with_attribution_timeout(SHORT_ATTRIBUTION);
-    plant_fake_configuration(&clis);
-    let watched: Vec<PathBuf> = std::iter::once(clis.home_folder())
-        .chain(clis.xdg_folders())
-        .collect();
-    let before = snapshot(&watched);
-    let office = Office::open_with(clis).await;
-    for cli in ["claude", "codex", "gemini", "opencode"] {
-        office.clis.add(cli, "echo quiet; sleep 30");
-    }
-    let mut client = office.client().await;
-
-    for cli in ["claude", "codex", "gemini", "opencode"] {
-        let agent = client
-            .create_agent(&office, cli, cli, Some(first_additions()))
-            .await;
-        let started = client.start(&agent).await;
-        client
-            .ask(
-                "agent.additions.set",
-                json!({"agent_id": agent, "additions": second_additions()}),
-            )
-            .await;
-        client.ask("agent.stop", json!({"agent_id": agent})).await;
-        // Continue refuses when the session id is unknown (the fake `codex`
-        // writes none); the attempt itself must still leave no trace.
-        client
-            .ask("session.continue", json!({"session_id": started["id"]}))
-            .await;
-        client.ask("agent.stop", json!({"agent_id": agent})).await;
-        let deleted = client.ask("agent.delete", json!({"agent_id": agent})).await;
-        assert_eq!(deleted["ok"], true, "{deleted}");
-        assert_eq!(snapshot(&watched), before, "after the steps for {cli}");
-    }
-    tokio::time::sleep(SHORT_ATTRIBUTION + Duration::from_millis(300)).await;
-    assert_eq!(
-        snapshot(&watched),
-        before,
-        "after the attribution windows closed"
-    );
     office.serving.stop().await;
 }
