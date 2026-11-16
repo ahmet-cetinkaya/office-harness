@@ -11,6 +11,8 @@ const WEBVIEW_COMMANDS: &[&str] = &[
     "send_request",
     "retry_connection",
     "start_server",
+    "register_login_start",
+    "login_start_status",
 ];
 
 fn main() {
