@@ -226,15 +226,13 @@ fn an_explicit_register_turns_login_start_on_again() {
     login_start.unregister().expect("unregister");
 
     login_start.register(&program).expect("register");
-    login_item
-        .disable()
-        .expect("the user removes the entry by hand");
-    let installed = login_start
+    let other_version = LoginStart::new(data.path(), "9.9.9", &login_item);
+    let installed = other_version
         .register_at_app_start(&program)
-        .expect("app start");
+        .expect("app start of a new version");
 
-    assert!(installed.is_some());
-    assert!(login_start.is_registered().expect("status"));
+    assert!(!data.path().join("login-start-off").exists());
+    assert_eq!(installed, Some(other_version.installed_program()));
 }
 
 #[test]
@@ -255,4 +253,27 @@ fn a_leftover_partial_copy_does_not_block_the_next_register() {
 
     assert_eq!(fs::read(installed).expect("copy"), b"server");
     assert!(!partial.exists());
+}
+
+#[test]
+fn a_later_app_start_of_the_same_version_changes_nothing() {
+    let data = TempDir::new().expect("data folder");
+    let source = TempDir::new().expect("source folder");
+    let login_item = FakeLoginItem::default();
+    let login_start = LoginStart::new(data.path(), VERSION, &login_item);
+    let program = running_program(&source, b"server");
+    login_start
+        .register_at_app_start(&program)
+        .expect("first app start");
+    login_item
+        .disable()
+        .expect("the user removes the entry by hand");
+
+    let installed = login_start
+        .register_at_app_start(&program)
+        .expect("second app start");
+
+    assert_eq!(installed, None);
+    assert_eq!(login_item.enable_calls.get(), 1);
+    assert!(!login_start.is_registered().expect("status"));
 }
