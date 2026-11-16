@@ -167,7 +167,18 @@ fn a_start_in_another_folder_does_not_disturb_this_one() {
 #[test]
 fn a_session_file_that_is_not_complete_yet_is_looked_at_again() {
     let fixture = fixture();
-    let mut tracking = begin(&fixture);
+    // The file is completed by another thread; a slow CI machine must not
+    // let the look end before it is written.
+    let patient = AttributionTiming {
+        timeout: Duration::from_secs(10),
+        ..QUICK
+    };
+    let mut tracking = CodexTracking::begin(
+        fixture.sessions.clone(),
+        &fixture.folder,
+        patient,
+        &fixture.pending,
+    );
     let day = fixture.sessions.join("2026").join("11").join("15");
     fs::create_dir_all(&day).expect("day");
     fs::write(day.join("rollout-late.jsonl"), "{\"type\":").expect("partial");

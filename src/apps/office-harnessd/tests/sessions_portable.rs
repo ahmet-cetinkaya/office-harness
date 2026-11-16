@@ -21,6 +21,22 @@ use support::office_client::{
 };
 
 const FRAME_HEADER_BYTES: usize = 17;
+/// A stop sends the interrupt key first. On Windows a batch file answers it
+/// with "Terminate batch job (Y/N)?" and waits, so the stop ends the child
+/// only after the grace period; a short one keeps each request under the
+/// client's wait.
+const SHORT_STOP_GRACE_MS: &str = "500";
+const TERMINAL_TEXT_WAIT: Duration = Duration::from_secs(10);
+
+async fn shorten_the_stop_grace(client: &mut Client) {
+    let set = client
+        .ask(
+            "settings.set",
+            json!({"key": "stop_grace_ms", "value": SHORT_STOP_GRACE_MS}),
+        )
+        .await;
+    assert_eq!(set["ok"], true, "{set}");
+}
 
 /// Reads what the terminal of `agent` shows, from the snapshot on, until it
 /// holds `wanted`. The child cannot record typed input on every OS (a batch
@@ -34,10 +50,17 @@ async fn wait_for_terminal_text(client: &mut Client, agent: &str, wanted: &str) 
         .await;
     assert_eq!(attached["ok"], true, "{attached}");
     let mut shown = String::new();
-    while !shown.contains(wanted) {
-        let frame = client.wire.receive_binary().await;
-        shown.push_str(&String::from_utf8_lossy(&frame[FRAME_HEADER_BYTES..]));
-    }
+    let read_until_wanted = async {
+        while !shown.contains(wanted) {
+            let frame = client.wire.receive_binary().await;
+            shown.push_str(&String::from_utf8_lossy(&frame[FRAME_HEADER_BYTES..]));
+        }
+    };
+    let found = tokio::time::timeout(TERMINAL_TEXT_WAIT, read_until_wanted).await;
+    assert!(
+        found.is_ok(),
+        "the terminal never showed {wanted:?}; it showed {shown:?}"
+    );
     client
         .ask("terminal.detach", json!({"agent_id": agent}))
         .await;
@@ -54,6 +77,7 @@ async fn flags_env_and_the_startup_prompt_reach_the_child_at_the_next_session_an
         &recording_body(office.records_path(), &print_then_wait("ready")),
     );
     let mut client = office.client().await;
+    shorten_the_stop_grace(&mut client).await;
     let mut observer = office.client().await;
     let agent = client
         .create_agent(&office, "Ana", "claude", Some(first_additions()))
@@ -182,6 +206,7 @@ async fn create_start_continue_edit_stop_and_delete_change_nothing_in_the_cli_co
         office.clis.add(cli, &print_then_wait("quiet"));
     }
     let mut client = office.client().await;
+    shorten_the_stop_grace(&mut client).await;
 
     for cli in ["claude", "codex", "gemini", "opencode"] {
         let agent = client
