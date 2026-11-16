@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The webview may call only the commands that the app lists, and no built-in command.",
+  "windows": ["main"],
+  "permissions": [
+    "allow-watch-connection",
+    "allow-watch-events",
+    "allow-watch-terminal-frames",
+    "allow-send-request",
+    "allow-retry-connection",
+    "allow-start-server",
+    "allow-register-login-start",
+    "allow-login-start-status"
+  ]
+}
