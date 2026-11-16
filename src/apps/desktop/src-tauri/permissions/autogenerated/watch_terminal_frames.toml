@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-watch-terminal-frames"
+description = "Enables the watch_terminal_frames command without any pre-configured scope."
+commands.allow = ["watch_terminal_frames"]
+
+[[permission]]
+identifier = "deny-watch-terminal-frames"
+description = "Denies the watch_terminal_frames command without any pre-configured scope."
+commands.deny = ["watch_terminal_frames"]

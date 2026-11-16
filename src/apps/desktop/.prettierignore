@@ -1,0 +1,6 @@
+dist
+src-tauri
+node_modules
+bun.lock
+test-results
+src/core/api/generated
