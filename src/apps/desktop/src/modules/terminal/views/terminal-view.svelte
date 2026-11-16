@@ -129,6 +129,9 @@
         }
         return false;
       }
+      // A stopped terminal takes no input, so Tab must reach the browser and
+      // move focus on. xterm.js would otherwise cancel it.
+      if (!isRunning && event.key === "Tab") return false;
       // The webview would otherwise move focus on Tab and open its own
       // function-key actions. xterm.js still sends the key's sequence.
       if (
