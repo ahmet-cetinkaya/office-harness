@@ -228,7 +228,9 @@ pub fn recording_body(records: &Path, rest: &str) -> String {
 }
 
 /// As on Unix, for a batch file. A batch file has no process id, so a random
-/// number names the record. It writes each argument on its own line to a
+/// number names the record; `%RANDOM%` repeats within one second, so the
+/// number is claimed with `mkdir`, which fails when another run holds it, and
+/// a taken number is drawn again. It writes each argument on its own line to a
 /// temporary file and moves that file into place, so the arguments file
 /// appears whole. A redirection comes first in each command, so a digit that
 /// ends a value is never read as a handle number.
@@ -236,7 +238,7 @@ pub fn recording_body(records: &Path, rest: &str) -> String {
 pub fn recording_body(records: &Path, rest: &str) -> String {
     let folder = records.display();
     format!(
-        "set RECORD=%RANDOM%%RANDOM%\n>\"{folder}\\key-%RECORD%\" echo %OFFICE_KEY%\nfor %%a in (%*) do >>\"{folder}\\partial-%RECORD%\" echo %%a\nmove /y \"{folder}\\partial-%RECORD%\" \"{folder}\\args-%RECORD%\" >nul\n{rest}"
+        ":pick_record\nset RECORD=%RANDOM%%RANDOM%\nmkdir \"{folder}\\claim-%RECORD%\" 2>nul || goto pick_record\n>\"{folder}\\key-%RECORD%\" echo %OFFICE_KEY%\nfor %%a in (%*) do >>\"{folder}\\partial-%RECORD%\" echo %%a\nmove /y \"{folder}\\partial-%RECORD%\" \"{folder}\\args-%RECORD%\" >nul\n{rest}"
     )
 }
 
