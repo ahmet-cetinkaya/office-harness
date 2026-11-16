@@ -31,3 +31,17 @@ fn a_line_that_is_not_such_a_question_gets_no_answer() {
         assert_eq!(confirmation_answer(line), None, "{line:?}");
     }
 }
+
+#[test]
+fn a_question_that_appears_after_the_interrupt_is_answered() {
+    assert_eq!(
+        answer_after_interrupt("C:\\work>", "Terminate batch job (Y/N)?"),
+        Some('Y')
+    );
+}
+
+#[test]
+fn a_question_that_was_on_the_screen_before_the_interrupt_gets_no_answer() {
+    let own_question = "Overwrite the file (y/n)?";
+    assert_eq!(answer_after_interrupt(own_question, own_question), None);
+}
