@@ -322,3 +322,36 @@ test.describe("accessibility", () => {
     await expect(page.getByRole("button", { name: "New agent" })).toBeFocused();
   });
 });
+
+test("the agent shows Stopping at once and the stop is disabled until the answer", async ({
+  page,
+}) => {
+  const stopDelayMs = 1500;
+  await installMockCore(page, {
+    initialState: { status: "connected" },
+    office: { agents: [agent({ status: "working" })] },
+    stopDelayMs,
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Ada, working" }).click();
+
+  await page.getByRole("button", { name: "Stop agent" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Stop agent" })
+    .click();
+
+  await expect(
+    page.getByRole("button", { name: "Ada, Stopping" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Stopping" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop agent" })).toBeDisabled();
+  await expectNoSeriousViolations(page);
+
+  await expect(
+    page.getByRole("button", { name: "Ada, stopped" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start agent" })).toBeEnabled();
+});

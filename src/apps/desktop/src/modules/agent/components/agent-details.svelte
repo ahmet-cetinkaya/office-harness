@@ -7,7 +7,7 @@
   import { TerminalView } from "../../terminal";
   import {
     isActive,
-    statusText,
+    shownStatusText,
     type Additions,
     type Agent,
   } from "../models/agent";
@@ -29,6 +29,8 @@
     statusDetail: string | null;
     projectName: string | null;
     isBusy: boolean;
+    /** True while the stop request of this agent is open. */
+    isStopping: boolean;
     onstart: () => void;
     onstop: () => void;
     onnewtask: () => void;
@@ -45,6 +47,7 @@
     statusDetail,
     projectName,
     isBusy,
+    isStopping,
     onstart,
     onstop,
     onnewtask,
@@ -86,7 +89,10 @@
       class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm text-neutral-900"
     >
       <dt class="font-medium">Status</dt>
-      <dd>{statusText(agent.status)}</dd>
+      <dd>
+        <!-- A live region, so a screen reader hears "Stopping" at once. -->
+        <span role="status">{shownStatusText(agent, isStopping)}</span>
+      </dd>
       <dt class="font-medium">Command</dt>
       <dd class="break-all">{agent.command}</dd>
       <dt class="font-medium">Working folder</dt>
@@ -106,7 +112,10 @@
     {/if}
     <div class="flex flex-wrap gap-3">
       {#if isRunning}
-        <Button disabled={isBusy} onclick={() => ask({ kind: "stop" })}>
+        <Button
+          disabled={isBusy || isStopping}
+          onclick={() => ask({ kind: "stop" })}
+        >
           Stop agent
         </Button>
       {:else}
