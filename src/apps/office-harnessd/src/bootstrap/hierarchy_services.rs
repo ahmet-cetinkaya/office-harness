@@ -4,10 +4,11 @@ use std::sync::Arc;
 
 use agent_application::commands::delete_agent::DeleteAgentHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
-use agent_infrastructure::persistence::SharedConnection;
+use agent_infrastructure::persistence::{AgentRepository, SharedConnection};
+use hierarchy_application::commands::send_directive::SendDirectiveHandler;
 use hierarchy_application::commands::subtree::SubtreeHandler;
 use hierarchy_application::common::ports::{
-    SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover,
+    DirectiveJournal, SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover,
 };
 use hierarchy_application::{CreateTeamHandler, DeleteTeamHandler, PlaceAgentHandler, TreeQuery};
 use hierarchy_infrastructure::persistence::migrations::{LEDGER_TABLE, SCRIPTS};
@@ -16,24 +17,37 @@ use hierarchy_infrastructure::services::agent_places::AgentPlaces;
 use hierarchy_presentation::{HierarchyHandlers, HierarchyUseCases};
 use kernel::AgentId;
 
-use super::{AgentServices, ServerLog, StartupError, StorageAlerts, run_migrations};
-use crate::bridges::SubtreeRequestsBridge;
+use super::{
+    AgentServices, ServerLog, StartupError, StorageAlerts, TerminalServices, run_migrations,
+};
+use crate::bridges::{
+    DirectiveJournalBridge, DirectiveTargetBridge, DirectiveWriterBridge, SubtreeRequestsBridge,
+};
 
 /// The hierarchy services: the store, the use cases, and the handlers.
 pub struct HierarchyServices {
     pub handlers: Arc<HierarchyHandlers>,
+    /// Sends one directive from a running agent to its member (FR-009). The
+    /// agent-call server answers `directive.send` with it.
+    pub send_directive: Arc<SendDirectiveHandler>,
+    /// Journals the directive attempts and the gateway's own refusals into
+    /// the shared action record (FR-011).
+    pub directive_journal: Arc<DirectiveJournalBridge>,
 }
 
 /// Runs the hierarchy migrations and builds its services. The subtree ports
 /// call the agent module's own stop and delete use cases, so a subtree stop
-/// or delete behaves exactly like the single-agent one (FR-006, FR-007).
+/// or delete behaves exactly like the single-agent one (FR-006, FR-007). The
+/// directive use case writes through the terminal runtime and journals into
+/// the agent module's action record (FR-009, FR-011).
 ///
 /// # Errors
 /// A migration failure.
 pub fn build_hierarchy_services(
     connection: &SharedConnection,
     agent: &AgentServices,
-    _alerts: &StorageAlerts,
+    terminal: &TerminalServices,
+    alerts: &StorageAlerts,
     _log: &ServerLog,
 ) -> Result<HierarchyServices, StartupError> {
     let handle = connection.handle();
@@ -68,7 +82,23 @@ pub fn build_hierarchy_services(
         place_agent: PlaceAgentHandler::new(Arc::clone(&store)),
         subtree: subtree(),
     }));
-    Ok(HierarchyServices { handlers })
+    let directive_journal = Arc::new(DirectiveJournalBridge::new(
+        agent.journal.clone(),
+        alerts.clone(),
+    ));
+    let send_directive = Arc::new(SendDirectiveHandler::new(
+        Arc::clone(&store),
+        Arc::new(DirectiveTargetBridge::new(Arc::new(AgentRepository::new(
+            connection.clone(),
+        )))),
+        Arc::new(DirectiveWriterBridge::new(Arc::clone(&terminal.runtime))),
+        Arc::clone(&directive_journal) as Arc<dyn DirectiveJournal>,
+    ));
+    Ok(HierarchyServices {
+        handlers,
+        send_directive,
+        directive_journal,
+    })
 }
 
 /// Bridges one agent stop to the agent module's own handler.

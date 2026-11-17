@@ -102,7 +102,7 @@ pub fn start_with(
         log,
         agent_calls,
     );
-    let hierarchy = build_hierarchy_services(&connection, &agent, &storage_alerts, log)?;
+    let hierarchy = build_hierarchy_services(&connection, &agent, &terminal, &storage_alerts, log)?;
     Ok(Services {
         machine,
         agents,

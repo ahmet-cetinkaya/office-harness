@@ -4,7 +4,10 @@ use std::sync::Arc;
 
 use access_application::commands::authenticate_agent_call::AgentAuthenticationHandler;
 use access_application::commands::authenticate_connection::AuthenticationHandler;
+use hierarchy_application::commands::send_directive::SendDirectiveHandler;
 use tokio::sync::{Semaphore, watch};
+
+use crate::bridges::DirectiveJournalBridge;
 
 use super::agent_requests::AgentGateway;
 use super::dispatcher::Dispatcher;
@@ -26,6 +29,12 @@ pub struct ServerState {
     pub terminals: Arc<TerminalGateway>,
     pub agents: AgentGateway,
     pub hierarchy: HierarchyGateway,
+    /// Sends one directive from this agent to its member (FR-009), answered
+    /// on the agent connections.
+    pub send_directive: Arc<SendDirectiveHandler>,
+    /// Journals the refusals the agent-call gateway itself rejects; the use
+    /// case journals the attempts it runs.
+    pub directive_journal: Arc<DirectiveJournalBridge>,
     pub events: EventHub,
     /// Raised by `server.restart`.
     pub restart: RestartSignal,
