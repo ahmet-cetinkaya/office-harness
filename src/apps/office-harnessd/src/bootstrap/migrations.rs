@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use agent_infrastructure::persistence::PreMigrationCheck;
 use rusqlite::{Connection, params};
 
 use super::StartupError;
@@ -7,16 +8,20 @@ use super::StartupError;
 /// Brings one module's tables forward: script `n` is version `n`, and the
 /// module's ledger table records the versions that ran. Each script runs in a
 /// transaction with its ledger row, so a failure leaves the previous version.
+/// Each `checks` entry runs just before its guarded version applies, so a
+/// hand-edited database fails with a clear message and no data changes.
 /// Returns how many scripts ran; a database that is current runs none.
 ///
 /// # Errors
-/// `Migration` when a script fails, `DatabaseTooNew` when the ledger is ahead
-/// of `scripts`, and `InvalidLedgerName` for a name that is not plain
-/// lower-case letters and underscores.
+/// `Migration` when a script fails, `PreMigrationCheck` when a check rejects
+/// the data, `DatabaseTooNew` when the ledger is ahead of `scripts`, and
+/// `InvalidLedgerName` for a name that is not plain lower-case letters and
+/// underscores.
 pub fn run_migrations(
     connection: &mut Connection,
     ledger_table: &str,
     scripts: &[&str],
+    checks: &[PreMigrationCheck],
 ) -> Result<usize, StartupError> {
     if !is_plain_table_name(ledger_table) {
         return Err(StartupError::InvalidLedgerName(ledger_table.to_owned()));
@@ -35,6 +40,15 @@ pub fn run_migrations(
             found: applied,
             supported,
         });
+    }
+    for &(guarded_version, check) in checks {
+        if applied < guarded_version && guarded_version <= supported {
+            check(connection).map_err(|message| StartupError::PreMigrationCheck {
+                ledger: ledger_table.to_owned(),
+                version: guarded_version,
+                message,
+            })?;
+        }
     }
     let already_applied = usize::try_from(applied).unwrap_or(scripts.len());
     for (index, script) in scripts.iter().enumerate().skip(already_applied) {

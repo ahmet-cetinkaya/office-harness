@@ -7,7 +7,7 @@ mod port_adapters;
 mod repositories;
 mod shared_connection;
 
-pub use migrations::{LEDGER_TABLE, SCRIPTS};
+pub use migrations::{LEDGER_TABLE, PRE_MIGRATION_CHECKS, PreMigrationCheck, SCRIPTS};
 pub use persistence_error::PersistenceError;
 pub use repositories::{
     AdditionsRepository, AgentRepository, MachineRepository, ProjectRepository, SessionRepository,

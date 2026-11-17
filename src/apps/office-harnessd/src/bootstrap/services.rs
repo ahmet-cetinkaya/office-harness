@@ -3,8 +3,8 @@
 use agent_application::common::interfaces::Clock;
 use agent_domain::entities::Machine;
 use agent_infrastructure::persistence::{
-    AgentRepository, LEDGER_TABLE, MachineRepository, ProjectRepository, SCRIPTS,
-    SessionRepository, SettingsRepository, SharedConnection,
+    AgentRepository, LEDGER_TABLE, MachineRepository, PRE_MIGRATION_CHECKS, ProjectRepository,
+    SCRIPTS, SessionRepository, SettingsRepository, SharedConnection,
 };
 use audit_infrastructure::persistence::{
     LEDGER_TABLE as AUDIT_LEDGER_TABLE, SCRIPTS as AUDIT_SCRIPTS,
@@ -64,8 +64,8 @@ pub fn start_with(
         ));
     }
     let mut connection = open_database(&config.database_path())?;
-    run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS)?;
-    run_migrations(&mut connection, AUDIT_LEDGER_TABLE, AUDIT_SCRIPTS)?;
+    run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, PRE_MIGRATION_CHECKS)?;
+    run_migrations(&mut connection, AUDIT_LEDGER_TABLE, AUDIT_SCRIPTS, &[])?;
 
     let connection = SharedConnection::new(connection);
     let agents = AgentRepository::new(connection.clone());
