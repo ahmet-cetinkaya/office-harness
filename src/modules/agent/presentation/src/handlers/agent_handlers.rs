@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
 
 use agent_application::commands::continue_session::ContinueSessionHandler;
 use agent_application::commands::create_agent::{
@@ -22,12 +23,14 @@ use agent_application::queries::get_settings::GetSettingsHandler;
 use agent_application::queries::list_agents::ListAgentsHandler;
 use agent_application::queries::list_projects::ListProjectsHandler;
 use agent_application::queries::list_sessions::ListSessionsHandler;
+use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{ProjectId, SessionId, SettingKey};
 use kernel::AgentId;
 use serde_json::Value;
 use wire::{Event, Request, Response};
 
 use super::handler_error::HandlerError;
+use super::subtree_requests::{SubtreeRequests, SubtreeResult};
 use crate::contracts::{
     AdditionsRequest, AgentIdRequest, CreateAgentRequest, CreateProjectRequest, ProjectIdRequest,
     SessionIdRequest, SettingKeyRequest, SettingRequest,
@@ -97,12 +100,35 @@ impl Success {
 /// block, so the host runs them on a blocking thread.
 pub struct AgentHandlers {
     use_cases: AgentUseCases,
+    /// The hierarchy's subtree bridge, when the host attaches it (0002).
+    /// Absent keeps the single-agent behavior of 0001.
+    subtree: OnceLock<Arc<dyn SubtreeRequests>>,
+}
+
+impl AgentHandlers {
+    /// The use cases, for the host to bridge into other modules (the
+    /// hierarchy's subtree stop and delete).
+    #[must_use]
+    pub fn use_cases(&self) -> &AgentUseCases {
+        &self.use_cases
+    }
 }
 
 impl AgentHandlers {
     #[must_use]
     pub fn new(use_cases: AgentUseCases) -> Self {
-        Self { use_cases }
+        Self {
+            use_cases,
+            subtree: OnceLock::new(),
+        }
+    }
+
+    /// Attaches the hierarchy's subtree bridge (0002), so `agent.stop` and
+    /// `agent.delete` accept `include_descendants`. The host attaches it
+    /// once, when the handlers are already shared with the gateways.
+    pub fn with_subtree(&self, subtree: Arc<dyn SubtreeRequests>) {
+        // First attach wins; the host builds one bridge per server.
+        self.subtree.get_or_init(|| subtree);
     }
 
     #[must_use]
@@ -192,6 +218,9 @@ impl AgentHandlers {
 
     fn delete_agent(&self, request: &Request) -> Result<Success, HandlerError> {
         let agent_id = parse_agent_id(request)?;
+        if let Some(subtree) = self.subtree.get() {
+            return subtree_delete(subtree.as_ref(), request, agent_id);
+        }
         self.use_cases.delete_agent.handle(agent_id)?;
         Ok(Success::done().with_event(agent_deleted_event(agent_id)))
     }
@@ -241,6 +270,9 @@ impl AgentHandlers {
 
     fn stop_agent(&self, request: &Request) -> Result<Success, HandlerError> {
         let agent_id = parse_agent_id(request)?;
+        if let Some(subtree) = self.subtree.get() {
+            return subtree_stop(subtree.as_ref(), request, agent_id);
+        }
         let agent = self.use_cases.stop_agent.handle(agent_id)?;
         Ok(Success::done().with_event(agent_status_event(agent_id, agent.status, None)))
     }
@@ -282,7 +314,54 @@ fn parse_agent_id(request: &Request) -> Result<AgentId, HandlerError> {
     parse_id("agent_id", &body.agent_id)
 }
 
+/// Stops one agent or, when the request asks for it, its whole subtree
+/// (FR-007). The events are one per stopped agent.
+fn subtree_stop(
+    subtree: &dyn SubtreeRequests,
+    request: &Request,
+    agent_id: AgentId,
+) -> Result<Success, HandlerError> {
+    subtree_outcome(subtree.stop_subtree(request, agent_id), |agent_id| {
+        agent_status_event(agent_id, AgentStatus::Stopped, None)
+    })
+}
+
+/// Deletes one agent or, when the request confirms the fresh descendant
+/// count, its whole subtree (FR-006). The events are one per deleted agent.
+fn subtree_delete(
+    subtree: &dyn SubtreeRequests,
+    request: &Request,
+    agent_id: AgentId,
+) -> Result<Success, HandlerError> {
+    subtree_outcome(
+        subtree.delete_subtree(request, agent_id),
+        agent_deleted_event,
+    )
+}
+
+/// The answer to a subtree action: a null result with one event per
+/// affected agent, or the wire failure the bridge reported.
+fn subtree_outcome(
+    result: SubtreeResult,
+    event_of: impl Fn(AgentId) -> Event,
+) -> Result<Success, HandlerError> {
+    match result {
+        SubtreeResult::Failed { code, message } => Err(HandlerError::with_code(code, message)),
+        SubtreeResult::Stopped(ids) | SubtreeResult::Deleted(ids) => {
+            let events = ids.into_iter().map(event_of).collect();
+            Ok(Success {
+                result: Value::Null,
+                events,
+            })
+        }
+    }
+}
+
 fn parse_id<T: std::str::FromStr>(field: &str, text: &str) -> Result<T, HandlerError> {
     text.parse()
         .map_err(|_| HandlerError::invalid(format!("{field} is not a valid identifier: {text}")))
 }
+
+#[cfg(test)]
+#[path = "agent_handlers.tests.rs"]
+mod tests;

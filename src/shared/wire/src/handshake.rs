@@ -22,6 +22,8 @@ pub struct ClientHandshake {
     token: String,
     port: u16,
     nonce: Option<String>,
+    /// Set when an agent calls the office with its own credential.
+    agent_id: Option<String>,
 }
 
 impl ClientHandshake {
@@ -32,6 +34,18 @@ impl ClientHandshake {
             token: token.to_owned(),
             port,
             nonce: None,
+            agent_id: None,
+        }
+    }
+
+    /// The handshake of an agent that calls from inside its session: the
+    /// proof is keyed with the agent's call credential, and the `auth` frame
+    /// names the agent.
+    #[must_use]
+    pub fn for_agent(agent_id: &str, credential: &str, port: u16) -> Self {
+        Self {
+            agent_id: Some(agent_id.to_owned()),
+            ..Self::new(credential, port)
         }
     }
 
@@ -49,7 +63,11 @@ impl ClientHandshake {
         let proof = compute_proof(&self.token, &nonce, self.port, ProofRole::Client)
             .map_err(|_| HandshakeError::UnusableToken)?;
         self.nonce = Some(nonce);
-        Ok(AuthMessage::Auth { proof }.encode())
+        Ok(AuthMessage::Auth {
+            proof,
+            agent_id: self.agent_id.clone(),
+        }
+        .encode())
     }
 
     /// Checks the server's `auth.ok` frame.

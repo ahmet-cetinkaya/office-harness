@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use agent_domain::errors::AgentError;
-use kernel::AgentIdError;
+use kernel::{AgentIdError, ProjectIdError};
 use rusqlite::ffi::{ErrorCode, SQLITE_CONSTRAINT_UNIQUE};
 use thiserror::Error;
 
@@ -20,6 +20,8 @@ pub enum PersistenceError {
     Invalid(#[from] AgentError),
     #[error("invalid data: {0}")]
     InvalidAgentId(#[from] AgentIdError),
+    #[error("invalid data: {0}")]
+    InvalidProjectId(#[from] ProjectIdError),
     #[error("invalid data: {0}")]
     InvalidJson(#[from] serde_json::Error),
     #[error("storage failure: {0}")]

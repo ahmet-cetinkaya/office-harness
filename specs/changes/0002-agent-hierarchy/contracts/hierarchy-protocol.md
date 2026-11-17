@@ -1,0 +1,80 @@
+# Contract: hierarchy protocol (0002)
+
+Date: 2026-11-16. Extends the 0001 wire protocol (`src/shared/wire/src/`): a request is `{"id":<u32>,"type":"<name>",...}`, a response `{"id":<u32>,"ok":true,"result":...}` or `{"id":<u32>,"ok":false,"error":{"code":"<code>","message":"<text>"}}`, and an event is a text frame `{"type":"<name>",...}`. Error codes: `invalid`, `conflict`, `not_found`, `refused`, `internal`.
+
+## New requests (user client)
+
+### `team.create`
+
+| Field | Type | Rule |
+|---|---|---|
+| `name` | string | 1 to 64 characters, not only spaces |
+| `project_id` | string? | optional; an existing project |
+| `lead` | object | the lead agent to create or pick, as in `agent.create` fields plus nothing else |
+
+Result: `{team}` (see `team` below). Errors: `conflict` when the name (case-insensitive) exists; `invalid` when the lead fields fail validation; `refused` when a second CEO would be needed.
+
+### `team.delete`
+
+| Field | Type | Rule |
+|---|---|---|
+| `team_id` | string | an existing team |
+| `confirm` | boolean | must be `true`; the client asked the counted question first |
+
+Deletes the team record only; its members keep their agent rows and become no-role agents (they leave the hierarchy). The lead keeps its agent row. Result: `{}`. Errors: `not_found`; `invalid` when `confirm` is not `true`.
+
+### `hierarchy.tree`
+
+No fields. Result: `{tree}`:
+
+```
+tree := { ceo: agent?, teams: [team], unassigned: [agent] }
+team := { id, name, project_id, lead: agent, members: [agent] }
+agent := { id, name, role, status, project_id }   // role: "ceo"|"lead"|"member"; in `unassigned` it is null
+```
+
+One read; no pagination (FR-005 forbids a cap; the report of a huge office is a 0003 concern).
+
+## Changed requests (user client)
+
+### `agent.create` — extended
+
+Optional `role` object: `{ kind: "ceo" | "lead" | "member", parent_agent_id: string?, team_id: string? }`. `kind: "ceo"` takes no parent or team. `kind: "lead"` requires `team_id` and no CEO parent (the team is its place; its parent becomes the CEO when one exists, else none). `kind: "member"` requires `parent_agent_id` of a lead and takes that lead's team. Refusal `refused` names the roles allowed at the given place (FR-003). Omitted `role` = 0001 behavior (PB-1).
+
+### `agent.stop` / `agent.delete` — extended
+
+Optional `include_descendants: boolean` (default `false`) and, for `agent.delete`, `descendant_count: number`: what the client showed in its confirmation. The server re-counts; when the count differs it refuses with `conflict` and the current count, so a stale confirmation can never delete the wrong set. Result and other fields as in 0001.
+
+## Agent connection (via `office-harnessd agent-call`)
+
+The `auth` frame of an agent adds `agent_id`; its proof is the office proof keyed with the agent's call credential (the secret half of `OFFICE_HARNESS_AGENT_TOKEN`, text `<agent_id>:<secret>`), so a client cannot tell a wrong proof from an agent that does not run. The credential belongs to one session: a new session of the agent gets a new one, and the credential dies when the child exits. An agent connection has no events and no terminals. The server answers only the types below, and refuses every other type with `refused`.
+
+`agent.whoami` (no fields) returns `{ "agent_id": "<id>" }`. It proves the credential and is the only type that T4 implements.
+
+## New requests (agent caller, via `office-harnessd agent-call`)
+
+Same envelope, but the connection proves an agent call token instead of the office token, and the server fixes the actor to that agent. Allowed types: `agent.create` (with `role`, within its own descendants and the role rules), `agent.start`, `agent.new_task`, `agent.stop` (descendants only), `directive.send`. Any other type, including `agent.delete`, `team.*`, and `hierarchy.tree`, is `refused` with the reason recorded (FR-008, FR-009).
+
+### `directive.send`
+
+| Field | Type | Rule |
+|---|---|---|
+| `target_agent_id` | string | must be a running descendant of the caller |
+| `text` | string | 1 to 8192 characters; no C0 control characters (the server appends the Enter itself) |
+
+Result: `{}`. Errors: `refused` (not a descendant: names the rule; not running: says so), `invalid` (control characters, empty, oversize). Every refusal is recorded with the actor and the reason.
+
+## New event
+
+### `hierarchy.changed`
+
+Fields: `{ cause: "team.created" | "team.deleted" | "agent.placed" | "agent.unplaced" | "subtree.stopped" | "subtree.deleted" }`. Sent after any change that alters the tree shape or a role. Clients re-read `hierarchy.tree`. No per-node deltas in 0002 (plan D6).
+
+## Environment contract (agent children)
+
+| Variable | Value |
+|---|---|
+| `OFFICE_HARNESS_AGENT_TOKEN` | the per-agent call token, present only while that agent's session runs |
+| `OFFICE_HARNESS_CLI` | absolute path of the running `office-harnessd` binary |
+
+Helper: `office-harnessd agent-call <method> <json>` reads the token from its inherited environment and performs the loopback proof. The office token never appears in any child environment (research R2).

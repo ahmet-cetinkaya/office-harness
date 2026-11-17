@@ -3,6 +3,7 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use access_application::common::interfaces::AgentCallStore;
 use agent_application::commands::change_agent_status::ChangeAgentStatusHandler;
 use agent_application::commands::end_session::EndSessionHandler;
 use agent_domain::enums::StatusEvent;
@@ -38,6 +39,10 @@ pub struct AgentStatusBridge {
     pub order: StatusOrder,
     pub alerts: StorageAlerts,
     pub log: ServerLog,
+    /// The call credentials of the running agents (0002). The exit of the
+    /// child revokes its agent's credential before the session closes, so a
+    /// restart can never meet a late revoke.
+    pub calls: Arc<dyn AgentCallStore>,
 }
 
 impl AgentStatusBridge {
@@ -79,6 +84,7 @@ impl AgentStatusBridge {
             return;
         };
         if let TerminalEvent::Exited { exit_code } = item.event {
+            self.calls.revoke_agent(item.agent_id);
             self.end_session(item.agent_id, exit_code);
         }
         match self.change_status.handle(item.agent_id, event) {

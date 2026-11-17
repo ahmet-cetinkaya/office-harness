@@ -24,7 +24,7 @@ fn a_server_that_proves_itself_is_confirmed() {
 
     let answer = handshake.answer_challenge(&challenge()).expect("answer");
 
-    let Some(AuthMessage::Auth { proof }) = AuthMessage::decode(&answer) else {
+    let Some(AuthMessage::Auth { proof, .. }) = AuthMessage::decode(&answer) else {
         panic!("not an auth frame: {answer}");
     };
     assert!(proof_is_valid(
@@ -56,7 +56,7 @@ fn a_server_with_another_token_or_port_is_not_confirmed() {
 fn the_client_proof_is_not_accepted_as_the_server_proof() {
     let mut handshake = ClientHandshake::new(TOKEN, PORT);
     let answer = handshake.answer_challenge(&challenge()).expect("answer");
-    let Some(AuthMessage::Auth { proof }) = AuthMessage::decode(&answer) else {
+    let Some(AuthMessage::Auth { proof, .. }) = AuthMessage::decode(&answer) else {
         panic!("not an auth frame");
     };
 

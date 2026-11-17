@@ -42,7 +42,8 @@ use audit_presentation::AuditHandlers;
 
 use super::{ServerLog, StorageAlerts, TerminalServices};
 use crate::bridges::{
-    ActionRecorderBridge, SavedOutputs, StatusOrder, StoppingFlag, SystemClock, TerminalHostBridge,
+    ActionRecorderBridge, AgentCalls, SavedOutputs, StatusOrder, StoppingFlag, SystemClock,
+    TerminalHostBridge,
 };
 
 /// The agent and audit modules, wired: the use cases behind their handlers,
@@ -88,6 +89,7 @@ pub fn build_agent_services(
     alerts: &StorageAlerts,
     attribution: AttributionTiming,
     log: &ServerLog,
+    agent_calls: AgentCalls,
 ) -> AgentServices {
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let action_log: Arc<dyn ActionLog> = Arc::new(ActionRepository::new(connection.handle()));
@@ -107,6 +109,7 @@ pub fn build_agent_services(
             Arc::clone(&terminal.runtime),
             terminal.events.clone(),
             log.clone(),
+            agent_calls,
         )),
         journal: ActionJournal::new(recorder, Arc::clone(&clock)),
         alerts: alerts.clone(),

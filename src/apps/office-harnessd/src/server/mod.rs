@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+mod agent_call;
 mod agent_requests;
 mod channel_subscriber;
 mod connection;
 mod dispatcher;
 mod event_hub;
 mod handshake;
+mod hierarchy_requests;
 mod restart_signal;
 mod router;
 mod running_server;
@@ -18,6 +20,7 @@ mod upgrade_check;
 
 pub use agent_requests::AgentGateway;
 pub use event_hub::EventHub;
+pub use hierarchy_requests::HierarchyGateway;
 pub use restart_signal::{RESTART_REQUEST, RestartSignal};
 pub use running_server::Server;
 pub use server_error::ServerError;

@@ -14,6 +14,10 @@ pub struct PrepareLaunch {
     /// The office additions' variables, applied over the login environment
     /// (FR-020).
     pub environment_additions: Vec<(String, String)>,
+    /// The agent and the session this launch is for, so the host can give the
+    /// child the call credential of exactly this session (0002).
+    pub agent_id: AgentId,
+    pub session_id: SessionId,
 }
 
 /// The program found on the login `PATH`, and the complete environment the

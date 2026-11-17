@@ -21,6 +21,23 @@ impl AgentId {
     pub fn generate() -> Self {
         Self(Uuid::new_v4())
     }
+
+    /// Builds an id from its raw value. Tests use this for fixed ids.
+    #[must_use]
+    pub fn from_u128(value: u128) -> Self {
+        Self(Uuid::from_u128(value))
+    }
+
+    /// Reads the id as stored text. `None` for any text that is not a UUID.
+    #[must_use]
+    pub fn from_uuid_text(text: &str) -> Option<Self> {
+        Uuid::parse_str(text).ok().map(Self)
+    }
+
+    #[must_use]
+    pub fn as_uuid_text(&self) -> String {
+        self.0.to_string()
+    }
 }
 
 impl fmt::Display for AgentId {

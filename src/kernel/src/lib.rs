@@ -4,8 +4,10 @@
 
 mod actor;
 mod agent_id;
+mod project_id;
 mod timestamp;
 
 pub use actor::Actor;
 pub use agent_id::{AgentId, AgentIdError};
+pub use project_id::{ProjectId, ProjectIdError};
 pub use timestamp::Timestamp;
