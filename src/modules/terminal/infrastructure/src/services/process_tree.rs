@@ -11,6 +11,10 @@ mod unix {
     use nix::sys::signal::{Signal, kill, killpg};
     use nix::unistd::Pid;
 
+    /// Most processes one walk reports, so a runaway fork tree or a huge
+    /// process table cannot make a stop slow or the list unbounded.
+    pub(super) const MAX_DESCENDANTS: usize = 4096;
+
     fn process_id(raw: u32) -> Option<Pid> {
         i32::try_from(raw).ok().map(Pid::from_raw)
     }
@@ -47,7 +51,8 @@ mod unix {
         }
     }
 
-    /// Parses `ps` output of `pid ppid` pairs and walks the tree below `root`.
+    /// Parses `ps` output of `pid ppid` pairs and walks the tree below `root`, up
+    /// to `MAX_DESCENDANTS` processes.
     pub(super) fn descendants_in(root: u32, table: &str) -> Vec<u32> {
         let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
         for line in table.lines() {
@@ -60,6 +65,9 @@ mod unix {
         let mut queue = VecDeque::from([root]);
         while let Some(parent) = queue.pop_front() {
             for &child in children.get(&parent).into_iter().flatten() {
+                if found.len() == MAX_DESCENDANTS {
+                    return found;
+                }
                 found.push(child);
                 queue.push_back(child);
             }

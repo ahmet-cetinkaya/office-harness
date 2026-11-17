@@ -19,6 +19,10 @@ const PROGRAM_VARIABLE: &str = "%_prog%";
 const PROGRAM_ASSIGNMENT_PREFIX: &str = "SET \"_prog=";
 const SHIM_FOLDER_VARIABLES: [&str; 2] = ["%~dp0", "%dp0%"];
 const PATH_VARIABLE: &str = "PATH";
+const COMMENT_PREFIX: &str = "::";
+/// Commands that stand first on a line and keep `cmd.exe` from running the
+/// rest of it as the shim's launch: a condition, a jump, or a comment.
+const LINE_GUARD_COMMANDS: [&str; 3] = ["IF", "GOTO", "REM"];
 const EXECUTABLE_SUFFIX: &str = ".exe";
 const ALLOWED_INTERPRETERS: [&str; 3] = ["node", "bun", "deno"];
 const SCRIPT_SUFFIXES: [&str; 3] = [".js", ".cjs", ".mjs"];
@@ -77,8 +81,9 @@ pub fn resolve_npm_shim(
 
 /// Parses the last line of the shim that passes the arguments on (`%*`).
 /// Returns `None` for anything that is not an npm shim of a known
-/// interpreter, or that cannot be resolved to absolute paths without
-/// variables.
+/// interpreter, that cannot be resolved to absolute paths without variables,
+/// or whose `%*` line starts with `IF`, `GOTO` or a comment, because
+/// `cmd.exe` may then skip it. A guard deeper in a line is not followed.
 #[must_use]
 pub fn parse_npm_shim(shim_path: &str, content: &str) -> Option<ShimTarget> {
     if content.len() > MAX_SHIM_BYTES || content.contains('\0') {
@@ -88,6 +93,9 @@ pub fn parse_npm_shim(shim_path: &str, content: &str) -> Option<ShimTarget> {
     let line = content
         .lines()
         .rfind(|line| line.contains(ARGUMENTS_PLACEHOLDER))?;
+    if starts_with_line_guard(line) {
+        return None;
+    }
     let before_arguments = &line[..line.rfind(ARGUMENTS_PLACEHOLDER)?];
     let (head, script) = split_last_quoted(before_arguments)?;
     let script = expand_absolute(script, shim_folder)?;
@@ -106,6 +114,16 @@ pub fn parse_npm_shim(shim_path: &str, content: &str) -> Option<ShimTarget> {
         interpreters,
         script,
     })
+}
+
+fn starts_with_line_guard(line: &str) -> bool {
+    // A batch line may start its command with `@` to hide the echo.
+    let line = line.trim_start().trim_start_matches('@').trim_start();
+    let first_word = line.split_whitespace().next().unwrap_or_default();
+    line.starts_with(COMMENT_PREFIX)
+        || LINE_GUARD_COMMANDS
+            .iter()
+            .any(|command| first_word.eq_ignore_ascii_case(command))
 }
 
 /// The interpreter token that stands right before the script: a quoted one,

@@ -10,4 +10,5 @@ pub const SCRIPTS: &[&str] = &[
     include_str!("0001_machines_projects_agents.sql"),
     include_str!("0002_settings.sql"),
     include_str!("0003_additions_and_sessions.sql"),
+    include_str!("0004_name_key_nocase.sql"),
 ];
