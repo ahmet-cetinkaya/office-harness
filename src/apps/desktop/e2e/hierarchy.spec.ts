@@ -298,6 +298,35 @@ test("a failed tree read shows the failure, and Try again loads the tree", async
   ).toBeVisible();
 });
 
+/** The CEO-less tree the mock holds once another client deletes the CEO. */
+const TREE_WITHOUT_CEO = {
+  ceo: null,
+  teams: [
+    {
+      id: "team-backend",
+      name: "Backend",
+      project_id: "project-site" as const,
+      lead: { id: "agent-lead-bo", role: "lead" as const },
+      members: [
+        { id: "agent-member-cy", role: "member" as const },
+        { id: "agent-member-dee", role: "member" as const },
+      ],
+    },
+  ],
+  unassigned: [],
+};
+
+/** Another client deletes the CEO and tells this view the tree changed. */
+async function deleteCeo(page: Page): Promise<void> {
+  await page.evaluate((tree) => {
+    window.__mockCore.setHierarchy(tree);
+    window.__mockCore.pushEvent({
+      type: "hierarchy.changed",
+      cause: "subtree.deleted",
+    });
+  }, TREE_WITHOUT_CEO);
+}
+
 test("deleting the active row from elsewhere leaves outside focus alone", async ({
   page,
 }) => {
@@ -313,33 +342,33 @@ test("deleting the active row from elsewhere leaves outside focus alone", async 
   await expect(agentsButton).toBeFocused();
 
   // Another client deletes the CEO; the teams remain, so a first row exists.
-  const keptTeam = COMPANY_TREE.teams[0];
-  await page.evaluate(
-    (team) => {
-      window.__mockCore.setHierarchy({
-        ceo: null,
-        teams: [team],
-        unassigned: [],
-      });
-      window.__mockCore.pushEvent({
-        type: "hierarchy.changed",
-        cause: "subtree.deleted",
-      });
-    },
-    {
-      id: keptTeam.id,
-      name: keptTeam.name,
-      project_id: keptTeam.project_id,
-      lead: { ...keptTeam.lead },
-      members: keptTeam.members.map((member) => ({ ...member })),
-    },
-  );
+  await deleteCeo(page);
 
   const teamRow = tree.getByRole("treeitem", {
     name: "Team Backend, project Site, 2 members",
   });
   await expect(teamRow).toBeVisible();
   await expect(agentsButton).toBeFocused();
+});
+
+test("deleting the focused row hands focus back to the tree's first row", async ({
+  page,
+}) => {
+  await openCompany(page);
+
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+  const ceoRow = tree.getByRole("treeitem", { name: "Ada, CEO, working" });
+  await ceoRow.focus();
+  await expect(ceoRow).toBeFocused();
+
+  // Another client deletes the CEO while the row holds keyboard focus.
+  await deleteCeo(page);
+
+  const teamRow = tree.getByRole("treeitem", {
+    name: "Team Backend, project Site, 2 members",
+  });
+  await expect(teamRow).toBeVisible();
+  await expect(teamRow).toBeFocused();
 });
 
 test("a hierarchy.changed event re-renders the tree", async ({ page }) => {

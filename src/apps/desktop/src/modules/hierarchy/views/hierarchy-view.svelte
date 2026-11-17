@@ -42,8 +42,9 @@
   let activeId = $state<string | null>(null);
 
   // Whether keyboard focus sits inside the tree. A row that is removed while
-  // focused drops focus to the page body without a focusout, so this flag is
-  // the only record that the removed row had focus.
+  // focused drops focus to the page body, and Chromium reports that as a
+  // focusout on the row, so the clear waits until the row's fate is settled:
+  // a row that leaves the tree keeps the flag for the refocus effect below.
   let treeHasFocus = $state(false);
   let treeContainer = $state<HTMLDivElement | null>(null);
 
@@ -53,7 +54,11 @@
 
   function ontreefocusout(event: FocusEvent): void {
     if (treeContainer?.contains(event.relatedTarget as Node | null)) return;
-    treeHasFocus = false;
+    void tick().then(() => {
+      const row = event.target;
+      if (row instanceof Element && !treeContainer?.contains(row)) return;
+      treeHasFocus = false;
+    });
   }
 
   const roots = $derived.by(() =>
