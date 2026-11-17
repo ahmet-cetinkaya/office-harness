@@ -46,7 +46,7 @@ impl HierarchyRepository {
             .connection
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        work(&mut connection).map_err(|_| HierarchyApplicationError::Storage)
+        work(&mut connection).map_err(HierarchyApplicationError::Storage)
     }
 
     fn read_team(row: &Row<'_>) -> rusqlite::Result<Team> {

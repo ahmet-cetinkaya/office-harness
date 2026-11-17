@@ -37,7 +37,8 @@ impl CreateRoleAgentHandler {
     /// # Errors
     /// `Invalid` naming the broken place rule: a second CEO, a parent that
     /// is not in the tree, or a role that cannot sit under that parent.
-    /// `Storage` when the agent module cannot create the agent.
+    /// `InvalidInput`, `NotFound`, `Conflict`, or `Storage` as the agent
+    /// module refused or failed the create, keeping its message.
     pub fn handle(
         &self,
         request: CreateRoleAgentRequest,
@@ -77,13 +78,33 @@ impl CreateRoleAgentHandler {
             team_id,
         ) {
             Ok(()) => Ok(agent_id),
-            // The placement failure is the one to report; a failed removal
-            // adds nothing the user can act on.
-            Err(placing) => {
-                let _ = self.creator.remove(agent_id);
-                Err(placing)
-            }
+            // The placement failure is the one to report; the removal is
+            // only the cleanup. When the cleanup also fails, the agent
+            // stays behind unplaced, so its failure rides along in the
+            // message and the user can find and delete the leftover.
+            Err(placing) => Err(self.remove_or_absorb(agent_id, placing)),
         }
+    }
+
+    /// Removes the created agent again; when that cleanup fails too, the
+    /// placement failure gains the cleanup's text instead of losing it.
+    fn remove_or_absorb(
+        &self,
+        agent_id: AgentId,
+        placing: HierarchyApplicationError,
+    ) -> HierarchyApplicationError {
+        let Err(removal) = self.creator.remove(agent_id) else {
+            return placing;
+        };
+        if let HierarchyApplicationError::Storage(reason) = &placing {
+            // Place failures are `Storage` by the store contract, so the
+            // cleanup text rides in the same payload.
+            return HierarchyApplicationError::Storage(format!(
+                "{reason}; the unplaced agent {agent_id} could not be removed either: {}",
+                removal.message
+            ));
+        }
+        placing
     }
 }
 

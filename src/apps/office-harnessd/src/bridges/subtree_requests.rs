@@ -48,10 +48,12 @@ impl SubtreeRequests for SubtreeRequestsBridge {
 /// mapped as the agent handlers mapped them before.
 fn failed(error: &HierarchyApplicationError) -> SubtreeResult {
     let code = match error {
-        HierarchyApplicationError::Invalid(_) => ErrorCode::Invalid,
+        HierarchyApplicationError::Invalid(_) | HierarchyApplicationError::InvalidInput(_) => {
+            ErrorCode::Invalid
+        }
         HierarchyApplicationError::NotFound(_) => ErrorCode::NotFound,
         HierarchyApplicationError::Conflict(_) => ErrorCode::Conflict,
-        HierarchyApplicationError::Storage => ErrorCode::Internal,
+        HierarchyApplicationError::Storage(_) => ErrorCode::Internal,
     };
     SubtreeResult::Failed {
         code,
