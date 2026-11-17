@@ -12,7 +12,13 @@ pub enum AuthMessage {
     Challenge { nonce: String },
     /// Client to server.
     #[serde(rename = "auth")]
-    Auth { proof: String },
+    Auth {
+        proof: String,
+        /// Set by an agent that calls the office from inside its session;
+        /// the proof is then keyed with that agent's call credential.
+        #[serde(default)]
+        agent_id: Option<String>,
+    },
     /// Server to client, carrying the server's own proof.
     #[serde(rename = "auth.ok")]
     AuthOk { proof: String },
@@ -24,7 +30,14 @@ impl AuthMessage {
     pub fn encode(&self) -> String {
         match self {
             Self::Challenge { nonce } => json!({"type": "auth.challenge", "nonce": nonce}),
-            Self::Auth { proof } => json!({"type": "auth", "proof": proof}),
+            Self::Auth {
+                proof,
+                agent_id: None,
+            } => json!({"type": "auth", "proof": proof}),
+            Self::Auth {
+                proof,
+                agent_id: Some(agent_id),
+            } => json!({"type": "auth", "proof": proof, "agent_id": agent_id}),
             Self::AuthOk { proof } => json!({"type": "auth.ok", "proof": proof}),
         }
         .to_string()

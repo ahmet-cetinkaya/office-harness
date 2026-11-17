@@ -3,6 +3,7 @@
 //! The login-start subcommands `register`, `unregister`, and `status`
 //! (plan D13). They run instead of the server and exit.
 
+pub mod agent_call;
 mod cli_error;
 mod command;
 mod login_item;

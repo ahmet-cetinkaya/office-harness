@@ -45,7 +45,7 @@ async fn receive_client_proof(socket: &mut ServerSocket) -> String {
         panic!("the client sent no text frame");
     };
     match AuthMessage::decode(frame.as_str()) {
-        Some(AuthMessage::Auth { proof }) => proof,
+        Some(AuthMessage::Auth { proof, .. }) => proof,
         other => panic!("expected an auth frame, got {other:?}"),
     }
 }

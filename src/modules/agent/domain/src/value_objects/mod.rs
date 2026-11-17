@@ -11,7 +11,7 @@ mod settings;
 pub use agent_command::AgentCommand;
 pub use display_name::DisplayName;
 pub use entity_ids::{MachineId, ProjectId, SessionId};
-pub use env_entry::EnvEntry;
+pub use env_entry::{EnvEntry, RESERVED_ENV_PREFIX};
 pub use exit_result::ExitResult;
 pub use office_additions::OfficeAdditions;
 pub use settings::{SettingKey, Settings};

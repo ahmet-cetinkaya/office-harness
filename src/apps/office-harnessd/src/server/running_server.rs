@@ -69,6 +69,7 @@ impl Server {
             order: Arc::clone(&services.agent.status_order),
             alerts: services.storage_alerts.clone(),
             log: log.clone(),
+            calls: services.access.agent_calls.clone(),
         }
         .spawn(services.terminal.events.subscribe());
         let agents = AgentGateway::new(
@@ -86,6 +87,7 @@ impl Server {
             port,
             options,
             authentication: services.access.authentication.clone(),
+            agent_authentication: services.access.agent_authentication.clone(),
             dispatcher: Arc::new(Dispatcher::new(services.access.handlers.clone())),
             terminals: Arc::new(TerminalGateway::new(
                 services.terminal.handlers.clone(),

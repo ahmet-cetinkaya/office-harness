@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use access_application::commands::authenticate_agent_call::AgentAuthenticationHandler;
 use access_application::commands::authenticate_connection::AuthenticationHandler;
 use tokio::sync::{Semaphore, watch};
 
@@ -20,6 +21,7 @@ pub struct ServerState {
     pub port: u16,
     pub options: ServerOptions,
     pub authentication: AuthenticationHandler,
+    pub agent_authentication: AgentAuthenticationHandler,
     pub dispatcher: Arc<Dispatcher>,
     pub terminals: Arc<TerminalGateway>,
     pub agents: AgentGateway,

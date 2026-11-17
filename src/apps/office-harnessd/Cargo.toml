@@ -37,12 +37,13 @@ terminal-infrastructure = { path = "../../modules/terminal/infrastructure" }
 terminal-presentation = { path = "../../modules/terminal/presentation" }
 thiserror.workspace = true
 tokio.workspace = true
+# The agent-call helper is a WebSocket client of the loopback server.
+futures-util.workspace = true
+tokio-tungstenite.workspace = true
 wire = { path = "../../shared/wire" }
 
 [dev-dependencies]
-futures-util.workspace = true
 tempfile.workspace = true
-tokio-tungstenite.workspace = true
 tower.workspace = true
 
 [lints]

@@ -191,6 +191,7 @@ mod runs {
             order: StatusOrder::default(),
             alerts: StorageAlerts::new(log.clone()),
             log,
+            calls: Arc::new(access_infrastructure::services::MemoryAgentCallStore::new()),
         };
         (bridge, store, ends)
     }

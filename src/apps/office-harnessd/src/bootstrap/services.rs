@@ -16,7 +16,7 @@ use super::{
     StorageAlerts, TerminalServices, build_access_services, build_agent_services,
     build_hierarchy_services, build_terminal_services, open_database, run_migrations,
 };
-use crate::bridges::SystemClock;
+use crate::bridges::{AgentCalls, CallHelper, SystemClock};
 use crate::config::Config;
 use crate::server::EventHub;
 
@@ -82,6 +82,16 @@ pub fn start_with(
     let terminal = build_terminal_services(config, &settings.load()?, login)?;
     let events = EventHub::new();
     let storage_alerts = StorageAlerts::new(log.clone());
+    let access = build_access_services(config)?;
+    let agent_calls = AgentCalls {
+        store: access.agent_calls.clone(),
+        helper: CallHelper {
+            server_binary: std::env::current_exe()
+                .map(|path| path.display().to_string())
+                .unwrap_or_default(),
+            server_file: config.server_file_path().display().to_string(),
+        },
+    };
     let agent = build_agent_services(
         &connection,
         machine.id,
@@ -89,6 +99,7 @@ pub fn start_with(
         &storage_alerts,
         attribution,
         log,
+        agent_calls,
     );
     let hierarchy = build_hierarchy_services(&connection, &agent, &storage_alerts, log)?;
     Ok(Services {
@@ -98,7 +109,7 @@ pub fn start_with(
         settings,
         storage_alerts,
         events,
-        access: build_access_services(config)?,
+        access,
         terminal,
         agent,
         hierarchy,

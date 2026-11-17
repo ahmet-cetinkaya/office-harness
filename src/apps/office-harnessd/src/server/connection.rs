@@ -8,8 +8,9 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::time::timeout;
 use wire::{CLOSE_TRY_AGAIN_LATER, CLOSE_UNAUTHORIZED, ErrorCode, Request, Response};
 
+use super::agent_call::serve_agent_connection;
 use super::agent_requests::AgentGateway;
-use super::handshake::{HandshakeFailure, authenticate};
+use super::handshake::{Authenticated, HandshakeFailure, authenticate};
 use super::hierarchy_requests::HierarchyGateway;
 use super::restart_signal::RESTART_REQUEST;
 use super::server_state::ServerState;
@@ -22,7 +23,7 @@ const RESPONSE_BACKLOG: usize = 64;
 const CLOSE_REPLY_WAIT: Duration = Duration::from_secs(1);
 /// How long the close of a connection that fell behind may take in all.
 const OVERFLOW_CLOSE_LIMIT: Duration = Duration::from_secs(2);
-const CLOSE_GOING_AWAY: u16 = 1001;
+pub(super) const CLOSE_GOING_AWAY: u16 = 1001;
 const CLOSE_INTERNAL_ERROR: u16 = 1011;
 /// The `id` of the answer to a frame that has none.
 const UNKNOWN_REQUEST_ID: u32 = 0;
@@ -45,7 +46,8 @@ pub async fn serve_connection(mut socket: WebSocket, state: ServerState) {
         authenticate(&mut socket, &state).await
     };
     match outcome {
-        Ok(grant) => run_session(socket, state, grant.generation).await,
+        Ok(Authenticated::Office(grant)) => run_session(socket, state, grant.generation).await,
+        Ok(Authenticated::Agent(grant)) => serve_agent_connection(socket, state, grant).await,
         Err(HandshakeFailure::Rejected) => close_with(&mut socket, CLOSE_UNAUTHORIZED).await,
         Err(HandshakeFailure::Unavailable) => close_with(&mut socket, CLOSE_INTERNAL_ERROR).await,
         Err(HandshakeFailure::Disconnected) => {}
@@ -281,7 +283,7 @@ async fn close_overflowed(socket: &mut WebSocket) {
     .await;
 }
 
-async fn close_with(socket: &mut WebSocket, code: u16) {
+pub(super) async fn close_with(socket: &mut WebSocket, code: u16) {
     let frame = CloseFrame {
         code,
         reason: Utf8Bytes::default(),
