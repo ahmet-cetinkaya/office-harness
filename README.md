@@ -2,7 +2,7 @@
 
 office-harness is a self-hosted control room for AI agent CLIs. A background server, `office-harnessd`, runs your agents in pseudo-terminals and keeps them running while the desktop app is closed. The desktop app shows every agent with its status and attaches to the live terminal of any agent. The server runs only on your machine, accepts only local clients that have the office token, and sends no office data to any outside service. It never writes the configuration files of the CLIs that it runs.
 
-For the product goals, see [docs/PRD.md](docs/PRD.md). For the design, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). For the behavior that this release gives, see [specs/changes/0001-office-server-and-terminal/SPEC.md](specs/changes/0001-office-server-and-terminal/SPEC.md).
+For the product goals, see [docs/PRD.md](docs/PRD.md). For the design, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). For the behavior that this release gives, see [specs/changes/0001-office-server-and-terminal/SPEC.md](specs/changes/0001-office-server-and-terminal/SPEC.md) and, for the agent hierarchy, [specs/changes/0002-agent-hierarchy/SPEC.md](specs/changes/0002-agent-hierarchy/SPEC.md).
 
 ## Install
 
@@ -38,19 +38,35 @@ The exact wording of these OS notices depends on the OS version. The macOS and W
 
 The app has no screen to change the focus shortcut. The server stores it as the setting `focus_shortcut`. The default value is `Ctrl+Shift+F12`. A value is modifiers joined with `+`, then one key, for example `Ctrl+Alt+F11`. A client can change it with the `settings.set` request (see [the client protocol](specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md)). The app reads the setting when you open a terminal.
 
+## The agent hierarchy
+
+office-harness can organize the agents of an office as a company. The office has one CEO at the top. Under the CEO are teams, and each team has one team lead with its members under the lead. An agent without a role stays outside the hierarchy and keeps the behavior described so far.
+
+The hierarchy view shows the office as a read-only tree: the CEO, every team with its project, its lead, and its members, and the agents without a role in their own group. Each agent shows its name, its role, and its status as text. You can move in the tree with the keyboard, as in the rest of the app. When the office has no CEO and no team, the view says so in text, and when the tree cannot load, it says so and offers to try again. A team without members shows its lead and says that it has no members.
+
+The app has no hierarchy actions yet. Creating a CEO, a team with its team lead, or a member under a lead, the role choice that offers only the roles that the chosen place allows, and the stop and delete confirmations that show how many agents the action affects, come later in this change with task T7, "Create flows and confirmations". The server already applies the rules behind them: it refuses a second CEO and names the existing one, it refuses a team whose name another team already has, and it refuses a role that a place does not allow, naming the roles that are allowed there.
+
+Stopping or deleting an agent that has agents under it affects them too. A confirmed delete removes the agent and every agent under it. A stop can stop the agent alone, or the agent together with the agents under it in one action. The server counts the agents under the deleted one again and refuses the delete when the number has changed since your confirmation.
+
+Deleting a team removes the team only. Its lead and members keep their agents and show outside the hierarchy afterwards.
+
+A client reaches the hierarchy over the protocol: the `team.create`, `team.delete`, `hierarchy.tree`, and `hierarchy.descendants` requests, and `agent.stop` and `agent.delete` extended with an `include_descendants` field; deleting an agent that has agents under it also carries `descendant_count`, the number that a confirmation showed. The shapes are in [the hierarchy protocol](specs/changes/0002-agent-hierarchy/contracts/hierarchy-protocol.md).
+
 ## Start at login
 
 The server runs only while you are logged in. Agents end when you log out or shut the machine down. After the next login the server starts again, and the agents that were running show `interrupted`. No agent starts without your action.
 
 The app registers the server for login on its first start and on the first start after an upgrade, so you do not need to do it yourself. After you run `office-harnessd unregister`, the app does not register it again; the button below or `office-harnessd register` turns login start on again. The app also shows a "Server at login" section with the button "Start the server at login".
 
-You can also register it from a terminal. `office-harnessd` has three subcommands:
+You can also register it from a terminal. `office-harnessd` has the login subcommands:
 
 ```sh
 office-harnessd register
 office-harnessd unregister
 office-harnessd status
 ```
+
+It has one more subcommand, `agent-call`, which runs inside an agent session (see [Calling the office from an agent](#calling-the-office-from-an-agent)).
 
 - `register` copies the server program to `<data folder>/bin/<version>/` and points the login item at that copy. The copy is stable if the app moves or an AppImage unmounts. Each version gets its own folder. Running `register` again gives the same result.
 - `unregister` removes the login item and every copy in `<data folder>/bin`, and records in the data folder that login start is off. The other files in the data folder stay. On Windows, stop the server first: Windows does not delete the file of a running program, so the command exits with code 1 when the server runs.
@@ -120,6 +136,42 @@ You can run any other command as an agent. It starts as a generic command and ca
 office-harness starts each CLI with your home folder, your login environment, and your CLI configuration. It adds only the flags, environment variables, and startup prompt that you set for that agent. It never creates, changes, or deletes a file in a CLI's configuration. It reads some session files of a CLI to tell its sessions apart.
 
 The startup prompt is pasted into the terminal after the first output of the CLI. office-harness never presses Enter for you. If the CLI shows a question first, for example a trust question, you answer it and press Enter to submit the prompt. A change to the additions of a running agent applies at the next session start.
+
+## Calling the office from an agent
+
+While an agent's session runs, office-harness gives that session three environment variables. They are additions to the session environment only; office-harness writes nothing to the configuration of the CLI.
+
+| Variable | Value |
+| -------- | ----- |
+| `OFFICE_HARNESS_AGENT_TOKEN` | The call credential of this session, as `<agent id>:<secret>`. A new session of the same agent gets a new one, and it stops working when the session ends. |
+| `OFFICE_HARNESS_CLI` | The absolute path of the running `office-harnessd` program. |
+| `OFFICE_HARNESS_SERVER_FILE` | The path of the `server.json` file in the data folder, from which the helper reads the port. |
+
+The office token is not in any agent environment. An agent connection proves its own credential, reaches only the local server, and gets no events and no terminals.
+
+An agent asks the office with the helper:
+
+```sh
+office-harnessd agent-call <request type> [<json fields>]
+```
+
+The helper reads the credential and the server file from the environment, connects to the server, sends one request, and prints the answer as JSON. It exits with code 0 when the answer is a success, code 2 when the command is used wrong or runs outside an agent session, and code 1 when anything else fails, for example when the server refuses the request or cannot be reached.
+
+Today the office answers an agent only for `agent.whoami`, which returns the agent's own id:
+
+```sh
+office-harnessd agent-call agent.whoami
+```
+
+```json
+{"id":1,"ok":true,"result":{"agent_id":"<agent id>"}}
+```
+
+The command works the same in every supported CLI, because it is an ordinary program and the credential lives in the session environment, which the CLI and everything that it starts share. An agent runs it as a shell command in its session, in the way that its CLI runs shell commands. Outside a session the environment has no credential, so the command exits with code 2.
+
+Every other request type is refused. The refusal of a type outside the agent list names the rule: an agent may only create, start, stop, and give new tasks to its own descendants, and send them directives. A type inside that list is refused for now with the reason that it is not available to agents yet. Later in this change, an agent will be able to create, start, and stop agents below it, start new tasks on them, and send them directives; the protocol contract lists the request shapes.
+
+An agent acts only within its own descendants: the agents under it in the tree. When the actions of that list arrive, a request about an agent that is not the asking agent's descendant will be refused and recorded.
 
 ## Known limits
 
