@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use super::*;
 use hierarchy_domain::{Role, TreeRow};
 
-use crate::common::interfaces::TreeSnapshot;
+use crate::common::interfaces::{TreeExclusion, TreeSnapshot};
 
 fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex
@@ -14,14 +14,22 @@ fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 /// The store reads are the only calls these tests make beyond the ports.
-struct FixedRows(Vec<TreeRow>);
+struct FixedRows {
+    rows: Vec<TreeRow>,
+    /// Never contended here; the exclusion exists so the trait stays whole.
+    tree_writes: Mutex<()>,
+}
 
 impl HierarchyStore for FixedRows {
     fn snapshot(&self) -> Result<TreeSnapshot, HierarchyApplicationError> {
         Ok(TreeSnapshot {
-            rows: self.0.clone(),
+            rows: self.rows.clone(),
             teams: Vec::new(),
         })
+    }
+
+    fn tree_exclusion(&self) -> TreeExclusion<'_> {
+        TreeExclusion::new(&self.tree_writes)
     }
 
     fn team_name_taken(&self, _key: &str) -> Result<bool, HierarchyApplicationError> {
@@ -219,7 +227,10 @@ fn harness_for(family: &Family, targets: ToggledTargets, writer: RecordingWriter
     let writer = Arc::new(writer);
     let journal = Arc::new(RecordingJournal::default());
     let handler = SendDirectiveHandler::new(
-        Arc::new(FixedRows(family.rows.clone())),
+        Arc::new(FixedRows {
+            rows: family.rows.clone(),
+            tree_writes: Mutex::new(()),
+        }),
         Arc::new(targets),
         writer.clone(),
         journal.clone(),

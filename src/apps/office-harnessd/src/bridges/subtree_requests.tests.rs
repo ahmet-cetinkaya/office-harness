@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use hierarchy_application::HierarchyApplicationError;
 use hierarchy_application::commands::subtree::SubtreeHandler;
-use hierarchy_application::common::interfaces::{HierarchyStore, TreeSnapshot};
+use hierarchy_application::common::interfaces::{HierarchyStore, TreeExclusion, TreeSnapshot};
 use hierarchy_application::common::ports::{
     SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover,
 };
@@ -25,14 +25,30 @@ fn never_called() -> ! {
 }
 
 /// A store that always reads back the rows it was built with.
-struct FixedRows(Vec<TreeRow>);
+struct FixedRows {
+    rows: Vec<TreeRow>,
+    tree_writes: Mutex<()>,
+}
+
+impl FixedRows {
+    fn holding(rows: Vec<TreeRow>) -> Self {
+        Self {
+            rows,
+            tree_writes: Mutex::new(()),
+        }
+    }
+}
 
 impl HierarchyStore for FixedRows {
     fn snapshot(&self) -> Result<TreeSnapshot, HierarchyApplicationError> {
         Ok(TreeSnapshot {
-            rows: self.0.clone(),
+            rows: self.rows.clone(),
             teams: Vec::new(),
         })
+    }
+
+    fn tree_exclusion(&self) -> TreeExclusion<'_> {
+        TreeExclusion::new(&self.tree_writes)
     }
 
     fn team_name_taken(&self, _key: &str) -> Result<bool, HierarchyApplicationError> {
@@ -120,7 +136,7 @@ fn bridge(
     remover: Arc<dyn SubtreeAgentRemover>,
 ) -> SubtreeRequestsBridge {
     SubtreeRequestsBridge::new(SubtreeHandler::new(
-        Arc::new(FixedRows(rows.to_vec())),
+        Arc::new(FixedRows::holding(rows.to_vec())),
         ender,
         remover,
     ))
