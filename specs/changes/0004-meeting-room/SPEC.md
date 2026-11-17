@@ -1,9 +1,11 @@
 ---
-status: draft
+status: approved (post-MVP, built after the MVP)
 capability: office
 plan:
 supersedes: 0003/FR-006 (in part)
 ---
+
+<!-- Approved by the owner on 2026-11-17; owner may amend. Built after the MVP. -->
 
 # 0004: Meeting room
 
@@ -13,11 +15,11 @@ The owner liked meeting rooms in other agent offices: he calls chosen agents tog
 
 ## Context
 
-- Source of truth: `docs/PRD.md`. The IDs `R1` to `R9` refer to its section 4. R8 has the priority "Later"; this spec exists so that the owner can approve it before the work starts.
+- Source of truth: `docs/PRD.md`. The IDs `R1` to `R9` refer to its section 4. R8 is post-MVP; this change is built after the MVP.
 - This change depends on 0001 (agents, statuses, terminals, the desktop app) and on 0003 (the panel, from which the meeting room opens and in which the user opens an agent's terminal). It does not depend on 0002. It changes one behavior of 0003 (see MODIFIED). References such as `0001/FR-014` and `0003/FR-004` point to requirements in those specs.
 - Stack decision, made by the owner on 2026-11-15. It is a recorded decision, not a requirement of this spec: a separate Rust background server, `office-harnessd`, runs as an always-on user service, owns the terminals through portable-pty, keeps its state in SQLite, and accepts clients over a loopback WebSocket with a token. A thin Tauri v2 desktop app with an xterm.js terminal connects to it.
 - The requirements below describe behavior only. The plan decides how to build them.
-- This spec is a draft. The decisions in Clarifications are reversible defaults that settle D-11; the owner approves or amends them with the spec.
+- The owner approved this spec on 2026-11-17. The decisions in Clarifications are approved as written and settle D-11; the owner may amend them.
 
 ## Terms
 
@@ -207,7 +209,7 @@ The outcome is `completed` when every participant answered and the facilitator r
 
 ### Session 2026-11-17 (overnight directive)
 
-Decisions with reversible defaults, so that the owner can approve the spec. They settle D-11 in `docs/PRD.md`.
+The owner approved these decisions on 2026-11-17. They settle D-11 in `docs/PRD.md`.
 
 - Q: Which presets? → A: Four fixed presets: Decision, Brainstorm, Review, and Status round (Terms). Reversible: a preset is one name, one instruction, and one result format; more can be added later.
 - Q: Which output format? → A: One meeting record with the topic, preset, participants, every answer, and the facilitator's result, which has a summary, a decision or the preset's equivalent, and action items (Terms). The record copies as Markdown text. It does not write a file into a project folder (PB-1). Reversible: export to a file can be added later.
