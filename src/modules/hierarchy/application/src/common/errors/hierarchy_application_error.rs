@@ -8,12 +8,17 @@ use thiserror::Error;
 pub enum HierarchyApplicationError {
     #[error("invalid: {0}")]
     Invalid(#[from] HierarchyError),
+    /// The agent module refused what it was given on its own rules; the
+    /// text is its message and the wire code stays `invalid`, so a seeded
+    /// create answers like `agent.create` always did (0001).
+    #[error("invalid: {0}")]
+    InvalidInput(String),
     #[error("not found: {0}")]
     NotFound(String),
     #[error("conflict: {0}")]
     Conflict(String),
-    #[error("storage failed")]
-    Storage,
+    #[error("storage failed: {0}")]
+    Storage(String),
 }
 
 impl HierarchyApplicationError {
