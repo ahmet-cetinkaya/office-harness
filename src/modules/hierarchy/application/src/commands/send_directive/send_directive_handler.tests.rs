@@ -73,24 +73,37 @@ struct Written {
 struct Journaled {
     sender: AgentId,
     target: AgentId,
+    text: String,
     failure: Option<String>,
 }
 
-/// Targets everything unless told one agent is down.
+/// Targets everything unless told one agent is down, and knows the family's
+/// names the way the real bridge does.
 struct ToggledTargets {
     stopped: Mutex<Option<AgentId>>,
+    names: Vec<(AgentId, &'static str)>,
 }
 
 impl ToggledTargets {
     fn all_running() -> Self {
-        Self {
-            stopped: Mutex::new(None),
-        }
+        Self::with_names(Vec::new())
     }
 
     fn with_stopped(agent_id: AgentId) -> Self {
+        Self::with_stopped_and_names(agent_id, Vec::new())
+    }
+
+    fn with_names(names: Vec<(AgentId, &'static str)>) -> Self {
+        Self {
+            stopped: Mutex::new(None),
+            names,
+        }
+    }
+
+    fn with_stopped_and_names(agent_id: AgentId, names: Vec<(AgentId, &'static str)>) -> Self {
         Self {
             stopped: Mutex::new(Some(agent_id)),
+            names,
         }
     }
 }
@@ -98,6 +111,13 @@ impl ToggledTargets {
 impl DirectiveTarget for ToggledTargets {
     fn is_running(&self, agent_id: AgentId) -> bool {
         *locked(&self.stopped) != Some(agent_id)
+    }
+
+    fn name_of(&self, agent_id: AgentId) -> Option<String> {
+        self.names
+            .iter()
+            .find(|(known, _)| *known == agent_id)
+            .map(|(_, name)| (*name).to_owned())
     }
 }
 
@@ -146,10 +166,11 @@ impl RecordingJournal {
 }
 
 impl DirectiveJournal for RecordingJournal {
-    fn record(&self, sender: AgentId, target: AgentId, failure: Option<&str>) {
+    fn record(&self, sender: AgentId, target: AgentId, text: &str, failure: Option<&str>) {
         locked(&self.attempts).push(Journaled {
             sender,
             target,
+            text: text.to_owned(),
             failure: failure.map(str::to_owned),
         });
     }
@@ -230,6 +251,7 @@ fn a_directive_to_a_running_descendant_is_written_and_journaled_clean() {
     assert_eq!(attempts.len(), 1);
     assert_eq!(attempts[0].sender, family.lead);
     assert_eq!(attempts[0].target, family.member);
+    assert_eq!(attempts[0].text, "please deploy");
     assert_eq!(attempts[0].failure, None);
 }
 
@@ -315,13 +337,46 @@ fn a_control_character_is_refused_before_any_write() {
         HierarchyApplicationError::Invalid(HierarchyError::ControlCharacter { .. })
     ));
     assert!(harness.writer.lines().is_empty());
+    // The audit keeps the rejected text as it was sent.
     let attempts = harness.journal.attempts();
     assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0].text, "deploy\u{7}now");
     assert!(attempts[0].failure.is_some());
 }
 
 #[test]
-fn a_stopped_target_is_refused_before_any_write() {
+fn a_stopped_target_is_refused_by_name_before_any_write() {
+    let family = family();
+    let harness = harness_for(
+        &family,
+        ToggledTargets::with_stopped_and_names(
+            family.member,
+            vec![(family.member, "docker-watcher")],
+        ),
+        RecordingWriter::new(None),
+    );
+    let error = harness
+        .handler
+        .handle(family.lead, family.member, "please deploy")
+        .expect_err("a stopped target cannot take text");
+    assert_eq!(
+        error,
+        HierarchyApplicationError::Invalid(HierarchyError::NotRunning {
+            name: "docker-watcher".to_owned()
+        })
+    );
+    assert!(harness.writer.lines().is_empty());
+    let attempts = harness.journal.attempts();
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0].text, "please deploy");
+    assert!(attempts[0].failure.is_some());
+}
+
+#[test]
+fn a_stopped_unknown_target_is_refused_by_id_before_any_write() {
+    // The id only fails to resolve when the agent is gone from the office,
+    // for example deleted between the snapshot and the lookup; the refusal
+    // still names something.
     let family = family();
     let harness = harness_for(
         &family,
@@ -332,14 +387,14 @@ fn a_stopped_target_is_refused_before_any_write() {
         .handler
         .handle(family.lead, family.member, "please deploy")
         .expect_err("a stopped target cannot take text");
-    assert!(matches!(
+    assert_eq!(
         error,
-        HierarchyApplicationError::Invalid(HierarchyError::NotRunning { .. })
-    ));
+        HierarchyApplicationError::Invalid(HierarchyError::NotRunning {
+            name: family.member.to_string()
+        })
+    );
     assert!(harness.writer.lines().is_empty());
-    let attempts = harness.journal.attempts();
-    assert_eq!(attempts.len(), 1);
-    assert!(attempts[0].failure.is_some());
+    assert_eq!(harness.journal.attempts().len(), 1);
 }
 
 #[test]

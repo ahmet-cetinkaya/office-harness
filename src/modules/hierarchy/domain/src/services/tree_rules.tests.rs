@@ -275,6 +275,12 @@ fn a_looped_tree_terminates_instead_of_hanging() {
     assert_eq!(descendants_of(&looped, b), vec![a]);
     assert!(is_descendant_of(&looped, a, b));
     assert!(is_descendant_of(&looped, b, a));
+    // The negative query starts inside the cycle and chases a target that
+    // no row holds, so neither a missing row nor a root can end the walk:
+    // only the step cap turns it into a plain no. A walker that loops
+    // forever instead of counting steps hangs here.
+    let outside = AgentId::from_u128(202);
+    assert!(!is_descendant_of(&looped, a, outside));
     assert!(
         started.elapsed() < bound,
         "the walks must end quickly, not spin"

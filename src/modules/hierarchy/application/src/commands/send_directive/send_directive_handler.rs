@@ -52,43 +52,49 @@ impl SendDirectiveHandler {
         let snapshot = self
             .store
             .snapshot()
-            .map_err(|error| self.journaled(sender, target, error))?;
+            .map_err(|error| self.journaled(sender, target, text, error))?;
         if let Err(error) = check_descendant(&snapshot.rows, sender, target) {
-            return Err(self.journaled(sender, target, error.into()));
+            return Err(self.journaled(sender, target, text, error.into()));
         }
         if let Err(error) = validate_directive_text(text) {
-            return Err(self.journaled(sender, target, error.into()));
+            return Err(self.journaled(sender, target, text, error.into()));
         }
         if !self.targets.is_running(target) {
+            let name = self
+                .targets
+                .name_of(target)
+                .unwrap_or_else(|| target.to_string());
             return Err(self.journaled(
                 sender,
                 target,
-                HierarchyApplicationError::Invalid(HierarchyError::NotRunning {
-                    name: target.to_string(),
-                }),
+                text,
+                HierarchyApplicationError::Invalid(HierarchyError::NotRunning { name }),
             ));
         }
         if let Err(message) = self.writer.write(target, text) {
             return Err(self.journaled(
                 sender,
                 target,
+                text,
                 HierarchyApplicationError::Conflict(message),
             ));
         }
-        self.journal.record(sender, target, None);
+        self.journal.record(sender, target, text, None);
         Ok(())
     }
 
     /// Records the attempt before the caller sees its outcome (FR-011): the
-    /// action record carries every refusal, with the reason as shown.
+    /// action record carries every refusal with the text as sent and the
+    /// reason, so the audit shows what was attempted.
     fn journaled(
         &self,
         sender: AgentId,
         target: AgentId,
+        text: &str,
         error: HierarchyApplicationError,
     ) -> HierarchyApplicationError {
         self.journal
-            .record(sender, target, Some(&error.to_string()));
+            .record(sender, target, text, Some(&error.to_string()));
         error
     }
 }
