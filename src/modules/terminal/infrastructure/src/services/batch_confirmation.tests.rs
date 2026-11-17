@@ -45,3 +45,11 @@ fn a_question_that_was_on_the_screen_before_the_interrupt_gets_no_answer() {
     let own_question = "Overwrite the file (y/n)?";
     assert_eq!(answer_after_interrupt(own_question, own_question), None);
 }
+
+#[test]
+fn a_redraw_of_the_programs_own_question_gets_no_answer() {
+    assert_eq!(
+        answer_after_interrupt("Overwrite the file (y/n)?  ", "  Overwrite the file (y/n)?"),
+        None
+    );
+}
