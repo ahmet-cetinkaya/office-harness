@@ -2,14 +2,15 @@
 
 use std::sync::Arc;
 
-use kernel::{Actor, AgentId};
+use kernel::AgentId;
 
+use crate::common::actor_scope::ActorScope;
 use crate::common::errors::ApplicationError;
 use crate::common::interfaces::{ActionRecorder, Clock};
 use crate::common::models::{AgentAction, AgentActionEntry};
 
-/// Writes the action record entries of the use cases. In 0001 the actor is
-/// always the user.
+/// Writes the action record entries of the use cases, attributing them to the
+/// actor set by [`ActorScope::enter`].
 #[derive(Clone)]
 pub struct ActionJournal {
     recorder: Arc<dyn ActionRecorder>,
@@ -31,7 +32,7 @@ impl ActionJournal {
         failure: Option<&str>,
     ) -> Result<(), ApplicationError> {
         self.recorder.record(&AgentActionEntry {
-            actor: Actor::User,
+            actor: ActorScope::current(),
             agent_id,
             action,
             failure: failure.map(str::to_owned),
@@ -40,3 +41,7 @@ impl ActionJournal {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "action_journal.tests.rs"]
+mod tests;
