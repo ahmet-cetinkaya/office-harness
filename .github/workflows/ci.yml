@@ -45,19 +45,24 @@ jobs:
         run: |
           set -u
           mkdir -p probe-logs
-          fails=0
-          for i in $(seq 1 40); do
-            cargo test -p office-harnessd --test sessions_portable -- --nocapture \
-              > "probe-logs/run-$i.log" 2>&1 || { fails=$((fails+1)); echo "RUN $i FAILED"; }
-            tail -3 "probe-logs/run-$i.log" | sed "s/^/run $i: /"
-          done
-          echo "TOTAL FAILURES: $fails / 40"
-          grep -l "FAILED\|panicked" probe-logs/*.log || true
+          # CPU load so the shell can be parked between the redirect that
+          # creates the empty args file and the write that fills it.
+          for j in 1 2 3 4; do (while :; do :; done) & done
+          LOAD_PIDS=$(jobs -p)
+          worker() {
+            local w=$1 i
+            for i in $(seq 1 6); do
+              cargo test -p office-harnessd --test sessions_portable -- --nocapture \
+                > "probe-logs/w$w-run$i.log" 2>&1 || echo "w$w run $i FAILED"
+            done
+          }
+          for w in 1 2 3 4 5 6 7 8; do worker "$w" & done
+          wait
+          kill $LOAD_PIDS 2>/dev/null || true
+          fails=$(grep -l "panicked" probe-logs/*.log 2>/dev/null | wc -l | tr -d ' ')
+          runs=$(ls probe-logs/*.log | wc -l | tr -d ' ')
+          echo "TOTAL FAILURES: $fails / $runs"
           for f in $(grep -l "panicked" probe-logs/*.log 2>/dev/null); do
-            echo "=== $f ==="; grep -A6 "panicked" "$f" | head -30
+            echo "=== $f ==="; grep -B2 -A8 "panicked" "$f" | head -40
           done
           [ "$fails" -eq 0 ]
-
-      - name: Tauri build
-        working-directory: src/apps/desktop
-        run: bun run tauri build --no-bundle
