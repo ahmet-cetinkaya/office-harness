@@ -32,11 +32,27 @@ pub struct AgentSeed {
     pub additions: Option<SeedAdditions>,
 }
 
+/// Why the agent module refused. The kinds follow its error contract, so a
+/// seeded create answers with the code that `agent.create` answers with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreatorErrorKind {
+    /// A field of the seed broke an agent-module rule.
+    Invalid,
+    /// A referenced entry (a project, an agent) does not exist.
+    NotFound,
+    /// Another agent already holds the name or the resource.
+    Conflict,
+    /// The agent module could not reach its own storage.
+    Internal,
+}
+
 /// What can go wrong when the hierarchy asks the agent module to create or
-/// remove one agent on its behalf. The text is the agent module's own
-/// message.
+/// remove one agent on its behalf. The message is the agent module's own.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreatorError(pub String);
+pub struct CreatorError {
+    pub kind: CreatorErrorKind,
+    pub message: String,
+}
 
 /// Creates one agent, as `agent.create` does, and removes it again when the
 /// hierarchy cannot give it a place.
@@ -51,10 +67,16 @@ pub trait AgentCreator: Send + Sync {
 }
 
 impl CreatorError {
-    /// Maps the failure to the hierarchy's storage error: the tree is fine;
-    /// the agent module could not do its part.
+    /// Maps the failure to the application error of the same kind, keeping
+    /// the agent module's message: the tree is fine; the agent module
+    /// refused or failed.
     #[must_use]
     pub fn into_application(self) -> HierarchyApplicationError {
-        HierarchyApplicationError::Storage
+        match self.kind {
+            CreatorErrorKind::Invalid => HierarchyApplicationError::InvalidInput(self.message),
+            CreatorErrorKind::NotFound => HierarchyApplicationError::NotFound(self.message),
+            CreatorErrorKind::Conflict => HierarchyApplicationError::Conflict(self.message),
+            CreatorErrorKind::Internal => HierarchyApplicationError::Storage(self.message),
+        }
     }
 }

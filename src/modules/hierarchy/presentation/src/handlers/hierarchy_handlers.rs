@@ -261,10 +261,12 @@ impl HandlerError {
 
 fn handler_error(error: &HierarchyApplicationError) -> HandlerError {
     let code = match error {
-        HierarchyApplicationError::Invalid(_) => wire::ErrorCode::Invalid,
+        HierarchyApplicationError::Invalid(_) | HierarchyApplicationError::InvalidInput(_) => {
+            wire::ErrorCode::Invalid
+        }
         HierarchyApplicationError::NotFound(_) => wire::ErrorCode::NotFound,
         HierarchyApplicationError::Conflict(_) => wire::ErrorCode::Conflict,
-        HierarchyApplicationError::Storage => wire::ErrorCode::Internal,
+        HierarchyApplicationError::Storage(_) => wire::ErrorCode::Internal,
     };
     HandlerError {
         code,
