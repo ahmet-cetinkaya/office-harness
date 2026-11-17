@@ -78,6 +78,29 @@ fn the_last_line_with_the_arguments_placeholder_wins() {
 }
 
 #[test]
+fn a_launch_line_that_cmd_would_skip_is_rejected() {
+    let launch = "node \"%dp0%\\node_modules\\x\\cli.js\" %*";
+    for guard in [
+        "IF 1==2 ",
+        "if not exist x ",
+        "GOTO end & ",
+        "@REM ",
+        "rem ",
+        ":: ",
+    ] {
+        assert_eq!(
+            parse_npm_shim(SHIM, &format!("{guard}{launch}")),
+            None,
+            "{guard:?}"
+        );
+    }
+    assert!(
+        parse_npm_shim(SHIM, launch).is_some(),
+        "the plain line stays"
+    );
+}
+
+#[test]
 fn an_unknown_interpreter_is_rejected() {
     let content = "SET \"_prog=python\"\r\n\"%_prog%\" \"%dp0%\\x.js\" %*";
     assert_eq!(parse_npm_shim(SHIM, content), None);

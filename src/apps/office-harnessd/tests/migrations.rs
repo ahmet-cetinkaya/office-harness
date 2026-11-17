@@ -69,6 +69,33 @@ fn a_ledger_at_an_older_version_migrates_forward_without_data_loss() {
 }
 
 #[test]
+fn a_name_key_that_differs_only_by_case_is_refused() {
+    let mut connection = Connection::open_in_memory().expect("database");
+    run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS).expect("current");
+    connection
+        .execute_batch(
+            "INSERT INTO agent_machines (id, name) VALUES ('m1', 'host');
+             INSERT INTO agent_projects (id, name, name_key, folder) VALUES ('p1', 'Web', 'web', '/w');
+             INSERT INTO agent_agents (id, name, name_key, command, machine_id, status, created_at)
+             VALUES ('a1', 'Ana', 'ana', 'claude', 'm1', 'stopped', 1);",
+        )
+        .expect("first rows");
+
+    let project = connection.execute(
+        "INSERT INTO agent_projects (id, name, name_key, folder) VALUES ('p2', 'WEB', 'WEB', '/w')",
+        [],
+    );
+    let agent = connection.execute(
+        "INSERT INTO agent_agents (id, name, name_key, command, machine_id, status, created_at)
+         VALUES ('a2', 'ANA', 'ANA', 'claude', 'm1', 'stopped', 1)",
+        [],
+    );
+
+    assert!(project.is_err(), "project key ignores case");
+    assert!(agent.is_err(), "agent key ignores case");
+}
+
+#[test]
 fn a_second_run_changes_nothing() {
     let mut connection = Connection::open_in_memory().expect("database");
     run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS).expect("first run");

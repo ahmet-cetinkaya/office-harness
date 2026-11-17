@@ -10,7 +10,8 @@ pub const SCRIPTS: &[&str] = &[
     include_str!("0001_machines_projects_agents.sql"),
     include_str!("0002_settings.sql"),
     include_str!("0003_additions_and_sessions.sql"),
-    // Runs after the hierarchy module's 0001, which creates the team table
-    // this column refers to.
-    include_str!("0004_hierarchy_columns.sql"),
+    include_str!("0004_name_key_nocase.sql"),
+    // Plain columns with no foreign key, so it does not depend on the
+    // hierarchy module's tables existing first.
+    include_str!("0005_hierarchy_columns.sql"),
 ];
