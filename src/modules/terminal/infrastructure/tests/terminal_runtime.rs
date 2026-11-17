@@ -319,6 +319,50 @@ fn a_command_that_cannot_start_keeps_the_saved_output_of_the_last_session() {
 }
 
 #[test]
+fn the_last_line_is_reported_when_it_changes_and_throttled_after() {
+    let folder = TempDir::new().expect("temp folder");
+    let (runtime, sink) = runtime_in(folder.path(), limits(1000));
+    let agent = AgentId::generate();
+    spawn_fixture(&runtime, agent, &["progress"]);
+    // The nine redraws all land inside the one-second window, so exactly one
+    // report carries the newest text.
+    wait_until("the only report to carry the last redraw", || {
+        sink.lines() == vec!["PROGRESS:9%".to_owned()]
+    });
+    std::thread::sleep(Duration::from_millis(1100));
+    let in_window = sink.lines();
+    assert_eq!(in_window, vec!["PROGRESS:9%".to_owned()]);
+    runtime.stop(agent, GRACE).expect("stop");
+}
+
+#[test]
+fn a_bell_from_the_child_becomes_one_bell_event() {
+    let folder = TempDir::new().expect("temp folder");
+    let (runtime, sink) = runtime_in(folder.path(), limits(1000));
+    let agent = AgentId::generate();
+    spawn_fixture(&runtime, agent, &["lines"]);
+    runtime
+        .write_input(agent, b"a")
+        .expect("write to confirm the child reads");
+    wait_until("the child to be reading", || {
+        !sink.lines().is_empty()
+    });
+    runtime.write_input(agent, b"b").expect("ring the bell");
+    wait_until("the bell to be reported", || {
+        sink.events()
+            .iter()
+            .any(|event| matches!(event, TerminalEvent::Bell))
+    });
+    let bells = sink
+        .events()
+        .iter()
+        .filter(|event| matches!(event, TerminalEvent::Bell))
+        .count();
+    assert_eq!(bells, 1);
+    runtime.stop(agent, GRACE).expect("stop");
+}
+
+#[test]
 fn the_runtime_refuses_an_unsafe_batch_script_whoever_calls_it() {
     let folder = TempDir::new().expect("temp folder");
     let (runtime, _sink) = runtime_in(folder.path(), limits(1000));

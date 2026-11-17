@@ -26,6 +26,8 @@ export interface Agent {
   machine_id: string;
   status: string;
   created_at: number;
+  /** The agent's last output line, plain text, or null before any output. */
+  last_line: string | null;
 }
 
 export interface Project {

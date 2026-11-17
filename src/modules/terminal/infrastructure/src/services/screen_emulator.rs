@@ -5,11 +5,29 @@ use terminal_domain::value_objects::TerminalSize;
 
 const LINE_BREAK: &str = "\r\n";
 const ENTER_ALTERNATE_SCREEN: &str = "\x1b[?1049h";
+/// The longest last line the agent list receives; the full text stays in the
+/// terminal.
+const LAST_LINE_CHARS: usize = 200;
+
+/// Counts the bells the parser reports, so the session can turn each into one
+/// event. The parser calls `audible_bell` only for a `0x07` outside an OSC
+/// string: inside one, the byte ends the string instead (vt100 0.18.1,
+/// vte 0.15.0).
+#[derive(Default)]
+struct BellCounter {
+    count: usize,
+}
+
+impl vt100::Callbacks for BellCounter {
+    fn audible_bell(&mut self, _screen: &mut vt100::Screen) {
+        self.count += 1;
+    }
+}
 
 /// The server-side copy of one terminal screen. It also answers the terminal
 /// queries that the program asks, so the answer does not depend on a client.
 pub struct ScreenEmulator {
-    parser: vt100::Parser,
+    parser: vt100::Parser<BellCounter>,
     scanner: QueryScanner,
     size: TerminalSize,
 }
@@ -18,7 +36,12 @@ impl ScreenEmulator {
     #[must_use]
     pub fn new(size: TerminalSize, scrollback_lines: usize) -> Self {
         Self {
-            parser: vt100::Parser::new(size.rows(), size.columns(), scrollback_lines),
+            parser: vt100::Parser::new_with_callbacks(
+                size.rows(),
+                size.columns(),
+                scrollback_lines,
+                BellCounter::default(),
+            ),
             scanner: QueryScanner::default(),
             size,
         }
@@ -49,6 +72,35 @@ impl ScreenEmulator {
     #[must_use]
     pub fn bracketed_paste(&self) -> bool {
         self.parser.screen().bracketed_paste()
+    }
+
+    /// The number of bells since the last call, which also clears the count.
+    /// A bell and its delivery are separate reads, so the session owns the
+    /// moment of the report.
+    pub fn take_bells(&mut self) -> usize {
+        std::mem::take(&mut self.parser.callbacks_mut().count)
+    }
+
+    /// The last line of the screen that shows anything, plain text: the
+    /// parser has already applied every redraw, so color and cursor codes
+    /// never reach this text. It is cut to `LAST_LINE_CHARS` characters on a
+    /// character boundary. An empty screen yields `None`.
+    #[must_use]
+    pub fn last_line(&self) -> Option<String> {
+        let line = self
+            .parser
+            .screen()
+            .contents()
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())?
+            .trim_end()
+            .to_owned();
+        Some(if line.chars().count() > LAST_LINE_CHARS {
+            line.chars().take(LAST_LINE_CHARS).collect()
+        } else {
+            line
+        })
     }
 
     /// The text of the row where the cursor stands.

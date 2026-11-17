@@ -11,6 +11,9 @@ pub enum TerminalEvent {
     /// The child wrote output again after a `QuietPeriod`. It is sent once for
     /// each change from quiet to active, not for each chunk of output.
     OutputResumed,
+    /// The child rang the terminal bell: a `0x07` outside an OSC string. The
+    /// notification bridge turns it into the "needs the user" notification.
+    Bell,
     /// The child ended with this exit code.
     Exited { exit_code: u32 },
     /// The output file could not be written. The child keeps running.
