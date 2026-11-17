@@ -34,6 +34,9 @@ export function createHierarchyController(client: CoreClient) {
   const service = createHierarchyService(client);
   let snapshot: HierarchySnapshot = INITIAL_HIERARCHY;
   const listeners = new Set<(snapshot: HierarchySnapshot) => void>();
+  // Reloads can overlap when events arrive while a read is still out; the
+  // counter tells which read is the newest, and only it may publish.
+  let newestRead = 0;
 
   function publish(changes: Partial<HierarchySnapshot>): void {
     snapshot = { ...snapshot, ...changes };
@@ -45,13 +48,13 @@ export function createHierarchyController(client: CoreClient) {
   }
 
   async function load(): Promise<void> {
+    const readId = ++newestRead;
     try {
-      publish({
-        phase: "ready",
-        failure: null,
-        tree: await service.fetchTree(),
-      });
+      const tree = await service.fetchTree();
+      if (readId !== newestRead) return;
+      publish({ phase: "ready", failure: null, tree });
     } catch (rejection) {
+      if (readId !== newestRead) return;
       publish({ phase: "failed", failure: describe(rejection) });
     }
   }

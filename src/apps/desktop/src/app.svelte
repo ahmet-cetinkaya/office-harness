@@ -11,8 +11,10 @@
   } from "./core/connection";
   import { LoginStartPanel, NotAuthorizedView } from "./modules/access";
   import { createOfficeStore, OfficeView } from "./modules/agent";
-  import { createHierarchyController } from "./modules/hierarchy";
-  import HierarchyView from "./modules/hierarchy/views/hierarchy-view.svelte";
+  import {
+    createHierarchyController,
+    HierarchyView,
+  } from "./modules/hierarchy";
   import FailureMessage from "$shared/ui/failure-message.svelte";
   import StatusPanel from "$shared/ui/status-panel.svelte";
 

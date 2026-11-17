@@ -269,6 +269,79 @@ test("a collapsed branch hides its members until it is expanded again", async ({
   ).toBeVisible();
 });
 
+test("a failed tree read shows the failure, and Try again loads the tree", async ({
+  page,
+}) => {
+  await installMockCore(page, {
+    initialState: { status: "connected" },
+    office: {
+      agents: COMPANY_AGENTS,
+      projects: [{ id: "project-site", name: "Site", folder: "/work/site" }],
+      hierarchy: COMPANY_TREE,
+    },
+    hierarchyTreeFailure: {
+      code: "internal",
+      message: "the tree read broke",
+    },
+  });
+  await page.goto("/");
+
+  await expect(page.getByText("The hierarchy did not load.")).toBeVisible();
+  await expect(page.getByText("the tree read broke")).toBeVisible();
+
+  await page.getByRole("button", { name: "Try again" }).click();
+
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+  await expect(tree).toBeVisible();
+  await expect(
+    tree.getByRole("treeitem", { name: "Ada, CEO, working" }),
+  ).toBeVisible();
+});
+
+test("deleting the active row from elsewhere leaves outside focus alone", async ({
+  page,
+}) => {
+  await openCompany(page);
+
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+  const ceoRow = tree.getByRole("treeitem", { name: "Ada, CEO, working" });
+  await ceoRow.click();
+
+  // The user then moves on to the agents list, say to open its terminal.
+  const agentsButton = page.getByRole("button", { name: "Ada, working" });
+  await agentsButton.focus();
+  await expect(agentsButton).toBeFocused();
+
+  // Another client deletes the CEO; the teams remain, so a first row exists.
+  const keptTeam = COMPANY_TREE.teams[0];
+  await page.evaluate(
+    (team) => {
+      window.__mockCore.setHierarchy({
+        ceo: null,
+        teams: [team],
+        unassigned: [],
+      });
+      window.__mockCore.pushEvent({
+        type: "hierarchy.changed",
+        cause: "subtree.deleted",
+      });
+    },
+    {
+      id: keptTeam.id,
+      name: keptTeam.name,
+      project_id: keptTeam.project_id,
+      lead: { ...keptTeam.lead },
+      members: keptTeam.members.map((member) => ({ ...member })),
+    },
+  );
+
+  const teamRow = tree.getByRole("treeitem", {
+    name: "Team Backend, project Site, 2 members",
+  });
+  await expect(teamRow).toBeVisible();
+  await expect(agentsButton).toBeFocused();
+});
+
 test("a hierarchy.changed event re-renders the tree", async ({ page }) => {
   await openOffice(page, {
     agents: [agent()],

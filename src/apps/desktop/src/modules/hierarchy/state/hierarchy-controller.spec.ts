@@ -7,12 +7,18 @@ import { createHierarchyController } from "./hierarchy-controller";
 interface FakeClient extends CoreClient {
   requests: string[];
   sendEvent(event: ServerEvent): void;
+  /** Parks the next tree read until releaseTreeRead answers it. */
+  holdNextTreeRead(): void;
+  /** Answers a parked tree read. */
+  releaseTreeRead(answer: unknown): void;
 }
 
 /** A core client that records the requests and replays events by hand. */
 function fakeClient(treeAnswer: unknown, failTree = false): FakeClient {
   const listeners: Array<(event: ServerEvent) => void> = [];
   const requests: string[] = [];
+  let parkNextRead = false;
+  let parkedRead: ((answer: unknown) => void) | null = null;
   return {
     requests,
     watchConnection: async () => {},
@@ -26,6 +32,10 @@ function fakeClient(treeAnswer: unknown, failTree = false): FakeClient {
         if (failTree) {
           throw { code: "internal", message: "the tree read broke" };
         }
+        if (parkNextRead) {
+          parkNextRead = false;
+          return await new Promise((resolve) => (parkedRead = resolve));
+        }
       }
       return treeAnswer;
     },
@@ -34,6 +44,14 @@ function fakeClient(treeAnswer: unknown, failTree = false): FakeClient {
     loginStartStatus: async () => false,
     retryConnection: async () => {},
     sendEvent: (event) => listeners.forEach((listener) => listener(event)),
+    holdNextTreeRead: () => {
+      parkNextRead = true;
+    },
+    releaseTreeRead: (answer) => {
+      const resolve = parkedRead;
+      parkedRead = null;
+      resolve?.(answer);
+    },
   };
 }
 
@@ -93,6 +111,25 @@ describe("hierarchy controller", () => {
     await settle();
 
     expect(client.requests).toEqual(["hierarchy.tree"]);
+  });
+
+  test("an older tree reply never overwrites a newer one", async () => {
+    const NEW_TREE = { ceo: { id: "ceo-2", role: "ceo" } };
+    const client = fakeClient(NEW_TREE);
+    client.holdNextTreeRead();
+    const controller = createHierarchyController(client);
+    await controller.watch();
+    void controller.load();
+
+    client.sendEvent({ type: "hierarchy.changed", cause: "team.created" });
+    await settle();
+    expect(controller.snapshot.tree.ceo).toEqual({ id: "ceo-2", role: "ceo" });
+
+    // The first read answers after the reload, as an overlapped read can.
+    client.releaseTreeRead(TREE);
+    await settle();
+    expect(controller.snapshot.tree.ceo).toEqual({ id: "ceo-2", role: "ceo" });
+    expect(client.requests).toEqual(["hierarchy.tree", "hierarchy.tree"]);
   });
 
   test("subscribe calls back at once and on each change until stopped", async () => {
