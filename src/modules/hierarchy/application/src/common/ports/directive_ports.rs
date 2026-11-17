@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+use kernel::AgentId;
+
+/// Whether a target agent's session can take input right now. The bool is
+/// enough: it only gates the write, and the write itself reports the failure.
+pub trait DirectiveTarget: Send + Sync {
+    #[must_use]
+    fn is_running(&self, agent_id: AgentId) -> bool;
+}
+
+/// Delivers one directive to a target agent's session. One call must deliver
+/// the text; the bridge appends the Enter and does one `write_input`.
+pub trait DirectiveWriter: Send + Sync {
+    /// # Errors
+    /// The host's message when the text could not be written.
+    fn write(&self, agent_id: AgentId, text: &str) -> Result<(), String>;
+}
+
+/// Keeps the directive attempts in the action record (FR-009, FR-011). It is
+/// a port so this crate stays independent of the agent module's journal; the
+/// bridge journals inside the sender's `ActorScope` and owns any record-write
+/// failure.
+pub trait DirectiveJournal: Send + Sync {
+    fn record(&self, sender: AgentId, target: AgentId, failure: Option<&str>);
+}
