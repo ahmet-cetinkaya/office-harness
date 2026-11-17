@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
-use agent_domain::value_objects::ProjectId;
 use hierarchy_domain::value_objects::TeamName;
 use hierarchy_domain::{Placement, Role, Team, check_placement, resolved_parent};
 use kernel::AgentId;
+use kernel::ProjectId;
 
 use crate::common::errors::HierarchyApplicationError;
 use crate::common::interfaces::HierarchyStore;

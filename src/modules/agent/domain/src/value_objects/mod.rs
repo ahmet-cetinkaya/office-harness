@@ -10,8 +10,10 @@ mod settings;
 
 pub use agent_command::AgentCommand;
 pub use display_name::DisplayName;
-pub use entity_ids::{MachineId, ProjectId, SessionId};
+pub use entity_ids::{MachineId, SessionId};
 pub use env_entry::{EnvEntry, RESERVED_ENV_PREFIX};
 pub use exit_result::ExitResult;
+// The project id belongs to the shared kernel; the agent module re-exports it.
+pub use kernel::ProjectId;
 pub use office_additions::OfficeAdditions;
 pub use settings::{SettingKey, Settings};

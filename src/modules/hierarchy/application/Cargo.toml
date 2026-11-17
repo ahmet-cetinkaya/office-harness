@@ -7,7 +7,6 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-agent-domain = { path = "../../agent/domain" }
 hierarchy-domain = { path = "../domain" }
 kernel = { path = "../../../kernel" }
 thiserror.workspace = true

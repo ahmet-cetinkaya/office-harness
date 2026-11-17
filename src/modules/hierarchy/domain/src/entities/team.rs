@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use agent_domain::value_objects::ProjectId;
 use kernel::AgentId;
+use kernel::ProjectId;
 use uuid::Uuid;
 
 use crate::value_objects::TeamName;

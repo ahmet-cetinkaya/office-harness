@@ -271,7 +271,7 @@ fn a_database_without_duplicate_name_keys_migrates_to_version_five() {
     let applied = run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, PRE_MIGRATION_CHECKS)
         .expect("migrates");
 
-    assert_eq!(applied, 2);
+    assert_eq!(applied, SCRIPTS.len() - 3);
     assert_eq!(ledger_versions(&connection), all_versions());
 }
 
@@ -285,6 +285,6 @@ fn name_keys_that_differ_outside_ascii_case_migrate_to_version_five() {
     let applied = run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, PRE_MIGRATION_CHECKS)
         .expect("migrates");
 
-    assert_eq!(applied, 2);
+    assert_eq!(applied, SCRIPTS.len() - 3);
     assert_eq!(ledger_versions(&connection), all_versions());
 }
