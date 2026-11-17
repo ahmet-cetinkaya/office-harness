@@ -324,14 +324,21 @@ fn the_last_line_is_reported_when_it_changes_and_throttled_after() {
     let (runtime, sink) = runtime_in(folder.path(), limits(1000));
     let agent = AgentId::generate();
     spawn_fixture(&runtime, agent, &["progress"]);
-    // The nine redraws all land inside the one-second window, so exactly one
-    // report carries the newest text.
-    wait_until("the only report to carry the last redraw", || {
-        sink.lines() == vec!["PROGRESS:9%".to_owned()]
+    // The monitor reports the screen as it stands on its first tick, then at
+    // most once per second. The nine redraws all land inside that first
+    // window, so the newest text arrives in the second report at the latest.
+    wait_until("the last redraw to be reported", || {
+        sink.lines().last() == Some(&"PROGRESS:9%".to_owned())
     });
+    // The screen no longer changes, so a whole report interval later there
+    // is still no further report.
     std::thread::sleep(Duration::from_millis(1100));
-    let in_window = sink.lines();
-    assert_eq!(in_window, vec!["PROGRESS:9%".to_owned()]);
+    let reports = sink.lines();
+    assert_eq!(reports.last(), Some(&"PROGRESS:9%".to_owned()));
+    assert!(
+        reports.len() <= 2,
+        "the throttle holds the unchanged screen back: {reports:?}"
+    );
     runtime.stop(agent, GRACE).expect("stop");
 }
 
@@ -344,9 +351,7 @@ fn a_bell_from_the_child_becomes_one_bell_event() {
     runtime
         .write_input(agent, b"a")
         .expect("write to confirm the child reads");
-    wait_until("the child to be reading", || {
-        !sink.lines().is_empty()
-    });
+    wait_until("the child to be reading", || !sink.lines().is_empty());
     runtime.write_input(agent, b"b").expect("ring the bell");
     wait_until("the bell to be reported", || {
         sink.events()

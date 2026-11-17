@@ -119,6 +119,7 @@ fn altscreen() {
 /// Prints one line per command byte and rings the bell on `b`. Tests drive
 /// it through `write_input`, so one run serves several assertions.
 fn lines() {
+    enter_raw_mode();
     let mut byte = [0_u8; 1];
     while stdin().read(&mut byte).is_ok_and(|count| count == 1) {
         match byte[0] {

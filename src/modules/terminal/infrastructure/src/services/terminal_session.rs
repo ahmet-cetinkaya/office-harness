@@ -411,8 +411,9 @@ impl TerminalSession {
         let tick = (quiet_period / 4).clamp(MIN_MONITOR_TICK, MAX_MONITOR_TICK);
         // One interval in the past, so the first change reports on the first
         // tick instead of a full window after the start.
-        let mut line_report_due =
-            Instant::now().checked_sub(LINE_REPORT_EVERY).unwrap_or_else(Instant::now);
+        let mut line_report_due = Instant::now()
+            .checked_sub(LINE_REPORT_EVERY)
+            .unwrap_or_else(Instant::now);
         while !self.has_exited() {
             thread::sleep(tick);
             if self.take_quiet_period_report(quiet_period) {
@@ -435,7 +436,7 @@ impl TerminalSession {
             if line == core.reported_line {
                 return;
             }
-            core.reported_line = line.clone();
+            core.reported_line.clone_from(&line);
             line
         };
         if let Some(line) = line {
