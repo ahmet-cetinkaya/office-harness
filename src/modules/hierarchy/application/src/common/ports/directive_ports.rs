@@ -7,6 +7,13 @@ use kernel::AgentId;
 pub trait DirectiveTarget: Send + Sync {
     #[must_use]
     fn is_running(&self, agent_id: AgentId) -> bool;
+
+    /// The agent's name as the office shows it, so a refusal can name the
+    /// agent instead of its id. `None` when the id cannot be resolved, for
+    /// example when the agent is deleted between the tree snapshot and this
+    /// lookup.
+    #[must_use]
+    fn name_of(&self, agent_id: AgentId) -> Option<String>;
 }
 
 /// Delivers one directive to a target agent's session. One call must deliver
@@ -22,5 +29,9 @@ pub trait DirectiveWriter: Send + Sync {
 /// bridge journals inside the sender's `ActorScope` and owns any record-write
 /// failure.
 pub trait DirectiveJournal: Send + Sync {
-    fn record(&self, sender: AgentId, target: AgentId, failure: Option<&str>);
+    /// Records one attempt together with the text as it was sent, refused or
+    /// not: the audit must show what was attempted, not only that something
+    /// was (FR-011). The bridge stores the full text and its hash as it does
+    /// for the 0001 actions, and a refusal keeps the rejected text as sent.
+    fn record(&self, sender: AgentId, target: AgentId, text: &str, failure: Option<&str>);
 }
