@@ -32,9 +32,10 @@ const ALLOWED_REQUESTS: [&str; 6] = [
 /// What the connection of an agent says about a request it will not run.
 const NOT_ALLOWED: &str = "an agent may only create, start, stop, and give new tasks to its own descendants, and send them directives";
 
-/// The longest request type the refusal log keeps. The type is the agent's
-/// text, so the limit keeps one hostile frame from flooding the log.
-const MAX_LOGGED_KIND_CHARS: usize = 64;
+/// The longest client text a refusal reason keeps: the type and a field key
+/// travel into the log and the record, so the limit keeps one hostile frame
+/// from flooding either.
+const MAX_REFUSAL_TEXT_CHARS: usize = 64;
 
 /// A field a request must never carry: the server fixes the actor from the
 /// authenticated credential, so a client naming an actor is smuggling an
@@ -109,7 +110,7 @@ async fn answer_request(state: &ServerState, grant: &AgentGrant, frame: &str) ->
         state.log.refusal(&format!(
             "agent {} asked for {:?}, which an agent may not",
             grant.agent_id,
-            truncated(&request.kind, MAX_LOGGED_KIND_CHARS)
+            truncated(&request.kind, MAX_REFUSAL_TEXT_CHARS)
         ));
         Refusal::NotAllowed
     };
@@ -130,14 +131,20 @@ fn smuggled_field(fields: &serde_json::Map<String, Value>) -> Option<String> {
         .map(|field| (*field).to_owned())
 }
 
-/// The refusal's text: what the record keeps and the caller sees.
+/// The refusal's text: what the record keeps and the caller sees. A client
+/// text in the reason (the type, a field key) is cut at the same 64
+/// characters as the log line, so neither the log nor the record floods.
 fn refusal_reason(refusal: &Refusal, kind: &str) -> String {
     match refusal {
         Refusal::NotAllowed => NOT_ALLOWED.to_owned(),
-        Refusal::NotYet => format!("{kind} is not available to agents yet"),
-        Refusal::SmuggledField(field) => {
-            format!("the request carries the field {field:?}, which the server does not take")
-        }
+        Refusal::NotYet => format!(
+            "{} is not available to agents yet",
+            truncated(kind, MAX_REFUSAL_TEXT_CHARS)
+        ),
+        Refusal::SmuggledField(field) => format!(
+            "the request carries the field {:?}, which the server does not take",
+            truncated(field, MAX_REFUSAL_TEXT_CHARS)
+        ),
     }
 }
 
@@ -185,7 +192,10 @@ async fn answer_directive(state: &ServerState, grant: &AgentGrant, request: &Req
 fn parse_directive(fields: &serde_json::Map<String, Value>) -> Result<(AgentId, String), String> {
     for key in fields.keys() {
         if !DIRECTIVE_FIELDS.contains(&key.as_str()) {
-            return Err(format!("directive.send does not take the field {key:?}"));
+            return Err(format!(
+                "directive.send does not take the field {:?}",
+                truncated(key, MAX_REFUSAL_TEXT_CHARS)
+            ));
         }
     }
     let target = fields
@@ -210,10 +220,12 @@ fn wire_code(error: &HierarchyApplicationError) -> ErrorCode {
         HierarchyApplicationError::Invalid(
             HierarchyError::NotADescendant { .. } | HierarchyError::NotRunning { .. },
         ) => ErrorCode::Refused,
-        HierarchyApplicationError::Invalid(_) => ErrorCode::Invalid,
+        HierarchyApplicationError::Invalid(_) | HierarchyApplicationError::InvalidInput(_) => {
+            ErrorCode::Invalid
+        }
         HierarchyApplicationError::NotFound(_) => ErrorCode::NotFound,
         HierarchyApplicationError::Conflict(_) => ErrorCode::Conflict,
-        HierarchyApplicationError::Storage => ErrorCode::Internal,
+        HierarchyApplicationError::Storage(_) => ErrorCode::Internal,
     }
 }
 

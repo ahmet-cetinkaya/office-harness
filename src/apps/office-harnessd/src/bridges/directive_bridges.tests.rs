@@ -282,6 +282,46 @@ fn a_gateway_refusal_journals_the_caller_as_actor_and_agent() {
 }
 
 #[test]
+fn a_control_character_in_a_gateway_refusal_is_escaped_in_the_journal() {
+    let caller = AgentId::generate();
+    let recorder = Arc::new(RecordingRecorder::default());
+    let journal = journal_of(&recorder);
+
+    journal.refused(caller, "bad field \u{7} here");
+
+    let entry = &recorder.entries()[0];
+    assert_eq!(entry.action, AgentAction::Refused);
+    assert_eq!(
+        entry.failure.as_deref(),
+        Some("bad field \\u0007 here"),
+        "the reason travels the same escape as a refused attempt"
+    );
+}
+
+#[test]
+fn a_gateway_refusal_over_the_bound_is_capped_with_a_hash() {
+    let caller = AgentId::generate();
+    let recorder = Arc::new(RecordingRecorder::default());
+    let journal = journal_of(&recorder);
+    let reason = format!(
+        "directive.send does not take the field {}",
+        "k".repeat(9000)
+    );
+
+    journal.refused(caller, &reason);
+
+    let stored = recorder.entries()[0]
+        .failure
+        .clone()
+        .expect("the refusal is journaled");
+    // The whole reason, however hostile, is one capped unit at the record's
+    // own bound, the same as a refused attempt.
+    assert_eq!(stored.chars().count(), JOURNAL_MAX_CHARS);
+    assert!(stored.contains('…'));
+    assert!(stored.ends_with(&text_hash(&escape_control_characters(&reason))));
+}
+
+#[test]
 fn a_journal_write_failure_is_an_alert_and_not_a_panic() {
     struct FailingRecorder;
     impl ActionRecorder for FailingRecorder {

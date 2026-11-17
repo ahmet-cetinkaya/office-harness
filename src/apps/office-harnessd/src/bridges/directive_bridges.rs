@@ -100,9 +100,15 @@ impl DirectiveJournalBridge {
 
     /// Records a request the agent-call gateway refused: the caller is the
     /// actor and the named agent, because no other agent is involved
-    /// (FR-009).
+    /// (FR-009). The reason may carry client text, so it goes through the
+    /// same escape and cap as a refused attempt (Efe, PR 35 MEDIUM-1).
     pub fn refused(&self, caller: AgentId, reason: &str) {
-        self.record_entry(caller, caller, AgentAction::Refused, Some(reason));
+        self.record_entry(
+            caller,
+            caller,
+            AgentAction::Refused,
+            Some(&refused_attempt(reason, "")),
+        );
     }
 
     fn record_entry(
@@ -130,19 +136,31 @@ impl DirectiveJournal for DirectiveJournalBridge {
 }
 
 /// The journal form of a refused attempt (FR-011): the reason, then the text
-/// as it was sent, so the audit shows what was attempted. Control characters
-/// become their `\u00xx` escape, since they cannot sit in the record as
-/// themselves, and the whole failure text is capped as one, so a long reason
-/// cannot push the representation past the bound either. Past the cap the
-/// text keeps its first characters, one ellipsis, and the hash of the whole.
+/// as it was sent (a refusal of the gateway itself carries no directive
+/// text), so the audit shows what was attempted. Both the reason and the
+/// text may carry client words, so both are escaped, and the whole failure
+/// text is capped as one, so a long reason cannot push the representation
+/// past the bound either. Past the cap the text keeps its first characters,
+/// one ellipsis, and the hash of the whole.
 fn refused_attempt(reason: &str, text: &str) -> String {
-    let escaped = format!("{reason}: {}", escape_control_characters(text));
+    let escaped = if text.is_empty() {
+        escape_control_characters(reason)
+    } else {
+        format!("{reason}: {}", escape_control_characters(text))
+    };
+    capped_at_journal_bound(&escaped)
+}
+
+/// The record keeps at most `JOURNAL_MAX_CHARS` of one failure text: past
+/// the bound it keeps the first characters, one ellipsis, and the hash of
+/// the whole.
+fn capped_at_journal_bound(escaped: &str) -> String {
     if escaped.chars().count() <= JOURNAL_MAX_CHARS {
-        return escaped;
+        return escaped.to_owned();
     }
     let mut capped: String = escaped.chars().take(PREFIX_CHARS).collect();
     capped.push('…');
-    capped.push_str(&text_hash(&escaped));
+    capped.push_str(&text_hash(escaped));
     capped
 }
 
