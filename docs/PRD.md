@@ -81,7 +81,7 @@ office-harness is not a new coding agent. It runs the CLIs that the user already
 
 ## 4. Scope by release
 
-**MVP:** the first release, for the owner's daily use. **Later:** the design must not block it, but it is not built in the MVP.
+**MVP:** the first release, for the owner's daily use. **MVP, after 0003:** part of the MVP, built once 0003 merges. **Post-MVP:** built after the MVP is complete. **Deferred (post-MVP):** built after the MVP, started when the owner asks. The post-MVP work is not built in the MVP, and the design must not block it.
 
 | ID | Requirement | Release | Spec |
 | --- | --- | --- | --- |
@@ -92,8 +92,8 @@ office-harness is not a new coding agent. It runs the CLIs that the user already
 | R6 | **Real terminal.** The user attaches to a live agent CLI and types into it, at pseudo-terminal (PTY) level. | MVP | 0001 |
 | R9 | **Practicality.** Agents and results are reachable fast, without walking or searching (criteria in 4.2). | MVP | 0003 |
 | R7 | **Office scene.** An optional view shows agents as desks, floors, and departments. It is a second view, not the main interface. | MVP, after 0003 | 0005 |
-| R5 | **Distributed machines.** Agents run on Linux, macOS, and Windows machines that join one office. | Deferred (post-MVP) | |
-| R8 | **Meeting room.** The user holds a meeting on a topic with chosen agents and a preset. The result is a decision and a summary. | Post-MVP (after the MVP) | 0004 |
+| R5 | **Distributed machines.** Agents run on Linux, macOS, and Windows machines that join one office. | Deferred (post-MVP) | 0006 |
+| R8 | **Meeting room.** The user holds a meeting on a topic with chosen agents and a preset. The result is a decision and a summary. | Post-MVP | 0004 |
 
 There is no small agent cap (12 or more must work). Anything not in this table is out of scope until the owner adds it (section 12).
 
@@ -172,7 +172,7 @@ These targets come from the specs. They are proposals for the owner's use, not a
 
 ## 9. MVP acceptance
 
-The MVP is accepted when the success criteria of specs 0001, 0002, and 0003 pass on Linux, macOS, and Windows, with the evidence recorded beside each spec; the office scene of 0005, built after 0003, is accepted by its own success criteria. These criteria are requirements, not test results yet. The main ones are:
+The MVP is accepted when the success criteria of specs 0001, 0002, 0003, and 0005 pass on Linux, macOS, and Windows, with the evidence recorded beside each spec. The office scene of 0005 is built after 0003 and is accepted by its own success criteria. These criteria are requirements, not test results yet. The main ones are:
 
 | ID | What must be shown | Source |
 | --- | --- | --- |
@@ -201,9 +201,9 @@ These are proposed targets. There is no baseline yet, so no improvement percenta
 | --- | --- | --- |
 | 1 Foundation (0001) | Server, terminal, sessions, desktop app, installers | 0001 success criteria pass on three OSes |
 | 2 Company (0002) | Hierarchy, teams, directives, agent actors | 0002 success criteria pass |
-| 3 Practicality (0003) | One list, shortcuts, project switcher, notifications, resume | 0003 success criteria pass, so the MVP is complete |
+| 3 Practicality (0003) | One list, shortcuts, project switcher, notifications, resume | 0003 success criteria pass |
 | 4 Office scene (0005) | The desks, floors, and departments view | 0005 success criteria pass, so the MVP is complete |
-| 5 Post-MVP | R8 meeting room (0004), then R5 machines (0006) when the owner asks for it | Each starts with its own spec when the owner asks for it |
+| 5 Post-MVP | R8 meeting room (0004), then R5 machines (0006) when the owner asks for it | 0004 starts when the MVP is complete (0005 merged and accepted), or earlier if the owner asks; 0006 starts with its own spec when the owner asks for it |
 
 Approving this PRD does not start development. Each change starts when its spec and plan are approved.
 
