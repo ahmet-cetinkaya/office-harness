@@ -1,9 +1,11 @@
 ---
-status: draft
+status: approved (post-MVP, built after the MVP)
 capability: office
 plan:
 supersedes: 0003/FR-006 (in part)
 ---
+
+<!-- Approved under the overnight directive 2026-11-17; owner may amend. Built after the MVP. -->
 
 # 0004: Meeting room
 
@@ -13,11 +15,11 @@ The owner liked meeting rooms in other agent offices: he calls chosen agents tog
 
 ## Context
 
-- Source of truth: `docs/PRD.md`. The IDs `R1` to `R9` refer to its section 4. R8 has the priority "Later"; this spec exists so that the owner can approve it before the work starts.
+- Source of truth: `docs/PRD.md`. The IDs `R1` to `R9` refer to its section 4. R8 is post-MVP; this change is built after the MVP.
 - This change depends on 0001 (agents, statuses, terminals, the desktop app) and on 0003 (the panel, from which the meeting room opens and in which the user opens an agent's terminal). It does not depend on 0002. It changes one behavior of 0003 (see MODIFIED). References such as `0001/FR-014` and `0003/FR-004` point to requirements in those specs.
 - Stack decision, made by the owner on 2026-11-15. It is a recorded decision, not a requirement of this spec: a separate Rust background server, `office-harnessd`, runs as an always-on user service, owns the terminals through portable-pty, keeps its state in SQLite, and accepts clients over a loopback WebSocket with a token. A thin Tauri v2 desktop app with an xterm.js terminal connects to it.
 - The requirements below describe behavior only. The plan decides how to build them.
-- This spec is a draft. The decisions in Clarifications are reversible defaults that settle D-11; the owner approves or amends them with the spec.
+- The owner approved this spec on 2026-11-17. The decisions in Clarifications are approved as written and settle D-11; the owner may amend them.
 
 ## Terms
 

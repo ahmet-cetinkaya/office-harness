@@ -1,10 +1,10 @@
 ---
-status: draft
+status: approved (post-MVP, built after the MVP)
 spec: specs/changes/0004-meeting-room/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-17. Status: draft. The build starts after the owner approves the spec and change 0003 (panel practicality) merges to `main`. The owner or god approves the plan before the build. -->
+<!-- Drafted 2026-11-17, approved by the owner 2026-11-17. Status: approved (post-MVP, built after the MVP). The build starts after change 0003 (panel practicality) merges to `main`. -->
 
 # Plan: meeting room (0004)
 
@@ -44,7 +44,7 @@ Deliver spec 0004: from the panel the user starts a meeting on a topic with 2 to
 
 ## Context
 
-- **Repository:** 0001 is on `main` (merge 7750602). 0002 and 0003 are approved and wait for their builds. 0004's spec is a draft that awaits the owner; its Clarifications settle D-11 of `docs/PRD.md`. This plan branches after 0003 merges, because the meeting room opens from the panel and the suppression needs 0003's notification bridge. Until then only the spec and this plan exist.
+- **Repository:** 0001 is on `main` (merge 7750602). 0002 and 0003 are approved and wait for their builds. 0004's spec is approved (2026-11-17, post-MVP); its Clarifications settle D-11 of `docs/PRD.md`. This plan branches after 0003 merges, because the meeting room opens from the panel and the suppression needs 0003's notification bridge. Until then only the spec and this plan exist.
 - **Existing seams this change touches** (verified in the repository at `origin/main` 7750602 on 2026-11-17):
   - Request routing: `src/apps/office-harnessd/src/server/dispatcher.rs` sends each request to the module that owns its prefix (`access` today, with `agent.*`, `project.*`, `session.*`, `settings.*` through `server/agent_requests.rs`). A `meeting.` prefix registers the same way. Requests run behind the token gate in `server/connection.rs`; nothing new guards them.
   - Terminal writes: `TerminalRuntime::paste` wraps text in the bracketed-paste markers when the CLI turned that mode on; `write_input` passes bytes unchanged; `bridges/typed_input.rs` already pastes after a run's first output and deliberately never submits (the 0001 startup prompt). The meeting brief submits, which is the one behavioral difference.
