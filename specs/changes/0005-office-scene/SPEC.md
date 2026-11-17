@@ -123,7 +123,7 @@ The user who works by keyboard, with a screen reader, or with reduced motion rea
 | State | What the user sees | Covered by |
 |---|---|---|
 | Loading, server not reachable, unauthorized | As in 0001 and 0003. | PB-3, 0003/PB-5 |
-| No agents | The scene says that the office has no agent and offers the create action (0001). | Edge cases |
+| No agents | The scene says that the office has no agent and offers the panel action, where the user creates the agent (0001). | Edge cases |
 | Success | The floors with their desks. | FR-002, FR-003 |
 | A project without agents | The floor shows its name and says that it has no agents. | Edge cases |
 | No agent matches the search | The scene says that no desk matches the search. | FR-007, Edge cases |
@@ -163,7 +163,7 @@ The user who works by keyboard, with a screen reader, or with reduced motion rea
 
 | Case | Kind | Required behavior |
 |---|---|---|
-| The office has no agent. | Empty | The scene says so and offers the create action of 0001. |
+| The office has no agent. | Empty | The scene says so and offers the panel action; the user creates the agent in the panel (0001). |
 | A project has no agent. | Empty | Its floor shows with the text that it has no agents. |
 | The search matches no desk. | Empty | The scene says that no desk matches. |
 | The search text is only spaces. | Invalid | The scene treats it as no search. |
@@ -173,7 +173,7 @@ The user who works by keyboard, with a screen reader, or with reduced motion rea
 | An agent name is very long. | Boundary | The name is cut with a visible sign, and the accessible name holds the full name. |
 | 100 or more agents. | Boundary | The scene shows every desk at a readable size and scrolls (SC-004). |
 | Agents are created, stopped, or deleted while the scene is open. | Concurrent | The scene adds, updates, or removes the desk without a user action (FR-004), and keyboard focus stays on a desk that still exists. |
-| The agent under the focused desk is deleted. | Concurrent | Keyboard focus moves to the next desk, and the change is announced. |
+| The agent under the focused desk is deleted. | Concurrent | Keyboard focus moves to the next desk, to the previous desk when none follows, and to the empty-state heading when no desk is left; the change is announced. |
 | Two views would show different data. | Concurrent | Not allowed: the panel and the scene read the same state (SC-003). |
 | 0002 is not present. | Boundary | The scene groups by floor only (FR-003). |
 | The desktop app cannot reach the background server, or its token is rejected. | Unauthorized | The 0001 states show. |
