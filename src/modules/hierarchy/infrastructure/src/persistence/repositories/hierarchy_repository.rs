@@ -3,7 +3,7 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use hierarchy_application::common::errors::HierarchyApplicationError;
-use hierarchy_application::common::interfaces::{HierarchyStore, TreeSnapshot};
+use hierarchy_application::common::interfaces::{HierarchyStore, TreeExclusion, TreeSnapshot};
 use hierarchy_domain::Team;
 use hierarchy_domain::entities::TeamId;
 use hierarchy_domain::value_objects::{Role, TeamName};
@@ -19,13 +19,20 @@ use crate::services::agent_places::AgentPlaces;
 /// its member writes cannot interleave with another caller.
 pub struct HierarchyRepository {
     connection: Arc<Mutex<Connection>>,
+    /// Held across a count and the writes it feeds, so a new team cannot
+    /// join the tree between the two. Taken before the connection lock.
+    tree_writes: Mutex<()>,
     places: AgentPlaces,
 }
 
 impl HierarchyRepository {
     #[must_use]
     pub fn new(connection: Arc<Mutex<Connection>>, places: AgentPlaces) -> Self {
-        Self { connection, places }
+        Self {
+            connection,
+            tree_writes: Mutex::new(()),
+            places,
+        }
     }
 
     /// Runs `work` while holding the connection lock.
@@ -77,6 +84,10 @@ impl HierarchyStore for HierarchyRepository {
         })
     }
 
+    fn tree_exclusion(&self) -> TreeExclusion<'_> {
+        TreeExclusion::new(&self.tree_writes)
+    }
+
     fn team_name_taken(&self, key: &str) -> Result<bool, HierarchyApplicationError> {
         self.locked(|connection| {
             connection
@@ -97,6 +108,9 @@ impl HierarchyStore for HierarchyRepository {
         parent_agent_id: Option<AgentId>,
     ) -> Result<(), HierarchyApplicationError> {
         let places = &self.places;
+        // The exclusion joins the new placement to the count a subtree
+        // action took; the connection lock is always the inner one.
+        let _exclusion = self.tree_exclusion();
         self.locked(|connection| {
             connection
                 .execute(
@@ -134,6 +148,7 @@ impl HierarchyStore for HierarchyRepository {
 
     fn delete_team_and_unplace(&self, team_id: TeamId) -> Result<(), HierarchyApplicationError> {
         let places = &self.places;
+        let _exclusion = self.tree_exclusion();
         self.locked(|connection| {
             let id = team_id.as_uuid_text();
             let members: Vec<String> = connection
@@ -170,6 +185,7 @@ impl HierarchyStore for HierarchyRepository {
         team_id: Option<TeamId>,
     ) -> Result<(), HierarchyApplicationError> {
         let places = &self.places;
+        let _exclusion = self.tree_exclusion();
         self.locked(|connection| {
             places.write_place(connection, agent_id, role, parent_agent_id, team_id)?;
             if let Some(team) = team_id {

@@ -53,7 +53,8 @@ impl SubtreeHandler {
     }
 
     /// Stops the agent and, when asked, its descendants: deepest first, the
-    /// agent itself last (FR-007).
+    /// agent itself last (FR-007). The tree exclusion held across the count
+    /// and the stops keeps the stopped set the one the count confirmed.
     ///
     /// # Errors
     /// `Invalid` with `DescendantCountChanged` when the tree changed since
@@ -62,6 +63,7 @@ impl SubtreeHandler {
         &self,
         request: SubtreeRequest,
     ) -> Result<Vec<AgentId>, HierarchyApplicationError> {
+        let _tree = self.store.tree_exclusion();
         let stopped = self.affected(request)?;
         for agent in &stopped {
             self.ender
@@ -73,7 +75,9 @@ impl SubtreeHandler {
 
     /// Deletes the agent and, when asked, its whole subtree: deepest first,
     /// the agent itself last, so a failed step leaves no parent deleted
-    /// above a child (FR-006).
+    /// above a child (FR-006). The tree exclusion held across the count and
+    /// the deletes keeps the confirmed count and the deleted set one tree:
+    /// no placement can join in between and be missed.
     ///
     /// # Errors
     /// `Conflict` when the agent still has descendants and the request does
@@ -83,6 +87,7 @@ impl SubtreeHandler {
         &self,
         request: SubtreeRequest,
     ) -> Result<Vec<AgentId>, HierarchyApplicationError> {
+        let _tree = self.store.tree_exclusion();
         let deleted = self.affected_for_delete(request)?;
         for agent in &deleted {
             self.remover

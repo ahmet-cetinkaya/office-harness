@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use super::*;
 use hierarchy_domain::{Role, TreeRow};
 
-use crate::common::interfaces::TreeSnapshot;
+use crate::common::interfaces::{TreeExclusion, TreeSnapshot};
 use crate::common::ports::SubtreeActionError;
 
 fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -20,14 +20,30 @@ fn never_called() -> ! {
 }
 
 /// A store that always reads back the rows it was built with.
-struct FixedRows(Vec<TreeRow>);
+struct FixedRows {
+    rows: Vec<TreeRow>,
+    tree_writes: Mutex<()>,
+}
+
+impl FixedRows {
+    fn holding(rows: Vec<TreeRow>) -> Self {
+        Self {
+            rows,
+            tree_writes: Mutex::new(()),
+        }
+    }
+}
 
 impl HierarchyStore for FixedRows {
     fn snapshot(&self) -> Result<TreeSnapshot, HierarchyApplicationError> {
         Ok(TreeSnapshot {
-            rows: self.0.clone(),
+            rows: self.rows.clone(),
             teams: Vec::new(),
         })
+    }
+
+    fn tree_exclusion(&self) -> TreeExclusion<'_> {
+        TreeExclusion::new(&self.tree_writes)
     }
 
     fn team_name_taken(&self, _key: &str) -> Result<bool, HierarchyApplicationError> {
@@ -162,7 +178,7 @@ fn handler(
     ender: Arc<dyn SubtreeAgentEnder>,
     remover: Arc<dyn SubtreeAgentRemover>,
 ) -> SubtreeHandler {
-    SubtreeHandler::new(Arc::new(FixedRows(rows.to_vec())), ender, remover)
+    SubtreeHandler::new(Arc::new(FixedRows::holding(rows.to_vec())), ender, remover)
 }
 
 #[test]
@@ -247,4 +263,162 @@ fn an_agent_without_descendants_deletes_alone_without_a_confirmation() {
 
     assert_eq!(deleted, [agent_id]);
     assert_eq!(remover.calls.order(), [agent_id]);
+}
+
+/// A ceo > lead tree whose store places a second child under the CEO during
+/// the delete, exactly in the window between the count read and the delete
+/// loop that a concurrent team creation could win. It also records whether
+/// any delete ran while another writer held the exclusion.
+struct GrowingTree {
+    rows: Mutex<Vec<TreeRow>>,
+    late_child: AgentId,
+    tree_writes: Mutex<()>,
+    /// Whether a delete ran without holding the exclusion, taken while a
+    /// placement was mid-write.
+    exclusion_leaked: Mutex<bool>,
+}
+
+impl GrowingTree {
+    fn new(rows: Vec<TreeRow>, late_child: AgentId) -> Self {
+        Self {
+            rows: Mutex::new(rows),
+            late_child,
+            tree_writes: Mutex::new(()),
+            exclusion_leaked: Mutex::new(false),
+        }
+    }
+
+    /// Proves the caller of the delete holds the exclusion: the writer's
+    /// lock cannot be taken, so a concurrent placement is not mid-write
+    /// while the count is read or a delete runs.
+    fn assert_exclusive(&self) {
+        let leaked = self.tree_writes.try_lock().is_ok();
+        *locked(&self.exclusion_leaked) |= leaked;
+    }
+}
+
+impl HierarchyStore for GrowingTree {
+    fn snapshot(&self) -> Result<TreeSnapshot, HierarchyApplicationError> {
+        self.assert_exclusive();
+        Ok(TreeSnapshot {
+            rows: locked(&self.rows).clone(),
+            teams: Vec::new(),
+        })
+    }
+
+    fn tree_exclusion(&self) -> TreeExclusion<'_> {
+        TreeExclusion::new(&self.tree_writes)
+    }
+
+    fn team_name_taken(&self, _key: &str) -> Result<bool, HierarchyApplicationError> {
+        never_called()
+    }
+
+    fn save_team_and_place_lead(
+        &self,
+        _team: &hierarchy_domain::Team,
+        _parent_agent_id: Option<AgentId>,
+    ) -> Result<(), HierarchyApplicationError> {
+        never_called()
+    }
+
+    fn delete_team_and_unplace(
+        &self,
+        _team_id: hierarchy_domain::TeamId,
+    ) -> Result<(), HierarchyApplicationError> {
+        never_called()
+    }
+
+    fn place_agent(
+        &self,
+        agent_id: AgentId,
+        role: Option<Role>,
+        parent_agent_id: Option<AgentId>,
+        _team_id: Option<hierarchy_domain::TeamId>,
+    ) -> Result<(), HierarchyApplicationError> {
+        // A second child joins under the CEO while the first delete is in
+        // flight, the placement a concurrent team creation would win.
+        locked(&self.rows).push(row(agent_id, parent_agent_id, role));
+        Ok(())
+    }
+
+    fn team_name_of(
+        &self,
+        _team_id: hierarchy_domain::TeamId,
+    ) -> Result<Option<hierarchy_domain::TeamName>, HierarchyApplicationError> {
+        never_called()
+    }
+}
+
+/// The remover that deletes the lead and, at that exact moment, places the
+/// second child the way a racing placement would.
+struct GrowingRemover {
+    calls: Calls,
+    ceo: AgentId,
+    store: Arc<GrowingTree>,
+}
+
+impl SubtreeAgentRemover for GrowingRemover {
+    fn delete(&self, agent_id: AgentId) -> Result<(), SubtreeActionError> {
+        self.store.assert_exclusive();
+        if self.calls.order().is_empty() {
+            self.store
+                .place_agent(
+                    self.store.late_child,
+                    Some(Role::Member),
+                    Some(self.ceo),
+                    None,
+                )
+                .expect("place the second child");
+        }
+        self.calls.record(agent_id);
+        Ok(())
+    }
+}
+
+#[test]
+fn a_delete_confirmed_on_one_tree_deletes_no_child_placed_after_its_count() {
+    let ceo = AgentId::generate();
+    let lead = AgentId::generate();
+    let late_child = AgentId::generate();
+    let rows = vec![
+        row(ceo, None, Some(Role::Ceo)),
+        row(lead, Some(ceo), Some(Role::Lead)),
+    ];
+    let store = Arc::new(GrowingTree::new(rows, late_child));
+    let remover = Arc::new(GrowingRemover {
+        calls: Calls::default(),
+        ceo,
+        store: Arc::clone(&store),
+    });
+    let handler = SubtreeHandler::new(
+        Arc::clone(&store) as Arc<dyn HierarchyStore>,
+        Arc::new(RecordingEnder::default()),
+        Arc::clone(&remover) as Arc<dyn SubtreeAgentRemover>,
+    );
+
+    // The confirmed count of 1 matches the tree as the delete first read
+    // it. The old code read that count in one snapshot and deleted in
+    // another, so the child placed in between was missed and left orphaned;
+    // holding the exclusion across both keeps the confirmed tree the one
+    // that is deleted.
+    let deleted = handler
+        .delete_subtree(request(ceo, true, Some(1)))
+        .expect("delete");
+
+    assert_eq!(deleted, [lead, ceo]);
+    assert_eq!(remover.calls.order(), [lead, ceo]);
+    assert!(
+        !*locked(&store.exclusion_leaked),
+        "the delete read or ran a step while another tree writer held the exclusion"
+    );
+    let final_tree = locked(&store.rows);
+    // The exclusion released only after the deletes, so the child that
+    // joined mid-delete is still there, to be confirmed on a later request
+    // instead of deleted unseen.
+    assert!(
+        final_tree
+            .iter()
+            .any(|tree_row| tree_row.agent_id == late_child)
+    );
 }
