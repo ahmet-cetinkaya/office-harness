@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::collections::HashSet;
+
 use kernel::AgentId;
 
 use crate::errors::HierarchyError;
@@ -105,16 +107,18 @@ pub fn resolved_parent(tree: &[TreeRow], placement: Placement) -> Option<AgentId
 
 /// The descendants of an agent, deepest level first so a caller can stop or
 /// delete a subtree from the leaves up. Inside a level the order follows the
-/// rows. The agent itself is not in the list.
+/// rows. The agent itself is not in the list. Each agent is visited once, so
+/// a hand-made cycle in the rows cannot extend the walk.
 #[must_use]
 pub fn descendants_of(tree: &[TreeRow], agent_id: AgentId) -> Vec<AgentId> {
+    let mut seen = HashSet::from([agent_id]);
     let mut levels: Vec<Vec<AgentId>> = Vec::new();
     let mut frontier = vec![agent_id];
     while !frontier.is_empty() {
         let mut next = Vec::new();
         for current in &frontier {
             for row in tree {
-                if row.parent_agent_id == Some(*current) {
+                if row.parent_agent_id == Some(*current) && seen.insert(row.agent_id) {
                     next.push(row.agent_id);
                 }
             }
@@ -128,10 +132,13 @@ pub fn descendants_of(tree: &[TreeRow], agent_id: AgentId) -> Vec<AgentId> {
 }
 
 /// Whether `agent_id` is a descendant of `ancestor_id` (FR-008, FR-009).
+/// The walk is capped at the row count: an honest chain never needs more
+/// steps than there are rows, so the cap turns a hand-made cycle into a
+/// plain no instead of a hang.
 #[must_use]
 pub fn is_descendant_of(tree: &[TreeRow], agent_id: AgentId, ancestor_id: AgentId) -> bool {
     let mut current = agent_id;
-    loop {
+    for _ in 0..=tree.len() {
         let Some(row) = tree.iter().find(|row| row.agent_id == current) else {
             return false;
         };
@@ -141,6 +148,7 @@ pub fn is_descendant_of(tree: &[TreeRow], agent_id: AgentId, ancestor_id: AgentI
             None => return false,
         }
     }
+    false
 }
 
 fn ceo_of(tree: &[TreeRow]) -> Option<TreeRow> {

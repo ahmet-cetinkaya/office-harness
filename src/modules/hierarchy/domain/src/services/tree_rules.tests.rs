@@ -244,3 +244,45 @@ fn a_generated_tree_never_loops_or_overflows() {
     }
     assert_eq!(descendants_of(&built, ceo).len(), 26);
 }
+
+#[test]
+fn a_looped_tree_terminates_instead_of_hanging() {
+    // Hand-made rows whose parent pointers loop a > b > a. Only a corrupted
+    // store can hold such rows, so the walkers only owe a termination: no
+    // hang, no stack overflow.
+    let a = AgentId::from_u128(200);
+    let b = AgentId::from_u128(201);
+    let looped = vec![
+        TreeRow {
+            agent_id: a,
+            role: None,
+            parent_agent_id: Some(b),
+            team_id: None,
+        },
+        TreeRow {
+            agent_id: b,
+            role: None,
+            parent_agent_id: Some(a),
+            team_id: None,
+        },
+    ];
+    let bound = std::time::Duration::from_secs(2);
+    let started = std::time::Instant::now();
+    // The walks read the rows as they are (b is a's child and a is b's
+    // parent); the seen-set and the step cap only stop the loop from
+    // extending the walk forever.
+    assert_eq!(descendants_of(&looped, a), vec![b]);
+    assert_eq!(descendants_of(&looped, b), vec![a]);
+    assert!(is_descendant_of(&looped, a, b));
+    assert!(is_descendant_of(&looped, b, a));
+    // The negative query starts inside the cycle and chases a target that
+    // no row holds, so neither a missing row nor a root can end the walk:
+    // only the step cap turns it into a plain no. A walker that loops
+    // forever instead of counting steps hangs here.
+    let outside = AgentId::from_u128(202);
+    assert!(!is_descendant_of(&looped, a, outside));
+    assert!(
+        started.elapsed() < bound,
+        "the walks must end quickly, not spin"
+    );
+}
