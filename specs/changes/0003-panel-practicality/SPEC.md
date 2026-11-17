@@ -207,6 +207,21 @@ Decisions with reversible defaults, so that the plan can start. The owner may am
 - Q: Does the user get an OS notification for the agent that he looks at? → A: No (A7).
 - Q: How does the last output line stay current for 30 agents? → A: The plan decides. The requirement is SC-001: each status or last-line change shows within 2 seconds.
 
+### Session 2026-11-18 (proposal)
+
+PROPOSED (pending owner sign-off): the two entries below sharpen the shortcut decisions of 2026-11-17 with the `research.md` R1 findings. They add no requirement and change none; on sign-off they join the Clarifications above.
+
+- PROPOSED (pending owner sign-off): Q: What does the office document for macOS in its default media-key mode? → A: In the default mode the top-row keys send media and brightness commands, and macOS hands F1 to F12 to the app only while Fn (or Globe) is held or "Use F1, F2, etc. keys as standard function keys" is turned on (`research.md` R1). `Ctrl+Shift+F1` to `Ctrl+Shift+F10` can therefore be unusable out of the box on macOS. The README keeps the Fn note and records the fallback table below, so the user who cannot change the setting switches the macOS build to the `Cmd+Alt` family instead.
+- PROPOSED (pending owner sign-off): Q: Are `Ctrl+Shift+F1` to `Ctrl+Shift+F10` verified on KDE Plasma? → A: Not yet. The primary Plasma documentation binds no `Ctrl+Shift+F1` to `Ctrl+Shift+F12`, but a secondary source names the family among Plasma "standard" bindings, so the evidence that the keys are free is one-sided (`research.md` R1). Until the hands-on QA pass checks Plasma live, the office treats the defaults as unverified on KDE; when a distribution binds the family globally, the fallback is the table below's last row.
+
+The fallback table from `research.md` R1 (recorded, not yet applied):
+
+| Default | Where it fails | Fallback |
+|---|---|---|
+| `Ctrl+Shift+F1` to `Ctrl+Shift+F9` | macOS in default media-key mode, unless Fn is held | Keep the key and document Fn (the Clarifications already expect this), or switch the macOS build to `Cmd+Alt+1` to `Cmd+Alt+9`, which no webview or macOS default takes |
+| `Ctrl+Shift+F10` | same as above | `Cmd+Alt+0` on macOS |
+| `Ctrl+Shift+F1` to `Ctrl+Shift+F10` | KDE, if a distribution binds the Plasma "standard" family globally | `Cmd`/`Ctrl+Alt+1..9,0` family; one table entry per key, so a per-OS build change is small |
+
 ## Out of scope
 
 - Search across terminal output of all agents.
