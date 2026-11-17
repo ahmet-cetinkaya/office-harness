@@ -116,7 +116,7 @@ impl TerminalEventSink for TerminalEvents {
         // clears the panel's text until the new child writes.
         {
             let mut lines = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
-            if lines.get(&agent_id).is_some_and(|held| held.run >= run) {
+            if lines.get(&agent_id).is_some_and(|held| held.run > run) {
                 return;
             }
             lines.insert(
@@ -130,6 +130,9 @@ impl TerminalEventSink for TerminalEvents {
         }
         // A receiver that dropped the send still holds a working value; the
         // send failing only means nobody forwards lines right now.
-        let _ = self.line_changed.send_modified(|stamp| *stamp += 1);
+        let _ = self.line_changed.send_if_modified(|stamp| {
+            *stamp += 1;
+            true
+        });
     }
 }

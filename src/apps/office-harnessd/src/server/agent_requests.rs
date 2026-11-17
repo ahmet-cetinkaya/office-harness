@@ -49,6 +49,10 @@ pub struct AgentGateway {
 
 impl AgentGateway {
     #[must_use]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the gateway joins the agent, audit, terminal, and access services"
+    )]
     pub fn new(
         agents: Arc<AgentHandlers>,
         audit: AuditHandlers,

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use agent_presentation::agent_line_event;
 use kernel::AgentId;

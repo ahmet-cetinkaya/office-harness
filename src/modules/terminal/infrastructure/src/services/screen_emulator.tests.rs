@@ -39,10 +39,7 @@ fn a_carriage_return_redraw_counts_once_in_the_last_line() {
 fn a_line_wrapped_across_rows_reads_as_one_line() {
     let mut screen = emulator(10, 24);
     screen.process(b"0123456789ABCDEFGHIJ\r\n");
-    assert_eq!(
-        screen.last_line().as_deref(),
-        Some("0123456789ABCDEFGHIJ")
-    );
+    assert_eq!(screen.last_line().as_deref(), Some("0123456789ABCDEFGHIJ"));
 }
 
 #[test]
