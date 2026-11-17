@@ -35,7 +35,8 @@ pub fn build_hierarchy_services(
     let mut guard = handle
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    run_migrations(&mut guard, LEDGER_TABLE, SCRIPTS)?;
+    // The hierarchy ledger guards no hand-edited data, so it needs no checks.
+    run_migrations(&mut guard, LEDGER_TABLE, SCRIPTS, &[])?;
     let places = AgentPlaces::new();
     let store: Arc<dyn hierarchy_application::common::interfaces::HierarchyStore> =
         Arc::new(HierarchyRepository::new(connection, places));
