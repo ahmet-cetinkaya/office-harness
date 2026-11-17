@@ -92,7 +92,9 @@ fn describe_group(table: &str, rows: &[NameKeyRow]) -> String {
     let listed = rows
         .iter()
         .map(|(id, name, name_key)| {
-            format!("  - {table} id {id}, name \"{name}\", name_key \"{name_key}\"")
+            // Debug formatting, so a hand-edited name with a newline or a
+            // control character cannot make the log lines misleading.
+            format!("  - {table} id {id}, name {name:?}, name_key {name_key:?}")
         })
         .collect::<Vec<_>>()
         .join("\n");

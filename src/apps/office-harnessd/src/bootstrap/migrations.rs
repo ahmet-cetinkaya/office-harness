@@ -8,8 +8,9 @@ use super::StartupError;
 /// Brings one module's tables forward: script `n` is version `n`, and the
 /// module's ledger table records the versions that ran. Each script runs in a
 /// transaction with its ledger row, so a failure leaves the previous version.
-/// Each `checks` entry runs just before its guarded version applies, so a
-/// hand-edited database fails with a clear message and no data changes.
+/// Each `checks` entry runs before any pending script, while the ledger is
+/// below the version it guards, so a hand-edited database fails with a clear
+/// message and no data changes.
 /// Returns how many scripts ran; a database that is current runs none.
 ///
 /// # Errors
