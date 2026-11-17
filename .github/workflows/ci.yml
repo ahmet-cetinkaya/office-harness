@@ -38,17 +38,21 @@ jobs:
         with:
           bun-version: 1.4.4
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
       - name: Probe the batch stop test
         run: |
           fails=0
-          for i in $(seq 1 24); do
+          for i in $(seq 1 30); do
             echo "=== RUN $i ==="
-            if ! cargo test -p office-harnessd --test sessions_windows a_batch_file -- --nocapture --test-threads=1 > "run-$i.log" 2>&1; then
+            if ! cargo test -p office-harnessd --test sessions_windows -- --nocapture > "run-$i.log" 2>&1; then
               fails=$((fails+1)); echo "RUN $i FAILED"; cat "run-$i.log" | grep -E "probe|panicked|test result" | head -80
             else
               echo "RUN $i ok"
             fi
           done
-          echo "FAILS=$fails of 24"
+          echo "FAILS=$fails of 30"
           echo "=== one passing run for comparison ==="
           grep -E "probe" run-1.log | head -60
