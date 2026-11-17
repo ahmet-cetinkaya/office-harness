@@ -549,3 +549,21 @@ fn a_stop_without_the_bridge_keeps_the_single_agent_behavior() {
     assert_eq!(statuses.len(), 1);
     assert_eq!(statuses[0]["status"], "stopped");
 }
+
+#[test]
+fn a_second_bridge_attach_is_refused_and_the_first_stays_in_place() {
+    let stores = stores();
+    let handlers = AgentHandlers::new(use_cases(&stores));
+    let deleted_agent = AgentId::generate();
+    let first = Arc::new(FakeSubtree::default().deleting(&[deleted_agent]));
+    let second = Arc::new(FakeSubtree::default());
+
+    assert!(handlers.attach_subtree(Arc::clone(&first) as Arc<dyn SubtreeRequests>));
+    assert!(!handlers.attach_subtree(Arc::clone(&second) as Arc<dyn SubtreeRequests>));
+
+    // The refused attach changed nothing: the first bridge still answers.
+    let handled = handlers.handle(&request("agent.delete", &agent_id_field(deleted_agent)));
+    assert!(matches!(handled.response, Response::Success { .. }));
+    assert_eq!(*locked(&first.deleted), [deleted_agent]);
+    assert_eq!(*locked(&second.deleted), []);
+}

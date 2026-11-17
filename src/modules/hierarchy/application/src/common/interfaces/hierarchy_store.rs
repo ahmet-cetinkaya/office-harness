@@ -1,11 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
 use hierarchy_domain::entities::TeamId;
 use hierarchy_domain::value_objects::{Role, TeamName};
 use hierarchy_domain::{Team, TreeRow};
 use kernel::AgentId;
 
 use crate::common::errors::HierarchyApplicationError;
+
+/// Keeps every tree writer off while a caller counts the tree and then
+/// stops or deletes from that count, so the count and the writes see one
+/// tree (FR-006, FR-007).
+#[must_use]
+pub struct TreeExclusion<'a> {
+    /// The held writer lock; its `Drop` releases the tree to the next
+    /// writer. Never read.
+    _held: MutexGuard<'a, ()>,
+}
+
+impl<'a> TreeExclusion<'a> {
+    /// Waits for the current holder, then takes the exclusion. A poisoned
+    /// lock is reused, because a panic leaves the tree rows consistent.
+    pub fn new(tree_writes: &'a Mutex<()>) -> Self {
+        Self {
+            _held: tree_writes.lock().unwrap_or_else(PoisonError::into_inner),
+        }
+    }
+}
 
 /// A team row as storage holds it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,6 +49,12 @@ pub trait HierarchyStore: Send + Sync {
     /// # Errors
     /// `Storage` when the read fails.
     fn snapshot(&self) -> Result<TreeSnapshot, HierarchyApplicationError>;
+
+    /// Keeps every tree writer of this store off until the returned guard
+    /// drops. A caller that counts the tree and then stops or deletes from
+    /// that count holds it across both, so a placement cannot join the tree
+    /// in between (FR-006, FR-007).
+    fn tree_exclusion(&self) -> TreeExclusion<'_>;
 
     /// Whether a team name is taken, ignoring case.
     ///

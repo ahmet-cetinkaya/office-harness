@@ -124,11 +124,23 @@ impl AgentHandlers {
     }
 
     /// Attaches the hierarchy's subtree bridge (0002), so `agent.stop` and
-    /// `agent.delete` accept `include_descendants`. The host attaches it
-    /// once, when the handlers are already shared with the gateways.
+    /// `agent.delete` accept `include_descendants`. Returns false when a
+    /// bridge is already attached: the first attach wins, nothing is
+    /// replaced.
+    #[must_use]
+    fn attach_subtree(&self, subtree: Arc<dyn SubtreeRequests>) -> bool {
+        self.subtree.set(subtree).is_ok()
+    }
+
+    /// The host attaches the bridge once, when the handlers are already
+    /// shared with the gateways. A second attach would wire a second bridge
+    /// over the first, so a debug build names it a bug.
     pub fn with_subtree(&self, subtree: Arc<dyn SubtreeRequests>) {
-        // First attach wins; the host builds one bridge per server.
-        self.subtree.get_or_init(|| subtree);
+        // First attach wins; the attach runs in every build, only the
+        // panic is debug-only (a `debug_assert!` would skip the call in
+        // release).
+        let attached = self.attach_subtree(subtree);
+        debug_assert!(attached, "the subtree bridge is attached twice");
     }
 
     #[must_use]
