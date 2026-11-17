@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:
@@ -27,13 +27,6 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-
-      - name: Install Linux system packages for Tauri
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
-            libayatana-appindicator3-dev librsvg2-dev
 
       # The version must match rust-toolchain.toml.
       - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
@@ -45,49 +38,17 @@ jobs:
         with:
           bun-version: 1.4.4
 
-      # bun installs and runs scripts; tools with a `node` shebang run on this pinned Node.
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-
-      # Tauri checks that the sidecar exists, so it is built before any clippy or Tauri run.
-      - name: Prepare sidecar
-        working-directory: src/apps/desktop
-        run: bun scripts/prepare-sidecar.ts
-
-      - name: Rust format and lint
+      - name: Probe the batch stop test
         run: |
-          cargo fmt --all --check
-          cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Rust tests
-        run: cargo test --workspace
-
-      - name: Boundaries
-        run: |
-          scripts/check-boundaries.sh --self-test
-          scripts/check-boundaries.sh
-
-      - name: Install JavaScript dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Webview lint
-        working-directory: src/apps/desktop
-        run: |
-          bun run check
-          bun run lint
-          bun run format:check
-
-      - name: Webview tests
-        working-directory: src/apps/desktop
-        run: bun test src
-
-      - name: Playwright
-        working-directory: src/apps/desktop
-        run: |
-          bunx playwright install --with-deps chromium
-          bun run e2e
-
-      - name: Tauri build
-        working-directory: src/apps/desktop
-        run: bun run tauri build --no-bundle
+          fails=0
+          for i in $(seq 1 24); do
+            echo "=== RUN $i ==="
+            if ! cargo test -p office-harnessd --test sessions_windows a_batch_file -- --nocapture --test-threads=1 > "run-$i.log" 2>&1; then
+              fails=$((fails+1)); echo "RUN $i FAILED"; cat "run-$i.log" | grep -E "probe|panicked|test result" | head -80
+            else
+              echo "RUN $i ok"
+            fi
+          done
+          echo "FAILS=$fails of 24"
+          echo "=== one passing run for comparison ==="
+          grep -E "probe" run-1.log | head -60

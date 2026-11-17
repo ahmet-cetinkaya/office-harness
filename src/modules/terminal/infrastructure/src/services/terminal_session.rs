@@ -41,6 +41,12 @@ const PASTE_END: &[u8] = b"\x1b[201~";
 /// Reported when the wait on the child itself fails.
 const UNKNOWN_EXIT_CODE: u32 = u32::MAX;
 
+fn probe(message: &str) {
+    static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    let start = START.get_or_init(Instant::now);
+    eprintln!("[probe {:>9.3?}] {message}", start.elapsed());
+}
+
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
@@ -261,12 +267,14 @@ impl TerminalSession {
             // The interrupt key is the only end request that reaches a
             // console child. A write that fails means the child is gone.
             let line_before_interrupt = locked(&self.core).emulator.cursor_line();
+            probe(&format!("stop: ctrl-c now, line before {line_before_interrupt:?}"));
             let _ = self.write_input(&[CTRL_C]);
             if self.runs_through_batch_interpreter {
                 self.answer_batch_question(&line_before_interrupt, QUESTION_WINDOW.min(grace));
             }
         }
-        self.wait_for_exit(grace);
+        let exited = self.wait_for_exit(grace);
+        probe(&format!("after grace wait: exited={exited}"));
         // Forced even after a clean exit: a grandchild may have outlived its
         // parent, and the group ends only when every member is gone.
         // On Windows the end goes by process id, and a freed id may belong to
@@ -296,10 +304,12 @@ impl TerminalSession {
             let line = locked(&self.core).emulator.cursor_line();
             if let Some(letter) = answer_after_interrupt(line_before_interrupt, &line) {
                 // A failed write means the child is gone; the waiter reports it.
+                probe(&format!("answering {letter:?} to {line:?}"));
                 let _ = self.write_input(format!("{letter}{ENTER}").as_bytes());
                 return;
             }
         }
+        probe(&format!("no question in window; cursor line {:?}", locked(&self.core).emulator.cursor_line()));
     }
 
     fn resize_locked(
@@ -333,6 +343,7 @@ impl TerminalSession {
     }
 
     fn handle_output(&self, bytes: &[u8]) {
+        probe(&format!("out {:?}", String::from_utf8_lossy(bytes)));
         let mut events = Vec::new();
         let replies = {
             let mut core = locked(&self.core);
