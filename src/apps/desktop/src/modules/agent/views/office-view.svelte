@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, type Snippet } from "svelte";
   import Button from "$shared/ui/button.svelte";
   import FailureMessage from "$shared/ui/failure-message.svelte";
   import type { Project } from "../models/agent";
@@ -14,9 +14,11 @@
 
   interface Props {
     store: OfficeStore;
+    /** Extra content of the left column, above the agent list. */
+    side?: Snippet;
   }
 
-  let { store }: Props = $props();
+  let { store, side }: Props = $props();
 
   const office = $derived(store.snapshot);
   const controller = $derived(store.controller);
@@ -106,12 +108,17 @@
       </section>
     {:else}
       <div class="grid gap-6 md:grid-cols-[16rem_1fr]">
-        <AgentList
-          agents={office.agents}
-          selectedAgentId={office.selectedAgentId}
-          stoppingAgentIds={office.stoppingAgentIds}
-          onselect={controller.select}
-        />
+        <div class="flex flex-col gap-6">
+          {#if side}
+            {@render side()}
+          {/if}
+          <AgentList
+            agents={office.agents}
+            selectedAgentId={office.selectedAgentId}
+            stoppingAgentIds={office.stoppingAgentIds}
+            onselect={controller.select}
+          />
+        </div>
         {#if selectedAgent !== null && office.details !== null}
           {@const agentId = selectedAgent.id}
           {#key agentId}

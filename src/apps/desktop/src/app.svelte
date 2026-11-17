@@ -11,24 +11,33 @@
   } from "./core/connection";
   import { LoginStartPanel, NotAuthorizedView } from "./modules/access";
   import { createOfficeStore, OfficeView } from "./modules/agent";
+  import {
+    createHierarchyController,
+    HierarchyView,
+  } from "./modules/hierarchy";
   import FailureMessage from "$shared/ui/failure-message.svelte";
   import StatusPanel from "$shared/ui/status-panel.svelte";
 
   const client = createTauriCoreClient();
   const connection = createConnectionStore(client);
   const office = createOfficeStore(client);
+  const hierarchy = createHierarchyController(client);
   const snapshot = $derived(connection.snapshot);
   const isConnected = $derived(snapshot.state.status === "connected");
 
   onMount(() => {
     void connection.start();
     void office.controller.watch();
+    void hierarchy.watch();
   });
 
   // The office is loaded again on each new connection, because events that
   // arrived while the app was disconnected are lost.
   $effect(() => {
-    if (isConnected) void office.controller.load();
+    if (isConnected) {
+      void office.controller.load();
+      void hierarchy.load();
+    }
   });
 </script>
 
@@ -60,7 +69,17 @@
       onrestart={connection.restartServer}
     />
   {:else}
-    <OfficeView store={office} />
+    <OfficeView store={office}>
+      {#snippet side()}
+        <HierarchyView
+          controller={hierarchy}
+          agents={office.snapshot.agents}
+          projects={office.snapshot.projects}
+          selectedAgentId={office.snapshot.selectedAgentId}
+          onselect={office.controller.select}
+        />
+      {/snippet}
+    </OfficeView>
     <LoginStartPanel {client} />
   {/if}
 </main>
