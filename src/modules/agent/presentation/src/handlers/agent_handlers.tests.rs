@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use agent_application::commands::continue_session::ContinueSessionHandler;
 use agent_application::commands::create_agent::CreateAgentHandler;
@@ -33,15 +33,6 @@ use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{
     AgentCommand, DisplayName, ExitResult, MachineId, ProjectId, SessionId, Settings,
 };
-use hierarchy_application::commands::subtree::SubtreeHandler;
-use hierarchy_application::common::interfaces::{HierarchyStore, TreeSnapshot};
-use hierarchy_application::common::ports::{
-    SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover,
-};
-use hierarchy_application::{
-    CreateTeamHandler, DeleteTeamHandler, HierarchyApplicationError, PlaceAgentHandler, TreeQuery,
-};
-use hierarchy_domain::{Role, Team, TeamId, TeamName, TreeRow};
 use kernel::{AgentId, Timestamp};
 use serde_json::{Value, json};
 use wire::{Request, Response};
@@ -49,9 +40,7 @@ use wire::{Request, Response};
 use super::*;
 
 fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// These paths read and write only what their fakes hold.
@@ -79,10 +68,6 @@ impl FakeAgents {
         )
         .expect("agent");
         locked(&self.agents).push(Agent { status, ..agent });
-    }
-
-    fn count(&self) -> usize {
-        locked(&self.agents).len()
     }
 
     fn delete_order(&self) -> Vec<AgentId> {
@@ -286,75 +271,46 @@ impl FailureReporter for FakeFailures {
     }
 }
 
-/// The hierarchy rows the subtree use cases read back.
-struct FixedRows(Vec<TreeRow>);
+/// The subtree answers the host bridge would give, so these tests exercise
+/// the handler's own work: the routing, the events, and the failure mapping.
+/// The bridge's stop order and confirmation rules have their own tests.
+#[derive(Default)]
+struct FakeSubtree {
+    stopped: Mutex<Vec<AgentId>>,
+    deleted: Mutex<Vec<AgentId>>,
+    failure: Mutex<Option<SubtreeResult>>,
+}
 
-impl HierarchyStore for FixedRows {
-    fn snapshot(&self) -> Result<TreeSnapshot, HierarchyApplicationError> {
-        Ok(TreeSnapshot {
-            rows: self.0.clone(),
-            teams: Vec::new(),
-        })
+impl FakeSubtree {
+    fn stopping(self, ids: &[AgentId]) -> Self {
+        *locked(&self.stopped) = ids.to_vec();
+        self
     }
 
-    fn team_name_taken(&self, _key: &str) -> Result<bool, HierarchyApplicationError> {
-        never_called()
+    fn deleting(self, ids: &[AgentId]) -> Self {
+        *locked(&self.deleted) = ids.to_vec();
+        self
     }
 
-    fn save_team_and_place_lead(
-        &self,
-        _team: &Team,
-        _parent_agent_id: Option<AgentId>,
-    ) -> Result<(), HierarchyApplicationError> {
-        never_called()
-    }
-
-    fn delete_team_and_unplace(&self, _team_id: TeamId) -> Result<(), HierarchyApplicationError> {
-        never_called()
-    }
-
-    fn place_agent(
-        &self,
-        _agent_id: AgentId,
-        _role: Option<Role>,
-        _parent_agent_id: Option<AgentId>,
-        _team_id: Option<TeamId>,
-    ) -> Result<(), HierarchyApplicationError> {
-        never_called()
-    }
-
-    fn team_name_of(
-        &self,
-        _team_id: TeamId,
-    ) -> Result<Option<TeamName>, HierarchyApplicationError> {
-        never_called()
+    fn failing(self, result: SubtreeResult) -> Self {
+        *locked(&self.failure) = Some(result);
+        self
     }
 }
 
-/// Bridges one agent stop to the fake-backed handler, as the host does.
-struct StopAgentPort {
-    stop: StopAgentHandler,
-}
-
-impl SubtreeAgentEnder for StopAgentPort {
-    fn stop(&self, agent_id: AgentId) -> Result<(), SubtreeActionError> {
-        self.stop
-            .handle(agent_id)
-            .map(|_| ())
-            .map_err(|error| SubtreeActionError(error.to_string()))
+impl SubtreeRequests for FakeSubtree {
+    fn stop_subtree(&self, _request: &Request, _agent_id: AgentId) -> SubtreeResult {
+        if let Some(failure) = &*locked(&self.failure) {
+            return failure.clone();
+        }
+        SubtreeResult::Stopped(locked(&self.stopped).clone())
     }
-}
 
-/// Bridges one agent delete to the fake-backed handler, as the host does.
-struct DeleteAgentPort {
-    delete: DeleteAgentHandler,
-}
-
-impl SubtreeAgentRemover for DeleteAgentPort {
-    fn delete(&self, agent_id: AgentId) -> Result<(), SubtreeActionError> {
-        self.delete
-            .handle(agent_id)
-            .map_err(|error| SubtreeActionError(error.to_string()))
+    fn delete_subtree(&self, _request: &Request, _agent_id: AgentId) -> SubtreeResult {
+        if let Some(failure) = &*locked(&self.failure) {
+            return failure.clone();
+        }
+        SubtreeResult::Deleted(locked(&self.deleted).clone())
     }
 }
 
@@ -470,57 +426,19 @@ fn use_cases(stores: &FakeStores) -> AgentUseCases {
     }
 }
 
-/// The handlers over the fakes, with the subtree use cases attached as the
-/// host wires them. Returns the fake agents for the assertions.
-fn office(rows: &[TreeRow]) -> (Arc<FakeAgents>, AgentHandlers) {
+/// The handlers with the subtree bridge attached, as the host wires them.
+fn office(subtree: FakeSubtree) -> (Arc<FakeAgents>, AgentHandlers) {
     let stores = stores();
-    let use_cases = use_cases(&stores);
-    let hierarchy_store: Arc<dyn HierarchyStore> = Arc::new(FixedRows(rows.to_vec()));
-    let subtree = SubtreeHandler::new(
-        Arc::clone(&hierarchy_store),
-        Arc::new(StopAgentPort {
-            stop: use_cases.stop_agent.clone(),
-        }),
-        Arc::new(DeleteAgentPort {
-            delete: use_cases.delete_agent.clone(),
-        }),
-    );
-    let handlers =
-        AgentHandlers::new(use_cases).with_subtree(hierarchy_presentation::HierarchyUseCases {
-            tree: Arc::new(TreeQuery::new(Arc::clone(&hierarchy_store))),
-            create_team: CreateTeamHandler::new(Arc::clone(&hierarchy_store)),
-            delete_team: DeleteTeamHandler::new(Arc::clone(&hierarchy_store)),
-            place_agent: PlaceAgentHandler::new(Arc::clone(&hierarchy_store)),
-            subtree,
-        });
+    let handlers = AgentHandlers::new(use_cases(&stores));
+    handlers.with_subtree(Arc::new(subtree) as Arc<dyn SubtreeRequests>);
     (stores.agents, handlers)
 }
 
-/// lead > member, with both agents in the store under the given statuses.
-fn lead_with_member(
-    lead_status: AgentStatus,
-    member_status: AgentStatus,
-) -> (Arc<FakeAgents>, AgentHandlers, AgentId, AgentId) {
-    let lead = AgentId::generate();
-    let member = AgentId::generate();
-    let rows = vec![
-        TreeRow {
-            agent_id: lead,
-            role: Some(Role::Lead),
-            parent_agent_id: None,
-            team_id: None,
-        },
-        TreeRow {
-            agent_id: member,
-            role: Some(Role::Member),
-            parent_agent_id: Some(lead),
-            team_id: None,
-        },
-    ];
-    let (agents, handlers) = office(&rows);
-    agents.insert_new(lead, lead_status);
-    agents.insert_new(member, member_status);
-    (agents, handlers, lead, member)
+/// The handlers without a bridge, the 0001 single-agent behavior.
+fn single_agent_office() -> (Arc<FakeAgents>, AgentHandlers) {
+    let stores = stores();
+    let handlers = AgentHandlers::new(use_cases(&stores));
+    (stores.agents, handlers)
 }
 
 fn request(kind: &str, fields: &Value) -> Request {
@@ -551,49 +469,14 @@ fn agent_id_field(agent_id: AgentId) -> Value {
 }
 
 #[test]
-fn a_delete_without_include_descendants_conflicts_and_deletes_nothing() {
-    let (agents, handlers, lead, _member) =
-        lead_with_member(AgentStatus::Stopped, AgentStatus::Stopped);
+fn a_delete_with_the_bridge_emits_one_deleted_event_per_agent() {
+    let lead = AgentId::generate();
+    let member = AgentId::generate();
+    let (_agents, handlers) = office(FakeSubtree::default().deleting(&[member, lead]));
 
     let handled = handlers.handle(&request("agent.delete", &agent_id_field(lead)));
 
-    let (code, message) = failure_of(&handled);
-    assert_eq!(code, "conflict");
-    assert!(message.contains("still has 1 descendant"), "{message}");
-    assert_eq!(agents.count(), 2);
-    assert_eq!(agents.delete_order(), []);
-    assert_eq!(handled.events, []);
-}
-
-#[test]
-fn a_delete_with_descendants_but_no_count_conflicts_and_deletes_nothing() {
-    let (agents, handlers, lead, _member) =
-        lead_with_member(AgentStatus::Stopped, AgentStatus::Stopped);
-    let mut fields = agent_id_field(lead);
-    fields["include_descendants"] = json!(true);
-
-    let handled = handlers.handle(&request("agent.delete", &fields));
-
-    let (code, message) = failure_of(&handled);
-    assert_eq!(code, "conflict");
-    assert!(message.contains("send descendant_count 1"), "{message}");
-    assert_eq!(agents.count(), 2);
-    assert_eq!(agents.delete_order(), []);
-}
-
-#[test]
-fn a_delete_with_the_confirmed_count_deletes_the_member_then_the_lead() {
-    let (agents, handlers, lead, member) =
-        lead_with_member(AgentStatus::Stopped, AgentStatus::Stopped);
-    let mut fields = agent_id_field(lead);
-    fields["include_descendants"] = json!(true);
-    fields["descendant_count"] = json!(1);
-
-    let handled = handlers.handle(&request("agent.delete", &fields));
-
     assert!(matches!(handled.response, Response::Success { .. }));
-    assert_eq!(agents.delete_order(), [member, lead]);
-    assert_eq!(agents.count(), 0);
     let deleted = event_jsons(&handled);
     assert_eq!(deleted.len(), 2);
     assert_eq!(deleted[0]["type"], "agent.deleted");
@@ -602,34 +485,17 @@ fn a_delete_with_the_confirmed_count_deletes_the_member_then_the_lead() {
 }
 
 #[test]
-fn a_delete_with_a_stale_count_conflicts_and_deletes_nothing() {
-    let (agents, handlers, lead, _member) =
-        lead_with_member(AgentStatus::Stopped, AgentStatus::Stopped);
-    let mut fields = agent_id_field(lead);
-    fields["include_descendants"] = json!(true);
-    fields["descendant_count"] = json!(2);
+fn a_stop_with_the_bridge_emits_one_stopped_event_per_agent() {
+    let lead = AgentId::generate();
+    let member = AgentId::generate();
+    let (_agents, handlers) = office(FakeSubtree::default().stopping(&[member, lead]));
 
-    let handled = handlers.handle(&request("agent.delete", &fields));
-
-    let (code, message) = failure_of(&handled);
-    assert_eq!(code, "conflict");
-    assert!(message.contains("has 1 descendant now"), "{message}");
-    assert_eq!(agents.count(), 2);
-    assert_eq!(agents.delete_order(), []);
-}
-
-#[test]
-fn a_stop_of_a_subtree_is_unchanged_and_runs_member_first() {
-    let (agents, handlers, lead, member) =
-        lead_with_member(AgentStatus::Working, AgentStatus::Working);
-    let mut fields = agent_id_field(lead);
-    fields["include_descendants"] = json!(true);
-
-    let handled = handlers.handle(&request("agent.stop", &fields));
+    let handled = handlers.handle(&request(
+        "agent.stop",
+        &json!({ "agent_id": lead.as_uuid_text(), "include_descendants": true }),
+    ));
 
     assert!(matches!(handled.response, Response::Success { .. }));
-    assert_eq!(agents.status_of(member), Some(AgentStatus::Stopped));
-    assert_eq!(agents.status_of(lead), Some(AgentStatus::Stopped));
     let statuses = event_jsons(&handled);
     assert_eq!(statuses.len(), 2);
     assert_eq!(statuses[0]["type"], "agent.status");
@@ -639,14 +505,47 @@ fn a_stop_of_a_subtree_is_unchanged_and_runs_member_first() {
 }
 
 #[test]
-fn a_leaf_delete_still_needs_no_confirmation() {
-    let (agents, handlers, lead, member) =
-        lead_with_member(AgentStatus::Stopped, AgentStatus::Stopped);
+fn a_failed_subtree_action_answers_the_wire_failure_without_events() {
+    let lead = AgentId::generate();
+    let (_agents, handlers) = office(FakeSubtree::default().failing(SubtreeResult::Failed {
+        code: wire::ErrorCode::Conflict,
+        message: "the agent still has 1 descendant".to_owned(),
+    }));
 
-    let handled = handlers.handle(&request("agent.delete", &agent_id_field(member)));
+    let handled = handlers.handle(&request("agent.delete", &agent_id_field(lead)));
+
+    let (code, message) = failure_of(&handled);
+    assert_eq!(code, "conflict");
+    assert_eq!(message, "the agent still has 1 descendant");
+    assert_eq!(handled.events, []);
+}
+
+#[test]
+fn a_delete_without_the_bridge_keeps_the_single_agent_behavior() {
+    let (agents, handlers) = single_agent_office();
+    let agent_id = AgentId::generate();
+    agents.insert_new(agent_id, AgentStatus::Stopped);
+
+    let handled = handlers.handle(&request("agent.delete", &agent_id_field(agent_id)));
 
     assert!(matches!(handled.response, Response::Success { .. }));
-    assert_eq!(agents.delete_order(), [member]);
-    assert_eq!(agents.count(), 1);
-    assert_eq!(agents.status_of(lead), Some(AgentStatus::Stopped));
+    assert_eq!(agents.delete_order(), [agent_id]);
+    let deleted = event_jsons(&handled);
+    assert_eq!(deleted.len(), 1);
+    assert_eq!(deleted[0]["agent_id"], agent_id.as_uuid_text());
+}
+
+#[test]
+fn a_stop_without_the_bridge_keeps_the_single_agent_behavior() {
+    let (agents, handlers) = single_agent_office();
+    let agent_id = AgentId::generate();
+    agents.insert_new(agent_id, AgentStatus::Working);
+
+    let handled = handlers.handle(&request("agent.stop", &agent_id_field(agent_id)));
+
+    assert!(matches!(handled.response, Response::Success { .. }));
+    assert_eq!(agents.status_of(agent_id), Some(AgentStatus::Stopped));
+    let statuses = event_jsons(&handled);
+    assert_eq!(statuses.len(), 1);
+    assert_eq!(statuses[0]["status"], "stopped");
 }
