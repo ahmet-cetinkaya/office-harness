@@ -12,6 +12,8 @@ pub enum HierarchyError {
     Empty { field: &'static str },
     #[error("{field} must be at most {max} characters")]
     TooLong { field: &'static str, max: usize },
+    #[error("{field} must not contain control characters")]
+    ControlCharacter { field: &'static str },
     #[error("{field} is not a valid identifier: {text}")]
     InvalidId { field: &'static str, text: String },
     #[error("{field} is not a role of the company: {text}")]
