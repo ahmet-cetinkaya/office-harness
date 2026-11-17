@@ -19,10 +19,15 @@ const PROGRAM_VARIABLE: &str = "%_prog%";
 const PROGRAM_ASSIGNMENT_PREFIX: &str = "SET \"_prog=";
 const SHIM_FOLDER_VARIABLES: [&str; 2] = ["%~dp0", "%dp0%"];
 const PATH_VARIABLE: &str = "PATH";
-const COMMENT_PREFIX: &str = "::";
 /// Commands that stand first on a line and keep `cmd.exe` from running the
-/// rest of it as the shim's launch: a condition, a jump, or a comment.
+/// rest of it as the shim's launch: a condition, a jump, or a remark.
 const LINE_GUARD_COMMANDS: [&str; 3] = ["IF", "GOTO", "REM"];
+/// Characters `cmd.exe` reads right after such a command word, with no space
+/// in between: a switch or a grouped condition (`IF/I`, `IF(...)`), the
+/// target of a jump (`GOTO:label`), or punctuation (`REM.`).
+const COMMAND_END_CHARACTERS: [char; 4] = ['/', '(', ':', '.'];
+/// First character of a label line, which `cmd.exe` never runs as a command.
+const LABEL_PREFIX: char = ':';
 const EXECUTABLE_SUFFIX: &str = ".exe";
 const ALLOWED_INTERPRETERS: [&str; 3] = ["node", "bun", "deno"];
 const SCRIPT_SUFFIXES: [&str; 3] = [".js", ".cjs", ".mjs"];
@@ -82,8 +87,11 @@ pub fn resolve_npm_shim(
 /// Parses the last line of the shim that passes the arguments on (`%*`).
 /// Returns `None` for anything that is not an npm shim of a known
 /// interpreter, that cannot be resolved to absolute paths without variables,
-/// or whose `%*` line starts with `IF`, `GOTO` or a comment, because
-/// `cmd.exe` may then skip it. A guard deeper in a line is not followed.
+/// or whose `%*` line starts with a guard `cmd.exe` may obey instead of
+/// running it: `IF` (also cut short as `IF/I`, `IF(`), `GOTO` (also
+/// `GOTO:label`), `REM` (also `REM.`, `REM:`), or a label line that begins
+/// with a single `:` (which covers `::`). A guard deeper in a line is not
+/// followed.
 #[must_use]
 pub fn parse_npm_shim(shim_path: &str, content: &str) -> Option<ShimTarget> {
     if content.len() > MAX_SHIM_BYTES || content.contains('\0') {
@@ -119,8 +127,16 @@ pub fn parse_npm_shim(shim_path: &str, content: &str) -> Option<ShimTarget> {
 fn starts_with_line_guard(line: &str) -> bool {
     // A batch line may start its command with `@` to hide the echo.
     let line = line.trim_start().trim_start_matches('@').trim_start();
-    let first_word = line.split_whitespace().next().unwrap_or_default();
-    line.starts_with(COMMENT_PREFIX)
+    // `cmd.exe` cuts the first word at a character that ends the command, so
+    // `IF/I` and `GOTO:label` are still `IF` and `GOTO`.
+    let first_word = line
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .split(COMMAND_END_CHARACTERS)
+        .next()
+        .unwrap_or_default();
+    line.starts_with(LABEL_PREFIX)
         || LINE_GUARD_COMMANDS
             .iter()
             .any(|command| first_word.eq_ignore_ascii_case(command))

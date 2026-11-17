@@ -1,5 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+mod name_key_checks;
+
+use rusqlite::Connection;
+
+/// A data check that runs only while the ledger is below the version it
+/// guards, before that version's script applies. The check reads the
+/// database and returns the user-facing problem text, or `Ok(())` when the
+/// data is ready for the script.
+pub type PreMigrationCheck = (i64, fn(&Connection) -> Result<(), String>);
+
+pub use name_key_checks::check_name_key_ascii_groups;
+
 /// The ledger table that records how many scripts of this module ran.
 pub const LEDGER_TABLE: &str = "agent_schema_version";
 
@@ -15,3 +27,11 @@ pub const SCRIPTS: &[&str] = &[
     // hierarchy module's tables existing first.
     include_str!("0005_hierarchy_columns.sql"),
 ];
+
+/// The data checks the server runs before it steps a database forward. Each
+/// entry guards one version and runs only while the ledger is below it, so a
+/// hand-edited database fails with a clear message and no data changes.
+pub const PRE_MIGRATION_CHECKS: &[PreMigrationCheck] = &[(
+    name_key_checks::NAME_KEY_INDEX_VERSION,
+    check_name_key_ascii_groups,
+)];

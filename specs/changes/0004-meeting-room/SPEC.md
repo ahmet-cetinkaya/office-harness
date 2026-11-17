@@ -2,7 +2,7 @@
 status: draft
 capability: office
 plan:
-supersedes:
+supersedes: 0003/FR-006 (in part)
 ---
 
 # 0004: Meeting room
@@ -14,7 +14,7 @@ The owner liked meeting rooms in other agent offices: he calls chosen agents tog
 ## Context
 
 - Source of truth: `docs/PRD.md`. The IDs `R1` to `R9` refer to its section 4. R8 has the priority "Later"; this spec exists so that the owner can approve it before the work starts.
-- This change depends on 0001 (agents, statuses, terminals, the desktop app) and on 0003 (the panel, from which the meeting room opens and in which the user opens an agent's terminal). It does not depend on 0002. References such as `0001/FR-014` and `0003/FR-004` point to requirements in those specs.
+- This change depends on 0001 (agents, statuses, terminals, the desktop app) and on 0003 (the panel, from which the meeting room opens and in which the user opens an agent's terminal). It does not depend on 0002. It changes one behavior of 0003 (see MODIFIED). References such as `0001/FR-014` and `0003/FR-004` point to requirements in those specs.
 - Stack decision, made by the owner on 2026-11-15. It is a recorded decision, not a requirement of this spec: a separate Rust background server, `office-harnessd`, runs as an always-on user service, owns the terminals through portable-pty, keeps its state in SQLite, and accepts clients over a loopback WebSocket with a token. A thin Tauri v2 desktop app with an xterm.js terminal connects to it.
 - The requirements below describe behavior only. The plan decides how to build them.
 - This spec is a draft. The decisions in Clarifications are reversible defaults that settle D-11; the owner approves or amends them with the spec.
@@ -30,9 +30,9 @@ The owner liked meeting rooms in other agent offices: he calls chosen agents tog
 | Facilitator | The one participant that writes the result. The user picks it at the start; the default is the first participant that he chose. |
 | Preset | A fixed kind of meeting. It sets the instruction in the brief and the format that the facilitator uses for the result. The presets are listed below. |
 | Brief | The text that the system sends to each participant: the topic, the user's optional extra instruction, and the preset's instruction. |
-| Answer | The text that a participant's terminal produced after the brief, until the participant's status became `waiting for input` again, without color and cursor codes. |
+| Answer | The text that a participant's terminal produced after the brief, until the participant's status became `waiting for input` again, without color and cursor codes. A participant that produced no output after the brief has no answer. The answer is readable only for agent CLIs that print their reply as lines (A1). |
 | Meeting record | The saved result of a meeting (see Key entities). |
-| Time limit | The longest time that a meeting waits for one participant's answer: 10 minutes. |
+| Time limit | The longest time that a meeting waits for one reply: 10 minutes, counted from the moment the system sent the brief to that participant, or the result request to the facilitator. A reply also needs the quiet period of 0001 A1 (5 seconds) after the last output. |
 
 **Presets:**
 
@@ -97,7 +97,7 @@ The user opens the list of past meetings, reads one, and copies it as text.
 
 - **FR-001** (US1): WHEN the user starts a meeting with a topic, 2 to 8 participants, and one preset, THE SYSTEM SHALL send the brief to each participant's terminal as one unbroken input that no key of the user can split.
 - **FR-002** (US1): THE SYSTEM SHALL offer the presets Decision, Brainstorm, Review, and Status round, each with the instruction and the result format in Terms.
-- **FR-003** (US1): IF any chosen participant does not have the status `waiting for input`, THEN THE SYSTEM SHALL refuse to start the meeting and name each such participant and its status.
+- **FR-003** (US1): IF any chosen participant does not have the status `waiting for input`, or is already a participant of another running meeting, THEN THE SYSTEM SHALL refuse to start the meeting and name each such participant and the reason.
 - **FR-004** (US1): WHEN every participant has answered or its time limit has ended, THE SYSTEM SHALL send the facilitator the answers and the preset's result format, and take the facilitator's answer as the result.
 - **FR-005** (US1): WHEN the result is complete, THE SYSTEM SHALL save a meeting record with the topic, the preset, the participants, each answer as the terminal produced it, the result as the facilitator wrote it, the start and end times, and the outcome (`completed`, `partial`, or `stopped`).
 - **FR-006** (US2): WHILE a meeting runs, THE SYSTEM SHALL show each participant's state as text, and open any participant's live terminal in one step.
@@ -105,7 +105,11 @@ The user opens the list of past meetings, reads one, and copies it as text.
 - **FR-008** (US2): IF a participant exits or fails during a meeting, THEN THE SYSTEM SHALL go on with the other participants and mark that participant `left` in the record.
 - **FR-009** (US3): THE SYSTEM SHALL list the meeting records newest first, open any record in the panel, and copy a record as Markdown text.
 
-The outcome is `completed` when every participant answered and the facilitator replied, `partial` when at least one participant has `no answer` or `left`, and `stopped` when the user stopped the meeting.
+The outcome is `completed` when every participant answered and the facilitator replied. It is `partial` when at least one participant has `no answer` or `left`, when the facilitator failed, exited, or gave no reply, or when the server restarted during the meeting. It is `stopped` when the user stopped the meeting.
+
+### MODIFIED
+
+- **0003/FR-006** (US2): WHILE an agent is a participant of a running meeting, THE SYSTEM SHALL NOT notify the user when its status changes to `waiting for input`; exits, failures, and bells still notify as in 0003.
 
 ### PRESERVED
 
@@ -161,9 +165,10 @@ The outcome is `completed` when every participant answered and the facilitator r
 - **SC-001:** With 5 agents that wait for input, a user starts a meeting (topic, agents, preset, start) in under 60 seconds.
 - **SC-002:** After the user starts a meeting with 8 participants, all 8 terminals have the brief within 5 seconds.
 - **SC-003:** With fake agents that print known answers, 100% of the saved answers equal the text that the terminals produced, and the result equals the facilitator's reply.
-- **SC-004:** With one participant that never answers, the meeting ends with the outcome `partial` within the time limit plus 10 seconds.
+- **SC-004:** With one participant that never answers, the meeting ends with the outcome `partial` within the time limit plus 10 seconds, counted from the moment the system sent that participant the brief.
 - **SC-005:** After the user stops a meeting, no further input reaches any participant, and the record is saved within 2 seconds.
 - **SC-006:** With 50 saved meetings, a user opens the meeting list, finds one by topic, and copies it within 30 seconds.
+- **SC-007:** With one real agent CLI from 0001 in a meeting on a one-line question, a person reads the saved answer and finds the CLI's reply as readable text. The check is repeated for each 0001 CLI, and the QA report records for each whether its answer is readable.
 
 ## Edge cases
 
@@ -174,21 +179,23 @@ The outcome is `completed` when every participant answered and the facilitator r
 | The facilitator is not one of the participants. | Invalid | Not possible; the picker offers only the participants. |
 | The same agent is chosen twice. | Invalid | The picker lists each agent once. |
 | An agent in another project is chosen. | Boundary | Allowed. A meeting may mix projects. |
-| A participant is already in another running meeting. | Concurrent | The system refuses the second meeting for that agent and names the running one (FR-003 also holds: its status is `working`). |
+| A participant is already in another running meeting. | Concurrent | The system refuses the second meeting for that agent and names the running one (FR-003), also when that agent is back to `waiting for input` after its answer. |
 | Two meetings with different agents run at the same time. | Concurrent | Both run; each has its own view and record. |
 | The user types into a participant's terminal during the meeting. | Concurrent | The input goes to the agent (PB-5); the answer then holds that text as well. |
-| A participant answers with no text. | Boundary | The record shows the answer as empty and the state as `answered`. |
-| An answer is very long. | Boundary | The record keeps the answer up to the terminal output limit of 0001 and says where it was cut. |
+| A participant's output after the brief is empty once the color and cursor codes are removed (only spaces or only codes). | Boundary | The record shows the answer as empty and the state as `answered`. A participant with no output at all has no answer (the idle case below). |
+| An answer is very long. | Boundary | The record keeps the answer up to the recent-output limit of 0001 (A2) and says where it was cut. |
 | The facilitator exits, fails, or gives no reply within the time limit. | Failure | The meeting ends with the outcome `partial`, shows the answers, and says that no result was written. |
 | The server restarts during a meeting. | Failure | The meeting ends with the outcome `partial`, and the record holds the answers so far. |
 | A participant's agent is deleted during the meeting. | Failure | The participant is marked `left` (FR-008). |
 | The desktop app is closed during the meeting. | Failure | The meeting goes on (PB-4); on the next start the panel shows the record. |
 | The desktop app cannot reach the background server or its token is rejected. | Unauthorized | The 0001 states show. |
 | An agent's CLI does not return to `waiting for input` after the brief. | Failure | The time limit ends the wait for that participant (US1 scenario 5). |
+| An agent's CLI stays `waiting for input` and produces no output after the brief. | Failure | The participant has no answer: the state becomes `no answer` when the time limit ends, never an empty `answered`. |
+| An agent's CLI redraws the screen in place or uses the alternate screen. | Boundary | The answer holds the text as the terminal produced it, which may be hard to read (A1). The QA report lists which 0001 CLIs give a readable answer. |
 
 ## Assumptions
 
-- **A1:** The answer is the text that the participant's terminal produced after the brief until its status became `waiting for input` again, so a meeting works with any agent CLI that office-harness runs, without a CLI-specific protocol (0001 A1 sets the quiet period).
+- **A1:** The answer is the text that the participant's terminal produced after the brief until its status became `waiting for input` again, so a meeting needs no CLI-specific protocol (0001 A1 sets the quiet period). This holds for CLIs that print their reply as lines. A CLI that redraws the screen in place or uses the alternate screen can give an answer that is hard to read; this change does not clean that up (SC-007 records the result per CLI).
 - **A2:** One round only: each participant answers once, and the facilitator writes the result. The MVP has no debate rounds and no agent-to-agent messages.
 - **A3:** The facilitator uses the same terminal as before; its answer to the result request is the result. The system does not parse or check the result's structure: the record stores the text as written.
 - **A4:** The presets are fixed. The user cannot create or edit presets in this change.
@@ -208,7 +215,9 @@ Decisions with reversible defaults, so that the owner can approve the spec. They
 - Q: Can agents with the status `working` join? → A: No (FR-003). Their terminals take the user's or the CLI's work, and a brief would mix into it.
 - Q: How many rounds? → A: One (A2).
 - Q: Are presets user-defined? → A: No (A4).
+- Q: Does a meeting notify the user? → A: Not for the participants' return to `waiting for input` (MODIFIED); a meeting with 8 agents would send about 9 notifications otherwise. The user started the meeting and watches its view, and the record is saved at the end.
 - Q: Does a meeting need agents of one project? → A: No (Edge cases).
+- Q: Is a clean answer promised for every CLI? → A: No. A1 narrows the promise; SC-007 measures it per CLI.
 
 ## Out of scope
 
@@ -218,3 +227,5 @@ Decisions with reversible defaults, so that the owner can approve the spec. They
 - A built-in facilitator that is not one of the user's agents.
 - The R7 office scene, R5 distributed machines, and the agent hierarchy of 0002 (for example, inviting a whole team in one action).
 - Scheduling meetings in advance or repeating them.
+- Turning the redraws of a full-screen CLI into a clean answer.
+- A notification when a meeting ends: the meeting view and the record show it (reversible: a later change can add one).
