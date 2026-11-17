@@ -1,9 +1,11 @@
 ---
-status: draft
+status: deferred (post-MVP, draft)
 capability: office
 plan:
 supersedes: 0001/FR-005 (in part), 0001/FR-008 (in part)
 ---
+
+<!-- Deferred by the owner on 2026-11-17 (post-MVP); the spec stays a draft. -->
 
 # 0006: Distributed machines
 
@@ -13,7 +15,7 @@ The owner wants agents on several machines (a Linux server, a Mac, a Windows PC)
 
 ## Context
 
-- Source of truth: `docs/PRD.md`. The IDs `R1` to `R9` refer to its section 4. R5 has the priority "Later"; this spec exists so that the owner can approve it before the work starts.
+- Source of truth: `docs/PRD.md`. The IDs `R1` to `R9` refer to its section 4. R5 is deferred (post-MVP); the spec stays a draft so that the owner can approve it before the work starts.
 - This change depends on 0001 (agents, projects, statuses, terminals, the office token, the action record, the background server) and on 0003 (the panel and its agent list). It does not depend on 0002, 0004, or 0005; where they are present, their views show agents of every machine in the same way. References such as `0001/FR-008` point to requirements in those specs.
 - Stack decision, made by the owner on 2026-11-15. It is a recorded decision, not a requirement of this spec: a separate Rust background server, `office-harnessd`, runs as an always-on user service, owns the terminals through portable-pty, keeps its state in SQLite, and accepts clients over a loopback WebSocket with a token. A thin Tauri v2 desktop app with an xterm.js terminal connects to it.
 - 0001 A13 prepared this change: each agent belongs to a machine, and every client uses the office token, so no second access model is needed.
