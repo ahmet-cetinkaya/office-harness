@@ -9,6 +9,7 @@ import type {
   Session,
 } from "../../src/modules/agent/models/agent";
 import type { ActionEntry } from "../../src/modules/audit/models/action-entry";
+import type { HierarchyTree } from "../../src/modules/hierarchy/models/hierarchy";
 
 /** What the faked office holds when the page opens. */
 export interface OfficeSeed {
@@ -16,6 +17,8 @@ export interface OfficeSeed {
   projects?: Project[];
   sessions?: Record<string, Session[]>;
   additions?: Record<string, AdditionsView>;
+  /** The 0002 tree shape that `hierarchy.tree` answers with. */
+  hierarchy?: HierarchyTree;
   /** The text of the snapshot frame that follows `terminal.attach`. */
   snapshots?: Record<string, string>;
   /** The `focus_shortcut` setting. The server's default when left out. */
@@ -55,6 +58,8 @@ declare global {
       pushEvent(event: ServerEvent): void;
       /** Sends a binary terminal frame: kind 1 snapshot, 2 output, 3 dropped. */
       pushTerminalFrame(kind: number, agentId: string, text: string): void;
+      /** Replaces the tree that `hierarchy.tree` answers with. */
+      setHierarchy(tree: HierarchyTree): void;
       calls: RecordedCall[];
     };
   }
@@ -95,6 +100,8 @@ export async function installMockCore(
       projects: structuredClone(mock.office?.projects ?? []),
       sessions: structuredClone(mock.office?.sessions ?? {}),
       additions: structuredClone(mock.office?.additions ?? {}),
+      /** The 0002 hierarchy shape, kept in step with the agents. */
+      hierarchy: structuredClone(mock.office?.hierarchy ?? null),
       actions: [] as ActionEntry[],
       nextId: 1,
     };
@@ -206,6 +213,8 @@ export async function installMockCore(
         }
         case "agent.list":
           return office.agents;
+        case "hierarchy.tree":
+          return office.hierarchy ?? { ceo: null, teams: [], unassigned: [] };
         case "agent.create": {
           if (!fields.name) refuse("invalid", "name is required");
           const agent: Agent = {
@@ -227,6 +236,9 @@ export async function installMockCore(
             applies_next_session: false,
           };
           pushEvent({ type: "agent.changed", agent });
+          if (office.hierarchy !== null) {
+            pushEvent({ type: "hierarchy.changed", cause: "agent.placed" });
+          }
           record(agent.id, "create");
           return agent;
         }
@@ -264,6 +276,9 @@ export async function installMockCore(
           const agent = findAgent(fields.agent_id);
           office.agents = office.agents.filter((known) => known !== agent);
           pushEvent({ type: "agent.deleted", agent_id: agent.id });
+          if (office.hierarchy !== null) {
+            pushEvent({ type: "hierarchy.changed", cause: "subtree.deleted" });
+          }
           return null;
         }
         case "agent.additions.get": {
@@ -374,7 +389,15 @@ export async function installMockCore(
     };
     Object.assign(window, {
       __TAURI_INTERNALS__: internals,
-      __mockCore: { push, pushEvent, pushTerminalFrame, calls },
+      __mockCore: {
+        push,
+        pushEvent,
+        pushTerminalFrame,
+        setHierarchy: (tree: HierarchyTree) => {
+          office.hierarchy = structuredClone(tree);
+        },
+        calls,
+      },
     });
   }, options);
 }
