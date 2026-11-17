@@ -95,6 +95,8 @@ impl Server {
             )),
             agents,
             hierarchy,
+            send_directive: Arc::clone(&services.hierarchy.send_directive),
+            directive_journal: Arc::clone(&services.hierarchy.directive_journal),
             events,
             restart: RestartSignal::default(),
             token_generations: services.access.token_store.subscribe(),

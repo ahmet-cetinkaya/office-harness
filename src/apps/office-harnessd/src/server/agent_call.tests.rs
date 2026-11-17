@@ -32,3 +32,76 @@ fn the_limit_counts_characters_not_bytes() {
 
     assert_eq!(logged.chars().count(), MAX_LOGGED_KIND_CHARS + 1);
 }
+
+#[test]
+fn an_actor_or_caller_field_is_smuggled_whatever_the_type() {
+    let mut fields = serde_json::Map::new();
+    fields.insert("actor".to_owned(), serde_json::Value::Null);
+
+    assert_eq!(
+        smuggled_field(&fields).as_deref(),
+        Some("actor"),
+        "an actor field is named, not taken",
+    );
+
+    let mut fields = serde_json::Map::new();
+    fields.insert("caller".to_owned(), serde_json::Value::Null);
+
+    assert_eq!(smuggled_field(&fields).as_deref(), Some("caller"));
+}
+
+#[test]
+fn a_frame_without_actor_fields_is_clean() {
+    let mut fields = serde_json::Map::new();
+    fields.insert(
+        "target_agent_id".to_owned(),
+        serde_json::json!(AgentId::generate().as_uuid_text()),
+    );
+    fields.insert("text".to_owned(), serde_json::json!("hello"));
+
+    assert_eq!(smuggled_field(&fields), None);
+}
+
+#[test]
+fn directive_fields_are_read_and_extra_ones_rejected() {
+    let target = AgentId::generate();
+    let mut fields = serde_json::Map::new();
+    fields.insert(
+        "target_agent_id".to_owned(),
+        serde_json::json!(target.as_uuid_text()),
+    );
+    fields.insert("text".to_owned(), serde_json::json!("ship it"));
+
+    let parsed = parse_directive(&fields);
+
+    assert_eq!(parsed, Ok((target, "ship it".to_owned())));
+
+    fields.insert(
+        "actor".to_owned(),
+        serde_json::json!(AgentId::generate().as_uuid_text()),
+    );
+    let extra = parse_directive(&fields);
+
+    assert!(extra.is_err(), "an extra field is refused");
+}
+
+#[test]
+fn a_bad_target_or_text_shape_is_a_parse_failure() {
+    let mut fields = serde_json::Map::new();
+    fields.insert(
+        "target_agent_id".to_owned(),
+        serde_json::json!("not-a-uuid"),
+    );
+    fields.insert("text".to_owned(), serde_json::json!("hello"));
+
+    assert!(parse_directive(&fields).is_err());
+
+    let mut fields = serde_json::Map::new();
+    fields.insert(
+        "target_agent_id".to_owned(),
+        serde_json::json!(AgentId::generate().as_uuid_text()),
+    );
+    fields.insert("text".to_owned(), serde_json::json!(42));
+
+    assert!(parse_directive(&fields).is_err());
+}

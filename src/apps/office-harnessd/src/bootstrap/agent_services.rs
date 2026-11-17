@@ -63,6 +63,10 @@ pub struct AgentServices {
     pub status_order: StatusOrder,
     /// Set by the interrupt at stop, so no start follows it.
     pub stopping: StoppingFlag,
+    /// The action record the agent use cases write. The hierarchy's
+    /// directive journal shares it, so a directive is kept like any other
+    /// action (FR-011).
+    pub journal: ActionJournal,
 }
 
 /// The stores and services that the use cases share.
@@ -133,6 +137,7 @@ pub fn build_agent_services(
         saved_outputs: SavedOutputs::new(wiring.sessions),
         status_order: StatusOrder::default(),
         stopping: StoppingFlag::default(),
+        journal: wiring.journal.clone(),
     }
 }
 
