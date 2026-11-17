@@ -45,7 +45,7 @@ jobs:
       - name: Probe the batch stop test
         run: |
           fails=0
-          for i in $(seq 1 30); do
+          for i in $(seq 1 50); do
             echo "=== RUN $i ==="
             if ! cargo test -p office-harnessd --test sessions_windows -- --nocapture > "run-$i.log" 2>&1; then
               fails=$((fails+1)); echo "RUN $i FAILED"; cat "run-$i.log" | grep -E "probe|panicked|test result" | head -80
@@ -53,6 +53,6 @@ jobs:
               echo "RUN $i ok"
             fi
           done
-          echo "FAILS=$fails of 30"
+          echo "FAILS=$fails of 50"
           echo "=== one passing run for comparison ==="
           grep -E "probe" run-1.log | head -60
