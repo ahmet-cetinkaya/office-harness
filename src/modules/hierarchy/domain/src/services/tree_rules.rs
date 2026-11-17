@@ -60,16 +60,18 @@ fn check_lead(tree: &[TreeRow], placement: Placement) -> Result<(), HierarchyErr
             return Err(role_not_allowed(Role::Lead, Role::Ceo));
         }
     }
-    if let Some(parent) = ceo_of(tree) {
-        if parent.agent_id == placement.agent_id {
-            return Err(role_not_allowed(Role::Lead, Role::Ceo));
-        }
+    if let Some(parent) = ceo_of(tree)
+        && parent.agent_id == placement.agent_id
+    {
+        return Err(role_not_allowed(Role::Lead, Role::Ceo));
     }
     Ok(())
 }
 
 fn check_member(tree: &[TreeRow], placement: Placement) -> Result<(), HierarchyError> {
-    let parent_id = placement.parent_agent_id.ok_or(HierarchyError::LeadMissing)?;
+    let parent_id = placement
+        .parent_agent_id
+        .ok_or(HierarchyError::LeadMissing)?;
     if parent_id == placement.agent_id {
         return Err(HierarchyError::Cycle);
     }
@@ -78,10 +80,10 @@ fn check_member(tree: &[TreeRow], placement: Placement) -> Result<(), HierarchyE
         return Err(role_not_allowed(Role::Member, Role::Lead));
     }
     // A member's team is its lead's team (A6); the caller passes none.
-    if let Some(team) = placement.team_id {
-        if Some(team) != parent.team_id {
-            return Err(HierarchyError::NotInHierarchy);
-        }
+    if let Some(team) = placement.team_id
+        && Some(team) != parent.team_id
+    {
+        return Err(HierarchyError::NotInHierarchy);
     }
     Ok(())
 }
@@ -101,21 +103,28 @@ pub fn resolved_parent(tree: &[TreeRow], placement: Placement) -> Option<AgentId
     }
 }
 
-/// The descendants of an agent, deepest first so a caller can stop or delete
-/// a subtree from the leaves up. The agent itself is not in the list.
+/// The descendants of an agent, deepest level first so a caller can stop or
+/// delete a subtree from the leaves up. Inside a level the order follows the
+/// rows. The agent itself is not in the list.
 #[must_use]
 pub fn descendants_of(tree: &[TreeRow], agent_id: AgentId) -> Vec<AgentId> {
-    let mut result = Vec::new();
+    let mut levels: Vec<Vec<AgentId>> = Vec::new();
     let mut frontier = vec![agent_id];
-    while let Some(current) = frontier.pop() {
-        for row in tree {
-            if row.parent_agent_id == Some(current) {
-                result.push(row.agent_id);
-                frontier.push(row.agent_id);
+    while !frontier.is_empty() {
+        let mut next = Vec::new();
+        for current in &frontier {
+            for row in tree {
+                if row.parent_agent_id == Some(*current) {
+                    next.push(row.agent_id);
+                }
             }
         }
+        if !next.is_empty() {
+            levels.push(next.clone());
+        }
+        frontier = next;
     }
-    result
+    levels.iter().rev().flatten().copied().collect()
 }
 
 /// Whether `agent_id` is a descendant of `ancestor_id` (FR-008, FR-009).
@@ -149,7 +158,7 @@ fn role_not_allowed(child: Role, parent: Role) -> HierarchyError {
     let allowed = parent
         .allowed_child_roles()
         .iter()
-        .map(|role| role.to_string())
+        .map(std::string::ToString::to_string)
         .collect::<Vec<_>>()
         .join(", ");
     HierarchyError::RoleNotAllowed {

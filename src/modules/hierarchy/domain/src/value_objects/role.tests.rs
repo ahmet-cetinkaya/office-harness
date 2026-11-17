@@ -22,5 +22,5 @@ fn the_wire_names_round_trip() {
 fn each_role_allows_only_its_children() {
     assert_eq!(Role::Ceo.allowed_child_roles(), &[Role::Lead]);
     assert_eq!(Role::Lead.allowed_child_roles(), &[Role::Member]);
-    assert!(Role::Member.allowed_child_roles().is_empty());
+    assert_eq!(Role::Member.allowed_child_roles(), []);
 }

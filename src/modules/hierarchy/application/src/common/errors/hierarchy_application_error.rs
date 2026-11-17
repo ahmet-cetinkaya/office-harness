@@ -15,3 +15,17 @@ pub enum HierarchyApplicationError {
     #[error("storage failed")]
     Storage,
 }
+
+impl HierarchyApplicationError {
+    /// Maps a stop or delete failure of one subtree member.
+    #[must_use]
+    pub fn from_stop(error: crate::common::ports::SubtreeActionError) -> Self {
+        error.into_application()
+    }
+
+    /// Maps a delete failure of one subtree member.
+    #[must_use]
+    pub fn from_delete(error: crate::common::ports::SubtreeActionError) -> Self {
+        error.into_application()
+    }
+}

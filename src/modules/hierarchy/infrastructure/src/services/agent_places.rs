@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use hierarchy_domain::TreeRow;
 use hierarchy_domain::entities::TeamId;
 use hierarchy_domain::value_objects::Role;
-use hierarchy_domain::TreeRow;
 use kernel::AgentId;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 /// Reads and writes the place columns of the agent module: role,
-/// parent_agent_id, and team_id. The columns are added by the agent module's
+/// `parent_agent_id`, and `team_id`. The columns are added by the agent module's
 /// migration 0004; this service is the one writer.
 pub struct AgentPlaces;
 
@@ -55,7 +55,7 @@ impl AgentPlaces {
                 "UPDATE agent_agents SET role = ?1, parent_agent_id = ?2, team_id = ?3 \
                  WHERE id = ?4",
                 params![
-                    role.map(|role| role.as_str()),
+                    role.map(hierarchy_domain::Role::as_str),
                     parent_agent_id.map(|id| id.as_uuid_text()),
                     team_id.map(|id| id.as_uuid_text()),
                     agent_id.as_uuid_text()
@@ -91,13 +91,11 @@ fn read_row(row: &Row<'_>) -> rusqlite::Result<TreeRow> {
         agent_id: AgentId::from_uuid_text(&id).ok_or(rusqlite::Error::InvalidQuery)?,
         role: role.as_deref().and_then(Role::from_wire),
         parent_agent_id: parent
-            .map(|text| AgentId::from_uuid_text(&text))
-            .transpose()
-            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+            .map(|text| AgentId::from_uuid_text(&text).ok_or(rusqlite::Error::InvalidQuery))
+            .transpose()?,
         team_id: team
-            .map(|text| TeamId::from_uuid_text(&text))
-            .transpose()
-            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+            .map(|text| TeamId::from_uuid_text(&text).ok_or(rusqlite::Error::InvalidQuery))
+            .transpose()?,
     })
 }
 

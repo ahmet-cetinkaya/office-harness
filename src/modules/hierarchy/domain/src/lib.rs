@@ -10,5 +10,7 @@ pub mod value_objects;
 
 pub use entities::{Team, TeamId};
 pub use errors::HierarchyError;
-pub use services::tree_rules::{Placement, TreeRow, check_placement, descendants_of, is_descendant_of, resolved_parent};
+pub use services::tree_rules::{
+    Placement, TreeRow, check_placement, descendants_of, is_descendant_of, resolved_parent,
+};
 pub use value_objects::{Role, TeamName, parse_role};

@@ -22,10 +22,11 @@ use agent_application::queries::get_settings::GetSettingsHandler;
 use agent_application::queries::list_agents::ListAgentsHandler;
 use agent_application::queries::list_projects::ListProjectsHandler;
 use agent_application::queries::list_sessions::ListSessionsHandler;
+use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{ProjectId, SessionId, SettingKey};
 use kernel::AgentId;
 use serde_json::Value;
-use wire::{Event, Request, Response};
+use wire::{ErrorCode, Event, Request, Response};
 
 use super::handler_error::HandlerError;
 use crate::contracts::{
@@ -90,6 +91,11 @@ impl Success {
         self.events.push(event);
         self
     }
+
+    fn with_events(mut self, events: Vec<Event>) -> Self {
+        self.events.extend(events);
+        self
+    }
 }
 
 /// The handlers of the agent, project, and settings requests. Each one parses
@@ -97,12 +103,41 @@ impl Success {
 /// block, so the host runs them on a blocking thread.
 pub struct AgentHandlers {
     use_cases: AgentUseCases,
+    /// The hierarchy's subtree use cases, when the host builds them (0002).
+    /// `None` keeps the single-agent behavior of 0001.
+    subtree: Option<hierarchy_presentation::HierarchyUseCases>,
+}
+
+impl AgentHandlers {
+    /// The use cases, for the host to bridge into other modules (the
+    /// hierarchy's subtree stop and delete).
+    #[must_use]
+    pub fn use_cases(&self) -> &AgentUseCases {
+        &self.use_cases
+    }
+
+    /// The hierarchy's subtree use cases, or `None` outside 0002.
+    #[must_use]
+    pub fn subtree(&self) -> Option<&hierarchy_presentation::HierarchyUseCases> {
+        self.subtree.as_ref()
+    }
 }
 
 impl AgentHandlers {
     #[must_use]
     pub fn new(use_cases: AgentUseCases) -> Self {
-        Self { use_cases }
+        Self {
+            use_cases,
+            subtree: None,
+        }
+    }
+
+    /// With the hierarchy's subtree use cases (0002), so `agent.stop` and
+    /// `agent.delete` accept `include_descendants`.
+    #[must_use]
+    pub fn with_subtree(mut self, subtree: hierarchy_presentation::HierarchyUseCases) -> Self {
+        self.subtree = Some(subtree);
+        self
     }
 
     #[must_use]
@@ -192,6 +227,9 @@ impl AgentHandlers {
 
     fn delete_agent(&self, request: &Request) -> Result<Success, HandlerError> {
         let agent_id = parse_agent_id(request)?;
+        if let Some(subtree) = self.subtree.as_ref() {
+            return subtree_delete(subtree, request, agent_id);
+        }
         self.use_cases.delete_agent.handle(agent_id)?;
         Ok(Success::done().with_event(agent_deleted_event(agent_id)))
     }
@@ -241,6 +279,9 @@ impl AgentHandlers {
 
     fn stop_agent(&self, request: &Request) -> Result<Success, HandlerError> {
         let agent_id = parse_agent_id(request)?;
+        if let Some(subtree) = self.subtree.as_ref() {
+            return subtree_stop(subtree, request, agent_id);
+        }
         let agent = self.use_cases.stop_agent.handle(agent_id)?;
         Ok(Success::done().with_event(agent_status_event(agent_id, agent.status, None)))
     }
@@ -280,6 +321,51 @@ fn started_session(outcome: StartOutcome) -> Success {
 fn parse_agent_id(request: &Request) -> Result<AgentId, HandlerError> {
     let body = AgentIdRequest::read(&request.fields).map_err(HandlerError::invalid)?;
     parse_id("agent_id", &body.agent_id)
+}
+
+/// Stops one agent or, when the request asks for it, its whole subtree
+/// (FR-007). The events are one per stopped agent.
+fn subtree_stop(
+    use_cases: &hierarchy_presentation::HierarchyUseCases,
+    request: &Request,
+    agent_id: AgentId,
+) -> Result<Success, HandlerError> {
+    let stopped = use_cases
+        .subtree
+        .stop_subtree(hierarchy_presentation::subtree_request(request, agent_id))
+        .map_err(|error| hierarchy_error(&error))?;
+    let events = stopped
+        .iter()
+        .map(|id| agent_status_event(*id, AgentStatus::Stopped, None))
+        .collect();
+    Ok(Success {
+        result: Value::Null,
+        events,
+    })
+}
+
+/// Deletes one agent or, when the request asks for it, its whole subtree,
+/// deepest first (FR-006).
+fn subtree_delete(
+    use_cases: &hierarchy_presentation::HierarchyUseCases,
+    request: &Request,
+    agent_id: AgentId,
+) -> Result<Success, HandlerError> {
+    let deleted = use_cases
+        .subtree
+        .delete_subtree(hierarchy_presentation::subtree_request(request, agent_id))
+        .map_err(|error| hierarchy_error(&error))?;
+    Ok(Success::done().with_events(deleted.iter().map(|id| agent_deleted_event(*id)).collect()))
+}
+
+fn hierarchy_error(error: &hierarchy_application::HierarchyApplicationError) -> HandlerError {
+    let code = match error {
+        hierarchy_application::HierarchyApplicationError::Invalid(_) => ErrorCode::Invalid,
+        hierarchy_application::HierarchyApplicationError::NotFound(_) => ErrorCode::NotFound,
+        hierarchy_application::HierarchyApplicationError::Conflict(_) => ErrorCode::Conflict,
+        hierarchy_application::HierarchyApplicationError::Storage => ErrorCode::Internal,
+    };
+    HandlerError::with_code(code, error.to_string())
 }
 
 fn parse_id<T: std::str::FromStr>(field: &str, text: &str) -> Result<T, HandlerError> {

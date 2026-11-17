@@ -3,6 +3,7 @@
 mod access_services;
 mod agent_services;
 mod database;
+mod hierarchy_services;
 mod instance_lock;
 mod interrupt_agents;
 mod migrations;
@@ -16,6 +17,7 @@ mod terminal_services;
 pub use access_services::{AccessServices, build_access_services};
 pub use agent_services::{AgentServices, build_agent_services};
 pub use database::open_database;
+pub use hierarchy_services::{HierarchyServices, build_hierarchy_services};
 pub use instance_lock::{InstanceLock, acquire_single_instance};
 pub use interrupt_agents::interrupt_running_agents;
 pub use migrations::run_migrations;

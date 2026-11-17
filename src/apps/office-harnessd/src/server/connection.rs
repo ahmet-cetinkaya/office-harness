@@ -10,6 +10,7 @@ use wire::{CLOSE_TRY_AGAIN_LATER, CLOSE_UNAUTHORIZED, ErrorCode, Request, Respon
 
 use super::agent_requests::AgentGateway;
 use super::handshake::{HandshakeFailure, authenticate};
+use super::hierarchy_requests::HierarchyGateway;
 use super::restart_signal::RESTART_REQUEST;
 use super::server_state::ServerState;
 use super::terminal_requests::{
@@ -210,6 +211,16 @@ async fn answer_request(
         }
         Some(request) if AgentGateway::accepts(&request.kind) => {
             spawn_agent_request(state.agents.clone(), request, responses.clone());
+            return Ok(());
+        }
+        Some(request) if HierarchyGateway::accepts(&request.kind) => {
+            let hierarchy = state.hierarchy.clone();
+            let responses = responses.clone();
+            tokio::spawn(async move {
+                let answer = hierarchy.handle(request).await.encode();
+                // The connection may be gone by now; the request still ran.
+                let _ = responses.send(answer).await;
+            });
             return Ok(());
         }
         Some(request) => TerminalAnswer {

@@ -34,7 +34,7 @@ impl CreateTeamHandler {
     /// # Errors
     /// `Invalid` for a bad name; `Conflict` when the name is taken; `Invalid`
     /// when the placement breaks a tree rule, naming the reason.
-    pub fn handle(&self, request: CreateTeamRequest) -> Result<Team, HierarchyApplicationError> {
+    pub fn handle(&self, request: &CreateTeamRequest) -> Result<Team, HierarchyApplicationError> {
         let name = TeamName::parse(&request.name)?;
         if self.store.team_name_taken(name.key())? {
             return Err(HierarchyApplicationError::Conflict(format!(

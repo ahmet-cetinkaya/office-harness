@@ -63,9 +63,7 @@ fn member_team(
     snapshot: &crate::common::interfaces::TreeSnapshot,
     request: PlaceAgentRequest,
 ) -> Result<Option<TeamId>, HierarchyError> {
-    let parent = request
-        .parent_agent_id
-        .ok_or(HierarchyError::LeadMissing)?;
+    let parent = request.parent_agent_id.ok_or(HierarchyError::LeadMissing)?;
     snapshot
         .rows
         .iter()

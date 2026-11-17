@@ -2,4 +2,4 @@
 
 mod hierarchy_store;
 
-pub use hierarchy_store::{TeamRecord, TreeSnapshot, HierarchyStore};
+pub use hierarchy_store::{HierarchyStore, TeamRecord, TreeSnapshot};

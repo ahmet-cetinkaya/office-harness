@@ -12,9 +12,9 @@ use audit_infrastructure::persistence::{
 use gethostname::gethostname;
 
 use super::{
-    AccessServices, AgentServices, LoginSetup, ServerLog, StartupError, StorageAlerts,
-    TerminalServices, build_access_services, build_agent_services, build_terminal_services,
-    open_database, run_migrations,
+    AccessServices, AgentServices, HierarchyServices, LoginSetup, ServerLog, StartupError,
+    StorageAlerts, TerminalServices, build_access_services, build_agent_services,
+    build_hierarchy_services, build_terminal_services, open_database, run_migrations,
 };
 use crate::bridges::SystemClock;
 use crate::config::Config;
@@ -33,6 +33,7 @@ pub struct Services {
     pub access: AccessServices,
     pub terminal: TerminalServices,
     pub agent: AgentServices,
+    pub hierarchy: HierarchyServices,
 }
 
 /// Startup steps 3 to 6 with the user's real login shell.
@@ -89,6 +90,7 @@ pub fn start_with(
         attribution,
         log,
     );
+    let hierarchy = build_hierarchy_services(&connection, &agent, &storage_alerts, log)?;
     Ok(Services {
         machine,
         agents,
@@ -99,6 +101,7 @@ pub fn start_with(
         access: build_access_services(config)?,
         terminal,
         agent,
+        hierarchy,
     })
 }
 
