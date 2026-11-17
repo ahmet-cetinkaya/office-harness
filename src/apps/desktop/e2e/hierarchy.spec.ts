@@ -552,3 +552,486 @@ test("a status event updates the tree name without a reload", async ({
   ).toBeVisible();
   await expectNoSeriousViolations(page);
 });
+
+/** The seed for the create flows: an empty office with one project. */
+const EMPTY_OFFICE_SEED: OfficeSeed = {
+  projects: [{ id: "project-site", name: "Site", folder: "/work/site" }],
+  hierarchy: { ceo: null, teams: [], unassigned: [] },
+};
+
+/** The kinds the webview asked the server for, in order. */
+async function sentRequestKinds(page: Page): Promise<string[]> {
+  const calls = await page.evaluate(() => window.__mockCore.calls);
+  return calls
+    .filter((call) => call.command === "send_request")
+    .map((call) => String(call.args.kind));
+}
+
+async function pressOn(page: Page, name: string): Promise<void> {
+  await page.getByRole("button", { name, exact: true }).focus();
+  await page.keyboard.press("Enter");
+}
+
+test("US1 builds a company from an empty office with the keyboard alone", async ({
+  page,
+}) => {
+  await openOffice(page, EMPTY_OFFICE_SEED);
+
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+
+  // 1. The CEO, from the empty office's own create actions.
+  await pressOn(page, "Create CEO");
+  await expect(page.getByRole("dialog", { name: "New CEO" })).toBeVisible();
+  await expect(page.getByLabel("Name", { exact: true })).toBeFocused();
+  await page.keyboard.type("Ada");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("claude");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("button", { name: "Create agent" }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  const ceoRow = tree.getByRole("treeitem", { name: "Ada, CEO, stopped" });
+  await expect(ceoRow).toBeVisible();
+
+  // 2. Two teams with a lead each, one request per team (FR-002). The CEO
+  // row is the active one, so the toolbar offers the team lead.
+  await ceoRow.click();
+  for (const teamName of ["Backend", "Web"]) {
+    await pressOn(page, "Create team lead");
+    await expect(page.getByRole("dialog", { name: "New team" })).toBeVisible();
+    await expect(page.getByLabel("Team name")).toBeFocused();
+    await page.keyboard.type(teamName);
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    await page.keyboard.type(teamName === "Backend" ? "Bo" : "El");
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("claude");
+    await page.keyboard.press("Tab");
+    await expect(
+      page.getByRole("button", { name: "Create team", exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+  await expect(
+    tree.getByRole("treeitem", { name: "Bo, team lead, stopped" }),
+  ).toBeVisible();
+  await expect(
+    tree.getByRole("treeitem", { name: "El, team lead, stopped" }),
+  ).toBeVisible();
+
+  // 3. Two members under each lead. Selecting a lead row moves the place,
+  // so the member dialog names the lead it sits under.
+  const members = [
+    {
+      name: "Cy",
+      leadRow: "Bo, team lead, stopped",
+      leadId: null as string | null,
+    },
+    {
+      name: "Dee",
+      leadRow: "Bo, team lead, stopped",
+      leadId: null as string | null,
+    },
+    {
+      name: "Fay",
+      leadRow: "El, team lead, stopped",
+      leadId: null as string | null,
+    },
+    {
+      name: "Gus",
+      leadRow: "El, team lead, stopped",
+      leadId: null as string | null,
+    },
+  ];
+  for (const member of members) {
+    await tree.getByRole("treeitem", { name: member.leadRow }).focus();
+    await page.keyboard.press("Enter");
+    await pressOn(page, "Create member");
+    await expect(
+      page.getByRole("dialog", { name: "New member" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Name", { exact: true })).toBeFocused();
+    await page.keyboard.type(member.name);
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("claude");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+
+  // The company stands: the CEO, two teams with a lead each, two members
+  // per team, under their correct parents.
+  await expect(
+    tree.getByRole("treeitem", { name: "Team Backend, 2 members" }),
+  ).toBeVisible();
+  await expect(
+    tree.getByRole("treeitem", { name: "Cy, member, stopped" }),
+  ).toBeVisible();
+  await expect(
+    tree.getByRole("treeitem", { name: "Dee, member, stopped" }),
+  ).toBeVisible();
+  await expect(
+    tree.getByRole("treeitem", { name: "Team Web, 2 members" }),
+  ).toBeVisible();
+  await expect(
+    tree.getByRole("treeitem", { name: "Fay, member, stopped" }),
+  ).toBeVisible();
+  await expect(
+    tree.getByRole("treeitem", { name: "Gus, member, stopped" }),
+  ).toBeVisible();
+  await expect(ceoRow).toBeVisible();
+
+  // The member requests carried the lead as the parent (FR-001): the two
+  // Backend members name one lead and the two Web members another.
+  const calls = await page.evaluate(() => window.__mockCore.calls);
+  const memberRoles = calls
+    .filter(
+      (call) =>
+        call.command === "send_request" &&
+        call.args.kind === "agent.create" &&
+        (call.args.fields as { role?: { kind?: string } }).role?.kind ===
+          "member",
+    )
+    .map(
+      (call) =>
+        (call.args.fields as { role: { parent_agent_id: string } }).role
+          .parent_agent_id,
+    );
+  // Cy and Dee name one lead, Fay and Gus another (SC-002: correct parents).
+  expect(memberRoles).toHaveLength(4);
+  expect(memberRoles[0]).toBe(memberRoles[1]);
+  expect(memberRoles[2]).toBe(memberRoles[3]);
+  expect(memberRoles[0]).not.toBe(memberRoles[2]);
+  expect(await sentRequestKinds(page)).toContain("team.create");
+  await expectNoSeriousViolations(page);
+});
+
+test("the delete confirmation states the counted descendants and cancel deletes 0", async ({
+  page,
+}) => {
+  await openCompany(page);
+
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+  const boRow = tree.getByRole("treeitem", { name: "Bo, team lead, stopped" });
+  await boRow.click();
+
+  // The lead has 2 members, so the question counts 3 agents in all.
+  await pressOn(page, "Delete Bo");
+  const dialog = page.getByRole("dialog", { name: "Delete Bo?" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("2 agents below Bo");
+  await expect(dialog).toContainText("3 agents in all");
+
+  // Cancel keeps every agent.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  for (const name of [
+    "Bo, team lead, stopped",
+    "Cy, member, waiting for input",
+    "Dee, member, exited",
+  ]) {
+    await expect(tree.getByRole("treeitem", { name })).toBeVisible();
+  }
+  const deletes = await page.evaluate(() => window.__mockCore.calls);
+  expect(
+    deletes.filter(
+      (call) =>
+        call.command === "send_request" && call.args.kind === "agent.delete",
+    ),
+  ).toEqual([]);
+});
+
+test("a confirmed lead delete removes the lead and its 2 members", async ({
+  page,
+}) => {
+  await openCompany(page);
+
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+  const boRow = tree.getByRole("treeitem", { name: "Bo, team lead, stopped" });
+  await boRow.click();
+
+  await pressOn(page, "Delete Bo");
+  await page
+    .getByRole("dialog", { name: "Delete Bo?" })
+    .getByRole("button", { name: "Delete agent" })
+    .click();
+
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(boRow).toHaveCount(0);
+  await expect(
+    tree.getByRole("treeitem", { name: "Cy, member, waiting for input" }),
+  ).toHaveCount(0);
+  await expect(
+    tree.getByRole("treeitem", { name: "Dee, member, exited" }),
+  ).toHaveCount(0);
+  // The team went with its lead: the tree lists a team only while its lead
+  // row exists (SC-005 counts the agents, not the teams).
+  await expect(
+    tree.getByRole("treeitem", { name: /Team Backend/ }),
+  ).toHaveCount(0);
+  await expect(
+    tree.getByRole("treeitem", { name: "Ada, CEO, working" }),
+  ).toBeVisible();
+  await expect(
+    tree.getByRole("treeitem", { name: "El, team lead, working" }),
+  ).toBeVisible();
+
+  const deletes = await page.evaluate(() => window.__mockCore.calls);
+  const sent = deletes.find(
+    (call) =>
+      call.command === "send_request" && call.args.kind === "agent.delete",
+  );
+  expect(sent?.args.fields).toMatchObject({
+    agent_id: "agent-lead-bo",
+    include_descendants: true,
+    descendant_count: 2,
+  });
+});
+
+test("the stop confirmation offers to stop the counted descendants too", async ({
+  page,
+}) => {
+  await openCompany(page);
+
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+  await tree.getByRole("treeitem", { name: "Bo, team lead, stopped" }).click();
+
+  await pressOn(page, "Stop Bo");
+  const dialog = page.getByRole("dialog", { name: "Stop Bo?" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("2 agents below Bo keep running");
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const stops = await page.evaluate(() => window.__mockCore.calls);
+  expect(
+    stops.filter(
+      (call) =>
+        call.command === "send_request" && call.args.kind === "agent.stop",
+    ),
+  ).toEqual([]);
+});
+
+test("a confirmed stop with descendants sends include_descendants", async ({
+  page,
+}) => {
+  await openCompany(page);
+
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+  await tree.getByRole("treeitem", { name: "Bo, team lead, stopped" }).click();
+
+  await pressOn(page, "Stop Bo");
+  await page
+    .getByRole("dialog", { name: "Stop Bo?" })
+    .getByRole("button", { name: "Stop agent" })
+    .click();
+
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const stops = await page.evaluate(() => window.__mockCore.calls);
+  const sent = stops.find(
+    (call) =>
+      call.command === "send_request" && call.args.kind === "agent.stop",
+  );
+  expect(sent?.args.fields).toMatchObject({
+    agent_id: "agent-lead-bo",
+    include_descendants: true,
+  });
+});
+
+test("the create actions list only the roles the place allows (FR-003)", async ({
+  page,
+}) => {
+  await openCompany(page);
+
+  // With a CEO, no second CEO is offered; the tree offers no toolbar role
+  // while the CEO row is not the active one.
+  await expect(page.getByRole("button", { name: "Create CEO" })).toHaveCount(0);
+
+  // The office without a CEO offers the CEO again.
+  await openOffice(page, {
+    agents: [],
+    hierarchy: { ceo: null, teams: [], unassigned: [] },
+  });
+  await pressOn(page, "Create CEO");
+  await expect(page.getByRole("dialog", { name: "New CEO" })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // An office without a CEO but with a team offers a member once the lead's
+  // row is the active one.
+  await openOffice(page, {
+    agents: [agent({ id: "agent-lead-bo", name: "Bo", status: "stopped" })],
+    hierarchy: {
+      ceo: null,
+      teams: [
+        {
+          id: "team-backend",
+          name: "Backend",
+          project_id: null,
+          lead: { id: "agent-lead-bo", role: "lead" },
+          members: [],
+        },
+      ],
+      unassigned: [],
+    },
+  });
+  await page
+    .getByRole("tree", { name: "Hierarchy" })
+    .getByRole("treeitem", { name: "Bo, team lead, stopped" })
+    .click();
+  await pressOn(page, "Create member");
+  await expect(page.getByRole("dialog", { name: "New member" })).toBeVisible();
+});
+
+test("a refused create shows the server's refusal text (FR-003)", async ({
+  page,
+}) => {
+  await openOffice(page, {
+    agents: [],
+    projects: [],
+    hierarchy: { ceo: null, teams: [], unassigned: [] },
+    refusals: {
+      "agent.create": {
+        code: "refused",
+        message: "the office already has a CEO: Ada",
+      },
+    },
+  });
+
+  // The office offers the CEO; the server refuses because another client
+  // took the top while the dialog was open.
+  await pressOn(page, "Create CEO");
+  await expect(page.getByRole("dialog", { name: "New CEO" })).toBeVisible();
+  await page.keyboard.type("Bo");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("claude");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByRole("alert")).toContainText(
+    "the office already has a CEO: Ada",
+  );
+  // The dialog stays open, so the user can correct or cancel.
+  await expect(page.getByRole("dialog", { name: "New CEO" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("a stale counted delete shows the server's recount refusal", async ({
+  page,
+}) => {
+  await openOffice(page, {
+    agents: COMPANY_AGENTS.slice(0, 4),
+    hierarchy: {
+      ceo: { id: "agent-ceo", role: "ceo" },
+      teams: [
+        {
+          id: "team-backend",
+          name: "Backend",
+          project_id: null,
+          lead: { id: "agent-lead-bo", role: "lead" },
+          members: [
+            { id: "agent-member-cy", role: "member" },
+            { id: "agent-member-dee", role: "member" },
+          ],
+        },
+      ],
+      unassigned: [],
+    },
+    refusals: {
+      "agent.delete": {
+        code: "conflict",
+        message: "the confirmation counted 2 descendants, but there are 3",
+      },
+    },
+  });
+
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+  await tree.getByRole("treeitem", { name: "Bo, team lead, stopped" }).click();
+  await pressOn(page, "Delete Bo");
+  await page
+    .getByRole("dialog", { name: "Delete Bo?" })
+    .getByRole("button", { name: "Delete agent" })
+    .click();
+
+  await expect(page.getByRole("alert")).toContainText(
+    "the confirmation counted 2 descendants, but there are 3",
+  );
+  // Nothing was deleted; the tree stands.
+  await expect(
+    tree.getByRole("treeitem", { name: "Bo, team lead, stopped" }),
+  ).toBeVisible();
+});
+
+test("the create flows run with the keyboard alone and axe stays clean", async ({
+  page,
+}) => {
+  await openOffice(page, EMPTY_OFFICE_SEED);
+
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+
+  // CEO by keyboard.
+  await pressOn(page, "Create CEO");
+  await expect(page.getByLabel("Name", { exact: true })).toBeFocused();
+  await page.keyboard.type("Ada");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("claude");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    tree.getByRole("treeitem", { name: "Ada, CEO, stopped" }),
+  ).toBeVisible();
+
+  // Team with its lead by keyboard: the CEO row active, Shift+Tab back to
+  // the toolbar above the tree, and the team lead's dialog is the team
+  // dialog (FR-002).
+  await tree.getByRole("treeitem", { name: "Ada, CEO, stopped" }).focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Shift+Tab");
+  await expect(
+    page.getByRole("button", { name: "Create team lead" }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "New team" })).toBeVisible();
+  await expect(page.getByLabel("Team name")).toBeFocused();
+  await page.keyboard.type("Backend");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("Bo");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("claude");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // Member under the lead by keyboard: the lead row active, Shift+Tab back
+  // to the toolbar above the tree, Enter on the create action.
+  await tree.getByRole("treeitem", { name: "Bo, team lead, stopped" }).focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Shift+Tab");
+  await expect(
+    page.getByRole("button", { name: "Create member" }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("Name", { exact: true })).toBeFocused();
+  await page.keyboard.type("Cy");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("claude");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    tree.getByRole("treeitem", { name: "Cy, member, stopped" }),
+  ).toBeVisible();
+
+  await expectNoSeriousViolations(page);
+});

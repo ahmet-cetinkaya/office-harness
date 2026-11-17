@@ -1,15 +1,110 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { CoreClient } from "../../../core/api";
+import type { NewAgent } from "../../agent";
 import { readHierarchyTree, type HierarchyTree } from "../models/hierarchy";
+import type { RoleKind } from "../models/placement";
 
 export const TREE_REQUEST = "hierarchy.tree";
 
-/** The typed face of the `hierarchy.*` requests (contract 0002). */
+/** The `role` object of `agent.create` (contract 0002, FR-003). */
+export interface RolePlacement {
+  kind: RoleKind;
+  parent_agent_id?: string;
+  team_id?: string;
+}
+
+/** The `lead` object of `team.create`: an `agent.create` body plus nothing. */
+export interface NewTeamLead {
+  name: string;
+  command: string;
+  working_folder?: string;
+}
+
+/** The fields of `team.create` (contract 0002, FR-002). */
+export interface NewTeam {
+  name: string;
+  project_id?: string;
+  lead: NewTeamLead;
+}
+
+function readTeamAnswer(answer: unknown): string {
+  const id = (answer as { id?: unknown })?.id;
+  return typeof id === "string" ? id : "";
+}
+
+/**
+ * The typed face of the `hierarchy.*` and `team.*` requests, and of the
+ * `agent.create` places (contract 0002).
+ */
 export function createHierarchyService(client: CoreClient) {
+  const send = (kind: string, fields?: Record<string, unknown>) =>
+    client.sendRequest(kind, fields);
+
   return {
     fetchTree: async (): Promise<HierarchyTree> =>
-      readHierarchyTree(await client.sendRequest(TREE_REQUEST)),
+      readHierarchyTree(await send(TREE_REQUEST)),
+
+    /** Creates the CEO: an agent with `role.kind` "ceo" (FR-001, FR-003). */
+    createCeo: async (input: NewAgent) => {
+      const role: RolePlacement = { kind: "ceo" };
+      return await send("agent.create", { ...input, role });
+    },
+
+    /** Creates a team lead under the CEO when one exists (FR-001). */
+    createLead: async (input: NewAgent, teamId: string) => {
+      const role: RolePlacement = { kind: "lead", team_id: teamId };
+      return await send("agent.create", { ...input, role });
+    },
+
+    /** Creates a member under a team lead; its team is the lead's (A6). */
+    createMember: async (input: NewAgent, leadAgentId: string) => {
+      const role: RolePlacement = {
+        kind: "member",
+        parent_agent_id: leadAgentId,
+      };
+      return await send("agent.create", { ...input, role });
+    },
+
+    /** Creates a team with its lead, in one request (FR-002). */
+    createTeam: async (input: NewTeam): Promise<string> =>
+      readTeamAnswer(await send("team.create", { ...input })),
+
+    /** Deletes the team record; its agents become no-role agents. */
+    deleteTeam: async (teamId: string) => {
+      await send("team.delete", { team_id: teamId, confirm: true });
+    },
+
+    /** The agents that sit below this one (FR-006, FR-007). */
+    countDescendants: async (agentId: string): Promise<number> => {
+      const answer = await send("hierarchy.descendants", {
+        agent_id: agentId,
+      });
+      const count = (answer as { count?: unknown })?.count;
+      return typeof count === "number" ? count : 0;
+    },
+
+    /** Stops an agent and, when asked, its whole subtree (FR-007). */
+    stopSubtree: async (agentId: string, includeDescendants: boolean) => {
+      await send("agent.stop", {
+        agent_id: agentId,
+        include_descendants: includeDescendants,
+      });
+    },
+
+    /** Deletes an agent and, when asked, its whole subtree; the server
+     * recounts `descendant_count` (FR-006). */
+    deleteSubtree: async (
+      agentId: string,
+      includeDescendants: boolean,
+      descendantCount: number,
+    ) => {
+      await send("agent.delete", {
+        agent_id: agentId,
+        include_descendants: includeDescendants,
+        descendant_count: descendantCount,
+      });
+    },
   };
 }
 

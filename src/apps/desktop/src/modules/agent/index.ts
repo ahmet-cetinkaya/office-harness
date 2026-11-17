@@ -9,5 +9,5 @@ export { default as AgentDetails } from "./components/agent-details.svelte";
 export { default as ConfirmDialog } from "./components/confirm-dialog.svelte";
 export { default as ProjectFormDialog } from "./components/project-form-dialog.svelte";
 export { default as ProjectList } from "./components/project-list.svelte";
-export type { Agent, Project } from "./models/agent";
+export type { Agent, NewAgent, Project } from "./models/agent";
 export { shownStatusText } from "./models/agent";

@@ -7,18 +7,30 @@ import { createHierarchyController } from "./hierarchy-controller";
 interface FakeClient extends CoreClient {
   requests: string[];
   sendEvent(event: ServerEvent): void;
+  /** The fields of the last request of one type, when it was sent. */
+  sentFields(kind: string): Record<string, unknown> | undefined;
   /** Parks the next tree read until releaseTreeRead answers it. */
   holdNextTreeRead(): void;
   /** Answers a parked tree read. */
   releaseTreeRead(answer: unknown): void;
 }
 
-/** A core client that records the requests and replays events by hand. */
-function fakeClient(treeAnswer: unknown, failTree = false): FakeClient {
+/** A core client that records the requests and replays events by hand. The
+ * tree answer is a value, or a function of the request type for the tests
+ * that stage several answers at once. */
+function fakeClient(
+  treeAnswer: unknown | ((kind: string) => unknown),
+  failTree = false,
+): FakeClient {
   const listeners: Array<(event: ServerEvent) => void> = [];
   const requests: string[] = [];
+  const sent = new Map<string, Record<string, unknown>>();
   let parkNextRead = false;
   let parkedRead: ((answer: unknown) => void) | null = null;
+  const answerOf = (kind: string): unknown =>
+    typeof treeAnswer === "function"
+      ? (treeAnswer as (kind: string) => unknown)(kind)
+      : treeAnswer;
   return {
     requests,
     watchConnection: async () => {},
@@ -26,8 +38,9 @@ function fakeClient(treeAnswer: unknown, failTree = false): FakeClient {
       listeners.push(onEvent);
     },
     watchTerminalFrames: async () => {},
-    sendRequest: async (kind) => {
+    sendRequest: async (kind, fields) => {
       requests.push(kind);
+      sent.set(kind, fields ?? {});
       if (kind === "hierarchy.tree") {
         if (failTree) {
           throw { code: "internal", message: "the tree read broke" };
@@ -37,12 +50,13 @@ function fakeClient(treeAnswer: unknown, failTree = false): FakeClient {
           return await new Promise((resolve) => (parkedRead = resolve));
         }
       }
-      return treeAnswer;
+      return answerOf(kind);
     },
     startServer: async () => {},
     registerLoginStart: async () => {},
     loginStartStatus: async () => false,
     retryConnection: async () => {},
+    sentFields: (kind) => sent.get(kind),
     sendEvent: (event) => listeners.forEach((listener) => listener(event)),
     holdNextTreeRead: () => {
       parkNextRead = true;
@@ -144,6 +158,164 @@ describe("hierarchy controller", () => {
     client.sendEvent({ type: "hierarchy.changed", cause: "team.created" });
     await settle();
     expect(seen).toEqual(["loading", "ready"]);
+  });
+
+  test("creating the CEO sends the role object and reports no failure", async () => {
+    const client = fakeClient(TREE);
+    const controller = createHierarchyController(client);
+    await controller.load();
+
+    const failure = await controller.createCeo({
+      name: "Ada",
+      command: "claude",
+    });
+
+    expect(failure).toBeNull();
+    const sent = client.sentFields("agent.create");
+    expect(sent?.role).toEqual({ kind: "ceo" });
+    expect(sent?.name).toBe("Ada");
+  });
+
+  test("a refused create names the server's reason (FR-003)", async () => {
+    const client = fakeClient((kind: string) => {
+      if (kind === "agent.create") {
+        throw { code: "refused", message: "the office already has a CEO: Bo" };
+      }
+      return TREE;
+    });
+    const controller = createHierarchyController(client);
+
+    const failure = await controller.createCeo({ name: "Ada", command: "n" });
+
+    expect(failure).toBe("the office already has a CEO: Bo");
+  });
+
+  test("creating a member carries the lead as its parent (FR-001)", async () => {
+    const client = fakeClient(TREE);
+    const controller = createHierarchyController(client);
+
+    await controller.createMember({ name: "Cy", command: "n" }, "lead-9");
+
+    expect(client.sentFields("agent.create")?.role).toEqual({
+      kind: "member",
+      parent_agent_id: "lead-9",
+    });
+  });
+
+  test("creating a lead carries the team as its place (FR-001)", async () => {
+    const client = fakeClient(TREE);
+    const controller = createHierarchyController(client);
+
+    await controller.createLead({ name: "Bo", command: "n" }, "team-7");
+
+    expect(client.sentFields("agent.create")?.role).toEqual({
+      kind: "lead",
+      team_id: "team-7",
+    });
+  });
+
+  test("creating a team sends the lead object and answers the team id", async () => {
+    const client = fakeClient((kind: string) =>
+      kind === "team.create" ? { id: "team-new" } : TREE,
+    );
+    const controller = createHierarchyController(client);
+
+    const failure = await controller.createTeam({
+      name: "Backend",
+      lead: { name: "Bo", command: "claude" },
+    });
+
+    expect(failure).toBeNull();
+    const sent = client.sentFields("team.create");
+    expect(sent?.name).toBe("Backend");
+    expect(sent?.lead).toEqual({ name: "Bo", command: "claude" });
+  });
+
+  test("deleting a team sends the confirmed flag", async () => {
+    const client = fakeClient(TREE);
+    const controller = createHierarchyController(client);
+
+    await controller.deleteTeam("team-7");
+
+    expect(client.sentFields("team.delete")).toEqual({
+      team_id: "team-7",
+      confirm: true,
+    });
+  });
+
+  test("the descendant count reads the server's count", async () => {
+    const client = fakeClient((kind: string) =>
+      kind === "hierarchy.descendants" ? { count: 2 } : TREE,
+    );
+    const controller = createHierarchyController(client);
+
+    expect(await controller.countDescendants("lead-1")).toBe(2);
+  });
+
+  test("a subtree delete sends the counted confirmation (FR-006)", async () => {
+    const client = fakeClient(TREE);
+    const controller = createHierarchyController(client);
+
+    await controller.deleteSubtree("lead-1", true, 2);
+
+    expect(client.sentFields("agent.delete")).toEqual({
+      agent_id: "lead-1",
+      include_descendants: true,
+      descendant_count: 2,
+    });
+  });
+
+  test("a plain stop sends no descendant fields", async () => {
+    const client = fakeClient(TREE);
+    const controller = createHierarchyController(client);
+
+    await controller.stopSubtree("lead-1", false);
+
+    expect(client.sentFields("agent.stop")).toEqual({
+      agent_id: "lead-1",
+      include_descendants: false,
+    });
+  });
+
+  test("a stale counted delete shows the server's conflict", async () => {
+    const client = fakeClient((kind: string) => {
+      if (kind === "agent.delete") {
+        throw { code: "conflict", message: "the agent has 3 members now" };
+      }
+      return TREE;
+    });
+    const controller = createHierarchyController(client);
+
+    const failure = await controller.deleteSubtree("lead-1", true, 2);
+
+    expect(failure).toBe("the agent has 3 members now");
+  });
+
+  test("placeOf reads the tree the snapshot holds", async () => {
+    const TREE_WITH_TEAM = {
+      ceo: { id: "ceo-1", role: "ceo" },
+      teams: [
+        {
+          id: "team-a",
+          name: "Backend",
+          project_id: null,
+          lead: { id: "lead-1", role: "lead" },
+          members: [],
+        },
+      ],
+      unassigned: [],
+    };
+    const client = fakeClient(TREE_WITH_TEAM);
+    const controller = createHierarchyController(client);
+    await controller.load();
+
+    expect(controller.placeOf("ceo-1")).toEqual({ kind: "under-ceo" });
+    expect(controller.placeOf("lead-1")).toEqual({
+      kind: "under-lead",
+      teamId: "team-a",
+    });
+    expect(controller.placeOf("member-x")).toEqual({ kind: "office" });
+    expect(controller.placeOf(null)).toEqual({ kind: "office" });
   });
 
   test("a watch on a core that cannot be reached fails the snapshot", async () => {
