@@ -209,6 +209,5 @@ impl HierarchyStore for HierarchyRepository {
 fn unix_now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|since| since.as_secs().try_into().unwrap_or_default())
-        .unwrap_or_default()
+        .map_or(0, |since| since.as_secs().try_into().unwrap_or_default())
 }
