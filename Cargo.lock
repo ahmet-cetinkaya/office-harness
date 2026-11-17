@@ -90,9 +90,6 @@ version = "0.1.0"
 dependencies = [
  "agent-application",
  "agent-domain",
- "hierarchy-application",
- "hierarchy-domain",
- "hierarchy-presentation",
  "kernel",
  "serde_json",
  "wire",
@@ -1604,12 +1601,10 @@ dependencies = [
 name = "hierarchy-infrastructure"
 version = "0.1.0"
 dependencies = [
- "agent-infrastructure",
  "hierarchy-application",
  "hierarchy-domain",
  "kernel",
  "rusqlite",
- "serde_json",
  "tempfile",
  "thiserror 2.0.21",
 ]
@@ -2681,6 +2676,7 @@ dependencies = [
  "futures-util",
  "gethostname",
  "hierarchy-application",
+ "hierarchy-domain",
  "hierarchy-infrastructure",
  "hierarchy-presentation",
  "kernel",

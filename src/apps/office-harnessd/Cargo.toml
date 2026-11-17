@@ -43,6 +43,7 @@ tokio-tungstenite.workspace = true
 wire = { path = "../../shared/wire" }
 
 [dev-dependencies]
+hierarchy-domain = { path = "../../modules/hierarchy/domain" }
 tempfile.workspace = true
 tower.workspace = true
 

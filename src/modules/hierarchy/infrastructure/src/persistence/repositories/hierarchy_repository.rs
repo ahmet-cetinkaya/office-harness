@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use agent_infrastructure::persistence::SharedConnection;
+use std::sync::{Arc, Mutex, PoisonError};
+
 use hierarchy_application::common::errors::HierarchyApplicationError;
 use hierarchy_application::common::interfaces::{HierarchyStore, TreeSnapshot};
 use hierarchy_domain::Team;
@@ -12,21 +13,19 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use crate::services::agent_places::AgentPlaces;
 
 /// SQLite storage of the hierarchy: the team tables this module owns, and
-/// the place columns of the agent module, written through `AgentPlaces`. One
+/// the place columns of the agent module, written through `AgentPlaces`. The
+/// connection is the handle of the one database the host app opened. One
 /// call holds the connection lock for its whole closure, so a team write and
 /// its member writes cannot interleave with another caller.
 pub struct HierarchyRepository {
-    connection: SharedConnection,
+    connection: Arc<Mutex<Connection>>,
     places: AgentPlaces,
 }
 
 impl HierarchyRepository {
     #[must_use]
-    pub fn new(connection: &SharedConnection, places: AgentPlaces) -> Self {
-        Self {
-            connection: connection.clone(),
-            places,
-        }
+    pub fn new(connection: Arc<Mutex<Connection>>, places: AgentPlaces) -> Self {
+        Self { connection, places }
     }
 
     /// Runs `work` while holding the connection lock.
@@ -36,10 +35,10 @@ impl HierarchyRepository {
     ) -> Result<T, HierarchyApplicationError> {
         // A panic in another repository call leaves SQLite itself consistent,
         // so a poisoned lock is safe to reuse.
-        let handle = self.connection.handle();
-        let mut connection = handle
+        let mut connection = self
+            .connection
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .unwrap_or_else(PoisonError::into_inner);
         work(&mut connection).map_err(|_| HierarchyApplicationError::Storage)
     }
 

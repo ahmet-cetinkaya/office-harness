@@ -8,5 +8,7 @@ pub mod contracts;
 pub mod handlers;
 pub mod mappings;
 
-pub use handlers::{AgentHandlers, AgentUseCases, Handled, REQUEST_PREFIXES};
+pub use handlers::{
+    AgentHandlers, AgentUseCases, Handled, REQUEST_PREFIXES, SubtreeRequests, SubtreeResult,
+};
 pub use mappings::agent_status_event;
