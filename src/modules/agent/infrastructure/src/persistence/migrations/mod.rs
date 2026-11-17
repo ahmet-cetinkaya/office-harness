@@ -4,10 +4,10 @@ mod name_key_checks;
 
 use rusqlite::Connection;
 
-/// A data check that runs only while the ledger is below the version it
-/// guards, before that version's script applies. The check reads the
-/// database and returns the user-facing problem text, or `Ok(())` when the
-/// data is ready for the script.
+/// A data check that runs before any pending script, while the ledger is
+/// below the version it guards. The check reads the database and returns the
+/// user-facing problem text, or `Ok(())` when the data is ready for the
+/// scripts of its version and the ones after it.
 pub type PreMigrationCheck = (i64, fn(&Connection) -> Result<(), String>);
 
 pub use name_key_checks::check_name_key_ascii_groups;
