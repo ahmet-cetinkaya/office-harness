@@ -371,6 +371,131 @@ test("deleting the focused row hands focus back to the tree's first row", async 
   await expect(teamRow).toBeFocused();
 });
 
+/** The tree the mock holds once another client moves Cy from Backend to Web. */
+const TREE_WITH_CY_IN_WEB: HierarchyTree = {
+  ceo: { id: "agent-ceo", role: "ceo" },
+  teams: [
+    {
+      id: "team-backend",
+      name: "Backend",
+      project_id: "project-site",
+      lead: { id: "agent-lead-bo", role: "lead" },
+      members: [{ id: "agent-member-dee", role: "member" }],
+    },
+    {
+      id: "team-web",
+      name: "Web",
+      project_id: null,
+      lead: { id: "agent-lead-el", role: "lead" },
+      members: [
+        { id: "agent-member-fay", role: "member" },
+        { id: "agent-member-gus", role: "member" },
+        { id: "agent-member-cy", role: "member" },
+      ],
+    },
+  ],
+  unassigned: [],
+};
+
+/** The tree with Cy in Web once another client deletes Cy. */
+const TREE_WITHOUT_CY: HierarchyTree = {
+  ceo: { id: "agent-ceo", role: "ceo" },
+  teams: [
+    {
+      id: "team-backend",
+      name: "Backend",
+      project_id: "project-site",
+      lead: { id: "agent-lead-bo", role: "lead" },
+      members: [{ id: "agent-member-dee", role: "member" }],
+    },
+    {
+      id: "team-web",
+      name: "Web",
+      project_id: null,
+      lead: { id: "agent-lead-el", role: "lead" },
+      members: [
+        { id: "agent-member-fay", role: "member" },
+        { id: "agent-member-gus", role: "member" },
+      ],
+    },
+  ],
+  unassigned: [],
+};
+
+test("a moved focused row keeps focus, and its later delete leaves outside focus alone", async ({
+  page,
+}) => {
+  await openCompany(page);
+
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+  const cyRow = tree.getByRole("treeitem", {
+    name: "Cy, member, waiting for input",
+  });
+  await cyRow.focus();
+  await expect(cyRow).toBeFocused();
+
+  // Another client moves Cy to another team; the row is rebuilt under the
+  // new parent, and keyboard focus follows the rebuilt element.
+  await page.evaluate((movedTree) => {
+    window.__mockCore.setHierarchy(movedTree);
+    window.__mockCore.pushEvent({
+      type: "hierarchy.changed",
+      cause: "agent.moved",
+    });
+  }, TREE_WITH_CY_IN_WEB);
+
+  await expect(cyRow).toBeVisible();
+  await expect(cyRow).toBeFocused();
+
+  // The user then moves on to the agents list, say to open its terminal.
+  const agentsButton = page.getByRole("button", { name: "Ada, working" });
+  await agentsButton.focus();
+  await expect(agentsButton).toBeFocused();
+
+  // Another client deletes Cy while the agents list holds focus.
+  await page.evaluate((treeAfterDelete) => {
+    window.__mockCore.setHierarchy(treeAfterDelete);
+    window.__mockCore.pushEvent({
+      type: "hierarchy.changed",
+      cause: "subtree.deleted",
+    });
+  }, TREE_WITHOUT_CY);
+
+  await expect(cyRow).toHaveCount(0);
+  await expect(agentsButton).toBeFocused();
+});
+
+test("tabbing out of the tree keeps a later row delete from stealing focus", async ({
+  page,
+}) => {
+  await openCompany(page);
+
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+  const cyRow = tree.getByRole("treeitem", {
+    name: "Cy, member, waiting for input",
+  });
+  await cyRow.focus();
+  await expect(cyRow).toBeFocused();
+
+  // Tab leaves the tree for the next tab stop, the agents list.
+  await page.keyboard.press("Tab");
+  const agentsButton = page.getByRole("button", { name: "Ada, working" });
+  await expect(agentsButton).toBeFocused();
+
+  // Another client deletes Cy, whose row held focus until the tab-out;
+  // the tree does not pull focus back from the agents list.
+  await page.evaluate((treeAfterDelete) => {
+    window.__mockCore.setHierarchy(treeAfterDelete);
+    window.__mockCore.pushEvent({
+      type: "hierarchy.changed",
+      cause: "subtree.deleted",
+    });
+  }, TREE_WITHOUT_CY);
+
+  await expect(cyRow).toHaveCount(0);
+  await expect(agentsButton).toBeFocused();
+});
+
 test("a hierarchy.changed event re-renders the tree", async ({ page }) => {
   await openOffice(page, {
     agents: [agent()],

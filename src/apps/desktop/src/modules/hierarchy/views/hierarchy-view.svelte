@@ -44,7 +44,8 @@
   // Whether keyboard focus sits inside the tree. A row that is removed while
   // focused drops focus to the page body, and Chromium reports that as a
   // focusout on the row, so the clear waits until the row's fate is settled:
-  // a row that leaves the tree keeps the flag for the refocus effect below.
+  // a rebuilt row takes its focus back, and only a deleted row keeps the
+  // flag for the refocus effect below.
   let treeHasFocus = $state(false);
   let treeContainer = $state<HTMLDivElement | null>(null);
 
@@ -56,9 +57,33 @@
     if (treeContainer?.contains(event.relatedTarget as Node | null)) return;
     void tick().then(() => {
       const row = event.target;
-      if (row instanceof Element && !treeContainer?.contains(row)) return;
+      if (row instanceof Element && !treeContainer?.contains(row)) {
+        refocusRemovedRow(row);
+        return;
+      }
       treeHasFocus = false;
     });
+  }
+
+  /**
+   * The row that fired focusout has left the DOM. If its id was rebuilt
+   * elsewhere in the tree, say an agent moved to another team, its new
+   * element takes the focus back, and its focusin keeps the flag. A move
+   * under a collapsed branch has no element to focus, so focus truly left
+   * the tree. Only a row whose id is gone from the tree keeps the flag, for
+   * the refocus effect below.
+   */
+  function refocusRemovedRow(removedRow: Element): void {
+    const id = removedRow.getAttribute("data-node-id");
+    if (id === null || !rowById.has(id)) return;
+    const replacement = document.querySelector<HTMLElement>(
+      `[data-node-id="${id}"]`,
+    );
+    if (replacement === null) {
+      treeHasFocus = false;
+      return;
+    }
+    replacement.focus();
   }
 
   const roots = $derived.by(() =>
