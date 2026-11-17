@@ -2,12 +2,14 @@
 
 use std::sync::Arc;
 
+use access_application::commands::authenticate_agent_call::AgentAuthenticationHandler;
 use access_application::commands::authenticate_connection::AuthenticationHandler;
 use tokio::sync::{Semaphore, watch};
 
 use super::agent_requests::AgentGateway;
 use super::dispatcher::Dispatcher;
 use super::event_hub::EventHub;
+use super::hierarchy_requests::HierarchyGateway;
 use super::restart_signal::RestartSignal;
 use super::server_options::ServerOptions;
 use super::terminal_requests::TerminalGateway;
@@ -19,9 +21,11 @@ pub struct ServerState {
     pub port: u16,
     pub options: ServerOptions,
     pub authentication: AuthenticationHandler,
+    pub agent_authentication: AgentAuthenticationHandler,
     pub dispatcher: Arc<Dispatcher>,
     pub terminals: Arc<TerminalGateway>,
     pub agents: AgentGateway,
+    pub hierarchy: HierarchyGateway,
     pub events: EventHub,
     /// Raised by `server.restart`.
     pub restart: RestartSignal,

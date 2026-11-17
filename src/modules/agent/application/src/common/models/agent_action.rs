@@ -11,6 +11,10 @@ pub enum AgentAction {
     Delete,
     NewTask,
     Continue,
+    TeamCreate,
+    TeamDelete,
+    Directive,
+    Refused,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

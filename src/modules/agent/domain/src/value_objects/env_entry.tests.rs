@@ -30,3 +30,15 @@ fn refuses_a_value_with_a_nul_character() {
         Err(AgentError::ContainsNul { .. })
     ));
 }
+
+#[test]
+fn a_name_in_the_reserved_prefix_is_refused() {
+    assert_eq!(
+        EnvEntry::parse("OFFICE_HARNESS_AGENT_TOKEN", "x"),
+        Err(AgentError::ReservedEnvName {
+            name: "OFFICE_HARNESS_AGENT_TOKEN".to_owned()
+        })
+    );
+    assert!(EnvEntry::parse("OFFICE_HARNESS", "x").is_ok());
+    assert!(EnvEntry::parse("MY_OFFICE_HARNESS_KEY", "x").is_ok());
+}

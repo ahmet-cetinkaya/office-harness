@@ -30,6 +30,15 @@ impl HandlerError {
             disk_failure: None,
         }
     }
+
+    #[must_use]
+    pub fn with_code(code: ErrorCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            disk_failure: None,
+        }
+    }
 }
 
 impl From<ApplicationError> for HandlerError {

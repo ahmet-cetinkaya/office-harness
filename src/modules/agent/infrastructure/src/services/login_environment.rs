@@ -223,6 +223,7 @@ fn without_server_variables(environment: &Environment) -> Environment {
             !SERVER_OWN_VARIABLES.contains(&name.as_str())
                 && !SHELL_SESSION_VARIABLES.contains(&name.as_str())
                 && !name.starts_with(SERVER_OWN_PREFIX)
+                && !name.starts_with(agent_domain::value_objects::RESERVED_ENV_PREFIX)
         })
         .map(|(name, value)| {
             let value = match app_directory {

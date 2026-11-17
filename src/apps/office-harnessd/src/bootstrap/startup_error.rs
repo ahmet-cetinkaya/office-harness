@@ -27,6 +27,8 @@ pub enum StartupError {
     DataFolder(#[from] io::Error),
     #[error("cannot install the shutdown signal handler: {0}")]
     SignalHandler(io::Error),
+    #[error("cannot find the path of the running server, so agents cannot call it: {0}")]
+    ServerPath(io::Error),
     #[error("database failure: {0}")]
     Database(#[from] rusqlite::Error),
     #[error("{ledger} migration failed at version {version}: {source}")]

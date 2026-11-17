@@ -73,5 +73,9 @@ fn action_kind(action: AgentAction) -> ActionKind {
         AgentAction::Delete => ActionKind::Delete,
         AgentAction::NewTask => ActionKind::NewTask,
         AgentAction::Continue => ActionKind::Continue,
+        AgentAction::TeamCreate => ActionKind::TeamCreate,
+        AgentAction::TeamDelete => ActionKind::TeamDelete,
+        AgentAction::Directive => ActionKind::Directive,
+        AgentAction::Refused => ActionKind::Refused,
     }
 }

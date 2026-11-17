@@ -39,10 +39,23 @@ macro_rules! uuid_identifier {
                     })
             }
         }
+
+        impl $name {
+            /// Reads the id as stored text. `None` for any text that is not
+            /// a UUID.
+            #[must_use]
+            pub fn from_uuid_text(text: &str) -> Option<Self> {
+                Uuid::parse_str(text).ok().map(Self)
+            }
+
+            #[must_use]
+            pub fn as_uuid_text(&self) -> String {
+                self.0.to_string()
+            }
+        }
     };
 }
 
-uuid_identifier!(ProjectId, "project id");
 uuid_identifier!(MachineId, "machine id");
 uuid_identifier!(SessionId, "session id");
 

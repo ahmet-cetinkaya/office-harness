@@ -12,11 +12,11 @@ use audit_infrastructure::persistence::{
 use gethostname::gethostname;
 
 use super::{
-    AccessServices, AgentServices, LoginSetup, ServerLog, StartupError, StorageAlerts,
-    TerminalServices, build_access_services, build_agent_services, build_terminal_services,
-    open_database, run_migrations,
+    AccessServices, AgentServices, HierarchyServices, LoginSetup, ServerLog, StartupError,
+    StorageAlerts, TerminalServices, build_access_services, build_agent_services,
+    build_hierarchy_services, build_terminal_services, open_database, run_migrations,
 };
-use crate::bridges::SystemClock;
+use crate::bridges::{AgentCalls, CallHelper, SystemClock};
 use crate::config::Config;
 use crate::server::EventHub;
 
@@ -33,6 +33,7 @@ pub struct Services {
     pub access: AccessServices,
     pub terminal: TerminalServices,
     pub agent: AgentServices,
+    pub hierarchy: HierarchyServices,
 }
 
 /// Startup steps 3 to 6 with the user's real login shell.
@@ -81,6 +82,17 @@ pub fn start_with(
     let terminal = build_terminal_services(config, &settings.load()?, login)?;
     let events = EventHub::new();
     let storage_alerts = StorageAlerts::new(log.clone());
+    let access = build_access_services(config)?;
+    let agent_calls = AgentCalls {
+        store: access.agent_calls.clone(),
+        helper: CallHelper {
+            server_binary: std::env::current_exe()
+                .map_err(StartupError::ServerPath)?
+                .display()
+                .to_string(),
+            server_file: config.server_file_path().display().to_string(),
+        },
+    };
     let agent = build_agent_services(
         &connection,
         machine.id,
@@ -88,7 +100,9 @@ pub fn start_with(
         &storage_alerts,
         attribution,
         log,
+        agent_calls,
     );
+    let hierarchy = build_hierarchy_services(&connection, &agent, &storage_alerts, log)?;
     Ok(Services {
         machine,
         agents,
@@ -96,9 +110,10 @@ pub fn start_with(
         settings,
         storage_alerts,
         events,
-        access: build_access_services(config)?,
+        access,
         terminal,
         agent,
+        hierarchy,
     })
 }
 

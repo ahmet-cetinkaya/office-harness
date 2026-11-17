@@ -215,6 +215,8 @@ impl SessionLauncher {
                     .iter()
                     .map(|entry| (entry.name().to_owned(), entry.value().to_owned()))
                     .collect(),
+                agent_id: agent.id,
+                session_id,
             })
             .map_err(|error| match error {
                 TerminalHostError::Failed(text) => PrepareError::NotStartable(text),

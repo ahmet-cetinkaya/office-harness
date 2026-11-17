@@ -10,6 +10,7 @@ publish.workspace = true
 access-application = { path = "../application" }
 access-domain = { path = "../domain" }
 getrandom.workspace = true
+kernel = { path = "../../../kernel" }
 private-fs = { path = "../../../shared/private-fs" }
 tokio.workspace = true
 wire = { path = "../../../shared/wire" }

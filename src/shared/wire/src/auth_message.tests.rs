@@ -14,8 +14,16 @@ fn each_message_round_trips_with_the_contract_field_names() {
         (
             AuthMessage::Auth {
                 proof: "cd".to_owned(),
+                agent_id: None,
             },
             r#"{"proof":"cd","type":"auth"}"#,
+        ),
+        (
+            AuthMessage::Auth {
+                proof: "cd".to_owned(),
+                agent_id: Some("a1".to_owned()),
+            },
+            r#"{"agent_id":"a1","proof":"cd","type":"auth"}"#,
         ),
         (
             AuthMessage::AuthOk {

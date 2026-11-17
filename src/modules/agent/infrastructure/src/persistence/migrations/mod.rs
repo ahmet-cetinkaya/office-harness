@@ -23,6 +23,9 @@ pub const SCRIPTS: &[&str] = &[
     include_str!("0002_settings.sql"),
     include_str!("0003_additions_and_sessions.sql"),
     include_str!("0004_name_key_nocase.sql"),
+    // Plain columns with no foreign key, so it does not depend on the
+    // hierarchy module's tables existing first.
+    include_str!("0005_hierarchy_columns.sql"),
 ];
 
 /// The data checks the server runs before it steps a database forward. Each

@@ -265,18 +265,18 @@ fn a_database_with_ascii_case_duplicate_name_keys_stops_before_version_four() {
 }
 
 #[test]
-fn a_database_without_duplicate_name_keys_migrates_to_version_four() {
+fn a_database_without_duplicate_name_keys_migrates_to_version_five() {
     let mut connection = version_three_with(&[("Web", "web")], &[("Ana", "ana")]);
 
     let applied = run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, PRE_MIGRATION_CHECKS)
         .expect("migrates");
 
-    assert_eq!(applied, 1);
+    assert_eq!(applied, SCRIPTS.len() - 3);
     assert_eq!(ledger_versions(&connection), all_versions());
 }
 
 #[test]
-fn name_keys_that_differ_outside_ascii_case_migrate_to_version_four() {
+fn name_keys_that_differ_outside_ascii_case_migrate_to_version_five() {
     let mut connection = version_three_with(
         &[("Ana", "äna"), ("ANA", "ÄNA")],
         &[("Äna", "äna"), ("ÄNA", "ÄNA")],
@@ -285,6 +285,6 @@ fn name_keys_that_differ_outside_ascii_case_migrate_to_version_four() {
     let applied = run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, PRE_MIGRATION_CHECKS)
         .expect("migrates");
 
-    assert_eq!(applied, 1);
+    assert_eq!(applied, SCRIPTS.len() - 3);
     assert_eq!(ledger_versions(&connection), all_versions());
 }
