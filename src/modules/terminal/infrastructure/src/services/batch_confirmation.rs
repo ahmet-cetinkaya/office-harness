@@ -14,11 +14,12 @@ pub fn confirmation_answer(line: &str) -> Option<char> {
 }
 
 /// The answer for the line at the cursor after the interrupt key, only when
-/// the line changed since before the key. A question that was already on the
-/// screen belongs to the program itself, so it never gets an answer.
+/// the question is new. A question that was already on the screen belongs to
+/// the program itself, so it never gets an answer, even when a redraw changed
+/// the line around it (such as trailing spaces).
 #[must_use]
 pub fn answer_after_interrupt(line_before_interrupt: &str, line: &str) -> Option<char> {
-    if line == line_before_interrupt {
+    if line.trim() == line_before_interrupt.trim() {
         return None;
     }
     confirmation_answer(line)
