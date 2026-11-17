@@ -91,7 +91,7 @@ When the user opens the desktop app, the panel shows the project, agent, and ter
 - **FR-003** (US1): WHERE the office has a hierarchy from 0002, THE SYSTEM SHALL also show each agent's role and team in the agent list.
 - **FR-004** (US1, R9 criterion 1): WHEN the user clicks an agent in the panel or presses that agent's keyboard shortcut, THE SYSTEM SHALL open that agent's live terminal.
 - **FR-005** (US1, R9 criterion 3): WHEN the user picks one project or "All projects" in the project switcher, THE SYSTEM SHALL show only the agents of that choice.
-- **FR-006** (US2, R9 criterion 4): WHEN an agent exits, fails, changes from `working` to `waiting for input`, or rings the terminal bell, THE SYSTEM SHALL notify the user with the agent's name and the event.
+- **FR-006** (US2, R9 criterion 4): WHEN an agent exits, fails, changes from `working` to `waiting for input`, or rings the terminal bell, THE SYSTEM SHALL notify the user with the agent's name and the event, EXCEPT that (a) while an unread bell notification of that agent exists, a further bell adds none, and (b) for the agent whose terminal is open in the focused desktop app window, the event shows in the notification list as read and sends no OS notification.
 - **FR-007** (US2): IF a notification occurs while the desktop app is closed, THEN THE SYSTEM SHALL show it as unread when the app opens.
 - **FR-008** (US3): WHEN the user opens the desktop app, THE SYSTEM SHALL show the current state of the office with the last view.
 - **FR-009** (US2): WHEN the user opens a notification, or opens the terminal of an agent that has unread notifications, THE SYSTEM SHALL show those notifications of that agent as read.
@@ -152,7 +152,7 @@ FR-002 states R9 criterion 2. FR-006 notifies only for the four events it lists:
 
 ## Success criteria
 
-- **SC-001:** With 30 agents across 3 projects that run at the same time, the agent list in one window shows all 30, and each status change shows in the list within 2 seconds.
+- **SC-001:** With 30 agents across 3 projects that run at the same time, the agent list in one window shows all 30, and each status change and each change of the last output line shows in the list within 2 seconds.
 - **SC-002:** From the panel, the user opens any agent's live terminal with 1 click or 1 shortcut, and the terminal shows live output within 1 second.
 - **SC-003:** The user switches from one project to another, or to "All projects", with 1 action.
 - **SC-004:** While the desktop app runs, the user gets a notification within 10 seconds after an agent exits, fails, rings the bell, or changes to `waiting for input` (that is, within 10 seconds after the quiet period ends).
@@ -186,7 +186,7 @@ FR-002 states R9 criterion 2. FR-006 notifies only for the four events it lists:
 - **A4:** The last view is kept per desktop app on the machine, not per agent or per project.
 - **A5:** Notifications stay until the user reads them. The MVP has no automatic cleanup of old notifications.
 - **A6:** Later releases stay open: the R7 office scene and the R8 meeting room open from the panel and do not replace it (`docs/PRD.md` section 4.1).
-- **A7:** An event of the agent whose terminal is open in the focused desktop app window shows in the notification list as read and sends no OS notification.
+- **A7:** The exception in FR-006(b) applies only to events that occur while the window has focus; the user sees the agent's terminal then, so an OS notification adds nothing.
 
 ## Clarifications
 
@@ -199,7 +199,7 @@ FR-002 states R9 criterion 2. FR-006 notifies only for the four events it lists:
 
 Decisions with reversible defaults, so that the plan can start. The owner may amend any of them.
 
-- Q: Which keys are the agent and switcher shortcuts? → A: Agent 1 to 9 use `Ctrl+Shift+F1` to `Ctrl+Shift+F9`, and the switcher uses `Ctrl+Shift+F10`, the same family as the focus shortcut `Ctrl+Shift+F12` (0001 A12). The plan checks them against the OS and the webview and may change the defaults. Reversible: the keys are one table.
+- Q: Which keys are the agent and switcher shortcuts? → A: Agent 1 to 9 use `Ctrl+Shift+F1` to `Ctrl+Shift+F9`, and the switcher uses `Ctrl+Shift+F10`, the same family as the focus shortcut `Ctrl+Shift+F12` (0001 A12). On most macOS keyboards the F-keys need the Fn key (or the system setting that makes F1, F2 act as standard function keys), so the plan checks the defaults against each OS and the webview and may change them. Reversible: the keys are one table.
 - Q: Can the user change the agent and switcher shortcuts? → A: Not in the MVP. The shortcuts are fixed and documented; only the focus shortcut stays changeable (0001 A12). Reversible: a later change can add settings without changing FR-004.
 - Q: What clears an unread notification? → A: Opening it, or opening that agent's terminal (FR-009). The MVP has no "mark all as read" action (A5).
 - Q: Does a bell that repeats flood the list? → A: No. One unread bell notification per agent; more bells add nothing while it stays unread (edge cases).
