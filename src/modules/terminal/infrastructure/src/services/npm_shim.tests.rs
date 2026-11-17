@@ -109,6 +109,9 @@ fn a_guard_glued_to_its_command_word_is_rejected() {
         "GOTO:label ",
         "REM. ",
         "REM: ",
+        "IF,1==2 ",
+        "GOTO;label ",
+        "REM=x ",
         "@IF 1==2 ",
     ] {
         assert_eq!(

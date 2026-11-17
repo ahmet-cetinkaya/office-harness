@@ -24,8 +24,10 @@ const PATH_VARIABLE: &str = "PATH";
 const LINE_GUARD_COMMANDS: [&str; 3] = ["IF", "GOTO", "REM"];
 /// Characters `cmd.exe` reads right after such a command word, with no space
 /// in between: a switch or a grouped condition (`IF/I`, `IF(...)`), the
-/// target of a jump (`GOTO:label`), or punctuation (`REM.`).
-const COMMAND_END_CHARACTERS: [char; 4] = ['/', '(', ':', '.'];
+/// target of a jump (`GOTO:label`), punctuation (`REM.`), and the further
+/// delimiters `cmd.exe` accepts between words (`IF,1==2`, `GOTO;label`,
+/// `REM=x`).
+const COMMAND_END_CHARACTERS: [char; 7] = ['/', '(', ':', '.', ',', ';', '='];
 /// First character of a label line, which `cmd.exe` never runs as a command.
 const LABEL_PREFIX: char = ':';
 const EXECUTABLE_SUFFIX: &str = ".exe";
@@ -89,9 +91,9 @@ pub fn resolve_npm_shim(
 /// interpreter, that cannot be resolved to absolute paths without variables,
 /// or whose `%*` line starts with a guard `cmd.exe` may obey instead of
 /// running it: `IF` (also cut short as `IF/I`, `IF(`), `GOTO` (also
-/// `GOTO:label`), `REM` (also `REM.`, `REM:`), or a label line that begins
-/// with a single `:` (which covers `::`). A guard deeper in a line is not
-/// followed.
+/// `GOTO:label`), `REM` (also `REM.`, `REM:`, `REM=`), or a label line that
+/// begins with a single `:` (which covers `::`). A guard deeper in a line is
+/// not followed.
 #[must_use]
 pub fn parse_npm_shim(shim_path: &str, content: &str) -> Option<ShimTarget> {
     if content.len() > MAX_SHIM_BYTES || content.contains('\0') {

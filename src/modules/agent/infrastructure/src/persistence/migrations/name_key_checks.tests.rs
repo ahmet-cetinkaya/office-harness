@@ -94,8 +94,11 @@ fn a_colliding_project_group_names_both_rows_and_keeps_the_data() {
     let error = check_name_key_ascii_groups(&connection).expect_err("collision");
 
     assert!(error.contains("agent_projects"), "{error}");
-    assert!(error.contains("p1") && error.contains("Web"), "{error}");
-    assert!(error.contains("p2") && error.contains("WEB"), "{error}");
+    assert!(
+        error.contains(r#"name "Web", name_key "web""#)
+            && error.contains(r#"name "WEB", name_key "WEB""#),
+        "{error}"
+    );
     assert!(error.contains("rename or delete"), "{error}");
     assert_eq!(ledger_version(&connection), 3, "the ledger must not move");
     let projects: i64 = connection
@@ -116,8 +119,23 @@ fn a_second_group_in_agent_agents_is_listed_with_the_first() {
 
     assert!(error.contains("agent_projects"), "{error}");
     assert!(error.contains("agent_agents"), "{error}");
-    assert!(error.contains("a1") && error.contains("Ana"), "{error}");
-    assert!(error.contains("a2") && error.contains("ANA"), "{error}");
+    assert!(error.contains(r#"name "Ana""#), "{error}");
+    assert!(error.contains(r#"name "ANA""#), "{error}");
+}
+
+#[test]
+fn a_name_with_control_characters_is_escaped_in_the_report() {
+    let connection = connection_at_version(3);
+    add_project(&connection, "p1", "Web\r\nINJECTED LINE", "web");
+    add_project(&connection, "p2", "WEB", "WEB");
+
+    let error = check_name_key_ascii_groups(&connection).expect_err("collision");
+
+    assert!(error.contains(r#"name "Web\r\nINJECTED LINE""#), "{error}");
+    assert!(
+        !error.contains("Web\r\nINJECTED LINE"),
+        "the raw characters stay out of the report: {error}"
+    );
 }
 
 #[test]
@@ -141,7 +159,7 @@ fn rows_outside_the_colliding_groups_stay_out_of_the_report() {
     let error = check_name_key_ascii_groups(&connection).expect_err("collision");
 
     assert!(
-        !error.contains("Web Master"),
+        !error.contains(r#""Web Master""#),
         "unrelated rows stay out of the report: {error}"
     );
 }
