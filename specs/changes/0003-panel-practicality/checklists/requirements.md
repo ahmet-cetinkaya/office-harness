@@ -35,6 +35,7 @@ Spec: `specs/changes/0003-panel-practicality/SPEC.md` · Status: approved (overn
 | 2 | Hostile reader | "Last output line" was undefined for color codes and long lines. The last view could point at a deleted agent or project. Blocked OS notifications, notifications for deleted agents, shortcut conflicts, and many events at once were not defined. | Defined the term "Last output line" and added US3 scenario 2 plus the matching edge cases. |
 | 3 | Hostile reader on the fixed text | No new gap. | None. |
 | 4 | Plannability (2026-11-17) | Nothing cleared an unread notification except opening it. A repeating bell could flood the list. Direct and switcher shortcuts had no keys, and A1 said the user can change them with no requirement for it. `stopped` and `interrupted` had no notify rule. SC-004 counted from the stop of output, not from the status change. | Added FR-009 and US2 scenarios 6 and 7. Recorded the shortcut defaults, fixed shortcuts, the bell rule, the focus rule (A7), and the notify rule as decisions in Clarifications. Made the shortcut conflict edge case about the changeable focus shortcut. Counted SC-004 from the status change. Set status to approved. |
+| 5 | Review fixes (PR 13) | The Clarification about the last line named SC-001, but SC-001 counted status changes only. FR-006 had its exceptions outside the FR. The shortcut note did not mention the Fn key on macOS. | SC-001 now counts the last output line. FR-006 states the bell and focus exceptions. The shortcut decision names the macOS Fn behavior. |
 
 ## Notes
 
