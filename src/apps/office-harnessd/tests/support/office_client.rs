@@ -218,12 +218,15 @@ pub struct Record {
 }
 
 /// The fake script body that writes a `Record` and then runs `rest`. The
-/// arguments file comes last, so its existence means the record is whole.
+/// arguments file comes last, so its existence means the record is whole: a
+/// redirect creates an empty file before it writes, so the test would read a
+/// record without arguments at that instant; the write goes to a temporary
+/// name that is renamed into place when whole.
 #[cfg(unix)]
 pub fn recording_body(records: &Path, rest: &str) -> String {
     let folder = records.display();
     format!(
-        "printf '%s' \"$OFFICE_KEY\" > {folder}/key-$$\nprintf '%s\\n' \"$@\" > {folder}/args-$$\n{rest}"
+        "printf '%s' \"$OFFICE_KEY\" > {folder}/key-$$\nprintf '%s\\n' \"$@\" > {folder}/partial-$$ && mv {folder}/partial-$$ {folder}/args-$$\n{rest}"
     )
 }
 
