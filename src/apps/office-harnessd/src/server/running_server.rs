@@ -14,6 +14,7 @@ use tokio::sync::{Semaphore, watch};
 use super::agent_requests::AgentGateway;
 use super::dispatcher::Dispatcher;
 use super::hierarchy_requests::HierarchyGateway;
+use super::notification_requests::NotificationGateway;
 use super::restart_signal::RestartSignal;
 use super::router::build_router;
 use super::server_error::ServerError;
@@ -22,7 +23,7 @@ use super::server_options::ServerOptions;
 use super::server_state::ServerState;
 use super::terminal_requests::TerminalGateway;
 use crate::bootstrap::{ServerLog, Services};
-use crate::bridges::{AgentLineBridge, AgentStatusBridge};
+use crate::bridges::{AgentLineBridge, AgentStatusBridge, NotificationBridge, SystemClock};
 use crate::config::Config;
 
 /// The loopback WebSocket server, bound and announced in `server.json` but
@@ -74,6 +75,19 @@ impl Server {
         .spawn(services.terminal.events.subscribe());
         AgentLineBridge::new(services.terminal.events.clone(), events.clone())
             .spawn(services.terminal.events.subscribe_lines());
+        NotificationBridge::new(
+            services.notification.create.clone(),
+            services.agent_bridge_store.clone(),
+            Arc::clone(&services.terminal.runtime),
+            Arc::new(SystemClock),
+            events.clone(),
+            services.storage_alerts.clone(),
+            log.clone(),
+        )
+        .spawn(
+            services.events.subscribe(),
+            services.terminal.events.subscribe(),
+        );
         let agents = AgentGateway::new(
             Arc::clone(&services.agent.handlers),
             services.agent.audit.clone(),
@@ -86,6 +100,10 @@ impl Server {
         );
         let hierarchy =
             HierarchyGateway::new(Arc::clone(&services.hierarchy.handlers), events.clone());
+        let notification = NotificationGateway::new(
+            Arc::new(services.notification.handlers.clone()),
+            events.clone(),
+        );
         let (shutdown, stopping) = watch::channel(false);
         let state = ServerState {
             port,
@@ -101,6 +119,7 @@ impl Server {
             hierarchy,
             send_directive: Arc::clone(&services.hierarchy.send_directive),
             directive_journal: Arc::clone(&services.hierarchy.directive_journal),
+            notification,
             events,
             restart: RestartSignal::default(),
             token_generations: services.access.token_store.subscribe(),
