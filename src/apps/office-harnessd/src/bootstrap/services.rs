@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::sync::Arc;
+
 use agent_application::common::interfaces::Clock;
 use agent_domain::entities::Machine;
 use agent_infrastructure::persistence::{
@@ -10,11 +12,15 @@ use audit_infrastructure::persistence::{
     LEDGER_TABLE as AUDIT_LEDGER_TABLE, SCRIPTS as AUDIT_SCRIPTS,
 };
 use gethostname::gethostname;
+use notification_infrastructure::persistence::{
+    LEDGER_TABLE as NOTIFICATION_LEDGER_TABLE, SCRIPTS as NOTIFICATION_SCRIPTS,
+};
 
 use super::{
-    AccessServices, AgentServices, HierarchyServices, LoginSetup, ServerLog, StartupError,
-    StorageAlerts, TerminalServices, build_access_services, build_agent_services,
-    build_hierarchy_services, build_terminal_services, open_database, run_migrations,
+    AccessServices, AgentServices, HierarchyServices, LoginSetup, NotificationServices, ServerLog,
+    StartupError, StorageAlerts, TerminalServices, build_access_services, build_agent_services,
+    build_hierarchy_services, build_notification_services, build_terminal_services, open_database,
+    run_migrations,
 };
 use crate::bridges::{AgentCalls, CallHelper, SystemClock};
 use crate::config::Config;
@@ -34,6 +40,10 @@ pub struct Services {
     pub terminal: TerminalServices,
     pub agent: AgentServices,
     pub hierarchy: HierarchyServices,
+    pub notification: NotificationServices,
+    /// The agent store as the bridge reads it, for the agent name a
+    /// notification copies at creation.
+    pub agent_bridge_store: Arc<dyn agent_application::common::interfaces::AgentStore>,
 }
 
 /// Startup steps 3 to 6 with the user's real login shell.
@@ -67,6 +77,12 @@ pub fn start_with(
     let mut connection = open_database(&config.database_path())?;
     run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, PRE_MIGRATION_CHECKS)?;
     run_migrations(&mut connection, AUDIT_LEDGER_TABLE, AUDIT_SCRIPTS, &[])?;
+    run_migrations(
+        &mut connection,
+        NOTIFICATION_LEDGER_TABLE,
+        NOTIFICATION_SCRIPTS,
+        &[],
+    )?;
 
     let connection = SharedConnection::new(connection);
     let agents = AgentRepository::new(connection.clone());
@@ -103,6 +119,11 @@ pub fn start_with(
         agent_calls,
     );
     let hierarchy = build_hierarchy_services(&connection, &agent, &terminal, &storage_alerts, log)?;
+    let notification = build_notification_services(connection.handle());
+    // The bridge reads the agent name at creation through the agent module's
+    // own store adapter; the repository is only a handle on the connection.
+    let agent_bridge_store: Arc<dyn agent_application::common::interfaces::AgentStore> =
+        Arc::new(AgentRepository::new(connection.clone()));
     Ok(Services {
         machine,
         agents,
@@ -114,6 +135,8 @@ pub fn start_with(
         terminal,
         agent,
         hierarchy,
+        notification,
+        agent_bridge_store,
     })
 }
 
