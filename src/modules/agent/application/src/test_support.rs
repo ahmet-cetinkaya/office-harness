@@ -402,7 +402,7 @@ impl CliAdapters for FakeAdapters {
     }
 }
 
-struct FixedClock;
+pub struct FixedClock;
 
 impl Clock for FixedClock {
     fn now(&self) -> Timestamp {
