@@ -2,7 +2,7 @@
 status: draft
 capability: office
 plan:
-supersedes: 0003/FR-007 (in part)
+supersedes: 0003/FR-008 (in part)
 ---
 
 # 0005: Office scene
