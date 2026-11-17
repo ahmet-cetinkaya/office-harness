@@ -15,6 +15,7 @@ agent-domain = { path = "../../modules/agent/domain" }
 agent-infrastructure = { path = "../../modules/agent/infrastructure" }
 agent-presentation = { path = "../../modules/agent/presentation" }
 hierarchy-application = { path = "../../modules/hierarchy/application" }
+hierarchy-domain = { path = "../../modules/hierarchy/domain" }
 hierarchy-infrastructure = { path = "../../modules/hierarchy/infrastructure" }
 hierarchy-presentation = { path = "../../modules/hierarchy/presentation" }
 audit-application = { path = "../../modules/audit/application" }
@@ -30,6 +31,8 @@ private-fs = { path = "../../shared/private-fs" }
 console-control = { path = "../../shared/console-control" }
 rusqlite.workspace = true
 serde.workspace = true
+# The journal's cap names an over-long directive text by its hash.
+sha2.workspace = true
 serde_json.workspace = true
 terminal-application = { path = "../../modules/terminal/application" }
 terminal-domain = { path = "../../modules/terminal/domain" }
@@ -43,7 +46,6 @@ tokio-tungstenite.workspace = true
 wire = { path = "../../shared/wire" }
 
 [dev-dependencies]
-hierarchy-domain = { path = "../../modules/hierarchy/domain" }
 tempfile.workspace = true
 tower.workspace = true
 
