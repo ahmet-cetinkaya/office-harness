@@ -35,6 +35,7 @@ Spec: `specs/changes/0004-meeting-room/SPEC.md` · Status: draft · Date: 2026-1
 | 2 | Hostile reader | A `working` agent would mix the brief into its work. A silent participant, a failed facilitator, a restart, a deleted agent, and overlapping meetings had no rule. The outcome values were not defined. | Added FR-003, FR-008, the time limit, the outcome definition, and the matching edge cases. |
 | 3 | Hostile reader on the fixed text | No new gap. | None. |
 | 4 | Review fixes (PR 13) | The answer could be redraw noise for full-screen CLIs, and no criterion showed it. A meeting would send about 9 notifications. The second-meeting refusal gave a false reason. The outcome rule missed a failed facilitator and a restart. A CLI that stays idle after the brief and the start of the time limit were undefined. | Narrowed A1, added SC-007 per 0001 CLI, and listed full-screen cleanup as out of scope. Added the MODIFIED entry for 0003/FR-006. Folded the second-meeting refusal into FR-003. Completed the outcome rule, the idle edge case, and the time limit start. Used the 0001 term "recent-output limit". |
+| 5 | Review fixes (PR 14) | The edge case "A participant answers with no text" could contradict the Answer term, which says that no output means no answer. | Reworded the case to output that is empty after the codes are removed, and pointed to the idle case for no output at all. |
 
 ## Notes
 
