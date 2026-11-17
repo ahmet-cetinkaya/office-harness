@@ -435,7 +435,8 @@ test("a moved focused row keeps focus, and its later delete leaves outside focus
   await expect(cyRow).toBeFocused();
 
   // Another client moves Cy to another team; the row is rebuilt under the
-  // new parent, and keyboard focus follows the rebuilt element.
+  // new parent, and keyboard focus follows the rebuilt element. No emitter
+  // sends this cause, and the view ignores it, so the real path still runs.
   await page.evaluate((movedTree) => {
     window.__mockCore.setHierarchy(movedTree);
     window.__mockCore.pushEvent({
