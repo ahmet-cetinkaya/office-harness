@@ -101,6 +101,38 @@ fn a_launch_line_that_cmd_would_skip_is_rejected() {
 }
 
 #[test]
+fn a_guard_glued_to_its_command_word_is_rejected() {
+    let launch = "node \"%dp0%\\node_modules\\x\\cli.js\" %*";
+    for guard in [
+        "IF/I ",
+        "IF(1==2) ",
+        "GOTO:label ",
+        "REM. ",
+        "REM: ",
+        "@IF 1==2 ",
+    ] {
+        assert_eq!(
+            parse_npm_shim(SHIM, &format!("{guard}{launch}")),
+            None,
+            "{guard:?}"
+        );
+    }
+    let guard_later = "endLocal & goto end & node \"%dp0%\\node_modules\\x\\cli.js\" %*";
+    assert!(
+        parse_npm_shim(SHIM, guard_later).is_some(),
+        "a guard later in the line is not followed"
+    );
+}
+
+#[test]
+fn a_label_line_with_the_arguments_placeholder_is_rejected() {
+    assert_eq!(
+        parse_npm_shim(SHIM, ":name \"%dp0%\\node_modules\\x\\cli.js\" %*"),
+        None
+    );
+}
+
+#[test]
 fn an_unknown_interpreter_is_rejected() {
     let content = "SET \"_prog=python\"\r\n\"%_prog%\" \"%dp0%\\x.js\" %*";
     assert_eq!(parse_npm_shim(SHIM, content), None);
