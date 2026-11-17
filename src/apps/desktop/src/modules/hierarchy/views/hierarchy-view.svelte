@@ -41,6 +41,21 @@
   const collapsedIds = new SvelteSet<string>();
   let activeId = $state<string | null>(null);
 
+  // Whether keyboard focus sits inside the tree. A row that is removed while
+  // focused drops focus to the page body without a focusout, so this flag is
+  // the only record that the removed row had focus.
+  let treeHasFocus = $state(false);
+  let treeContainer = $state<HTMLDivElement | null>(null);
+
+  function ontreefocusin(): void {
+    treeHasFocus = true;
+  }
+
+  function ontreefocusout(event: FocusEvent): void {
+    if (treeContainer?.contains(event.relatedTarget as Node | null)) return;
+    treeHasFocus = false;
+  }
+
   const roots = $derived.by(() =>
     buildHierarchy(snapshot.tree, agents, projects, collapsedIds),
   );
@@ -160,14 +175,16 @@
           }
         }
         break;
-      case "Escape":
-        // The collapse is the row's own cancel; dialogs close themselves.
-        event.preventDefault();
-        {
-          const row = focusedRow();
-          if (row?.expanded && row.children.length > 0) collapse(row.id);
+      case "Escape": {
+        // The collapse is the row's own cancel; without it, Escape belongs
+        // to an outer handler, such as a dialog.
+        const row = focusedRow();
+        if (row?.expanded && row.children.length > 0) {
+          event.preventDefault();
+          collapse(row.id);
         }
         break;
+      }
     }
   }
 
@@ -189,11 +206,13 @@
   }
 
   // When the row that held focus leaves the tree (a delete elsewhere, a
-  // reload), focus returns to its branch so keyboard use never drops to the
-  // page body.
+  // reload), the roving tab stop moves back to the first row. Focus follows
+  // only when it sat inside the tree; if the user had moved on, say to the
+  // terminal, their focus stays there.
   $effect(() => {
     if (activeId !== null && !rowById.has(activeId)) {
       activeId = firstId;
+      if (!treeHasFocus) return;
       void tick().then(() => {
         if (firstId !== null) {
           document
@@ -244,6 +263,9 @@
       aria-labelledby="hierarchy-heading"
       data-testid="hierarchy-tree"
       class="flex flex-col gap-1"
+      bind:this={treeContainer}
+      onfocusin={ontreefocusin}
+      onfocusout={ontreefocusout}
     >
       {#each roots as root (root.id)}
         <TreeRow

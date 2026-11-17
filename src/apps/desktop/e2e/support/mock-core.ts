@@ -37,6 +37,9 @@ export interface MockCoreOptions {
   /** Milliseconds that "agent.stop" waits before it answers, as a CLI that
    * takes its time to end. Answers at once when left out. */
   stopDelayMs?: number;
+  /** The first "hierarchy.tree" read fails with this, so the failed state
+   * and its retry can be tested. Later reads answer the office. */
+  hierarchyTreeFailure?: { code: string; message: string };
   /** The login item. Not registered, and registering works, when left out. */
   loginStart?: {
     registered?: boolean;
@@ -84,6 +87,7 @@ export async function installMockCore(
     let nextCallbackId = 1;
     let current = mock.initialState;
     let loginStartRegistered = mock.loginStart?.registered ?? false;
+    let hierarchyTreeFailedOnce = false;
 
     const send = (channelId: number, message: unknown) => {
       const index = nextIndex.get(channelId) ?? 0;
@@ -213,8 +217,16 @@ export async function installMockCore(
         }
         case "agent.list":
           return office.agents;
-        case "hierarchy.tree":
+        case "hierarchy.tree": {
+          if (mock.hierarchyTreeFailure && !hierarchyTreeFailedOnce) {
+            hierarchyTreeFailedOnce = true;
+            refuse(
+              mock.hierarchyTreeFailure.code,
+              mock.hierarchyTreeFailure.message,
+            );
+          }
           return office.hierarchy ?? { ceo: null, teams: [], unassigned: [] };
+        }
         case "agent.create": {
           if (!fields.name) refuse("invalid", "name is required");
           const agent: Agent = {
