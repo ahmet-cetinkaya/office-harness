@@ -25,6 +25,10 @@ const ALLOWED_REQUESTS: [&str; 6] = [
 /// What the connection of an agent says about a request it will not run.
 const NOT_ALLOWED: &str = "an agent may only create, start, stop, and give new tasks to its own descendants, and send them directives";
 
+/// The longest request type the refusal log keeps. The type is the agent's
+/// text, so the limit keeps one hostile frame from flooding the log.
+const MAX_LOGGED_KIND_CHARS: usize = 64;
+
 /// Serves one authenticated agent connection: requests and answers, nothing
 /// else. It has no events and no terminals. The connection ends when the
 /// agent's session ends, so a revoked credential stops the connection and not
@@ -60,9 +64,12 @@ fn answer_request(state: &ServerState, grant: &AgentGrant, frame: &str) -> Respo
         );
     };
     if !ALLOWED_REQUESTS.contains(&request.kind.as_str()) {
+        // `{:?}` quotes and escapes, so an embedded newline cannot fake a log
+        // line of its own.
         state.log.refusal(&format!(
-            "agent {} asked for {}, which an agent may not",
-            grant.agent_id, request.kind
+            "agent {} asked for {:?}, which an agent may not",
+            grant.agent_id,
+            truncated(&request.kind, MAX_LOGGED_KIND_CHARS)
         ));
         return Response::failure(request.id, ErrorCode::Refused, NOT_ALLOWED);
     }
@@ -77,6 +84,21 @@ fn answer_request(state: &ServerState, grant: &AgentGrant, frame: &str) -> Respo
         ),
     }
 }
+
+/// Cuts `text` at `max` characters and adds one ellipsis when cut. The count
+/// is characters, so a cut never splits a character in half.
+fn truncated(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_owned();
+    }
+    let mut cut: String = text.chars().take(max).collect();
+    cut.push('…');
+    cut
+}
+
+#[cfg(test)]
+#[path = "agent_call.tests.rs"]
+mod tests;
 
 async fn server_stopping(shutdown: &mut watch::Receiver<bool>) {
     // A dropped sender also means the server is going away.

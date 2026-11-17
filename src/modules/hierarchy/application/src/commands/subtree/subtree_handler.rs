@@ -52,7 +52,8 @@ impl SubtreeHandler {
         Ok(descendants_of(&self.store.snapshot()?.rows, agent_id).len())
     }
 
-    /// Stops the agent and, when asked, its descendants.
+    /// Stops the agent and, when asked, its descendants: deepest first, the
+    /// agent itself last (FR-007).
     ///
     /// # Errors
     /// `Invalid` with `DescendantCountChanged` when the tree changed since
@@ -70,17 +71,19 @@ impl SubtreeHandler {
         Ok(stopped)
     }
 
-    /// Deletes the agent and, when asked, its descendants, deepest first.
+    /// Deletes the agent and, when asked, its whole subtree: deepest first,
+    /// the agent itself last, so a failed step leaves no parent deleted
+    /// above a child (FR-006).
     ///
     /// # Errors
-    /// `Invalid` with `DescendantCountChanged` when the tree changed since
-    /// the client asked; the error of the first agent that cannot be deleted.
+    /// `Conflict` when the agent still has descendants and the request does
+    /// not confirm their fresh count; the error of the first agent that
+    /// cannot be deleted. The agents deleted before that step stay deleted.
     pub fn delete_subtree(
         &self,
         request: SubtreeRequest,
     ) -> Result<Vec<AgentId>, HierarchyApplicationError> {
-        let deleted = self.affected(request)?;
-        // Deepest first, so no parent leaves a child behind mid-run.
+        let deleted = self.affected_for_delete(request)?;
         for agent in &deleted {
             self.remover
                 .delete(*agent)
@@ -89,25 +92,73 @@ impl SubtreeHandler {
         Ok(deleted)
     }
 
-    /// The agents an action affects: the agent plus its descendants when
-    /// asked, after the count check.
+    /// The agents a stop affects: the agent plus its descendants when asked,
+    /// after the count check.
     fn affected(&self, request: SubtreeRequest) -> Result<Vec<AgentId>, HierarchyApplicationError> {
         if !request.include_descendants {
             return Ok(vec![request.agent_id]);
         }
-        let snapshot = self.store.snapshot()?;
-        let mut affected = descendants_of(&snapshot.rows, request.agent_id);
+        let descendants = self.descendants(request.agent_id)?;
         if let Some(confirmed) = request.confirmed_descendants
-            && confirmed != affected.len()
+            && confirmed != descendants.len()
         {
             return Err(HierarchyApplicationError::Invalid(
                 HierarchyError::DescendantCountChanged {
                     confirmed,
-                    actual: affected.len(),
+                    actual: descendants.len(),
                 },
             ));
         }
-        affected.insert(0, request.agent_id);
-        Ok(affected)
+        Ok(agent_last(descendants, request.agent_id))
+    }
+
+    /// The agents a delete affects. An agent without descendants still
+    /// deletes alone, as in 0001; one with descendants deletes its subtree
+    /// only when the request confirms the fresh count, so no descendant is
+    /// left without its parent (FR-006).
+    fn affected_for_delete(
+        &self,
+        request: SubtreeRequest,
+    ) -> Result<Vec<AgentId>, HierarchyApplicationError> {
+        let descendants = self.descendants(request.agent_id)?;
+        if descendants.is_empty() {
+            return Ok(vec![request.agent_id]);
+        }
+        let count = descendants.len();
+        let subject = if count == 1 {
+            "descendant"
+        } else {
+            "descendants"
+        };
+        if !request.include_descendants {
+            return Err(HierarchyApplicationError::Conflict(format!(
+                "the agent still has {count} {subject}; delete them too by sending \
+                 include_descendants=true and descendant_count {count}"
+            )));
+        }
+        if request.confirmed_descendants != Some(count) {
+            return Err(HierarchyApplicationError::Conflict(format!(
+                "the agent has {count} {subject} now; send descendant_count {count} \
+                 to confirm the delete"
+            )));
+        }
+        Ok(agent_last(descendants, request.agent_id))
+    }
+
+    /// The agent's descendants, as storage holds the tree now.
+    fn descendants(&self, agent_id: AgentId) -> Result<Vec<AgentId>, HierarchyApplicationError> {
+        let snapshot = self.store.snapshot()?;
+        Ok(descendants_of(&snapshot.rows, agent_id))
     }
 }
+
+/// Deepest first, the agent itself last: when a step fails mid-run, no
+/// already-deleted agent sits above the failing one.
+fn agent_last(mut descendants: Vec<AgentId>, agent_id: AgentId) -> Vec<AgentId> {
+    descendants.push(agent_id);
+    descendants
+}
+
+#[cfg(test)]
+#[path = "subtree_handler.tests.rs"]
+mod tests;

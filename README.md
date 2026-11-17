@@ -134,6 +134,12 @@ The startup prompt is pasted into the terminal after the first output of the CLI
 
 You need Rust 1.100.0 (the repository pins it in `rust-toolchain.toml`), Bun 1.4.4, and Node 24. On Linux you also need the Tauri system packages. The list is in the `Install Linux system packages for Tauri` step of `.github/workflows/ci.yml`.
 
+On a machine without rustup, run the Rust lint gates with scripts/lint-rust.sh through the pinned toolchain, so that a wrong rustc cannot hide lints from CI:
+
+```sh
+nix-shell -p rustup --run "rustup run 1.100.0 scripts/lint-rust.sh -p <crate>"
+```
+
 Install the JavaScript dependencies from the repository root:
 
 ```sh

@@ -87,8 +87,9 @@ pub fn start_with(
         store: access.agent_calls.clone(),
         helper: CallHelper {
             server_binary: std::env::current_exe()
-                .map(|path| path.display().to_string())
-                .unwrap_or_default(),
+                .map_err(StartupError::ServerPath)?
+                .display()
+                .to_string(),
             server_file: config.server_file_path().display().to_string(),
         },
     };
