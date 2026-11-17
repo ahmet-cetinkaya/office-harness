@@ -39,6 +39,15 @@ fn a_deleted_event_names_the_agent() {
 }
 
 #[test]
+fn a_line_event_names_the_agent_and_carries_the_line() {
+    let agent_id = AgentId::generate();
+    let event = frame(&agent_line_event(agent_id, "100%"));
+    assert_eq!(event["type"], "agent.line");
+    assert_eq!(event["agent_id"], agent_id.to_string());
+    assert_eq!(event["line"], "100%");
+}
+
+#[test]
 fn an_additions_event_names_the_agent_and_carries_the_additions() {
     use agent_domain::entities::AdditionsRecord;
     use agent_domain::value_objects::{EnvEntry, OfficeAdditions};

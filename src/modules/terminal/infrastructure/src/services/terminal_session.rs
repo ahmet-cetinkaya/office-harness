@@ -30,6 +30,8 @@ const DRAIN_GRACE: Duration = Duration::from_millis(300);
 const FORCE_GRACE: Duration = Duration::from_secs(3);
 const MIN_MONITOR_TICK: Duration = Duration::from_millis(10);
 const MAX_MONITOR_TICK: Duration = Duration::from_millis(250);
+/// The quiet monitor also reports a changed last line at most this often.
+const LINE_REPORT_EVERY: Duration = Duration::from_millis(1000);
 const CTRL_C: u8 = 0x03;
 /// How long after the interrupt key a stop looks for the question that
 /// `cmd.exe` asks of a batch file, and how often.
@@ -65,6 +67,9 @@ struct SessionCore {
     output_seen: bool,
     last_output: Instant,
     quiet_reported: bool,
+    /// The last line this session reported, so a redraw that leaves the text
+    /// unchanged reports nothing.
+    reported_line: Option<String>,
 }
 
 impl SessionCore {
@@ -158,6 +163,7 @@ impl TerminalSession {
                 output_seen: false,
                 last_output: Instant::now(),
                 quiet_reported: false,
+                reported_line: None,
             }),
             writer: Mutex::new(pty.writer),
             master: Mutex::new(Some(pty.master)),
@@ -350,6 +356,9 @@ impl TerminalSession {
             if core.quiet_reported {
                 events.push(TerminalEvent::OutputResumed);
             }
+            for _ in 0..core.emulator.take_bells() {
+                events.push(TerminalEvent::Bell);
+            }
             core.last_output = Instant::now();
             core.quiet_reported = false;
             replies
@@ -400,11 +409,37 @@ impl TerminalSession {
 
     fn run_quiet_monitor(&self, quiet_period: Duration) {
         let tick = (quiet_period / 4).clamp(MIN_MONITOR_TICK, MAX_MONITOR_TICK);
+        // One interval in the past, so the first change reports on the first
+        // tick instead of a full window after the start.
+        let mut line_report_due =
+            Instant::now().checked_sub(LINE_REPORT_EVERY).unwrap_or_else(Instant::now);
         while !self.has_exited() {
             thread::sleep(tick);
             if self.take_quiet_period_report(quiet_period) {
                 self.publish_unless_exited(TerminalEvent::QuietPeriod);
             }
+            if line_report_due.elapsed() >= LINE_REPORT_EVERY {
+                self.report_line_if_changed();
+                line_report_due = Instant::now();
+            }
+        }
+    }
+
+    /// Publishes the last line when the screen shows a new one. The throttle
+    /// instant lives in the monitor loop; this is only the one question: has
+    /// the text changed since the last report?
+    fn report_line_if_changed(&self) {
+        let line = {
+            let mut core = locked(&self.core);
+            let line = core.emulator.last_line();
+            if line == core.reported_line {
+                return;
+            }
+            core.reported_line = line.clone();
+            line
+        };
+        if let Some(line) = line {
+            self.sink.publish_line(self.agent_id, self.run, line);
         }
     }
 

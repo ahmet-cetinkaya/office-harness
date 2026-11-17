@@ -23,6 +23,14 @@ fn terminal_events_map_to_status_events() {
 }
 
 #[test]
+fn a_bell_and_a_storage_failure_are_no_status_change() {
+    // The bell goes to the notification bridge (0003 T3), a storage failure
+    // to the alerts; neither changes the status the panel shows.
+    assert_eq!(status_event(TerminalEvent::Bell), None);
+    assert_eq!(status_event(TerminalEvent::OutputStorageFailed), None);
+}
+
+#[test]
 fn a_failed_exit_names_the_exit_code() {
     let (event, detail) = status_event(TerminalEvent::Exited { exit_code: 3 }).expect("event");
 

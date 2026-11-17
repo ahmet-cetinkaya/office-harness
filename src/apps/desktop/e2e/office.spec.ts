@@ -17,6 +17,7 @@ function agent(overrides: Partial<Agent> = {}): Agent {
     machine_id: "machine",
     status: "stopped",
     created_at: 1_700_000_000_000,
+    last_line: null,
     ...overrides,
   };
 }

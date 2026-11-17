@@ -30,6 +30,14 @@ pub fn agent_changed_event(agent: &Agent) -> Event {
     fields.insert("agent".to_owned(), agent_json(agent));
     Event::new("agent.changed", fields)
 }
+/// `agent.line`: the agent's last output line changed.
+#[must_use]
+pub fn agent_line_event(agent_id: AgentId, line: &str) -> Event {
+    let mut fields = Map::new();
+    fields.insert("agent_id".to_owned(), Value::String(agent_id.to_string()));
+    fields.insert("line".to_owned(), Value::String(line.to_owned()));
+    Event::new("agent.line", fields)
+}
 
 #[must_use]
 pub fn agent_deleted_event(agent_id: AgentId) -> Event {

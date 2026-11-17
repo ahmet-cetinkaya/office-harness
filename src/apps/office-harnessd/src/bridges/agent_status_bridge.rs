@@ -125,6 +125,9 @@ fn status_event(event: TerminalEvent) -> Option<(StatusEvent, Option<String>)> {
         )),
         // The child keeps running; the bridge raises the alert instead.
         TerminalEvent::OutputStorageFailed => None,
+        // The bell is not a status change. The notification bridge (0003 T3)
+        // subscribes to the same source and turns it into the notification.
+        TerminalEvent::Bell => None,
     }
 }
 

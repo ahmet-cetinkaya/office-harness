@@ -32,6 +32,8 @@ fn main() {
         "pause-resume" => pause_resume(number(argument(1))),
         "counter" => counter(number(argument(1)), number(argument(2))),
         "keys" => keys(),
+        "lines" => lines(),
+        "progress" => progress(),
         "altscreen" => altscreen(),
         "size" => size(),
         "query" => query(),
@@ -111,6 +113,30 @@ fn keys() {
 
 fn altscreen() {
     announce("\x1b[?1049h\x1b[2J\x1b[5;10HFULLSCREEN-MARKER");
+    sleep_forever();
+}
+
+/// Prints one line per command byte and rings the bell on `b`. Tests drive
+/// it through `write_input`, so one run serves several assertions.
+fn lines() {
+    let mut byte = [0_u8; 1];
+    while stdin().read(&mut byte).is_ok_and(|count| count == 1) {
+        match byte[0] {
+            b'b' => announce("BELLED\x07\n"),
+            other => announce(&format!("LINE:{other}\r\n")),
+        }
+    }
+}
+
+/// Redraws one row nine times, about 30 ms apart. Every redraw lands inside
+/// the report throttle's one-second window, so the tests can hold the report
+/// count without racing a monitor tick.
+fn progress() {
+    announce("PROGRESS:0%");
+    for percent in 1..=9 {
+        thread::sleep(Duration::from_millis(30));
+        announce(&format!("\rPROGRESS:{percent}%"));
+    }
     sleep_forever();
 }
 
