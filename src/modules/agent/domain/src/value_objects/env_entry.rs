@@ -10,6 +10,11 @@ pub struct EnvEntry {
     value: String,
 }
 
+/// Names with this prefix belong to the server: it sets them for the agent's
+/// call credential (0002) and removes any other. An office addition cannot
+/// set one.
+pub const RESERVED_ENV_PREFIX: &str = "OFFICE_HARNESS_";
+
 impl EnvEntry {
     /// # Errors
     /// `InvalidEnvName` naming the entry when the name does not match
@@ -17,6 +22,11 @@ impl EnvEntry {
     pub fn parse(name: &str, value: &str) -> Result<Self, AgentError> {
         if !is_valid_name(name) {
             return Err(AgentError::InvalidEnvName {
+                name: name.to_owned(),
+            });
+        }
+        if name.starts_with(RESERVED_ENV_PREFIX) {
+            return Err(AgentError::ReservedEnvName {
                 name: name.to_owned(),
             });
         }

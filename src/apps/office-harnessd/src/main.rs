@@ -17,6 +17,12 @@ use tokio::sync::oneshot;
 #[tokio::main]
 async fn main() -> ExitCode {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
+    if arguments
+        .first()
+        .is_some_and(|first| first == cli::agent_call::AGENT_CALL)
+    {
+        return cli::agent_call::run(&arguments[1..]).await;
+    }
     if let Some((command, rest)) = cli::split_command(&arguments) {
         return cli::run(command, rest);
     }

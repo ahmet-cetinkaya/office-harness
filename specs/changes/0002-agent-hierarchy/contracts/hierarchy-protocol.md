@@ -45,6 +45,12 @@ Optional `role` object: `{ kind: "ceo" | "lead" | "member", parent_agent_id: str
 
 Optional `include_descendants: boolean` (default `false`) and, for `agent.delete`, `descendant_count: number`: what the client showed in its confirmation. The server re-counts; when the count differs it refuses with `conflict` and the current count, so a stale confirmation can never delete the wrong set. Result and other fields as in 0001.
 
+## Agent connection (via `office-harnessd agent-call`)
+
+The `auth` frame of an agent adds `agent_id`; its proof is the office proof keyed with the agent's call credential (the secret half of `OFFICE_HARNESS_AGENT_TOKEN`, text `<agent_id>:<secret>`), so a client cannot tell a wrong proof from an agent that does not run. The credential belongs to one session: a new session of the agent gets a new one, and the credential dies when the child exits. An agent connection has no events and no terminals. The server answers only the types below, and refuses every other type with `refused`.
+
+`agent.whoami` (no fields) returns `{ "agent_id": "<id>" }`. It proves the credential and is the only type that T4 implements.
+
 ## New requests (agent caller, via `office-harnessd agent-call`)
 
 Same envelope, but the connection proves an agent call token instead of the office token, and the server fixes the actor to that agent. Allowed types: `agent.create` (with `role`, within its own descendants and the role rules), `agent.start`, `agent.new_task`, `agent.stop` (descendants only), `directive.send`. Any other type, including `agent.delete`, `team.*`, and `hierarchy.tree`, is `refused` with the reason recorded (FR-008, FR-009).

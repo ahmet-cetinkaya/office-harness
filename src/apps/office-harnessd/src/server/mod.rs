@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+mod agent_call;
 mod agent_requests;
 mod channel_subscriber;
 mod connection;

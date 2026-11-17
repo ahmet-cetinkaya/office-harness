@@ -17,7 +17,7 @@ pub use agent_status_bridge::{AgentStatusBridge, StatusOrder, StoppingFlag};
 pub use saved_output::{SavedOutputError, SavedOutputs};
 pub use system_clock::SystemClock;
 pub use terminal_events::{AgentTerminalEvent, TerminalEvents};
-pub use terminal_host::TerminalHostBridge;
+pub use terminal_host::{AgentCalls, CallHelper, TerminalHostBridge};
 pub use terminal_launcher::{
     LaunchError, LaunchOutcome, LaunchRequest, PrepareRequest, PreparedProgram, SpawnRequest,
     TerminalLauncher,

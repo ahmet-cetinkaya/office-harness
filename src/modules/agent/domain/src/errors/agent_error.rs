@@ -3,6 +3,7 @@
 use thiserror::Error;
 
 use crate::enums::{AgentStatus, StatusEvent};
+use crate::value_objects::RESERVED_ENV_PREFIX;
 
 /// A rule of the agent module that an input or a transition broke. Messages
 /// name the field at fault.
@@ -27,6 +28,10 @@ pub enum AgentError {
          and holds only letters, digits, and underscores"
     )]
     InvalidEnvName { name: String },
+    #[error(
+        "environment entry {name:?} is reserved for office-harness: names that start with {RESERVED_ENV_PREFIX} are set by the server"
+    )]
+    ReservedEnvName { name: String },
     #[error("flag {} must not be empty", .index + 1)]
     EmptyFlag { index: usize },
     #[error("{field} must not contain a NUL character")]

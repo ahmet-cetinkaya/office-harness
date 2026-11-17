@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use access_application::common::interfaces::AgentCallStore;
 use agent_application::common::errors::TerminalHostError;
 use agent_application::common::interfaces::TerminalHost;
 use agent_application::common::models::{PrepareLaunch, PreparedLaunch, StartTerminal};
@@ -31,7 +32,31 @@ pub struct TerminalHostBridge {
     runtime: Arc<dyn TerminalRuntime>,
     events: TerminalEvents,
     log: ServerLog,
+    /// Where each agent's call credential is issued (0002).
+    calls: Arc<dyn AgentCallStore>,
+    /// The two values that tell an agent how to call the office back: the
+    /// server binary and the file that names its port.
+    call_helper: CallHelper,
 }
+
+/// What an agent session needs to call the office back: the store that
+/// issues its credential and the helper that performs the call.
+pub struct AgentCalls {
+    pub store: Arc<dyn AgentCallStore>,
+    pub helper: CallHelper,
+}
+
+/// How an agent finds the office again from inside its session.
+#[derive(Debug, Clone)]
+pub struct CallHelper {
+    pub server_binary: String,
+    pub server_file: String,
+}
+
+/// The environment names of the call credential (contract, Environment).
+pub const AGENT_TOKEN_VARIABLE: &str = "OFFICE_HARNESS_AGENT_TOKEN";
+pub const CLI_VARIABLE: &str = "OFFICE_HARNESS_CLI";
+pub const SERVER_FILE_VARIABLE: &str = "OFFICE_HARNESS_SERVER_FILE";
 
 impl TerminalHostBridge {
     #[must_use]
@@ -40,12 +65,15 @@ impl TerminalHostBridge {
         runtime: Arc<dyn TerminalRuntime>,
         events: TerminalEvents,
         log: ServerLog,
+        agent_calls: AgentCalls,
     ) -> Self {
         Self {
             launcher,
             runtime,
             events,
             log,
+            calls: agent_calls.store,
+            call_helper: agent_calls.helper,
         }
     }
 }
@@ -56,12 +84,36 @@ fn failed(error: &dyn std::fmt::Display) -> TerminalHostError {
 
 impl TerminalHost for TerminalHostBridge {
     fn prepare(&self, request: &PrepareLaunch) -> Result<PreparedLaunch, TerminalHostError> {
+        // A new session gets a new credential, so the one of an earlier
+        // session never works again. The credential is in this session's
+        // environment and nowhere else.
+        let credential = self
+            .calls
+            .issue(request.agent_id, &request.session_id.to_string())
+            .map_err(|error| failed(&error))?;
+        let mut additions = request.environment_additions.clone();
+        additions.push((
+            AGENT_TOKEN_VARIABLE.to_owned(),
+            format!("{}:{}", request.agent_id, credential.token.expose_secret()),
+        ));
+        additions.push((
+            CLI_VARIABLE.to_owned(),
+            self.call_helper.server_binary.clone(),
+        ));
+        additions.push((
+            SERVER_FILE_VARIABLE.to_owned(),
+            self.call_helper.server_file.clone(),
+        ));
         let prepared = self
             .launcher
             .prepare(&PrepareRequest {
                 program: request.program.clone(),
                 working_folder: request.working_folder.clone(),
-                additions: request.environment_additions.clone(),
+                additions,
+            })
+            .inspect_err(|_| {
+                self.calls
+                    .revoke_session(request.agent_id, &request.session_id.to_string());
             })
             .map_err(|error| failed(&error))?;
         let program = prepared.program.to_string_lossy().into_owned();
@@ -111,6 +163,10 @@ impl TerminalHost for TerminalHostBridge {
                 environment: request.environment.clone(),
                 size,
                 output_key,
+            })
+            .inspect_err(|_| {
+                self.calls
+                    .revoke_session(request.agent_id, &request.session_id.to_string());
             })
             .map_err(|error| match error {
                 LaunchError::Runtime(TerminalRuntimeError::AlreadyRunning(_)) => {
