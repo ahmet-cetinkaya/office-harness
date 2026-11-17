@@ -5,7 +5,7 @@ plan:
 supersedes: 0003/FR-006 (in part)
 ---
 
-<!-- Approved under the overnight directive 2026-11-17; owner may amend. Built after the MVP. -->
+<!-- Approved by the owner on 2026-11-17; owner may amend. Built after the MVP. -->
 
 # 0004: Meeting room
 
@@ -209,7 +209,7 @@ The outcome is `completed` when every participant answered and the facilitator r
 
 ### Session 2026-11-17 (overnight directive)
 
-Decisions with reversible defaults, so that the owner can approve the spec. They settle D-11 in `docs/PRD.md`.
+The owner approved these decisions on 2026-11-17. They settle D-11 in `docs/PRD.md`.
 
 - Q: Which presets? → A: Four fixed presets: Decision, Brainstorm, Review, and Status round (Terms). Reversible: a preset is one name, one instruction, and one result format; more can be added later.
 - Q: Which output format? → A: One meeting record with the topic, preset, participants, every answer, and the facilitator's result, which has a summary, a decision or the preset's equivalent, and action items (Terms). The record copies as Markdown text. It does not write a file into a project folder (PB-1). Reversible: export to a file can be added later.

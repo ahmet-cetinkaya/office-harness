@@ -4,7 +4,7 @@ spec: specs/changes/0004-meeting-room/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-17, approved by the owner 2026-11-17. Status: approved (post-MVP, built after the MVP). The build starts after change 0003 (panel practicality) merges to `main`. -->
+<!-- Drafted 2026-11-17; plan approved by god on 2026-11-17. Status: approved (post-MVP, built after the MVP). The build starts after the MVP is complete (0005 merged and accepted), or earlier if the owner asks. -->
 
 # Plan: meeting room (0004)
 
@@ -36,7 +36,7 @@ This change adds the meeting room to the panel: the user picks a topic, 2 to 8 a
 
 **Decisions made for you:** the `meeting` module with tables `meeting_meetings` and `meeting_participants`, the brief as one paste plus one submit key, capture from the raw output stream stripped of control codes, each answer persisted when it freezes, the time limit injected at construction (10 minutes in production, short in tests), the meeting room as a shell view value that is not restorable (the `last_view` view field stays panel or scene), the Markdown template as a tested pure function in the webview, and no new npm dependency.
 
-**Blockers:** the owner's approval of the spec, then 0003 merged to `main`. Nothing else.
+**Blockers:** the MVP complete (0005 merged and accepted), or an earlier start if the owner asks. Nothing else.
 
 ## Goal
 
@@ -44,7 +44,7 @@ Deliver spec 0004: from the panel the user starts a meeting on a topic with 2 to
 
 ## Context
 
-- **Repository:** 0001 is on `main` (merge 7750602). 0002 and 0003 are approved and wait for their builds. 0004's spec is approved (2026-11-17, post-MVP); its Clarifications settle D-11 of `docs/PRD.md`. This plan branches after 0003 merges, because the meeting room opens from the panel and the suppression needs 0003's notification bridge. Until then only the spec and this plan exist.
+- **Repository:** 0001 is on `main` (merge 7750602). 0002 and 0003 are approved and wait for their builds. 0004's spec is approved (2026-11-17, post-MVP); its Clarifications settle D-11 of `docs/PRD.md`. The build starts after the MVP is complete (0005 merged and accepted), or earlier if the owner asks; the meeting room opens from the panel and the suppression needs 0003's notification bridge, both of which are on `main` once the MVP is complete. Until then only the spec and this plan exist.
 - **Existing seams this change touches** (verified in the repository at `origin/main` 7750602 on 2026-11-17):
   - Request routing: `src/apps/office-harnessd/src/server/dispatcher.rs` sends each request to the module that owns its prefix (`access` today, with `agent.*`, `project.*`, `session.*`, `settings.*` through `server/agent_requests.rs`). A `meeting.` prefix registers the same way. Requests run behind the token gate in `server/connection.rs`; nothing new guards them.
   - Terminal writes: `TerminalRuntime::paste` wraps text in the bracketed-paste markers when the CLI turned that mode on; `write_input` passes bytes unchanged; `bridges/typed_input.rs` already pastes after a run's first output and deliberately never submits (the 0001 startup prompt). The meeting brief submits, which is the one behavioral difference.
@@ -100,7 +100,7 @@ Deliver spec 0004: from the panel the user starts a meeting on a topic with 2 to
 | 1 Server meetings | Meeting module, brief and capture, protocol, restart sweep, suppression | T1 to T5 | `feat/0004-p1-server` (umbrella) | p1 → umbrella |
 | 2 Desktop meeting room | Room view, records, copy, docs, QA | T6 to T9 | `feat/0004-p2-desktop` (umbrella after p1) | p2 → umbrella, then umbrella → `main` |
 
-The umbrella `feat/0004-meeting-room` is created from `main` after the spec is approved and 0003 merges, and holds the approved spec and this plan (committed by the docs PR). Each phase PR runs CI on three OSes and gets Efe's review at its head sha.
+The umbrella `feat/0004-meeting-room` is created from `main` after the MVP is complete (0005 merged and accepted), or earlier if the owner asks, and holds the approved spec and this plan (committed by the docs PR). Each phase PR runs CI on three OSes and gets Efe's review at its head sha.
 
 ## Tasks
 
@@ -118,7 +118,7 @@ Paths are relative to the repository root. `M/` stands for `src/modules/`. `D/` 
   - R6: WAI-ARIA Authoring Practices for the multi-select picker dialog, the preset select, and the polite live region; cite each.
   - `data-model.md`: the DDL of `meeting_meetings` and `meeting_participants` (ids, topic, extra instruction, preset, facilitator, times, outcome, state, per-seat agent id, copied agent name, state, answer, cut note, answer times), the indexes, and the ledger name.
   - `contracts/meeting-protocol.md`: the four preset texts (instruction and result format), every request and event with field tables, the refusal body that names participants and reasons, the deadline timestamp fields, and the Markdown template of D12, and nothing else.
-- **Depends on:** the gate (the spec approved, 0003 merged), because R1 and R4 read merged code.
+- **Depends on:** the gate (the MVP complete: 0005 merged and accepted, or an earlier start if the owner asks), because R1 and R4 read merged code.
 - **Acceptance:** every research item has a "verified <date>, source <file or link>" line; the contract lists every type that T2 to T7 use, and nothing else.
 
 ### T2: Meeting module domain and persistence
@@ -229,7 +229,7 @@ T1 → T2 → T3 → T4 → T5, then T6 → T7 → T8 → T9.
 - **Sequential:** T2 to T4 build one module bottom up and share its files and `Cargo.lock`; T5 edits the bridge that T4's registry feeds; T6 and T7 change the same webview folder.
 - **Parallel:** none; the shared files make parallel tasks collide.
 - **Exclusive:** `Cargo.lock`, the meeting module, the host bridges, and `D/modules/meeting/` are owned by one running task at a time.
-- **Gate before everything:** the owner approves the spec, and 0003 is merged to `main`; the umbrella branch is created from that `main`; T1 starts only then.
+- **Gate before everything:** the MVP is complete (0005 merged and accepted), or the owner asks for an earlier start; the umbrella branch is created from that `main`; T1 starts only then.
 
 ## Commit strategy
 

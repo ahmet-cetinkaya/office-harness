@@ -5,7 +5,7 @@ plan:
 supersedes: 0003/FR-008 (in part)
 ---
 
-<!-- Approved under the overnight directive 2026-11-17; owner may amend. In the MVP, built after 0003. -->
+<!-- Approved by the owner on 2026-11-17; owner may amend. In the MVP, built after 0003. -->
 
 # 0005: Office scene
 
@@ -196,7 +196,7 @@ The user who works by keyboard, with a screen reader, or with reduced motion rea
 
 ### Session 2026-11-17 (overnight directive)
 
-Decisions with reversible defaults, so that the owner can approve the spec.
+The owner approved these decisions on 2026-11-17.
 
 - Q: 2D or 3D? → A: Flat 2D (A1). The owner tried a 3D scene and disliked walking to results. Reversible: a later change can add a 3D layer over the same desks.
 - Q: Does an avatar or a figure walk, work, or react? → A: No. A desk only shows text status. Reversible: a later change can add motion that honors FR-009.

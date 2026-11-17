@@ -4,7 +4,7 @@ spec: specs/changes/0005-office-scene/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-17, approved by the owner 2026-11-17. Status: approved (in the MVP, built after 0003). The build starts after change 0003 (panel practicality) merges to `main`. -->
+<!-- Drafted 2026-11-17; plan approved by god on 2026-11-17. Status: approved (in the MVP, built after 0003). The build starts after change 0003 (panel practicality) merges to `main`. -->
 
 # Plan: office scene (0005)
 
