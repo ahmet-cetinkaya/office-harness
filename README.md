@@ -42,15 +42,15 @@ The app has no screen to change the focus shortcut. The server stores it as the 
 
 office-harness can organize the agents of an office as a company. The office has one CEO at the top. Under the CEO are teams, and each team has one team lead with its members under the lead. An agent without a role stays outside the hierarchy and keeps the behavior described so far.
 
-The hierarchy view shows the office as a read-only tree: the CEO, every team with its project, its lead, and its members, and the agents without a role in their own group. Each agent shows its name, its role, and its status as text. You can move in the tree with the keyboard, as in the rest of the app. When the office has no CEO and no team, the view says so in text, and when the tree cannot load, it says so and offers to try again. A team without members shows its lead and says that it has no members. The view ships with PR #25, which merges before this branch.
+The hierarchy view shows the office as a read-only tree: the CEO, every team with its project, its lead, and its members, and the agents without a role in their own group. Each agent shows its name, its role, and its status as text. You can move in the tree with the keyboard, as in the rest of the app. When the office has no CEO and no team, the view says so in text, and when the tree cannot load, it says so and offers to try again. A team without members shows its lead and says that it has no members.
 
 The app has no hierarchy actions yet. Creating a CEO, a team with its team lead, or a member under a lead, the role choice that offers only the roles that the chosen place allows, and the stop and delete confirmations that show how many agents the action affects, come later in this change with task T7, "Create flows and confirmations". The server already applies the rules behind them: it refuses a second CEO and names the existing one, it refuses a team whose name another team already has, and it refuses a role that a place does not allow, naming the roles that are allowed there.
 
-Stopping or deleting an agent that has agents under it affects them too. A confirmed delete removes the agent and every agent under it. A stop can stop the agent alone, or the agent together with the agents under it in one action. The server counts the agents under the deleted one again and refuses the delete when the number has changed since your confirmation. This branch merges only after PR #11 wires the subtree handling into the server and is rebased onto it, so this text ships with the wiring.
+Stopping or deleting an agent that has agents under it affects them too. A confirmed delete removes the agent and every agent under it. A stop can stop the agent alone, or the agent together with the agents under it in one action. The server counts the agents under the deleted one again and refuses the delete when the number has changed since your confirmation.
 
 Deleting a team removes the team only. Its lead and members keep their agents and show outside the hierarchy afterwards.
 
-A client reaches the hierarchy over the protocol: the `team.create`, `team.delete`, `hierarchy.tree`, and `hierarchy.descendants` requests, and `agent.stop` and `agent.delete` extended with an `include_descendants` field; deleting an agent that has agents under it also carries `descendant_count`, the number that a confirmation showed. The wire surface for subtree stop and delete lands with PR #11's wiring, and the shapes are in [the hierarchy protocol](specs/changes/0002-agent-hierarchy/contracts/hierarchy-protocol.md).
+A client reaches the hierarchy over the protocol: the `team.create`, `team.delete`, `hierarchy.tree`, and `hierarchy.descendants` requests, and `agent.stop` and `agent.delete` extended with an `include_descendants` field; deleting an agent that has agents under it also carries `descendant_count`, the number that a confirmation showed. The shapes are in [the hierarchy protocol](specs/changes/0002-agent-hierarchy/contracts/hierarchy-protocol.md).
 
 ## Start at login
 
@@ -157,7 +157,7 @@ office-harnessd agent-call <request type> [<json fields>]
 
 The helper reads the credential and the server file from the environment, connects to the server, sends one request, and prints the answer as JSON. It exits with code 0 when the answer is a success, code 2 when the command is used wrong or runs outside an agent session, and code 1 when anything else fails, for example when the server refuses the request or cannot be reached.
 
-On this branch the office answers an agent only for `agent.whoami`, which returns the agent's own id:
+Today the office answers an agent only for `agent.whoami`, which returns the agent's own id:
 
 ```sh
 office-harnessd agent-call agent.whoami
