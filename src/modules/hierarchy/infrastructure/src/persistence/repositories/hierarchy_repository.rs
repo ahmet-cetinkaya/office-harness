@@ -53,8 +53,7 @@ impl HierarchyRepository {
             TeamName::parse(&name).map_err(|_| rusqlite::Error::InvalidQuery)?,
             project_id
                 .map(|text| {
-                    agent_domain::value_objects::ProjectId::from_uuid_text(&text)
-                        .ok_or(rusqlite::Error::InvalidQuery)
+                    kernel::ProjectId::from_uuid_text(&text).ok_or(rusqlite::Error::InvalidQuery)
                 })
                 .transpose()?,
             AgentId::from_uuid_text(&lead_agent_id).ok_or(rusqlite::Error::InvalidQuery)?,

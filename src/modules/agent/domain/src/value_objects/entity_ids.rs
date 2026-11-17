@@ -56,7 +56,6 @@ macro_rules! uuid_identifier {
     };
 }
 
-uuid_identifier!(ProjectId, "project id");
 uuid_identifier!(MachineId, "machine id");
 uuid_identifier!(SessionId, "session id");
 

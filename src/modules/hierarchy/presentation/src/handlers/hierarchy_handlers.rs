@@ -230,11 +230,8 @@ fn read_team_id(
     hierarchy_domain::TeamId::from_uuid_text(fields.get(key)?.as_str()?)
 }
 
-fn read_id(
-    fields: &serde_json::Map<String, Value>,
-    key: &str,
-) -> Option<agent_domain::value_objects::ProjectId> {
-    agent_domain::value_objects::ProjectId::from_uuid_text(fields.get(key)?.as_str()?)
+fn read_id(fields: &serde_json::Map<String, Value>, key: &str) -> Option<kernel::ProjectId> {
+    kernel::ProjectId::from_uuid_text(fields.get(key)?.as_str()?)
 }
 
 fn missing(field: &'static str) -> impl Fn() -> HandlerError {

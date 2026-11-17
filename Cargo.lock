@@ -1584,7 +1584,6 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 name = "hierarchy-application"
 version = "0.1.0"
 dependencies = [
- "agent-domain",
  "hierarchy-domain",
  "kernel",
  "tempfile",
@@ -1595,7 +1594,6 @@ dependencies = [
 name = "hierarchy-domain"
 version = "0.1.0"
 dependencies = [
- "agent-domain",
  "kernel",
  "serde",
  "thiserror 2.0.21",
@@ -1606,7 +1604,6 @@ dependencies = [
 name = "hierarchy-infrastructure"
 version = "0.1.0"
 dependencies = [
- "agent-domain",
  "agent-infrastructure",
  "hierarchy-application",
  "hierarchy-domain",
@@ -1621,7 +1618,6 @@ dependencies = [
 name = "hierarchy-presentation"
 version = "0.1.0"
 dependencies = [
- "agent-domain",
  "hierarchy-application",
  "hierarchy-domain",
  "kernel",

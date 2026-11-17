@@ -27,6 +27,7 @@ impl From<PersistenceError> for PortError {
             }
             PersistenceError::Invalid(_)
             | PersistenceError::InvalidAgentId(_)
+            | PersistenceError::InvalidProjectId(_)
             | PersistenceError::InvalidJson(_) => Self::InvalidData {
                 message: error.to_string(),
             },
