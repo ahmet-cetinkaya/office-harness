@@ -2,7 +2,7 @@
 status: draft
 capability: office
 plan:
-supersedes:
+supersedes: 0003/FR-007 (in part)
 ---
 
 # 0005: Office scene
@@ -92,10 +92,13 @@ The user who works by keyboard, with a screen reader, or with reduced motion rea
 - **FR-004** (US1): WHEN the status or the last output line of an agent changes, THE SYSTEM SHALL update the desk of that agent without a user action.
 - **FR-005** (US1): WHEN the user opens a desk, THE SYSTEM SHALL open that agent's live terminal in the same window, with keyboard focus, as 0003/FR-004 does for the agent list.
 - **FR-006** (US2): WHEN the user returns from the scene to the panel, THE SYSTEM SHALL show the panel with the project choice and the selected agent that it had before the scene opened.
-- **FR-007** (US2): THE SYSTEM SHALL store which view was open as part of 0003's last view, and SHALL open that view when the desktop app starts.
-- **FR-008** (US2): WHILE the scene is open, THE SYSTEM SHALL apply the project switcher and a search for an agent by name to the scene, with the same result as in the panel.
-- **FR-009** (US3): THE SYSTEM SHALL make every scene action available from the keyboard, with a visible focus mark, and SHALL announce each change of a desk's status to screen readers.
-- **FR-010** (US3): WHERE the user's system asks to reduce motion, THE SYSTEM SHALL show the scene with no moving or flashing element.
+- **FR-007** (US2): WHILE the scene is open, THE SYSTEM SHALL apply the project switcher and a search for an agent by name to the scene, with the same result as in the panel.
+- **FR-008** (US3): THE SYSTEM SHALL make every scene action available from the keyboard, with a visible focus mark, and SHALL announce each change of a desk's status to screen readers.
+- **FR-009** (US3): WHERE the user's system asks to reduce motion, THE SYSTEM SHALL show the scene with no moving or flashing element.
+
+### MODIFIED
+
+- **0003/FR-008** (US2): WHEN the user opens the desktop app, THE SYSTEM SHALL show the current state of the office with the last view, where the last view now also names the open view (panel or scene), and SHALL open that view. This changes steps 1 and 6 of the 0003 Flow, which now read "the open view" where they read "the panel", and 0003/SC-006, which now measures the open view.
 
 ### PRESERVED
 
@@ -113,7 +116,7 @@ The user who works by keyboard, with a screen reader, or with reduced motion rea
 1. The user opens the panel and chooses the scene action.
 2. The scene shows the floors that the project switcher selects. Each floor is a labeled area with its project name and the number of agents. Each desk shows the agent's name, its status, and its last output line.
 3. The user opens a desk by click or by keyboard, and the agent's live terminal opens in the same window.
-4. The user chooses the panel action to return, or leaves the scene open; the app opens it again on the next start.
+4. The user chooses the panel action to return, or leaves the scene open; the app opens it again on the next start (0003/FR-008, modified).
 
 **Visible states:**
 
@@ -123,7 +126,7 @@ The user who works by keyboard, with a screen reader, or with reduced motion rea
 | No agents | The scene says that the office has no agent and offers the create action (0001). | Edge cases |
 | Success | The floors with their desks. | FR-002, FR-003 |
 | A project without agents | The floor shows its name and says that it has no agents. | Edge cases |
-| No agent matches the search | The scene says that no desk matches the search. | FR-008, Edge cases |
+| No agent matches the search | The scene says that no desk matches the search. | FR-007, Edge cases |
 | Desk status | Each desk shows its status as text. | FR-002, PB-3 |
 | Many agents | The scene stays readable and usable; it scrolls, or groups folded by the user, instead of shrinking desks below a readable size. | SC-004, Edge cases |
 
@@ -131,7 +134,7 @@ The user who works by keyboard, with a screen reader, or with reduced motion rea
 
 **Accessibility:**
 
-- The scene works from the keyboard: move between desks, open a desk, return to the panel (FR-009). Keyboard focus is always visible.
+- The scene works from the keyboard: move between desks, open a desk, return to the panel (FR-008). Keyboard focus is always visible.
 - Each desk has an accessible name that includes the agent's name, project, and status. Floor and department are text, not a picture alone.
 - A change of a desk's status is announced to screen readers.
 - Status is text, optionally with an icon, never color alone.
@@ -144,12 +147,12 @@ The user who works by keyboard, with a screen reader, or with reduced motion rea
 | Desk | One agent in the scene. | agent name, status, last output line | One per agent. Shows an existing agent; it is not stored. |
 | Floor | The desks of one project. | project name, agent count | One per project, plus "No project". Not stored. |
 | Department | The desks of one team on a floor. | team name | One per team. Exists only where 0002 is present. Not stored. |
-| Last view (extends 0003) | Where the user left the app. | open view (panel or scene), in addition to the 0003 attributes | One per office. |
+| Last view (extends 0003) | Where the user left the app. | open view (panel or scene), in addition to the 0003 attributes | One per desktop app on the machine, as in 0003 A4. |
 
 ## Success criteria
 
 - **SC-001:** With 12 agents in 3 projects, a user who sees the panel opens the scene, finds a named agent's desk, and opens its terminal in under 10 seconds.
-- **SC-002:** After an agent's status changes, the desk shows the new status within 2 seconds in 100% of 50 changes.
+- **SC-002:** After an agent's status changes, the desk shows the new status, and after an agent's last output line changes, the desk shows the new line, within 2 seconds in 100% of 50 changes of each kind.
 - **SC-003:** In the scene and in the panel, the same 12 agents show the same status text and the same last output line in 100% of 50 samples.
 - **SC-004:** With 100 agents in 10 projects, the scene opens in under 2 seconds, and the user finds and opens a named agent's terminal in under 15 seconds.
 - **SC-005:** With only the keyboard, a user opens the scene, opens a desk, and returns to the panel with 0 pointer actions.
@@ -175,8 +178,8 @@ The user who works by keyboard, with a screen reader, or with reduced motion rea
 | 0002 is not present. | Boundary | The scene groups by floor only (FR-003). |
 | The desktop app cannot reach the background server, or its token is rejected. | Unauthorized | The 0001 states show. |
 | The user opens a desk of an agent whose status is `exited`, `failed`, or `stopped`. | Failure | The terminal opens with the agent's recent output, as in 0001/FR-016. |
-| The server stops while the scene is open. | Failure | The scene shows the 0001 state for an unreachable server and keeps the last data marked as old. |
-| The user's system asks to reduce motion. | Boundary | FR-010. |
+| The server stops while the scene is open. | Failure | The scene shows the 0001 state for an unreachable server, as the panel does (PB-2). |
+| The user's system asks to reduce motion. | Boundary | FR-009. |
 
 ## Assumptions
 
@@ -194,12 +197,20 @@ The user who works by keyboard, with a screen reader, or with reduced motion rea
 Decisions with reversible defaults, so that the owner can approve the spec.
 
 - Q: 2D or 3D? → A: Flat 2D (A1). The owner tried a 3D scene and disliked walking to results. Reversible: a later change can add a 3D layer over the same desks.
-- Q: Does an avatar or a figure walk, work, or react? → A: No. A desk only shows text status. Reversible: a later change can add motion that honors FR-010.
+- Q: Does an avatar or a figure walk, work, or react? → A: No. A desk only shows text status. Reversible: a later change can add motion that honors FR-009.
 - Q: Is the scene the main view? → A: No. It is the second view and opens from the panel (FR-001, PB-2; `docs/PRD.md` section 4.1).
 - Q: Can the user act on agents in the scene? → A: Only open a terminal (FR-005, PB-1). Create, start, stop, and delete stay in the panel, so that the scene never duplicates a function.
 - Q: What do floors and departments stand for? → A: Floors stand for projects, departments for the teams of 0002 (A3). The user does not edit the layout.
-- Q: Does the app reopen the scene after a restart? → A: Yes, as part of the last view (FR-007), to follow "resume where you left off" in `docs/PRD.md` section 4.1. Reversible: the panel can be the only start view.
+- Q: Does the app reopen the scene after a restart? → A: Yes, as part of the last view (0003/FR-008, modified), to follow "resume where you left off" in `docs/PRD.md` section 4.1. Reversible: the panel can be the only start view.
 - Q: Does the scene depend on 0002 or 0004? → A: No. It uses teams where 0002 is present (FR-003) and does not show meetings (A5).
+
+### Open questions from review (2026-11-17)
+
+Reversible defaults, so that the owner can amend them.
+
+- Q: Where does the CEO's desk go, when 0002 is present and the CEO has no team? → A: On the CEO's own project floor (or "No project"), in the group without a department name, shown first.
+- Q: Where does a team lead's desk go when the lead's project differs from its team's project? → A: On the lead's own floor, in the department of its team; the department then shows on each floor where one of its agents sits, and the lead is first only on the floor where it sits.
+- Q: Does the scene mark stale data after a server stop? → A: No. The scene shows the 0001 state as the panel does (PB-2); a stale-data marker would be a new function for both views in a later change.
 
 ## Out of scope
 
