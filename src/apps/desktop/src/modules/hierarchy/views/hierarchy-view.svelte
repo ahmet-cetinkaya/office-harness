@@ -65,6 +65,15 @@
     });
   }
 
+  /** The rendered row for a node id, searched inside the tree only. */
+  function rowElement(id: string): HTMLElement | null {
+    return (
+      treeContainer?.querySelector<HTMLElement>(
+        `[data-node-id="${CSS.escape(id)}"]`,
+      ) ?? null
+    );
+  }
+
   /**
    * The row that fired focusout has left the DOM. If its id was rebuilt
    * elsewhere in the tree, say an agent moved to another team, its new
@@ -76,9 +85,7 @@
   function refocusRemovedRow(removedRow: Element): void {
     const id = removedRow.getAttribute("data-node-id");
     if (id === null || !rowById.has(id)) return;
-    const replacement = document.querySelector<HTMLElement>(
-      `[data-node-id="${id}"]`,
-    );
+    const replacement = rowElement(id);
     if (replacement === null) {
       treeHasFocus = false;
       return;
@@ -125,7 +132,7 @@
   async function focusRow(id: string): Promise<void> {
     activeId = id;
     await tick();
-    document.querySelector<HTMLElement>(`[data-node-id="${id}"]`)?.focus();
+    rowElement(id)?.focus();
   }
 
   function move(delta: number): void {
@@ -244,11 +251,7 @@
       activeId = firstId;
       if (!treeHasFocus) return;
       void tick().then(() => {
-        if (firstId !== null) {
-          document
-            .querySelector<HTMLElement>(`[data-node-id="${firstId}"]`)
-            ?.focus();
-        }
+        if (firstId !== null) rowElement(firstId)?.focus();
       });
     }
   });
