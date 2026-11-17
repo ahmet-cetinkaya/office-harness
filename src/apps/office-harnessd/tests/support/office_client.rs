@@ -4,6 +4,7 @@
 
 //! A server with fake CLIs, and a client that numbers its own requests.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -69,23 +70,26 @@ impl Office {
 pub struct Client {
     pub wire: WireClient,
     next_id: u32,
+    /// Answers that arrived before the test asked for them: the server
+    /// answers concurrent requests in any order, so a skipped answer is
+    /// kept here instead of being dropped.
+    answered: HashMap<u32, Value>,
 }
 
 impl Client {
     #[must_use]
     pub fn new(wire: WireClient) -> Self {
-        Self { wire, next_id: 1 }
+        Self {
+            wire,
+            next_id: 1,
+            answered: HashMap::new(),
+        }
     }
 
     /// Sends a request and returns its answer, skipping events that arrive
     /// first.
     pub async fn ask(&mut self, kind: &str, fields: Value) -> Value {
-        let id = self.next_id;
-        self.next_id += 1;
-        let mut body = fields;
-        body["id"] = json!(id);
-        body["type"] = json!(kind);
-        self.wire.send_text(&body.to_string()).await;
+        let id = self.send(kind, fields).await;
         self.answer_of(id).await
     }
 
@@ -101,20 +105,34 @@ impl Client {
     }
 
     pub async fn answer_of(&mut self, id: u32) -> Value {
+        if let Some(answer) = self.answered.remove(&id) {
+            return answer;
+        }
         loop {
             let message = self.wire.receive_json().await;
-            if message["id"] == json!(id) {
-                return message;
+            let answer_id = message["id"]
+                .as_u64()
+                .and_then(|found| u32::try_from(found).ok());
+            match answer_id {
+                Some(found) if found == id => return message,
+                Some(found) => {
+                    self.answered.insert(found, message);
+                }
+                None => {}
             }
         }
     }
 
-    /// Reads events until one of the type `kind` arrives.
+    /// Reads events until one of the type `kind` arrives. Answers that turn
+    /// up meanwhile are kept for `answer_of`.
     pub async fn next_event(&mut self, kind: &str) -> Value {
         loop {
             let message = self.wire.receive_json().await;
             if message["type"] == kind {
                 return message;
+            }
+            if let Some(found) = message["id"].as_u64().and_then(|id| u32::try_from(id).ok()) {
+                self.answered.insert(found, message);
             }
         }
     }
