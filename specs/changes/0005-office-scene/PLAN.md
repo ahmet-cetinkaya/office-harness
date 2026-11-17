@@ -168,13 +168,13 @@ Paths are relative to `src/apps/desktop/src/` unless they start at the repositor
 - **Files:** `M/office-scene/views/scene-view.svelte`, `M/office-scene/components/floor.svelte`, `M/office-scene/components/desk.svelte`.
 - **Work:**
   - (a) Tab moves between desks in reading order, floor by floor; the arrow keys move within one floor; the focus mark is always visible (FR-008, D9).
-  - (b) One polite live region announces "agent name, new status" and the focus move after a deletion; deleting the focused desk's agent moves focus to the next desk in reading order, to the previous desk when none follows, and to the empty-state control when no desk is left (FR-008, D9, the concurrent edge cases).
+  - (b) One polite live region announces "agent name, new status" and the focus move after a deletion; deleting the focused desk's agent moves focus to the next desk in reading order, to the previous desk when none follows, and to the empty-state heading when no desk is left (FR-008, D9, the concurrent edge cases).
   - (c) No animation or transition of its own; inherited ones honor `prefers-reduced-motion` (FR-009, D10).
   - (d) A long name and a long line are cut with a visible ellipsis; the accessible name holds the full name and the agent's name, project, and status (D4, edge cases).
 - **Depends on:** T4.
 - **Acceptance:**
   - (a) Playwright, keyboard only: open the scene, move over all 12 desks in reading order, open one with Enter, and return to the panel with 0 pointer actions (SC-005, US3 independent test); the focus mark is asserted on the focused desk.
-  - (b) Playwright: a pushed status change adds "name, status" to the live region; deleting the focused agent moves focus to the next desk, to the previous desk when none follows, and to the empty-state control when the last desk is deleted, each with its announcement.
+  - (b) Playwright: a pushed status change adds "name, status" to the live region; deleting the focused agent moves focus to the next desk, to the previous desk when none follows, and to the empty-state heading when the last desk is deleted, each with its announcement.
   - (c) Playwright with `reducedMotion: "reduce"` while 12 statuses change: the scan finds 0 moving or flashing elements (SC-007).
   - (d) Playwright with 100 agents in 10 projects at 360 width: every desk keeps a readable size, the page scrolls, the scene opens in under 2 seconds, and the user finds a named agent through the search and opens its desk in under 15 seconds (SC-004 measurement); a long name and a long line are cut with an ellipsis and the accessible names hold the full text.
   - `svelte-check`, `eslint`, `prettier --check`.
