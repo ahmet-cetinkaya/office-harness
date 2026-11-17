@@ -86,16 +86,17 @@ The user sees when a machine goes offline, gets its agents back when it returns,
 3. Given a machine is `offline`, When the user opens one of its agents, Then the panel shows the last output that the office server holds and says that the agent is unreachable.
 4. Given a joined machine runs 2 agents, When the user removes the machine, Then the panel states how many agents it affects and asks for confirmation, and after the user confirms, the machine's credential stops working.
 5. Given the user turns off the listener, When a joined machine is connected, Then the office server closes that connection and the machine shows `offline`, and the office remains usable on the home machine.
+6. Given a joined machine has the fingerprint from its join, When it reaches a server with another identity, Then it sends no credential, refuses the connection, and says that the server's identity changed and a new join is needed.
 
 ## Requirements
 
 ### ADDED
 
 - **FR-001** (US1): THE SYSTEM SHALL keep the listener off until the user turns it on in the desktop app, and SHALL close every joined machine's connection when the user turns it off.
-- **FR-002** (US1): WHEN the user asks for a join code, THE SYSTEM SHALL create a code that works once and expires after 10 minutes, SHALL show it once with the server fingerprint, and SHALL NOT show it again.
+- **FR-002** (US1): WHEN the user asks for a join code, THE SYSTEM SHALL create a code of at least 64 bits from a secure random source, that works once and expires after 10 minutes, SHALL show it once with the server fingerprint, and SHALL NOT show it again.
 - **FR-003** (US1): WHEN a machine presents a valid join code, THE SYSTEM SHALL register the machine under the name that the user gave it, issue it a machine credential, and record the join with the machine's name and time; IF the code is wrong, used, or expired, THEN THE SYSTEM SHALL refuse it and record the refusal.
-- **FR-004** (US1): THE SYSTEM SHALL encrypt and authenticate every connection between the office server and a joined machine, and a joining machine SHALL send the join code only to a server that has the fingerprint in the code.
-- **FR-005** (US1): IF a source makes 5 failed join attempts within 1 minute, THEN THE SYSTEM SHALL refuse every join attempt from that source for the next 5 minutes.
+- **FR-004** (US1): THE SYSTEM SHALL encrypt and authenticate every connection between the office server and a joined machine, and a machine SHALL send the join code, and every later connection SHALL send the machine credential, only to a server that has the fingerprint that the join code held; a server with another identity SHALL be refused until the user joins the machine again with a new code.
+- **FR-005** (US1): IF a source makes 5 failed join attempts within 1 minute, THEN THE SYSTEM SHALL refuse every join attempt from that source for the next 5 minutes. The lockout stops join attempts only: it does not stop connected machines or their credentials, and it does not use up a valid join code.
 - **FR-006** (US2): WHEN the user creates an agent, THE SYSTEM SHALL let the user pick the home machine or an `online` joined machine, start the agent there with that machine's own user environment (0001/FR-020), and show the machine's name in the agent list and the agent's details.
 - **FR-007** (US2, US3): THE SYSTEM SHALL give every agent on a joined machine the same terminal, status, last output, and action record as a local agent, and WHEN a joined machine is offline THE SYSTEM SHALL show its agents as `unreachable`, keep them running on that machine, and show their real status when the connection returns.
 - **FR-008** (US3): WHEN the user removes a joined machine, THE SYSTEM SHALL state how many agents it affects, ask for confirmation, then make the machine's credential stop working and close its connection.
@@ -126,8 +127,9 @@ This section states what the change protects, from whom, and what is not promise
 |---|---|---|
 | Someone on the network reads or changes traffic between machines. | Every connection is encrypted and authenticated; plain connections are refused. | FR-004, SC-004 |
 | A fake server answers a joining machine and collects the join code. | The machine sends the code only to a server with the expected fingerprint. | FR-004, US1 scenario 6, SC-004 |
+| A fake server replaces the office server after the join, for example by a changed address, and collects the machine credential. | Every connection, not only the join, checks the fingerprint pinned at join; a changed identity is refused until the user joins the machine again with a new code. | FR-004, US3 scenario 6, SC-009 |
 | A stranger on the network connects to the listener. | The listener accepts only a valid join code or a valid machine credential, and refuses all else. | FR-003, 0001/FR-008, SC-002 |
-| A join code is stolen or guessed. | A code works once, expires in 10 minutes, and repeated wrong attempts lock the source out. | FR-002, FR-005, SC-003 |
+| A join code is stolen or guessed. | A code has at least 64 bits from a secure random source, works once, and expires in 10 minutes, so guessing it is not practical even from many addresses. Repeated wrong attempts also lock the source out. | FR-002, FR-005, SC-003, SC-010 |
 | A machine credential is stolen. | The user removes the machine, and the credential stops working at once. The credential works for that machine's agents only. | FR-008, 0001/FR-008, SC-005 |
 | A joined machine is compromised. | It can read and control only its own agents. It cannot read the terminals of other machines or the office token. | 0001/FR-008, SC-005 |
 | A secret appears in a log, the action record, stored terminal output, an error message, or a repository file. | No such place holds a join code, a machine credential, or the office token. | FR-002, PB-6, SC-008 |
@@ -186,8 +188,12 @@ This section states what the change protects, from whom, and what is not promise
 - **SC-004:** A capture of all network traffic during a join and a 100-line terminal session holds 0 readable bytes of the join code, the machine credential, or the terminal text, and a machine that reaches a server with another fingerprint sends 0 bytes of the join code.
 - **SC-005:** After the user removes a machine, 100% of 20 connections that use its old credential are refused within 5 seconds, and a test machine with a valid credential reads 0 terminals of other machines in 20 attempts.
 - **SC-006:** After a joined machine loses its network, its agents show `unreachable` within 15 seconds, and after the network returns, they show their real status within 10 seconds.
-- **SC-007:** With 3 joined machines and 30 agents in total, the agent list shows a status change of any agent within 2 seconds (`docs/PRD.md` NFR-03), and 95% of typed characters in a remote agent's terminal appear within 250 milliseconds on a link with a 50 millisecond round trip.
+- **SC-007:** With 3 joined machines and 30 agents in total, the agent list shows a status change of any agent within 2 seconds (`docs/PRD.md` NFR-03), and 95% of typed characters in a remote agent's terminal appear within 100 milliseconds on a link with a 5 millisecond round trip (`docs/PRD.md` NFR-03).
 - **SC-008:** After a join, a removal, and a refused join, a search of the logs, the action record, the stored terminal output, and the repository files finds 0 occurrences of the join code, the machine credential, or the office token.
+
+- **SC-009:** In a test of 20 reconnects of a joined machine to a server with another identity, 100% are refused with 0 bytes of the machine credential sent, and the machine joins again only with a new code.
+- **SC-010:** 10,000 generated join codes hold no repeat and each has at least 64 bits of entropy from a secure random source, and 1,000 wrong attempts spread over 1,000 source addresses are all refused with no valid code guessed.
+- **SC-011:** On a link with a 50 millisecond round trip, 95% of typed characters in a remote agent's terminal appear within 250 milliseconds (see the decision on NFR-03 in Clarifications).
 
 ## Edge cases
 
@@ -208,6 +214,8 @@ This section states what the change protects, from whom, and what is not promise
 | The user removes a machine that is offline. | Failure | The credential is made invalid at the office server, the panel says that the machine's agents may still run there, and the machine's agents are deleted from the office. |
 | The user deletes a project whose agents run on several machines. | Boundary | Agents on every machine are counted in the confirmation (0001). |
 | The listener port is already used by another program. | Failure | The listener stays off and the panel says why. |
+| Many machines share one source address (a shared NAT), and a wrong code from one locks that source out. | Concurrent | Joins from that source wait 5 minutes (FR-005), the lockout does not touch connected machines or valid codes, and the panel tells the user that a source is locked out. The user can wait or turn the listener off and on to clear the lockout. |
+| The office server restarts. | Failure | The listener stays off after a restart unless the user turned on the option to start it on; joined machines show `offline` until it is on. |
 | The clocks of two machines differ. | Boundary | A join code's expiry counts on the office server's clock only. |
 | A client without the office token connects to the home machine. | Unauthorized | Refused as in 0001. |
 | A machine connects with an old or removed credential. | Unauthorized | Refused and recorded (FR-008). |
@@ -233,7 +241,10 @@ Decisions with reversible defaults, so that the owner can approve the spec.
 - Q: Which topology? → A: One office server and joined machines that report to it (A1). Reversible: a later change can add peer machines.
 - Q: How does a machine join? → A: With a one-time join code that holds the server fingerprint (FR-002, FR-004). Reversible: the code can later hold more, or be replaced by a scanned code.
 - Q: Which encryption identity? → A: One created by the office server and checked by fingerprint (A4), not a public certificate. Reversible: a later change can accept a certificate from a certificate authority when the user has a domain.
-- Q: Is the listener on by default? → A: No. It is off until the user turns it on (FR-001, PB-1), so that an office with one machine has no new exposure.
+- Q: Is the listener on by default? → A: No. It is off until the user turns it on (FR-001, PB-1), so that an office with one machine has no new exposure. After a restart of the office server it is off again unless the user chose to keep it on across restarts (a stored setting, off by default). Reversible: the default can become on-after-restart.
+- Q: Does the machine credential change a PRD rule? → A: Yes, it amends `docs/PRD.md` section 4.1 ("every client proves that it knows the office token") and 0001 A13 ("every client, the desktop app included, uses the office token"): a joined machine proves itself with its own machine credential, and the office token stays on the home machine and the desktop app. The reason is the blast radius of a lost machine (SC-005). Reversible: both texts are amended together with the approval of this spec.
+- Q: Is the 100 ms typing limit of NFR-03 kept for remote agents? → A: On a local network (5 ms round trip), yes (SC-007). Over a slower link (50 ms round trip), 95% within 250 ms is accepted (SC-011), because network delay counts. Reversible: the figure can change when the owner measures his links.
+- Q: What does a shared network address do to a join? → A: One wrong code locks that address out of joins for 5 minutes (FR-005), and the user can clear it by turning the listener off and on. The code's strength, not the lockout, is the protection against guessing (FR-002, SC-010).
 - Q: Can a desktop app on another machine connect? → A: No (PB-2). Only machines that run agents join. Reversible: later releases can add remote clients with the same credential model (A9).
 - Q: What can a joined machine do? → A: Run and report its own agents only (0001/FR-008, modified).
 - Q: Does the office find machines on its own? → A: No (A3). The user gives the address.
