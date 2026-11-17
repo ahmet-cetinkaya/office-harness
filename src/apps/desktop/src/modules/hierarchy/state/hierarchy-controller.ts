@@ -5,8 +5,13 @@ import {
   type CoreClient,
   type ServerEvent,
 } from "../../../core/api";
+import type { NewAgent } from "../../agent";
 import { EMPTY_TREE, type HierarchyTree } from "../models/hierarchy";
-import { createHierarchyService } from "../services/hierarchy-service";
+import { placeOf, type CreatePlace } from "../models/placement";
+import {
+  createHierarchyService,
+  type NewTeam,
+} from "../services/hierarchy-service";
 
 export interface HierarchySnapshot {
   phase: "loading" | "ready" | "failed";
@@ -25,10 +30,13 @@ const REQUEST_FAILED = "The request failed.";
 /** The server's tree event: any change to the tree shape or a role (D6). */
 const EVENT_TREE_CHANGED = "hierarchy.changed";
 
+/** A form's refusal, or null when the request went through. */
+export type FailureText = string | null;
+
 /**
- * Owns the tree snapshot. It reads `hierarchy.tree` and reads it again on
- * `hierarchy.changed`, so agents that other clients or agents created show up
- * without a reload (D6).
+ * Owns the tree snapshot and the create flows. It reads `hierarchy.tree` and
+ * reads it again on `hierarchy.changed`, so agents that other clients or
+ * agents created show up without a reload (D6).
  */
 export function createHierarchyController(client: CoreClient) {
   const service = createHierarchyService(client);
@@ -56,6 +64,16 @@ export function createHierarchyController(client: CoreClient) {
     } catch (rejection) {
       if (readId !== newestRead) return;
       publish({ phase: "failed", failure: describe(rejection) });
+    }
+  }
+
+  /** Runs one form request, which shows the failure itself (FR-003). */
+  async function submit(work: () => Promise<unknown>): Promise<FailureText> {
+    try {
+      await work();
+      return null;
+    } catch (rejection) {
+      return describe(rejection);
     }
   }
 
@@ -95,6 +113,55 @@ export function createHierarchyController(client: CoreClient) {
 
     /** Loads the tree. Call it each time the connection becomes ready. */
     load,
+
+    /** Creates the CEO from the create-CEO dialog. */
+    createCeo: (input: NewAgent): Promise<FailureText> =>
+      submit(() => service.createCeo(input)),
+
+    /** Creates a team lead in a team the dialog names by its id. */
+    createLead: (input: NewAgent, teamId: string): Promise<FailureText> =>
+      submit(() => service.createLead(input, teamId)),
+
+    /** Creates a member under the team lead the dialog names. */
+    createMember: (
+      input: NewAgent,
+      leadAgentId: string,
+    ): Promise<FailureText> =>
+      submit(() => service.createMember(input, leadAgentId)),
+
+    /** Creates a team with its lead, in one request (FR-002). */
+    createTeam: (input: NewTeam): Promise<FailureText> =>
+      submit(() => service.createTeam(input)),
+
+    /** Deletes a team record; its agents become no-role agents (PB-1). */
+    deleteTeam: (teamId: string): Promise<FailureText> =>
+      submit(() => service.deleteTeam(teamId)),
+
+    /** The agents that sit below this one (FR-006, FR-007). */
+    countDescendants: (agentId: string): Promise<number> =>
+      service.countDescendants(agentId),
+
+    /** Stops an agent and, when asked, its whole subtree (FR-007). */
+    stopSubtree: (
+      agentId: string,
+      includeDescendants: boolean,
+    ): Promise<FailureText> =>
+      submit(() => service.stopSubtree(agentId, includeDescendants)),
+
+    /** Deletes an agent and, when asked, its whole subtree (FR-006). The
+     * count is what the confirmation showed; the server recounts it. */
+    deleteSubtree: (
+      agentId: string,
+      includeDescendants: boolean,
+      descendantCount: number,
+    ): Promise<FailureText> =>
+      submit(() =>
+        service.deleteSubtree(agentId, includeDescendants, descendantCount),
+      ),
+
+    /** The place a create dialog would act at, from the tree as it is now. */
+    placeOf: (selectedAgentId: string | null): CreatePlace =>
+      placeOf(snapshot.tree, selectedAgentId),
   };
 }
 
