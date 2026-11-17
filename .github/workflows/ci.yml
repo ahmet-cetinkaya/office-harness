@@ -45,27 +45,32 @@ jobs:
         run: |
           set -u
           mkdir -p probe-logs
-          # CPU load so the shell can be parked between the redirect that
-          # creates the empty args file and the write that fills it.
+          # CPU load so the two start answers of the codex test can finish
+          # out of order, and so the shell can be parked inside the args-file
+          # window of the portable test.
           for j in 1 2; do (while :; do :; done) & done
           LOAD_PIDS=$(jobs -p)
           worker() {
             local w=$1 i
             for i in $(seq 1 10); do
-              cargo test -p office-harnessd --test sessions_portable -- --nocapture \
-                > "probe-logs/w$w-run$i.log" 2>&1 \
-                && echo "w$w run $i ok" \
-                || echo "w$w run $i FAILED"
+              for t in sessions sessions_portable; do
+                cargo test -p office-harnessd --test $t -- --nocapture \
+                  > "probe-logs/w$w-$t-$i.log" 2>&1 \
+                  && echo "w$w $t $i ok" \
+                  || echo "w$w $t $i FAILED"
+              done
             done
             echo "worker $w done"
           }
-          for w in 1 2 3 4; do worker "$w" & done
-          wait
+          # Kill the load first, so wait returns when the workers end.
+          ( for w in 1 2 3 4; do worker "$w" & done; wait ) &
+          WORKERS=$!
+          wait "$WORKERS"
           kill $LOAD_PIDS 2>/dev/null || true
           fails=$(grep -l "panicked" probe-logs/*.log 2>/dev/null | wc -l | tr -d ' ')
           runs=$(ls probe-logs/*.log | wc -l | tr -d ' ')
           echo "TOTAL FAILURES: $fails / $runs"
           for f in $(grep -l "panicked" probe-logs/*.log 2>/dev/null); do
-            echo "=== $f ==="; grep -B2 -A8 "panicked" "$f" | head -40
+            echo "=== $f ==="; grep -B2 -A10 "panicked" "$f" | head -40
           done
           [ "$fails" -eq 0 ]
