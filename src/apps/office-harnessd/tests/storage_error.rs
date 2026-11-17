@@ -27,7 +27,7 @@ fn bulky_agent(machine_id: agent_domain::value_objects::MachineId, number: usize
 /// growth hits `SQLITE_FULL`, the error a full disk produces.
 fn capped_repositories(config: &Config) -> (AgentRepository, MachineRepository) {
     let mut connection = bootstrap::open_database(&config.database_path()).expect("database");
-    bootstrap::run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS).expect("migrations");
+    bootstrap::run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, &[]).expect("migrations");
     let page_count: i64 = connection
         .query_row("PRAGMA page_count", [], |row| row.get(0))
         .expect("pages");

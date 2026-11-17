@@ -182,7 +182,7 @@ The outcome is `completed` when every participant answered and the facilitator r
 | A participant is already in another running meeting. | Concurrent | The system refuses the second meeting for that agent and names the running one (FR-003), also when that agent is back to `waiting for input` after its answer. |
 | Two meetings with different agents run at the same time. | Concurrent | Both run; each has its own view and record. |
 | The user types into a participant's terminal during the meeting. | Concurrent | The input goes to the agent (PB-5); the answer then holds that text as well. |
-| A participant answers with no text. | Boundary | The record shows the answer as empty and the state as `answered`. |
+| A participant's output after the brief is empty once the color and cursor codes are removed (only spaces or only codes). | Boundary | The record shows the answer as empty and the state as `answered`. A participant with no output at all has no answer (the idle case below). |
 | An answer is very long. | Boundary | The record keeps the answer up to the recent-output limit of 0001 (A2) and says where it was cut. |
 | The facilitator exits, fails, or gives no reply within the time limit. | Failure | The meeting ends with the outcome `partial`, shows the answers, and says that no result was written. |
 | The server restarts during a meeting. | Failure | The meeting ends with the outcome `partial`, and the record holds the answers so far. |

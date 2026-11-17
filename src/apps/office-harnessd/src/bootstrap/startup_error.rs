@@ -35,6 +35,12 @@ pub enum StartupError {
         version: i64,
         source: rusqlite::Error,
     },
+    #[error("{ledger} migration stopped before version {version}: {message}")]
+    PreMigrationCheck {
+        ledger: String,
+        version: i64,
+        message: String,
+    },
     #[error(
         "the database ledger {ledger} is at version {found}, newer than the {supported} that this server knows"
     )]

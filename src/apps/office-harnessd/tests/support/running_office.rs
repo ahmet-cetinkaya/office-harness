@@ -67,7 +67,7 @@ pub async fn bind_office_with(
 
 fn store_quiet_period(config: &Config, quiet_period_ms: u64) {
     let mut connection = bootstrap::open_database(&config.database_path()).expect("database");
-    bootstrap::run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS).expect("migrations");
+    bootstrap::run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, &[]).expect("migrations");
     let settings = SettingsRepository::new(SharedConnection::new(connection));
     let mut stored = settings.load().expect("settings");
     stored
