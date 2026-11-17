@@ -15,5 +15,8 @@ kernel = { path = "../../../kernel" }
 serde_json.workspace = true
 wire = { path = "../../../shared/wire" }
 
+[dev-dependencies]
+hierarchy-domain = { path = "../../hierarchy/domain" }
+
 [lints]
 workspace = true

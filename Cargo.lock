@@ -91,6 +91,7 @@ dependencies = [
  "agent-application",
  "agent-domain",
  "hierarchy-application",
+ "hierarchy-domain",
  "hierarchy-presentation",
  "kernel",
  "serde_json",

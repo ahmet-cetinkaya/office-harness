@@ -372,3 +372,7 @@ fn parse_id<T: std::str::FromStr>(field: &str, text: &str) -> Result<T, HandlerE
     text.parse()
         .map_err(|_| HandlerError::invalid(format!("{field} is not a valid identifier: {text}")))
 }
+
+#[cfg(test)]
+#[path = "agent_handlers.tests.rs"]
+mod tests;
