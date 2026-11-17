@@ -1,28 +1,46 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use std::sync::Arc;
-
+use agent_infrastructure::persistence::SharedConnection;
 use hierarchy_application::common::errors::HierarchyApplicationError;
 use hierarchy_application::common::interfaces::{HierarchyStore, TreeSnapshot};
+use hierarchy_domain::Team;
 use hierarchy_domain::entities::TeamId;
 use hierarchy_domain::value_objects::{Role, TeamName};
-use hierarchy_domain::{Team, TreeRow};
 use kernel::AgentId;
-use rusqlite::{Connection, Row, params};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::services::agent_places::AgentPlaces;
 
 /// SQLite storage of the hierarchy: the team tables this module owns, and
-/// the place columns of the agent module, written through `AgentPlaces`.
+/// the place columns of the agent module, written through `AgentPlaces`. One
+/// call holds the connection lock for its whole closure, so a team write and
+/// its member writes cannot interleave with another caller.
 pub struct HierarchyRepository {
-    connection: Arc<Connection>,
+    connection: SharedConnection,
     places: AgentPlaces,
 }
 
 impl HierarchyRepository {
     #[must_use]
-    pub fn new(connection: Arc<Connection>, places: AgentPlaces) -> Self {
-        Self { connection, places }
+    pub fn new(connection: &SharedConnection, places: AgentPlaces) -> Self {
+        Self {
+            connection: connection.clone(),
+            places,
+        }
+    }
+
+    /// Runs `work` while holding the connection lock.
+    fn locked<T>(
+        &self,
+        work: impl FnOnce(&mut Connection) -> Result<T, String>,
+    ) -> Result<T, HierarchyApplicationError> {
+        // A panic in another repository call leaves SQLite itself consistent,
+        // so a poisoned lock is safe to reuse.
+        let handle = self.connection.handle();
+        let mut connection = handle
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        work(&mut connection).map_err(|_| HierarchyApplicationError::Storage)
     }
 
     fn read_team(row: &Row<'_>) -> rusqlite::Result<Team> {
@@ -30,69 +48,49 @@ impl HierarchyRepository {
         let name: String = row.get(1)?;
         let project_id: Option<String> = row.get(2)?;
         let lead_agent_id: String = row.get(3)?;
-        let team_id = TeamId::from_uuid_text(&id).ok_or(rusqlite::Error::InvalidQuery)?;
-        let lead = AgentId::from_uuid_text(&lead_agent_id).ok_or(rusqlite::Error::InvalidQuery)?;
-        let display_name = TeamName::parse(&name).map_err(|_| rusqlite::Error::InvalidQuery)?;
         Ok(Team::stored(
-            team_id,
-            display_name,
+            TeamId::from_uuid_text(&id).ok_or(rusqlite::Error::InvalidQuery)?,
+            TeamName::parse(&name).map_err(|_| rusqlite::Error::InvalidQuery)?,
             project_id
                 .map(|text| {
                     agent_domain::value_objects::ProjectId::from_uuid_text(&text)
                         .ok_or(rusqlite::Error::InvalidQuery)
                 })
                 .transpose()?,
-            lead,
+            AgentId::from_uuid_text(&lead_agent_id).ok_or(rusqlite::Error::InvalidQuery)?,
         ))
-    }
-
-    /// Runs `work` inside one transaction, so a team write and its member
-    /// writes go together or not at all.
-    fn in_transaction<T>(
-        &self,
-        work: impl FnOnce(&Connection) -> Result<T, HierarchyApplicationError>,
-    ) -> Result<T, HierarchyApplicationError> {
-        self.connection
-            .unchecked_transaction()
-            .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))
-            .and_then(|transaction| {
-                let result = work(&transaction)?;
-                transaction
-                    .commit()
-                    .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))?;
-                Ok(result)
-            })
     }
 }
 
 impl HierarchyStore for HierarchyRepository {
     fn snapshot(&self) -> Result<TreeSnapshot, HierarchyApplicationError> {
-        let rows = self
-            .places
-            .read_tree(self.connection.as_ref())
-            .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))?;
-        let teams = self
-            .connection
-            .prepare("SELECT id, name, project_id, lead_agent_id FROM hierarchy_teams ORDER BY rowid")
-            .and_then(|mut statement| {
-                statement
-                    .query_map([], Self::read_team)
-                    .and_then(|teams| teams.collect())
-            })
-            .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))?;
-        Ok(TreeSnapshot { rows, teams })
+        let places = &self.places;
+        self.locked(|connection| {
+            let rows = places.read_tree(connection)?;
+            let teams = connection
+                .prepare("SELECT id, name, project_id, lead_agent_id FROM hierarchy_teams ORDER BY rowid")
+                .and_then(|mut statement| {
+                    statement
+                        .query_map([], Self::read_team)
+                        .and_then(std::iter::Iterator::collect)
+                })
+                .map_err(|error| error.to_string())?;
+            Ok(TreeSnapshot { rows, teams })
+        })
     }
 
     fn team_name_taken(&self, key: &str) -> Result<bool, HierarchyApplicationError> {
-        self.connection
-            .query_row(
-                "SELECT 1 FROM hierarchy_teams WHERE name_key = ?1",
-                params![key],
-                |_| Ok(()),
-            )
-            .optional()
-            .map(|found| found.is_some())
-            .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))
+        self.locked(|connection| {
+            connection
+                .query_row(
+                    "SELECT 1 FROM hierarchy_teams WHERE name_key = ?1",
+                    params![key],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map(|found| found.is_some())
+                .map_err(|error| error.to_string())
+        })
     }
 
     fn save_team_and_place_lead(
@@ -100,7 +98,8 @@ impl HierarchyStore for HierarchyRepository {
         team: &Team,
         parent_agent_id: Option<AgentId>,
     ) -> Result<(), HierarchyApplicationError> {
-        self.in_transaction(|connection| {
+        let places = &self.places;
+        self.locked(|connection| {
             connection
                 .execute(
                     "INSERT INTO hierarchy_teams (id, name, name_key, project_id, lead_agent_id) \
@@ -113,7 +112,7 @@ impl HierarchyStore for HierarchyRepository {
                         team.lead_agent_id().as_uuid_text()
                     ],
                 )
-                .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))?;
+                .map_err(|error| error.to_string())?;
             connection
                 .execute(
                     "INSERT INTO hierarchy_team_members (agent_id, team_id, joined_at) \
@@ -121,43 +120,47 @@ impl HierarchyStore for HierarchyRepository {
                     params![
                         team.lead_agent_id().as_uuid_text(),
                         team.id().as_uuid_text(),
-                        now_unix()
+                        unix_now()
                     ],
                 )
-                .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))?;
-            self.places
-                .write_place(
-                    connection,
-                    team.lead_agent_id(),
-                    Some(Role::Lead),
-                    parent_agent_id,
-                    Some(team.id()),
-                )
-                .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))
+                .map_err(|error| error.to_string())?;
+            places.write_place(
+                connection,
+                team.lead_agent_id(),
+                Some(Role::Lead),
+                parent_agent_id,
+                Some(team.id()),
+            )
         })
     }
 
     fn delete_team_and_unplace(&self, team_id: TeamId) -> Result<(), HierarchyApplicationError> {
-        self.in_transaction(|connection| {
+        let places = &self.places;
+        self.locked(|connection| {
             let id = team_id.as_uuid_text();
             let members: Vec<String> = connection
                 .prepare("SELECT agent_id FROM hierarchy_team_members WHERE team_id = ?1")
                 .and_then(|mut statement| {
-                    statement.query_map(params![id], |row| row.get(0)).and_then(|ids| ids.collect())
+                    statement
+                        .query_map(params![id], |row| row.get(0))
+                        .and_then(|ids| ids.collect())
                 })
-                .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))?;
+                .map_err(|error| error.to_string())?;
             for member in &members {
-                self.places
-                    .write_place(connection, member_id(member)?, None, None, None)
-                    .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))?;
+                let agent_id = AgentId::from_uuid_text(member)
+                    .ok_or_else(|| format!("agent id {member} is not a uuid"))?;
+                places.write_place(connection, agent_id, None, None, None)?;
             }
             connection
-                .execute("DELETE FROM hierarchy_team_members WHERE team_id = ?1", params![id])
-                .and_then(|()| {
-                    connection.execute("DELETE FROM hierarchy_teams WHERE id = ?1", params![id])
-                })
+                .execute(
+                    "DELETE FROM hierarchy_team_members WHERE team_id = ?1",
+                    params![id],
+                )
+                .map_err(|error| error.to_string())?;
+            connection
+                .execute("DELETE FROM hierarchy_teams WHERE id = ?1", params![id])
                 .map(|_| ())
-                .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))
+                .map_err(|error| error.to_string())
         })
     }
 
@@ -168,58 +171,44 @@ impl HierarchyStore for HierarchyRepository {
         parent_agent_id: Option<AgentId>,
         team_id: Option<TeamId>,
     ) -> Result<(), HierarchyApplicationError> {
-        self.connection
-            .unchecked_transaction()
-            .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))
-            .and_then(|transaction| {
-                self.places
-                    .write_place(&transaction, agent_id, role, parent_agent_id, team_id)
-                    .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))?;
-                if let Some(team) = team_id {
-                    transaction
-                        .execute(
-                            "INSERT OR REPLACE INTO hierarchy_team_members \
-                             (agent_id, team_id, joined_at) VALUES (?1, ?2, ?3)",
-                            params![agent_id.as_uuid_text(), team.as_uuid_text(), now_unix()],
-                        )
-                        .map(|_| ())
-                        .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))?;
-                }
-                transaction
-                    .commit()
-                    .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))
-            })
+        let places = &self.places;
+        self.locked(|connection| {
+            places.write_place(connection, agent_id, role, parent_agent_id, team_id)?;
+            if let Some(team) = team_id {
+                connection
+                    .execute(
+                        "INSERT OR REPLACE INTO hierarchy_team_members \
+                         (agent_id, team_id, joined_at) VALUES (?1, ?2, ?3)",
+                        params![agent_id.as_uuid_text(), team.as_uuid_text(), unix_now()],
+                    )
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())?;
+            }
+            Ok(())
+        })
     }
 
     fn team_name_of(&self, team_id: TeamId) -> Result<Option<TeamName>, HierarchyApplicationError> {
-        self.connection
-            .query_row(
-                "SELECT name FROM hierarchy_teams WHERE id = ?1",
-                params![team_id.as_uuid_text()],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(|error| HierarchyApplicationError::Storage(error.to_string()))
-            .and_then(|name| {
-                name.map(|text| TeamName::parse(&text).map_err(hierarchy_invalid))
-                    .transpose()
-            })
+        self.locked(|connection| {
+            connection
+                .query_row(
+                    "SELECT name FROM hierarchy_teams WHERE id = ?1",
+                    params![team_id.as_uuid_text()],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())
+                .and_then(|name| {
+                    name.map(|text| TeamName::parse(&text).map_err(|error| error.to_string()))
+                        .transpose()
+                })
+        })
     }
 }
 
-fn hierarchy_invalid(error: hierarchy_domain::HierarchyError) -> HierarchyApplicationError {
-    HierarchyApplicationError::Invalid(error)
-}
-
-fn member_id(text: &str) -> Result<AgentId, HierarchyApplicationError> {
-    AgentId::from_uuid_text(text).ok_or_else(|| {
-        HierarchyApplicationError::Storage(format!("agent id {text} is not a uuid"))
-    })
-}
-
-fn now_unix() -> i64 {
+fn unix_now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|since| since.as_secs() as i64)
+        .map(|since| since.as_secs().try_into().unwrap_or_default())
         .unwrap_or_default()
 }

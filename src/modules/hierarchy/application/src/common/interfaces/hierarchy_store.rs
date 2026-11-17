@@ -50,10 +50,7 @@ pub trait HierarchyStore: Send + Sync {
     ///
     /// # Errors
     /// `Storage` when the write fails.
-    fn delete_team_and_unplace(
-        &self,
-        team_id: TeamId,
-    ) -> Result<(), HierarchyApplicationError>;
+    fn delete_team_and_unplace(&self, team_id: TeamId) -> Result<(), HierarchyApplicationError>;
 
     /// Writes one agent's place columns (role, parent, team).
     ///

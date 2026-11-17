@@ -4,4 +4,6 @@
 
 pub mod handlers;
 
-pub use handlers::hierarchy_handlers::{HierarchyHandlers, REQUEST_PREFIXES};
+pub use handlers::hierarchy_handlers::{
+    HierarchyHandlers, HierarchyUseCases, REQUEST_PREFIXES, TREE_EVENT, subtree_request,
+};

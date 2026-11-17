@@ -13,6 +13,7 @@ use tokio::sync::{Semaphore, watch};
 
 use super::agent_requests::AgentGateway;
 use super::dispatcher::Dispatcher;
+use super::hierarchy_requests::HierarchyGateway;
 use super::restart_signal::RestartSignal;
 use super::router::build_router;
 use super::server_error::ServerError;
@@ -78,6 +79,8 @@ impl Server {
             Arc::clone(&services.agent.status_order),
             Arc::clone(&services.agent.stopping),
         );
+        let hierarchy =
+            HierarchyGateway::new(Arc::clone(&services.hierarchy.handlers), events.clone());
         let (shutdown, stopping) = watch::channel(false);
         let state = ServerState {
             port,
@@ -89,6 +92,7 @@ impl Server {
                 services.agent.saved_outputs.clone(),
             )),
             agents,
+            hierarchy,
             events,
             restart: RestartSignal::default(),
             token_generations: services.access.token_store.subscribe(),

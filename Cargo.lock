@@ -88,6 +88,8 @@ version = "0.1.0"
 dependencies = [
  "agent-application",
  "agent-domain",
+ "hierarchy-application",
+ "hierarchy-presentation",
  "kernel",
  "serde_json",
  "wire",
@@ -1576,6 +1578,57 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hierarchy-application"
+version = "0.1.0"
+dependencies = [
+ "agent-domain",
+ "hierarchy-domain",
+ "kernel",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "hierarchy-domain"
+version = "0.1.0"
+dependencies = [
+ "agent-domain",
+ "kernel",
+ "serde",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
+name = "hierarchy-infrastructure"
+version = "0.1.0"
+dependencies = [
+ "agent-domain",
+ "agent-infrastructure",
+ "hierarchy-application",
+ "hierarchy-domain",
+ "kernel",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "hierarchy-presentation"
+version = "0.1.0"
+dependencies = [
+ "agent-domain",
+ "hierarchy-application",
+ "hierarchy-domain",
+ "kernel",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "wire",
+]
+
+[[package]]
 name = "hmac"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2628,6 +2681,9 @@ dependencies = [
  "directories",
  "futures-util",
  "gethostname",
+ "hierarchy-application",
+ "hierarchy-infrastructure",
+ "hierarchy-presentation",
  "kernel",
  "private-fs",
  "rusqlite",

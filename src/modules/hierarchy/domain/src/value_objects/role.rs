@@ -61,8 +61,10 @@ impl std::fmt::Display for Role {
 /// # Errors
 /// `UnknownRole` when the text is not one of the three wire names.
 pub fn parse_role(field: &'static str, text: &str) -> Result<Role, HierarchyError> {
-    Role::from_wire(text)
-        .ok_or_else(|| HierarchyError::UnknownRole { field, text: text.to_owned() })
+    Role::from_wire(text).ok_or_else(|| HierarchyError::UnknownRole {
+        field,
+        text: text.to_owned(),
+    })
 }
 
 #[cfg(test)]

@@ -37,7 +37,11 @@ impl DeleteTeamHandler {
             ));
         }
         let snapshot = self.store.snapshot()?;
-        if !snapshot.teams.iter().any(|team| team.id() == request.team_id) {
+        if !snapshot
+            .teams
+            .iter()
+            .any(|team| team.id() == request.team_id)
+        {
             return Err(HierarchyApplicationError::NotFound(
                 "the team does not exist".to_owned(),
             ));
