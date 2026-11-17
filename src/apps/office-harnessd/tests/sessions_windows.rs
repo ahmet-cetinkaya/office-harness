@@ -17,12 +17,16 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use support::fake_cli::FakeClis;
-use support::office_client::{Office, recording_body, wait_for, wait_for_records};
+use support::office_client::{Client, Office, recording_body, wait_for, wait_for_records};
 
 /// Well under the 10 second grace, and well over what a clean stop takes.
 const FAST_STOP_LIMIT: Duration = Duration::from_secs(5);
 /// How long a plain batch file keeps running, if nothing ends it.
 const BATCH_KEEP_ALIVE_PINGS: u32 = 32;
+/// The address that `ping` prints when it starts, in any language. The batch
+/// file blocks in `ping`, so seeing it proves that the interrupt key will
+/// reach a running program.
+const KEEP_ALIVE_ADDRESS: &str = "127.0.0.1";
 const SHIM_RECORD_FILE: &str = "shim-record.json";
 const UNIQUE_MARKER: &str = "--office-shim-marker-7f3a91";
 const NODE_FILE: &str = "node.exe";
@@ -81,6 +85,24 @@ fn process_name_of(process_id: u32) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_owned()
 }
 
+/// Waits until the batch file runs `ping`. The interrupt key that arrives
+/// between `echo` and the start of `ping` is lost, and the batch file then
+/// keeps running until the grace period ends, so a stop must not start sooner.
+async fn wait_until_the_batch_blocks_in_ping(client: &mut Client, agent: &str) {
+    let attached = client
+        .ask(
+            "terminal.attach",
+            json!({"agent_id": agent, "cols": 80, "rows": 24}),
+        )
+        .await;
+    assert_eq!(attached["ok"], true, "{attached}");
+    let mut seen = String::new();
+    while !seen.contains(KEEP_ALIVE_ADDRESS) {
+        let frame = client.wire.receive_binary().await;
+        seen.push_str(&String::from_utf8_lossy(&frame));
+    }
+}
+
 /// Stops the agent with the default grace and returns how long the request
 /// took.
 async fn timed_stop(office: &Office, agent: &str) -> Duration {
@@ -137,13 +159,14 @@ async fn a_batch_file_that_is_not_an_npm_shim_is_stopped_by_answering_its_questi
         "claude",
         &recording_body(
             office.records_path(),
-            &format!("echo ready\nping -n {BATCH_KEEP_ALIVE_PINGS} 127.0.0.1 >nul"),
+            &format!("echo ready\nping -n {BATCH_KEEP_ALIVE_PINGS} {KEEP_ALIVE_ADDRESS}"),
         ),
     );
     let mut client = office.client().await;
     let agent = client.create_agent(&office, "Ana", "claude", None).await;
     client.start(&agent).await;
     wait_for_records(office.records_path(), 1).await;
+    wait_until_the_batch_blocks_in_ping(&mut client, &agent).await;
 
     let elapsed = timed_stop(&office, &agent).await;
 
