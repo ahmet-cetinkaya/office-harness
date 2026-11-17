@@ -1,9 +1,11 @@
 ---
-status: draft
+status: approved (in the MVP, built after 0003)
 capability: office
 plan:
 supersedes: 0003/FR-008 (in part)
 ---
+
+<!-- Approved by the owner on 2026-11-17; owner may amend. In the MVP, built after 0003. -->
 
 # 0005: Office scene
 
@@ -13,11 +15,11 @@ The owner liked the idea of an office that he can look at, but he disliked walki
 
 ## Context
 
-- Source of truth: `docs/PRD.md`. The IDs `R1` to `R9` refer to its section 4. R7 has the priority "Later"; this spec exists so that the owner can approve it before the work starts.
+- Source of truth: `docs/PRD.md`. The IDs `R1` to `R9` refer to its section 4. R7 is in the MVP; this change is built after 0003.
 - This change depends on 0001 (agents, projects, statuses, terminals, the desktop app) and on 0003 (the panel, from which the scene opens, and the agent list, whose content the scene repeats). It does not depend on 0002 or 0004. Where 0002 is present, the scene groups desks by team (FR-003). References such as `0001/FR-014` and `0003/FR-004` point to requirements in those specs.
 - Stack decision, made by the owner on 2026-11-15. It is a recorded decision, not a requirement of this spec: a separate Rust background server, `office-harnessd`, runs as an always-on user service, owns the terminals through portable-pty, keeps its state in SQLite, and accepts clients over a loopback WebSocket with a token. A thin Tauri v2 desktop app with an xterm.js terminal connects to it.
 - The requirements below describe behavior only. The plan decides how to build them.
-- This spec is a draft. The decisions in Clarifications are reversible defaults; the owner approves or amends them with the spec.
+- The owner approved this spec on 2026-11-17. The decisions in Clarifications are approved as written; the owner may amend them.
 
 ## Terms
 
@@ -194,7 +196,7 @@ The user who works by keyboard, with a screen reader, or with reduced motion rea
 
 ### Session 2026-11-17 (overnight directive)
 
-Decisions with reversible defaults, so that the owner can approve the spec.
+The owner approved these decisions on 2026-11-17.
 
 - Q: 2D or 3D? → A: Flat 2D (A1). The owner tried a 3D scene and disliked walking to results. Reversible: a later change can add a 3D layer over the same desks.
 - Q: Does an avatar or a figure walk, work, or react? → A: No. A desk only shows text status. Reversible: a later change can add motion that honors FR-009.
