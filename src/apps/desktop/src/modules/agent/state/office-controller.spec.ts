@@ -23,6 +23,7 @@ function agent(id: string, status = "stopped"): Agent {
     machine_id: "m",
     status,
     created_at: 1,
+    last_line: null,
   };
 }
 
