@@ -49,10 +49,11 @@ const MODIFIER_NAMES: [&str; 5] = ["ctrl", "control", "alt", "shift", "meta"];
 /// spaces around the parts, and case no longer matter. `None` when the text
 /// names no key, or only a modifier, which the desktop matches to nothing.
 fn normalized_shortcut(text: &str) -> Option<String> {
-    let mut parts = text
+    let mut parts: Vec<String> = text
         .split(KEY_SEPARATOR)
-        .map(|part| part.trim().to_lowercase());
-    let key = parts.next_back()?;
+        .map(|part| part.trim().to_lowercase())
+        .collect();
+    let key = parts.pop()?;
     if key.is_empty() || MODIFIER_NAMES.contains(&key.as_str()) {
         return None;
     }
@@ -60,7 +61,7 @@ fn normalized_shortcut(text: &str) -> Option<String> {
     // modifier name for key rejection, but it does not set the ctrl flag.
     let mut normalized: Vec<String> = ["ctrl", "alt", "shift", "meta"]
         .iter()
-        .filter(|name| parts.any(|part| part == **name))
+        .filter(|name| parts.iter().any(|part| part == **name))
         .map(|name| (*name).to_owned())
         .collect();
     normalized.push(match key.as_str() {
