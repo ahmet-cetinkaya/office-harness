@@ -42,12 +42,13 @@ impl DirectiveTargetBridge {
 }
 
 impl DirectiveTarget for DirectiveTargetBridge {
-    fn is_running(&self, agent_id: AgentId) -> bool {
+    fn is_running(&self, agent_id: AgentId) -> Result<bool, String> {
+        // A store failure is the error it is (Efe r2 LOW): the caller must
+        // not read a broken store as a stopped member.
         self.agents
             .find(agent_id)
-            .ok()
-            .flatten()
-            .is_some_and(|agent| agent.status.is_running())
+            .map(|found| found.is_some_and(|agent| agent.status.is_running()))
+            .map_err(|error| error.to_string())
     }
 
     fn name_of(&self, agent_id: AgentId) -> Option<String> {
@@ -107,7 +108,7 @@ impl DirectiveJournalBridge {
             caller,
             caller,
             AgentAction::Refused,
-            Some(&refused_attempt(reason, "")),
+            Some(&refused_attempt(reason, None)),
         );
     }
 
@@ -130,23 +131,24 @@ impl DirectiveJournalBridge {
 
 impl DirectiveJournal for DirectiveJournalBridge {
     fn record(&self, sender: AgentId, target: AgentId, text: &str, failure: Option<&str>) {
-        let journaled = failure.map(|reason| refused_attempt(reason, text));
+        let journaled = failure.map(|reason| refused_attempt(reason, Some(text)));
         self.record_entry(sender, target, AgentAction::Directive, journaled.as_deref());
     }
 }
 
 /// The journal form of a refused attempt (FR-011): the reason, then the text
-/// as it was sent (a refusal of the gateway itself carries no directive
-/// text), so the audit shows what was attempted. Both the reason and the
-/// text may carry client words, so both are escaped, and the whole failure
-/// text is capped as one, so a long reason cannot push the representation
-/// past the bound either. Past the cap the text keeps its first characters,
-/// one ellipsis, and the hash of the whole.
-fn refused_attempt(reason: &str, text: &str) -> String {
-    let escaped = if text.is_empty() {
-        escape_control_characters(reason)
-    } else {
-        format!("{reason}: {}", escape_control_characters(text))
+/// as it was sent (an empty text stays an empty text after the colon, so a
+/// refusal of an empty directive shows that the text was empty; a refusal of
+/// the gateway itself carries no directive text and is called without one),
+/// so the audit shows what was attempted. Both the reason and the text may
+/// carry client words, so both are escaped, and the whole failure text is
+/// capped as one, so a long reason cannot push the representation past the
+/// bound either. Past the cap the text keeps its first characters, one
+/// ellipsis, and the hash of the whole.
+fn refused_attempt(reason: &str, text: Option<&str>) -> String {
+    let escaped = match text {
+        None => escape_control_characters(reason),
+        Some(text) => format!("{reason}: {}", escape_control_characters(text)),
     };
     capped_at_journal_bound(&escaped)
 }

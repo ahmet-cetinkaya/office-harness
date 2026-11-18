@@ -22,30 +22,41 @@ fn fixed_ids() -> Ids {
     }
 }
 
+/// The name a test row carries: the id text, since these rules do not read
+/// names.
+fn name_of(agent_id: AgentId) -> String {
+    agent_id.to_string()
+}
+
 fn tree() -> Vec<TreeRow> {
     let ids = fixed_ids();
     let team = TeamId::from_u128(10);
+
     vec![
         TreeRow {
             agent_id: ids.caller,
+            name: name_of(ids.caller),
             role: Some(Role::Lead),
             parent_agent_id: None,
             team_id: Some(team),
         },
         TreeRow {
             agent_id: ids.middle,
+            name: name_of(ids.middle),
             role: Some(Role::Member),
             parent_agent_id: Some(ids.caller),
             team_id: Some(team),
         },
         TreeRow {
             agent_id: ids.leaf,
+            name: name_of(ids.leaf),
             role: Some(Role::Member),
             parent_agent_id: Some(ids.middle),
             team_id: Some(team),
         },
         TreeRow {
             agent_id: ids.outsider,
+            name: name_of(ids.outsider),
             role: Some(Role::Member),
             parent_agent_id: None,
             team_id: Some(team),

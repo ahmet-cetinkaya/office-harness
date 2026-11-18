@@ -24,7 +24,7 @@ impl AgentPlaces {
     pub fn read_tree(&self, connection: &Connection) -> Result<Vec<TreeRow>, String> {
         connection
             .prepare(
-                "SELECT id, role, parent_agent_id, team_id FROM agent_agents \
+                "SELECT id, name, role, parent_agent_id, team_id FROM agent_agents \
                  WHERE role IS NOT NULL",
             )
             .map_err(|error| error.to_string())
@@ -84,11 +84,13 @@ impl AgentPlaces {
 
 fn read_row(row: &Row<'_>) -> rusqlite::Result<TreeRow> {
     let id: String = row.get(0)?;
-    let role: Option<String> = row.get(1)?;
-    let parent: Option<String> = row.get(2)?;
-    let team: Option<String> = row.get(3)?;
+    let name: String = row.get(1)?;
+    let role: Option<String> = row.get(2)?;
+    let parent: Option<String> = row.get(3)?;
+    let team: Option<String> = row.get(4)?;
     Ok(TreeRow {
         agent_id: AgentId::from_uuid_text(&id).ok_or(rusqlite::Error::InvalidQuery)?,
+        name,
         role: role.as_deref().and_then(Role::from_wire),
         parent_agent_id: parent
             .map(|text| AgentId::from_uuid_text(&text).ok_or(rusqlite::Error::InvalidQuery))

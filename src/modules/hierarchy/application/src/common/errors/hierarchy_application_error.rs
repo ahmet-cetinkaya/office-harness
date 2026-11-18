@@ -9,10 +9,22 @@ pub enum HierarchyApplicationError {
     #[error("invalid: {0}")]
     Invalid(#[from] HierarchyError),
     /// The agent module refused what it was given on its own rules; the
-    /// text is its message and the wire code stays `invalid`, so a seeded
-    /// create answers like `agent.create` always did (0001).
-    #[error("invalid: {0}")]
+    /// text is its message alone and the wire code stays `invalid`, so a
+    /// seeded create answers with exactly the text `agent.create` answers
+    /// with (0001, and #33 r2 LOW: no `invalid: ` prefix in front of a
+    /// message that already speaks for itself).
+    #[error("{0}")]
     InvalidInput(String),
+    /// The agent module could not find what the create named; the text is
+    /// its message alone, so the role route answers with exactly what a
+    /// plain `agent.create` answers (Efe, PR 40 LOW: no `not found: `
+    /// prefix in front of a pass-through message).
+    #[error("{0}")]
+    NotFoundInput(String),
+    /// The agent module refused the create as a conflict (a taken name or
+    /// resource); the text is its message alone, like `InvalidInput`.
+    #[error("{0}")]
+    ConflictInput(String),
     #[error("not found: {0}")]
     NotFound(String),
     #[error("conflict: {0}")]

@@ -7,7 +7,7 @@ use hierarchy_domain::{Placement, Role, check_placement, resolved_parent};
 use kernel::AgentId;
 
 use crate::common::errors::HierarchyApplicationError;
-use crate::common::interfaces::HierarchyStore;
+use crate::common::interfaces::{HierarchyStore, TreeExclusion};
 use crate::common::ports::{AgentCreator, AgentSeed, CreatorError};
 
 /// What `agent.create` with a `role` object carries (FR-003): the agent's
@@ -39,9 +39,17 @@ impl CreateRoleAgentHandler {
     /// is not in the tree, or a role that cannot sit under that parent.
     /// `InvalidInput`, `NotFound`, `Conflict`, or `Storage` as the agent
     /// module refused or failed the create, keeping its message.
+    ///
+    /// The caller holds the tree exclusion across this call, so a concurrent
+    /// placement cannot join the tree between the check and the create+place
+    /// (the subtree handlers' hold pattern, FR-006, FR-007): two callers
+    /// racing for the last CEO seat see one tree.
     pub fn handle(
         &self,
         request: CreateRoleAgentRequest,
+        // The caller's held exclusion; the parameter keeps the guard alive
+        // for the whole body without a second, never-returning take.
+        _tree: &TreeExclusion<'_>,
     ) -> Result<AgentId, HierarchyApplicationError> {
         let snapshot = self.store.snapshot()?;
         // A member's team is its lead's team (A6); the lead's team wins over

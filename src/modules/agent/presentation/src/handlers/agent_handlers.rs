@@ -30,10 +30,11 @@ use serde_json::Value;
 use wire::{Event, Request, Response};
 
 use super::handler_error::HandlerError;
+use super::role_requests::{RoleRequests, RoleResult};
 use super::subtree_requests::{SubtreeRequests, SubtreeResult};
 use crate::contracts::{
     AdditionsRequest, AgentIdRequest, CreateAgentRequest, CreateProjectRequest, ProjectIdRequest,
-    SessionIdRequest, SettingKeyRequest, SettingRequest,
+    RolePlacement, SessionIdRequest, SettingKeyRequest, SettingRequest,
 };
 use crate::mappings::{
     additions_changed_event, additions_json, agent_changed_event, agent_deleted_event, agent_json,
@@ -103,6 +104,9 @@ pub struct AgentHandlers {
     /// The hierarchy's subtree bridge, when the host attaches it (0002).
     /// Absent keeps the single-agent behavior of 0001.
     subtree: OnceLock<Arc<dyn SubtreeRequests>>,
+    /// The hierarchy's role bridge, when the host attaches it (0002). Absent
+    /// refuses a `role` object, because no use case could place the agent.
+    roles: OnceLock<Arc<dyn RoleRequests>>,
 }
 
 impl AgentHandlers {
@@ -120,6 +124,7 @@ impl AgentHandlers {
         Self {
             use_cases,
             subtree: OnceLock::new(),
+            roles: OnceLock::new(),
         }
     }
 
@@ -141,6 +146,13 @@ impl AgentHandlers {
         // release).
         let attached = self.attach_subtree(subtree);
         debug_assert!(attached, "the subtree bridge is attached twice");
+    }
+
+    /// Attaches the hierarchy's role bridge (0002), so `agent.create` with a
+    /// `role` object creates and places in one step.
+    pub fn with_roles(&self, roles: Arc<dyn RoleRequests>) {
+        let attached = self.roles.set(roles).is_ok();
+        debug_assert!(attached, "the role bridge is attached twice");
     }
 
     #[must_use]
@@ -213,6 +225,9 @@ impl AgentHandlers {
 
     fn create_agent(&self, request: &Request) -> Result<Success, HandlerError> {
         let body = CreateAgentRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        if let Some(role) = body.role.as_ref() {
+            return self.create_role_agent(&body, role);
+        }
         let project_id = body
             .project_id
             .as_deref()
@@ -226,6 +241,46 @@ impl AgentHandlers {
             additions: body.additions,
         })?;
         Ok(Success::result(agent_json(&agent)).with_event(agent_changed_event(&agent)))
+    }
+
+    /// `agent.create` with a `role` object (0002, FR-003): the hierarchy's
+    /// bridge creates and places in one step. Without the bridge there is
+    /// nothing that could place the agent, so the request is refused and
+    /// creates nothing (a plain no-role create would break the tree rules).
+    fn create_role_agent(
+        &self,
+        body: &CreateAgentRequest,
+        role: &RolePlacement,
+    ) -> Result<Success, HandlerError> {
+        let Some(roles) = self.roles.get() else {
+            return Err(HandlerError::with_code(
+                wire::ErrorCode::Refused,
+                "role is not available: no hierarchy is attached",
+            ));
+        };
+        let seed = super::role_requests::RoleSeed {
+            name: body.name.clone(),
+            command: body.command.clone(),
+            working_folder: body.working_folder.clone(),
+            project_id: body.project_id.clone(),
+            additions: body.additions.clone(),
+        };
+        match roles.create_role_agent(
+            &seed,
+            &role.kind,
+            role.parent_agent_id.clone(),
+            role.team_id.clone(),
+        ) {
+            RoleResult::Created(agent_id) => {
+                // The created agent reads back through the store the agent
+                // module owns, so the answer is the record `agent.create`
+                // always shows.
+                let agent_id = parse_id::<AgentId>("agent_id", &agent_id)?;
+                let agent = self.use_cases.list_agents.handle_one(agent_id)?;
+                Ok(Success::result(agent_json(&agent)).with_event(agent_changed_event(&agent)))
+            }
+            RoleResult::Failed { code, message } => Err(HandlerError::with_code(code, message)),
+        }
     }
 
     fn delete_agent(&self, request: &Request) -> Result<Success, HandlerError> {
