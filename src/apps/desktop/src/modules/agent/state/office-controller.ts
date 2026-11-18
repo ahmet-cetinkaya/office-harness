@@ -22,6 +22,7 @@ import {
   EVENT_ADDITIONS_CHANGED,
   EVENT_AGENT_CHANGED,
   EVENT_AGENT_DELETED,
+  EVENT_AGENT_LINE,
   EVENT_AGENT_STATUS,
   EVENT_CLIENT_RESYNC,
   EVENT_STORAGE_ERROR,
@@ -29,10 +30,12 @@ import {
   readAdditionsChanged,
   readAgentChanged,
   readAgentDeleted,
+  readLineEvent,
   readStatusEvent,
   readStorageError,
   upsertAgent,
   withoutAgent,
+  withLine,
   withStatus,
 } from "./office-events";
 
@@ -228,6 +231,12 @@ export function createOfficeController(
         return update({
           agents: upsertAgent(snapshot.agents, readAgentChanged(event)),
         });
+      case EVENT_AGENT_LINE: {
+        const agentId = event.agent_id as string;
+        return update({
+          agents: withLine(snapshot.agents, agentId, readLineEvent(event)),
+        });
+      }
       case EVENT_AGENT_DELETED:
         return handleDeleted(event);
       case EVENT_ADDITIONS_CHANGED: {

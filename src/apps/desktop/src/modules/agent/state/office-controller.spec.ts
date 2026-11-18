@@ -208,6 +208,37 @@ describe("office controller", () => {
     expect(state().agents[0].status).toBe("working");
   });
 
+  test("a line event replaces the agent's last line in place", async () => {
+    const { client, push } = fakeClient(officeHandler([agent("a")]));
+    const { controller, state } = observe(client);
+    await controller.watch();
+    await controller.load();
+
+    push({ type: "agent.line", agent_id: "a", line: "Building the project" });
+
+    expect(state().agents).toHaveLength(1);
+    expect(state().agents[0].last_line).toBe("Building the project");
+  });
+
+  test("a status and a line change keep the selection and the order", async () => {
+    const { client, push } = fakeClient(
+      officeHandler([agent("a"), agent("b", "working")]),
+    );
+    const { controller, state } = observe(client);
+    await controller.watch();
+    await controller.load();
+    controller.select("b");
+    await settle();
+
+    push({ type: "agent.status", agent_id: "b", status: "waiting_for_input" });
+    push({ type: "agent.line", agent_id: "b", line: "Ready." });
+
+    expect(state().selectedAgentId).toBe("b");
+    expect(state().agents.map((known) => known.id)).toEqual(["a", "b"]);
+    expect(state().agents[1].status).toBe("waiting_for_input");
+    expect(state().agents[1].last_line).toBe("Ready.");
+  });
+
   test("a deleted agent that is open closes its details and says why", async () => {
     const { client, push } = fakeClient(officeHandler([agent("a")]));
     const { controller, state } = observe(client);
