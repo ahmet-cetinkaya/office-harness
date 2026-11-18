@@ -3,17 +3,21 @@
   import Dialog from "$shared/ui/dialog.svelte";
   import { FIELD_CLASS } from "$shared/ui/field-class";
   import { shownStatusText, type Agent, type Project } from "../../agent";
+  import { matchesAgentName } from "../models/name-matcher";
   import { projectNameOf } from "../models/panel";
 
   interface Props {
     /** Every agent of the office, of every project (FR-004, A1). */
     agents: Agent[];
     projects: Project[];
+    /** The agents whose stop request is open, shown as Stopping. */
+    stoppingAgentIds: ReadonlySet<string>;
     onchoose: (agentId: string) => void;
     onclose: () => void;
   }
 
-  let { agents, projects, onchoose, onclose }: Props = $props();
+  let { agents, projects, stoppingAgentIds, onchoose, onclose }: Props =
+    $props();
 
   const id = $props.id();
   const OPTION_CLASS =
@@ -24,18 +28,17 @@
   let options = $state<HTMLElement | null>(null);
 
   const matches = $derived(
-    agents.filter((agent) =>
-      agent.name.toLowerCase().includes(query.trim().toLowerCase()),
-    ),
+    agents.filter((agent) => matchesAgentName(agent, query)),
   );
 
-  // The name reads as one sentence, as the panel's rows do (D11).
+  // The name reads as one sentence, as the panel's rows do (D11), and shows
+  // Stopping while the agent's stop request is open, as they do too.
   function optionName(agent: Agent): string {
     const project = projectNameOf(agent, projects);
     return [
       agent.name,
       ...(project !== null ? [`project ${project}`] : []),
-      shownStatusText(agent, false),
+      shownStatusText(agent, stoppingAgentIds.has(agent.id)),
     ].join(", ");
   }
 

@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import {
   APP_SHORTCUT_TABLE,
   DEFAULT_FOCUS_SHORTCUT,
+  isAppShortcut,
   parseShortcut,
   pressedAppShortcut,
   type ShortcutEvent,
@@ -97,5 +98,40 @@ describe("app shortcut table", () => {
       pressedAppShortcut(keyEvent({ key: "F1", shiftKey: true })),
     ).toBeNull();
     expect(pressedAppShortcut(keyEvent({ key: "F10" }))).toBeNull();
+  });
+
+  // The server's settings.rs refuses a focus_shortcut equal to one of these
+  // ten combinations (its RESERVED_SHORTCUTS, "agent 1" to "agent 9" and
+  // "the agent switcher"). The two lists are the same rule's two sides, so
+  // written out here: a drift on either side fails this test.
+  test("the table matches the combinations the server reserves", () => {
+    const SERVER_RESERVED = [
+      "Ctrl+Shift+F1",
+      "Ctrl+Shift+F2",
+      "Ctrl+Shift+F3",
+      "Ctrl+Shift+F4",
+      "Ctrl+Shift+F5",
+      "Ctrl+Shift+F6",
+      "Ctrl+Shift+F7",
+      "Ctrl+Shift+F8",
+      "Ctrl+Shift+F9",
+      "Ctrl+Shift+F10",
+    ];
+    for (const label of SERVER_RESERVED)
+      expect(isAppShortcut(label)).toBe(true);
+    expect(APP_SHORTCUT_TABLE.map((entry) => entry.label)).toEqual(
+      SERVER_RESERVED,
+    );
+    expect(isAppShortcut(DEFAULT_FOCUS_SHORTCUT)).toBe(false);
+  });
+
+  test("isAppShortcut compares combinations, not spellings", () => {
+    expect(isAppShortcut("ctrl + shift + f1")).toBe(true);
+    expect(isAppShortcut("Shift+Ctrl+F1")).toBe(true);
+    expect(isAppShortcut("Ctrl+Shift+F12")).toBe(false);
+    expect(isAppShortcut("Ctrl+Shift+F11")).toBe(false);
+    expect(isAppShortcut("Ctrl+F1")).toBe(false);
+    expect(isAppShortcut("Ctrl+Shift")).toBe(false);
+    expect(isAppShortcut("")).toBe(false);
   });
 });
