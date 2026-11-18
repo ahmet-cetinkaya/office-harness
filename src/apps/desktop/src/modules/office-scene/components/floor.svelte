@@ -9,9 +9,11 @@
     projectName: string | null;
     /** True while the agent's stop request is open. */
     isStopping: (agentId: string) => boolean;
+    /** Moves focus within the floor on an arrow key (D9). */
+    onnavigate?: (event: KeyboardEvent) => void;
   }
 
-  let { floor, projectName, isStopping }: Props = $props();
+  let { floor, projectName, isStopping, onnavigate }: Props = $props();
 
   // The no-project floor's id is the one null maps to, so two floors can
   // never share a label id.
@@ -42,7 +44,12 @@
       >
         {#each group.agents as agent (agent.id)}
           <li>
-            <Desk {agent} {projectName} isStopping={isStopping(agent.id)} />
+            <Desk
+              {agent}
+              {projectName}
+              isStopping={isStopping(agent.id)}
+              {onnavigate}
+            />
           </li>
         {/each}
       </ul>
