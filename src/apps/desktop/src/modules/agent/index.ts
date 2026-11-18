@@ -10,4 +10,4 @@ export { default as ConfirmDialog } from "./components/confirm-dialog.svelte";
 export { default as ProjectFormDialog } from "./components/project-form-dialog.svelte";
 export { default as ProjectList } from "./components/project-list.svelte";
 export type { Agent, NewAgent, Project } from "./models/agent";
-export { shownStatusText } from "./models/agent";
+export { isActive, shownStatusText } from "./models/agent";

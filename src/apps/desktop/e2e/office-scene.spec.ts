@@ -1,0 +1,536 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Scene e2e. Part 1 (0005 T3) covered floors, desks, switcher, search, and
+// the empty state. The part 2 additions here cover the keyboard traversal,
+// the status announcements, and the deletion focus moves (T5 a, b); the
+// reduced-motion scan (T5 c) sits at the bottom. Still waiting for other
+// work: departments from a seeded tree, in-place desk updates (SC-002,
+// SC-003 shapes), the PB-4 recorded-calls assertion, the terminal embed
+// (D5), and the role, team, and settings seeds that
+// test/mock-core-extensions adds to mock-core.
+
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type Page } from "@playwright/test";
+import type { Agent } from "../src/modules/agent/models/agent";
+import { installMockCore, type OfficeSeed } from "./support/mock-core";
+
+const SERIOUS_IMPACTS = ["serious", "critical"];
+const DESKTOP = { width: 1280, height: 720 };
+const PHONE = { width: 360, height: 800 };
+
+function agent(overrides: Partial<Agent> = {}): Agent {
+  return {
+    id: "agent-ada",
+    name: "Ada",
+    command: "claude",
+    working_folder: "/work/ada",
+    project_id: null,
+    machine_id: "machine",
+    status: "working",
+    created_at: 1_700_000_000_000,
+    last_line: null,
+    ...overrides,
+  };
+}
+
+const PROJECTS = [
+  { id: "project-site", name: "Site", folder: "/work/site" },
+  { id: "project-api", name: "Api", folder: "/work/api" },
+  { id: "project-empty", name: "Empty", folder: "/work/empty" },
+];
+
+/** Site: Ada, Bo. Api: Cy. No project: Dee. Empty floor: none. */
+const OFFICE_AGENTS = [
+  agent({ project_id: "project-site", last_line: "Building the site" }),
+  agent({
+    id: "agent-bo",
+    name: "Bo",
+    project_id: "project-site",
+    status: "stopped",
+  }),
+  agent({
+    id: "agent-cy",
+    name: "Cy",
+    project_id: "project-api",
+    status: "waiting_for_input",
+  }),
+  agent({ id: "agent-dee", name: "Dee", status: "exited", last_line: "Bye." }),
+];
+
+async function openScene(page: Page, office: OfficeSeed = {}): Promise<void> {
+  await installMockCore(page, {
+    initialState: { status: "connected" },
+    office: { agents: OFFICE_AGENTS, projects: PROJECTS, ...office },
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "To the scene" }).click();
+}
+
+async function expectNoSeriousViolations(page: Page): Promise<void> {
+  const report = await new AxeBuilder({ page }).analyze();
+  const serious = report.violations.filter((violation) =>
+    SERIOUS_IMPACTS.includes(violation.impact ?? ""),
+  );
+  expect(serious).toEqual([]);
+}
+
+/** Axe at the plan's two widths: desktop first, then phone. */
+async function expectNoSeriousViolationsAtBothWidths(
+  page: Page,
+): Promise<void> {
+  await expectNoSeriousViolations(page);
+  await page.setViewportSize(PHONE);
+  await expectNoSeriousViolations(page);
+  await page.setViewportSize(DESKTOP);
+}
+
+/** The scene's own area; the shell's switch actions stay outside it. */
+function scene(page: Page) {
+  return page.getByRole("region", { name: "Office scene" });
+}
+
+/** The desks inside the scene, in reading order. */
+function desks(page: Page) {
+  return scene(page).getByRole("button");
+}
+
+test("the floors show their desks with name, status, and last line", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  const ada = desks(page).filter({ hasText: "Ada" });
+  await expect(ada).toHaveAttribute(
+    "aria-label",
+    "Ada, project Site, working, Building the site",
+  );
+  await expect(desks(page).filter({ hasText: "Dee" })).toHaveAttribute(
+    "aria-label",
+    "Dee, exited, Bye.",
+  );
+  // The "No project" floor holds Dee, and the agentless floor shows its text.
+  await expect(
+    scene(page).getByRole("heading", { name: "No project (1)" }),
+  ).toBeVisible();
+  await expect(
+    scene(page).getByRole("heading", { name: "Empty (0)" }),
+  ).toBeVisible();
+  await expect(
+    scene(page).getByText("This floor has no agents."),
+  ).toBeVisible();
+  // The desk text is the panel row's text for the same agent (SC-003 shape).
+  await expect(desks(page).filter({ hasText: "Cy" })).toContainText(
+    "waiting for input",
+  );
+
+  await expectNoSeriousViolationsAtBothWidths(page);
+});
+
+test("the switcher shows one project's floor and All projects brings the rest back", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  await page.getByLabel("Project", { exact: true }).selectOption({
+    label: "Site",
+  });
+  await expect(
+    scene(page).getByRole("heading", { name: "Site (2)" }),
+  ).toBeVisible();
+  await expect(
+    scene(page).getByRole("heading", { name: "Api (1)" }),
+  ).toHaveCount(0);
+  await expect(desks(page)).toHaveCount(2);
+
+  await page.getByLabel("Project", { exact: true }).selectOption({
+    label: "All projects",
+  });
+  await expect(desks(page)).toHaveCount(4);
+  await expect(
+    scene(page).getByRole("heading", { name: "No project (1)" }),
+  ).toBeVisible();
+});
+
+test("the search filters desks, focuses the match, and says when nothing matches", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  const search = page.getByLabel("Search agents");
+  await search.fill("bo");
+  await expect(desks(page)).toHaveCount(1);
+  await expect(desks(page).filter({ hasText: "Bo" })).toBeFocused();
+
+  await search.fill("zzz");
+  await expect(desks(page)).toHaveCount(0);
+  await expect(
+    scene(page).getByText("No desk matches the search."),
+  ).toBeVisible();
+
+  // Spaces-only is no search: every desk is back.
+  await search.fill("   ");
+  await expect(desks(page)).toHaveCount(4);
+
+  // Mixed case goes through the panel's matchesAgentName, so the scene
+  // search agrees with the panel switcher's semantics (D7): "dE" matches
+  // only Dee, case-insensitively.
+  await search.fill("dE");
+  await expect(desks(page)).toHaveCount(1);
+  await expect(desks(page).filter({ hasText: "Dee" })).toBeFocused();
+});
+
+test("the empty office says so and the shell returns to the panel", async ({
+  page,
+}) => {
+  await installMockCore(page, {
+    initialState: { status: "connected" },
+    office: { agents: [], projects: [] },
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "To the scene" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "The office is empty" }),
+  ).toBeVisible();
+  // The create action lives in the panel; the scene offers only the way back.
+  await expect(
+    page.getByRole("button", { name: "Create the first agent" }),
+  ).toHaveCount(0);
+
+  await expectNoSeriousViolationsAtBothWidths(page);
+
+  await page.getByRole("button", { name: "To the panel" }).click();
+  await expect(
+    page.getByRole("heading", { name: "The office is empty" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Create the first agent" }),
+  ).toBeVisible();
+});
+
+test("the keyboard alone moves over every desk in reading order", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  // Reading order: floors sort by name, so Api (Cy) comes first, then
+  // Site (Ada, Bo), then No project (Dee). Tab walks all four desks in
+  // DOM order across floor edges; the arrows stop inside one floor.
+  const cy = desks(page).filter({ hasText: "Cy" });
+  await cy.focus();
+  await expect(cy).toBeFocused();
+
+  await page.keyboard.press("Tab");
+  await expect(desks(page).filter({ hasText: "Ada" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(desks(page).filter({ hasText: "Bo" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(desks(page).filter({ hasText: "Dee" })).toBeFocused();
+
+  // The arrows move inside one floor and stop at its edge, no wrap. The
+  // Site floor has two desks (Ada, Bo); the Api and No project floors
+  // have one each, so arrows hold there.
+  await desks(page).filter({ hasText: "Ada" }).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(desks(page).filter({ hasText: "Bo" })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(desks(page).filter({ hasText: "Bo" })).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(desks(page).filter({ hasText: "Ada" })).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(desks(page).filter({ hasText: "Ada" })).toBeFocused();
+
+  // The focus mark is the shared focus-visible outline, always there.
+  const outline = await desks(page)
+    .filter({ hasText: "Ada" })
+    .evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { width: style.outlineWidth, style: style.outlineStyle };
+    });
+  expect(outline.style).not.toBe("none");
+  expect(Number.parseFloat(outline.width)).toBeGreaterThanOrEqual(2);
+
+  await expectNoSeriousViolations(page);
+});
+
+test("a pushed status change is announced with the agent's name", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  const region = page
+    .locator('[role="region"][aria-labelledby="scene-heading"]')
+    .getByRole("status")
+    .first();
+  await expect(region).toHaveText("");
+
+  await page.evaluate(() => {
+    window.__mockCore.pushEvent({
+      type: "agent.status",
+      agent_id: "agent-ada",
+      status: "waiting_for_input",
+    });
+  });
+
+  await expect(region).toHaveText("Ada, waiting for input");
+});
+
+test("deleting the focused desk's agent moves focus forward, back, or to the empty state", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  // Reading order: Cy (Api), Dee (Site), Ada (Site), Bo (Site).
+  const ada = desks(page).filter({ hasText: "Ada" });
+  const bo = desks(page).filter({ hasText: "Bo" });
+  await ada.focus();
+
+  // The next desk in reading order takes the focus.
+  await page.evaluate(() => {
+    window.__mockCore.pushEvent({
+      type: "agent.deleted",
+      agent_id: "agent-ada",
+    });
+  });
+  await expect(bo).toBeFocused();
+
+  // The last desk's deletion falls back to the previous one.
+  const boAgain = desks(page).filter({ hasText: "Bo" });
+  await boAgain.focus();
+  await page.evaluate(() => {
+    window.__mockCore.pushEvent({
+      type: "agent.deleted",
+      agent_id: "agent-bo",
+    });
+  });
+  await expect(desks(page).filter({ hasText: "Dee" })).toBeFocused();
+
+  // The last desk left drops the scene into its empty state heading.
+  await desks(page).filter({ hasText: "Dee" }).focus();
+  await page.evaluate(() => {
+    window.__mockCore.pushEvent({
+      type: "agent.deleted",
+      agent_id: "agent-dee",
+    });
+    window.__mockCore.pushEvent({
+      type: "agent.deleted",
+      agent_id: "agent-cy",
+    });
+    window.__mockCore.pushEvent({
+      type: "agent.deleted",
+      agent_id: "agent-bo",
+    });
+  });
+  await expect(
+    page.getByRole("heading", { name: "The office is empty" }),
+  ).toBeFocused();
+});
+
+test.describe("reduced motion (SC-007, research R5)", () => {
+  test.use({ reducedMotion: "reduce" });
+
+  test("12 pushed status changes move or flash no element", async ({
+    page,
+  }) => {
+    await openScene(page);
+    expect(
+      await page.evaluate(
+        () => matchMedia("(prefers-reduced-motion: reduce)").matches,
+      ),
+    ).toBe(true);
+
+    // 12 statuses change in the same second (the plan's SC-007 fixture).
+    await page.evaluate(() => {
+      const agents = ["agent-ada", "agent-bo", "agent-cy", "agent-dee"];
+      for (let round = 0; round < 3; round += 1) {
+        for (const agentId of agents) {
+          window.__mockCore.pushEvent({
+            type: "agent.status",
+            agent_id: agentId,
+            status: round % 2 === 0 ? "waiting_for_input" : "working",
+          });
+        }
+      }
+    });
+    await expect(desks(page).filter({ hasText: "Ada" })).toContainText(
+      "waiting for input",
+    );
+
+    // Pass 1 (deterministic): no motion-producing computed style anywhere
+    // in the scene. Color/opacity-only changes are not motion (R4/R5).
+    const motion = await page.evaluate(() => {
+      const sceneRoot = document.querySelector(
+        '[role="region"][aria-labelledby="scene-heading"]',
+      );
+      const offenders: Array<Record<string, string>> = [];
+      if (sceneRoot === null) return offenders;
+      for (const element of sceneRoot.querySelectorAll("*")) {
+        const style = getComputedStyle(element);
+        const transitionActive =
+          style.transitionProperty !== "none" &&
+          style.transitionDuration.split(",").some((d) => d.trim() !== "0s");
+        if (
+          style.animationName !== "none" ||
+          transitionActive ||
+          style.transform !== "none"
+        ) {
+          offenders.push({
+            tag: element.tagName,
+            cls: String(element.className).slice(0, 40),
+            animation: style.animationName,
+            transition: style.transitionProperty,
+            transform: style.transform,
+          });
+        }
+      }
+      return offenders;
+    });
+    expect(motion).toEqual([]);
+
+    // Pass 2 (runtime): two animation frames with no scroll input — every
+    // desk rect must hold still, and the scroll position must not move.
+    const frames = await page.evaluate(async () => {
+      const raf = () =>
+        new Promise((resolve) => requestAnimationFrame(resolve));
+      const snapshot = () => {
+        const desks = [...document.querySelectorAll("[data-agent-id]")].map(
+          (element) => element.getBoundingClientRect().toJSON(),
+        );
+        return {
+          scrollTop: document.scrollingElement?.scrollTop ?? 0,
+          desks,
+        };
+      };
+      await raf();
+      const first = snapshot();
+      await raf();
+      const second = snapshot();
+      return { first, second };
+    });
+    expect(frames.first.scrollTop).toBe(frames.second.scrollTop);
+    expect(frames.first.desks).toEqual(frames.second.desks);
+  });
+});
+
+test("view switches write last_view with the view field, throttled", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  // The scene is open: the write carries view "scene" plus the 0003 fields.
+  // The switch happens inside the 1s throttle window, so the scene write
+  // rides the held tail and lands within about a second.
+  const writes = async () =>
+    page.evaluate(() =>
+      (
+        window.__mockCore.calls.filter(
+          (call) =>
+            call.command === "send_request" &&
+            call.args.kind === "settings.set",
+        ) as Array<{ args: { fields?: { value?: string } } }>
+      ).map((call) => JSON.parse(String(call.args.fields?.value))),
+    );
+
+  await expect
+    .poll(async () => (await writes()).at(-1))
+    .toMatchObject({ view: "scene", project: null, terminal_open: false });
+
+  // Back to the panel: the newest write carries view "panel".
+  await page.getByRole("button", { name: "To the panel" }).click();
+  await expect
+    .poll(async () => (await writes()).at(-1))
+    .toMatchObject({ view: "panel" });
+
+  // One step each way, so at most a handful of writes ever go out (D6's
+  // at-most-once-per-second throttle; the whole test runs in well under 1s
+  // apart from polling, and the held tail never exceeds one write).
+  const sceneWrites = (await writes()).filter(
+    (value) => value.view === "scene",
+  );
+  expect(sceneWrites.length).toBeLessThanOrEqual(2);
+});
+
+test.describe("desk opens the terminal in the scene (D5)", () => {
+  test("a click embeds the terminal with focus, no second window", async ({
+    page,
+  }) => {
+    await openScene(page);
+
+    await desks(page).filter({ hasText: "Cy" }).click();
+    const terminal = page.getByLabel("Terminal of Cy", { exact: true });
+    await expect(terminal).toBeFocused();
+    await expect(page.getByText("Every key goes to the agent")).toBeVisible();
+    // One page only: the desk click never spawns a second window (D5).
+    // Bo is stopped, so its readonly embed proves itself via its note.
+    const contexts = page.context().pages().length;
+    await desks(page).filter({ hasText: "Bo" }).click();
+    await expect(page.getByText("The agent is stopped.")).toBeVisible();
+    expect(page.context().pages().length).toBe(contexts);
+  });
+
+  test("Enter on a focused desk opens the same terminal", async ({ page }) => {
+    await openScene(page);
+
+    await desks(page).filter({ hasText: "Bo" }).focus();
+    await page.keyboard.press("Enter");
+    // Bo is stopped: the embed shows recent output and takes no stdin, so
+    // the focus mark sits on the terminal heading region instead of the
+    // textarea; the embed itself is proven by the stopped-terminal note.
+    await expect(page.getByText("The agent is stopped.")).toBeVisible();
+    await expect(
+      page.getByLabel("Terminal of Bo", { exact: true }),
+    ).toHaveAttribute("readonly", "");
+  });
+
+  test("the focus-leave shortcut returns focus to the desk", async ({
+    page,
+  }) => {
+    await openScene(page);
+
+    await desks(page).filter({ hasText: "Cy" }).click();
+    await expect(
+      page.getByLabel("Terminal of Cy", { exact: true }),
+    ).toBeFocused();
+
+    await page.keyboard.press("Control+Shift+F12");
+    await expect(desks(page).filter({ hasText: "Cy" })).toBeFocused();
+  });
+
+  test("a stopped agent's desk opens with its recent output", async ({
+    page,
+  }) => {
+    // The terminal frame format encodes a 16-byte UUID, so the seeded id
+    // must be one (terminal.spec's convention), or the snapshot drops.
+    const agentId = "11111111-2222-4333-8444-555555555555";
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: [
+          agent({ id: agentId, project_id: "project-site", status: "stopped" }),
+        ],
+        projects: PROJECTS,
+        snapshots: { [agentId]: "recent saved output" },
+      },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "To the scene" }).click();
+
+    await desks(page).filter({ hasText: "Ada" }).click();
+    const input = page.getByLabel("Terminal of Ada", { exact: true });
+    // A stopped terminal takes no input (isRunning false; readonly) and the
+    // snapshot reaches the screen-reader buffer (terminal.spec convention).
+    await expect(page.getByText(/The agent is stopped/)).toBeVisible();
+    await expect(page.locator(".xterm-accessibility-tree")).toContainText(
+      "recent saved output",
+    );
+    await input.press("x");
+    const inputs = await page.evaluate(() =>
+      window.__mockCore.calls.filter(
+        (call) =>
+          call.command === "send_request" &&
+          call.args.kind === "terminal.input",
+      ),
+    );
+    expect(inputs).toEqual([]);
+  });
+});
