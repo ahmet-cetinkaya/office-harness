@@ -344,27 +344,54 @@ fn the_last_line_is_reported_when_it_changes_and_throttled_after() {
 
 #[test]
 fn a_bell_from_the_child_becomes_one_bell_event() {
+    const TAP: bool = true; // TEMPORARY DEBUG TAP - remove before merge
     let folder = TempDir::new().expect("temp folder");
     let (runtime, sink) = runtime_in(folder.path(), limits(1000));
     let agent = AgentId::generate();
     spawn_fixture(&runtime, agent, &["lines"]);
+    let client = Client::attach(&runtime, agent, size(80, 24));
     runtime
         .write_input(agent, b"a")
         .expect("write to confirm the child reads");
     wait_until("the child to be reading", || !sink.lines().is_empty());
     runtime.write_input(agent, b"b").expect("ring the bell");
-    wait_until("the bell to be reported", || {
-        sink.events()
+    let sleep_result = wait_until_tap(&sink);
+    if TAP {
+        let stream = client.raw();
+        eprintln!("=== BELL TAP BEGIN ===");
+        eprintln!("master stream after timeout: {} bytes", stream.len());
+        eprintln!("hexdump of the last 400 bytes:");
+        for chunk in stream.len().saturating_sub(400)..stream.len() {
+            eprintln!("{:04x}: {:02x}", chunk, stream[chunk]);
+        }
+        eprintln!(
+            "0x07 occurrences in master stream: {}",
+            stream.iter().filter(|byte| **byte == 0x07).count()
+        );
+        eprintln!(
+            "BELLED marker in master stream: {}",
+            client.text().contains("BELLED")
+        );
+        eprintln!("events at timeout: {:?}", sink.events());
+        eprintln!("lines at timeout: {:?}", sink.lines());
+        eprintln!("=== BELL TAP END ===");
+    }
+    panic!("tap: dumping state instead of waiting ({sleep_result:?})");
+}
+
+fn wait_until_tap(sink: &support::RecordingSink) -> std::time::Duration {
+    let started = std::time::Instant::now();
+    while started.elapsed() < std::time::Duration::from_secs(12) {
+        if sink
+            .events()
             .iter()
             .any(|event| matches!(event, TerminalEvent::Bell))
-    });
-    let bells = sink
-        .events()
-        .iter()
-        .filter(|event| matches!(event, TerminalEvent::Bell))
-        .count();
-    assert_eq!(bells, 1);
-    runtime.stop(agent, GRACE).expect("stop");
+        {
+            panic!("the bell was reported; the tap is not needed on this platform");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    started.elapsed()
 }
 
 #[test]
