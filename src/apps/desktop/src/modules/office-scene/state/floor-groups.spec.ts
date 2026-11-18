@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { Agent, Project } from "../../agent";
+import type { HierarchyTree } from "../../hierarchy";
 import {
   deskLastLine,
   deskStatusText,
@@ -9,7 +10,6 @@ import {
   NO_PROJECT_FLOOR_NAME,
   type ProjectChoice,
   searchMatches,
-  type HierarchyTree,
 } from "./floor-groups";
 
 function agent(overrides: Partial<Agent> = {}): Agent {
