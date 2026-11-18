@@ -135,8 +135,14 @@ fn wire_code(error: &HierarchyApplicationError) -> ErrorCode {
         HierarchyApplicationError::Invalid(_) | HierarchyApplicationError::InvalidInput(_) => {
             ErrorCode::Invalid
         }
-        HierarchyApplicationError::NotFound(_) => ErrorCode::NotFound,
-        HierarchyApplicationError::Conflict(_) => ErrorCode::Conflict,
+        // The `*Input` variants carry an agent-module message, so they keep
+        // the code `agent.create` answers with — only the prefix is bare.
+        HierarchyApplicationError::NotFoundInput(_) | HierarchyApplicationError::NotFound(_) => {
+            ErrorCode::NotFound
+        }
+        HierarchyApplicationError::ConflictInput(_) | HierarchyApplicationError::Conflict(_) => {
+            ErrorCode::Conflict
+        }
         HierarchyApplicationError::Storage(_) => ErrorCode::Internal,
     }
 }

@@ -226,6 +226,17 @@ async fn answer_office_request(
     request: &Request,
 ) -> Response {
     let caller = grant.agent_id;
+    // The field allowlist runs before anything else: a frame the type does
+    // not take is refused as `invalid` before any rule reads its fields
+    // (the same shape as `parse_directive`, PR 40 LOW).
+    let fields = match allowed_fields_of(request, caller) {
+        Ok(fields) => fields,
+        Err(message) => {
+            let message = truncated(&message, MAX_REFUSAL_TEXT_CHARS);
+            state.directive_journal.refused(caller, &message);
+            return Response::failure(request.id, ErrorCode::Invalid, message);
+        }
+    };
     let target = match target_of(request, caller) {
         Ok(target) => target,
         Err(message) => {
@@ -234,12 +245,26 @@ async fn answer_office_request(
             return Response::failure(request.id, ErrorCode::Invalid, message);
         }
     };
+    // An agent does not start, task, or stop itself over agent-call: the
+    // contract keeps start, new_task, and stop to descendants only (FR-008).
+    // Only `agent.create` may name the caller — as the default parent of the
+    // child — so the self case cannot reach the tree check below.
+    if request.kind != "agent.create" && target == caller {
+        let reason = "an agent does not act on itself".to_owned();
+        state.log.refusal(&format!(
+            "agent {caller} asked for {:?} on itself",
+            truncated(&request.kind, MAX_REFUSAL_TEXT_CHARS)
+        ));
+        state.directive_journal.refused(caller, &reason);
+        return Response::failure(request.id, ErrorCode::Refused, reason);
+    }
     // The descendant rule runs on a fresh snapshot, on the blocking pool,
     // before the gateway sees the request: an agent that names a stranger
     // (as a target or as the parent of its create) reaches no use case at
     // all (FR-008, FR-009). The caller itself is always inside its own
     // subtree, placed or not — a member may create before it is placed,
-    // and the tree rules then decide the place the child takes.
+    // and the tree rules then decide the place the child takes. Past the
+    // self refusal above, a target equal to the caller is a create parent.
     let tree_query = Arc::clone(&state.hierarchy_tree);
     let inside = spawn_blocking(move || {
         tree_query
@@ -272,14 +297,6 @@ async fn answer_office_request(
         state.directive_journal.refused(caller, &reason);
         return Response::failure(request.id, ErrorCode::Refused, reason);
     }
-    let fields = match allowed_fields_of(request, caller) {
-        Ok(fields) => fields,
-        Err(message) => {
-            let message = truncated(&message, MAX_REFUSAL_TEXT_CHARS);
-            state.directive_journal.refused(caller, &message);
-            return Response::failure(request.id, ErrorCode::Invalid, message);
-        }
-    };
     let forwarded = Request {
         id: request.id,
         kind: request.kind.clone(),
@@ -333,8 +350,10 @@ fn target_of(request: &Request, caller: AgentId) -> Result<AgentId, String> {
 
 /// The fields an office request may carry: a create keeps the fields the
 /// agent protocol takes, but the role is the server's, not the client's;
-/// the other types keep only `agent_id`. Any other field is dropped before
-/// the gateway sees the frame (the closed allowlist of the 0002 contract).
+/// the other types keep only `agent_id`. Any other field is refused, not
+/// dropped — the same closed allowlist as `directive.send` (Efe, PR 40 LOW:
+/// a silently dropped `include_descendants` would answer success while
+/// doing something else than asked).
 fn allowed_fields_of(
     request: &Request,
     caller: AgentId,
@@ -346,6 +365,14 @@ fn allowed_fields_of(
         // caller).
         if request.fields.contains_key("additions") {
             return Err("agent.create does not take the field \"additions\"".to_owned());
+        }
+        for key in request.fields.keys() {
+            if !CREATE_ALLOWED.contains(&key.as_str()) {
+                return Err(format!(
+                    "agent.create does not take the field {:?}",
+                    truncated(key, MAX_REFUSAL_TEXT_CHARS)
+                ));
+            }
         }
         for key in CREATE_FIELDS {
             if let Some(value) = request.fields.get(key) {
@@ -363,16 +390,31 @@ fn allowed_fields_of(
             Value::String(caller.to_string()),
         );
         fields.insert("role".to_owned(), Value::Object(role));
-    } else if let Some(agent_id) = request.fields.get("agent_id") {
-        fields.insert("agent_id".to_owned(), agent_id.clone());
+    } else {
+        for key in request.fields.keys() {
+            if key != "agent_id" {
+                return Err(format!(
+                    "{:?} does not take the field {:?}",
+                    request.kind,
+                    truncated(key, MAX_REFUSAL_TEXT_CHARS)
+                ));
+            }
+        }
+        if let Some(agent_id) = request.fields.get("agent_id") {
+            fields.insert("agent_id".to_owned(), agent_id.clone());
+        }
     }
     Ok(fields)
 }
 
-/// The fields of `agent.create` an agent caller may set. `role` is joined
-/// separately, the client's own `role` object is replaced, and `additions`
-/// is refused outright.
+/// The fields of `agent.create` an agent caller may set. `role` is checked
+/// against the allowlist here and joined separately; the client's own
+/// `role` object is replaced, and `additions` is refused outright.
 const CREATE_FIELDS: [&str; 4] = ["name", "command", "working_folder", "project_id"];
+
+/// Everything a create frame may name: the seed fields plus the `role`
+/// object that the allowlist check accepts and then replaces.
+const CREATE_ALLOWED: [&str; 5] = ["name", "command", "working_folder", "project_id", "role"];
 
 /// The wire code of a directive failure: a rule between the agents is a
 /// refusal (the contract names not-a-descendant and not-running `refused`),
@@ -386,8 +428,14 @@ fn wire_code(error: &HierarchyApplicationError) -> ErrorCode {
         HierarchyApplicationError::Invalid(_) | HierarchyApplicationError::InvalidInput(_) => {
             ErrorCode::Invalid
         }
-        HierarchyApplicationError::NotFound(_) => ErrorCode::NotFound,
-        HierarchyApplicationError::Conflict(_) => ErrorCode::Conflict,
+        // The `*Input` variants carry an agent-module message, so they keep
+        // the code of their kind — only the prefix is bare.
+        HierarchyApplicationError::NotFoundInput(_) | HierarchyApplicationError::NotFound(_) => {
+            ErrorCode::NotFound
+        }
+        HierarchyApplicationError::ConflictInput(_) | HierarchyApplicationError::Conflict(_) => {
+            ErrorCode::Conflict
+        }
         HierarchyApplicationError::Storage(_) => ErrorCode::Internal,
     }
 }

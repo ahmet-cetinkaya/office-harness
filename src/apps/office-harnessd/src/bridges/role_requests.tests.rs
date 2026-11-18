@@ -51,6 +51,43 @@ fn a_broken_project_id_is_refused_before_any_handler_runs() {
     );
 }
 
+/// An agent-module `NotFound` or `Conflict` rides to the wire bare (#40
+/// LOW): the kind keeps the code `agent.create` answers with and the
+/// message stays the agent module's own, without a hierarchy prefix.
+#[test]
+fn an_agent_module_not_found_or_conflict_passes_through_without_a_prefix() {
+    let cases = [
+        (
+            HierarchyApplicationError::NotFoundInput("the project is gone".to_owned()),
+            ErrorCode::NotFound,
+        ),
+        (
+            HierarchyApplicationError::ConflictInput("an agent named Ana exists".to_owned()),
+            ErrorCode::Conflict,
+        ),
+    ];
+    for (error, code) in cases {
+        let outcome = RoleResult::failed(wire_code(&error), error.to_string());
+
+        assert_eq!(
+            outcome,
+            RoleResult::Failed {
+                code,
+                message: error_message(&error)
+            }
+        );
+    }
+}
+
+/// The message of an error, for comparing against the bridge's answer.
+fn error_message(error: &HierarchyApplicationError) -> String {
+    match error {
+        HierarchyApplicationError::NotFoundInput(message)
+        | HierarchyApplicationError::ConflictInput(message) => message.clone(),
+        other => other.to_string(),
+    }
+}
+
 /// The store these parse-failure tests never reach: the refusal happens
 /// before the handler or the store runs.
 struct FailingStore;

@@ -138,3 +138,66 @@ fn a_type_over_the_limit_is_cut_in_the_not_yet_reason() {
     assert!(reason.contains(&"x".repeat(kept_xs)));
     assert!(!reason.contains(&"x".repeat(kept_xs + 1)));
 }
+
+/// An office request with only the fields its type takes, plus the caller
+/// for a create's role object.
+fn office_request(kind: &str, fields: &[(&str, Value)]) -> Request {
+    Request {
+        id: 1,
+        kind: kind.to_owned(),
+        fields: fields
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect(),
+    }
+}
+
+#[test]
+fn an_office_request_with_an_extra_field_is_refused_not_dropped() {
+    let caller = AgentId::generate();
+    // A stop that smuggles `include_descendants`: dropped silently, it
+    // would answer success while stopping the target alone (PR 40 LOW).
+    let mut request = office_request("agent.stop", &[("agent_id", json!(AgentId::generate()))]);
+    request
+        .fields
+        .insert("include_descendants".to_owned(), json!(true));
+
+    let error = allowed_fields_of(&request, caller).expect_err("an extra field is refused");
+
+    assert!(error.contains("include_descendants"), "{error}");
+}
+
+#[test]
+fn a_create_with_an_extra_field_is_refused_not_dropped() {
+    let caller = AgentId::generate();
+    let request = office_request(
+        "agent.create",
+        &[
+            ("name", json!("Bo")),
+            ("command", json!("fake-cli")),
+            ("unknown_thing", json!(1)),
+        ],
+    );
+
+    let error = allowed_fields_of(&request, caller).expect_err("an extra field is refused");
+
+    assert!(error.contains("unknown_thing"), "{error}");
+}
+
+#[test]
+fn an_office_request_with_only_its_own_fields_passes_the_allowlist() {
+    let caller = AgentId::generate();
+    let target = AgentId::generate();
+    let stop = office_request("agent.stop", &[("agent_id", json!(target.as_uuid_text()))]);
+    assert!(allowed_fields_of(&stop, caller).is_ok());
+
+    let create = office_request(
+        "agent.create",
+        &[
+            ("name", json!("Bo")),
+            ("command", json!("fake-cli")),
+            ("role", json!({"kind": "member"})),
+        ],
+    );
+    assert!(allowed_fields_of(&create, caller).is_ok());
+}

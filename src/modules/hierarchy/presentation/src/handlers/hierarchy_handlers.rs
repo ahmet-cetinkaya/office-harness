@@ -260,14 +260,19 @@ impl HandlerError {
 }
 
 fn handler_error(error: &HierarchyApplicationError) -> HandlerError {
-    let code = match error {
-        HierarchyApplicationError::Invalid(_) | HierarchyApplicationError::InvalidInput(_) => {
-            wire::ErrorCode::Invalid
-        }
-        HierarchyApplicationError::NotFound(_) => wire::ErrorCode::NotFound,
-        HierarchyApplicationError::Conflict(_) => wire::ErrorCode::Conflict,
-        HierarchyApplicationError::Storage(_) => wire::ErrorCode::Internal,
-    };
+    let code =
+        match error {
+            HierarchyApplicationError::Invalid(_) | HierarchyApplicationError::InvalidInput(_) => {
+                wire::ErrorCode::Invalid
+            }
+            // The `*Input` variants carry an agent-module message, so they keep
+            // the code `agent.create` answers with — only the prefix is bare.
+            HierarchyApplicationError::NotFoundInput(_)
+            | HierarchyApplicationError::NotFound(_) => wire::ErrorCode::NotFound,
+            HierarchyApplicationError::ConflictInput(_)
+            | HierarchyApplicationError::Conflict(_) => wire::ErrorCode::Conflict,
+            HierarchyApplicationError::Storage(_) => wire::ErrorCode::Internal,
+        };
     HandlerError {
         code,
         message: error.to_string(),

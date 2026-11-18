@@ -341,8 +341,8 @@ fn a_refused_create_maps_to_the_matching_error_kind() {
         let message = message.to_owned();
         let expected = match kind {
             CreatorErrorKind::Invalid => HierarchyApplicationError::InvalidInput(message.clone()),
-            CreatorErrorKind::NotFound => HierarchyApplicationError::NotFound(message.clone()),
-            CreatorErrorKind::Conflict => HierarchyApplicationError::Conflict(message.clone()),
+            CreatorErrorKind::NotFound => HierarchyApplicationError::NotFoundInput(message.clone()),
+            CreatorErrorKind::Conflict => HierarchyApplicationError::ConflictInput(message.clone()),
             CreatorErrorKind::Internal => HierarchyApplicationError::Storage(message.clone()),
         };
         let creator = RecordingCreator::failing_create(CreatorError { kind, message });
