@@ -2,6 +2,7 @@
 
 export {
   APP_SHORTCUT_TABLE,
+  isAppShortcut,
   pressedAppShortcut,
   type AppShortcut,
 } from "./app-shortcuts";
