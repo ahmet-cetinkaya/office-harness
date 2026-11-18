@@ -62,13 +62,16 @@ fn sleep_forever() -> ! {
 }
 
 /// Raw mode makes every key reach this program unchanged, Ctrl+C included.
-/// Windows needs console calls for this, which the tests do not cover.
+/// On Unix `stty` does it; on Windows `console-control` clears the line input
+/// modes, which a pseudoconsole console starts with.
 fn enter_raw_mode() {
     if cfg!(unix) {
         let _ = Command::new("stty")
             .args(["raw", "-echo"])
             .stdin(Stdio::inherit())
             .status();
+    } else if let Err(text) = console_control::disable_line_input() {
+        announce(&format!("RAW-ERROR:{text}\r\n"));
     }
 }
 
@@ -123,7 +126,13 @@ fn lines() {
     let mut byte = [0_u8; 1];
     while stdin().read(&mut byte).is_ok_and(|count| count == 1) {
         match byte[0] {
-            b'b' => announce("BELLED\x07\n"),
+            // The bell byte goes out on its own write, so a read that ends
+            // between it and the line break cannot lose it.
+            b'b' => {
+                announce("BELLED");
+                announce("\x07");
+                announce("\n");
+            }
             other => announce(&format!("LINE:{other}\r\n")),
         }
     }
