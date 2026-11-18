@@ -31,6 +31,16 @@ const NOW: Timestamp = Timestamp::from_unix_millis(1_700_000_000_000);
 #[derive(Default)]
 struct MemoryNotifications(std::sync::Mutex<Vec<Notification>>);
 
+fn unread_first_then_newest(rows: &mut [Notification]) {
+    rows.sort_by(|left, right| {
+        let left_unread = u8::from(left.is_unread());
+        let right_unread = u8::from(right.is_unread());
+        right_unread
+            .cmp(&left_unread)
+            .then_with(|| right.created_at.cmp(&left.created_at))
+    });
+}
+
 impl MemoryNotifications {
     fn all(&self) -> Vec<Notification> {
         self.0.lock().expect("lock").clone()
@@ -48,13 +58,7 @@ impl NotificationStore for MemoryNotifications {
 
     fn list(&self) -> Result<Vec<Notification>, NotificationApplicationError> {
         let mut rows = self.0.lock().expect("lock").clone();
-        rows.sort_by(|left, right| {
-            let left_unread = u8::from(left.is_unread());
-            let right_unread = u8::from(right.is_unread());
-            right_unread
-                .cmp(&left_unread)
-                .then_with(|| right.created_at.cmp(&left.created_at))
-        });
+        unread_first_then_newest(&mut rows);
         rows.truncate(LIST_LIMIT);
         Ok(rows)
     }
@@ -68,13 +72,7 @@ impl NotificationStore for MemoryNotifications {
             .filter(|row| row.is_unread())
             .cloned()
             .collect();
-        rows.sort_by(|left, right| {
-            let left_unread = u8::from(left.is_unread());
-            let right_unread = u8::from(right.is_unread());
-            right_unread
-                .cmp(&left_unread)
-                .then_with(|| right.created_at.cmp(&left.created_at))
-        });
+        unread_first_then_newest(&mut rows);
         Ok(rows)
     }
 
@@ -111,6 +109,38 @@ impl NotificationStore for MemoryNotifications {
             .filter(|row| row.agent_id == agent_id && row.is_unread())
             .cloned()
             .collect())
+    }
+}
+
+/// An agent store whose every lookup fails: the disk problem a broken store
+/// produces, to tell apart from a real delete.
+struct BrokenStore;
+
+impl AgentStore for BrokenStore {
+    fn insert(&self, _agent: &Agent) -> Result<(), PortError> {
+        Ok(())
+    }
+
+    fn find(&self, _id: AgentId) -> Result<Option<Agent>, PortError> {
+        Err(PortError::Storage {
+            message: "the agent table cannot be read".to_owned(),
+            is_disk_failure: true,
+        })
+    }
+
+    fn list(&self) -> Result<Vec<Agent>, PortError> {
+        Err(PortError::Storage {
+            message: "the agent table cannot be read".to_owned(),
+            is_disk_failure: true,
+        })
+    }
+
+    fn update_status(&self, _id: AgentId, _status: AgentStatus) -> Result<(), PortError> {
+        Ok(())
+    }
+
+    fn delete(&self, _id: AgentId) -> Result<(), PortError> {
+        Ok(())
     }
 }
 
@@ -237,6 +267,23 @@ fn bridge_for(
     Arc<OneAgent>,
     EventHub,
 ) {
+    let agents = Arc::new(OneAgent::never_deleted(agent));
+    let (bridge, store, hub, _alerts) =
+        bridge_over(Arc::clone(&agents) as Arc<dyn AgentStore>, current_run);
+    (bridge, store, agents, hub)
+}
+
+/// A bridge over any agent store, with the alerts feed, so a test can fail
+/// the lookups or watch the surfaced losses.
+fn bridge_over(
+    agents: Arc<dyn AgentStore>,
+    current_run: Option<RunId>,
+) -> (
+    NotificationBridge,
+    Arc<MemoryNotifications>,
+    EventHub,
+    StorageAlerts,
+) {
     let store: Arc<MemoryNotifications> = Arc::new(MemoryNotifications::default());
     let log_folder = tempfile::tempdir().expect("folder");
     let config = crate::config::Config {
@@ -244,17 +291,17 @@ fn bridge_for(
     };
     let log = crate::bootstrap::open_log(&config).expect("log");
     let hub = EventHub::new();
-    let agents = Arc::new(OneAgent::never_deleted(agent));
+    let alerts = StorageAlerts::new(log.clone());
     let bridge = NotificationBridge {
         create: CreateNotificationHandler::new(Arc::clone(&store) as Arc<dyn NotificationStore>),
-        agents: Arc::clone(&agents) as Arc<dyn AgentStore>,
+        agents,
         runtime: Arc::new(RunOnly(current_run)),
         clock: Arc::new(FixedClock(NOW)),
         hub: hub.clone(),
-        alerts: StorageAlerts::new(log.clone()),
+        alerts: alerts.clone(),
         log,
     };
-    (bridge, store, agents, hub)
+    (bridge, store, hub, alerts)
 }
 
 /// The status frame exactly as the office publishes it.
@@ -425,6 +472,27 @@ mod records {
         let listed = store.list().expect("list");
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].agent_name, DELETED_AGENT_NAME);
+    }
+
+    #[test]
+    fn a_failed_name_lookup_records_nothing_and_alerts_instead_of_naming_a_delete() {
+        let agent = agent_named("Ana");
+        let (bridge, store, _hub, alerts) = bridge_over(Arc::new(BrokenStore), Some(RunId(1)));
+        let mut alert_feed = alerts.subscribe();
+
+        bridge.apply_frame(&frame_of("exited", &agent));
+
+        assert_eq!(
+            store.all(),
+            [],
+            "a storage failure must not write a row that names a delete"
+        );
+        let alert = alert_feed.try_recv().expect("the loss is surfaced");
+        assert!(
+            alert.message.contains("the agent table cannot be read"),
+            "{}",
+            alert.message
+        );
     }
 
     #[test]
