@@ -496,6 +496,24 @@ mod records {
     }
 
     #[test]
+    fn a_lagged_status_feed_is_surfaced_as_a_loss_the_client_can_resync() {
+        let agent = agent_named("Ana");
+        let (bridge, store, _hub, alerts) =
+            bridge_over(Arc::new(OneAgent::never_deleted(&agent)), Some(RunId(1)));
+        let mut alert_feed = alerts.subscribe();
+
+        bridge.missed(3, "status events");
+
+        assert_eq!(store.all(), [], "a lag records no row of its own");
+        let alert = alert_feed.try_recv().expect("the lag is surfaced");
+        assert_eq!(
+            alert.message,
+            "the notification bridge missed 3 status events; \
+             notifications are missing for them"
+        );
+    }
+
+    #[test]
     fn a_second_bell_while_the_first_is_unread_is_coalesced() {
         let agent = agent_named("Ana");
         let (bridge, store, _agents, hub) = bridge_for(&agent, Some(RunId(1)));
