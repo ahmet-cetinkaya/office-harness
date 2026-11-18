@@ -938,7 +938,7 @@ test("a refused create shows the server's refusal text (FR-003)", async ({
     refusals: {
       "agent.create": {
         code: "invalid",
-        message: "invalid: the office already has a CEO: agent-ceo",
+        message: "invalid: the office already has a CEO: Chief",
       },
     },
   });
@@ -955,7 +955,7 @@ test("a refused create shows the server's refusal text (FR-003)", async ({
   await page.keyboard.press("Enter");
 
   await expect(page.getByRole("alert")).toContainText(
-    "invalid: the office already has a CEO: agent-ceo",
+    "invalid: the office already has a CEO: Chief",
   );
   // The dialog stays open, so the user can correct or cancel.
   await expect(page.getByRole("dialog", { name: "New CEO" })).toBeVisible();
