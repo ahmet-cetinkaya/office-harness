@@ -33,6 +33,7 @@ import {
   readLineEvent,
   readStatusEvent,
   readStorageError,
+  namesLostNotifications,
   upsertAgent,
   withoutAgent,
   withLine,
@@ -86,10 +87,17 @@ export const INITIAL_OFFICE: OfficeSnapshot = {
 
 const REQUEST_FAILED = "The request failed.";
 
+/** The restore's word for a last-view agent that no longer exists (US3). */
+export const LAST_AGENT_GONE_LEAD = "The last view's agent no longer exists.";
+export const LAST_AGENT_GONE_MESSAGE =
+  "The office opened without a selected agent.";
+
 export function createOfficeController(
   client: CoreClient,
   onChange: (snapshot: OfficeSnapshot) => void,
   actionRecord: ActionRecordSource,
+  /** Called when the bridge reports lost notifications (LOW-1). */
+  onNotificationsLost: () => void = () => {},
 ) {
   const service = createAgentService(client);
   let snapshot: OfficeSnapshot = INITIAL_OFFICE;
@@ -223,6 +231,23 @@ export function createOfficeController(
     });
   }
 
+  /**
+   * A failed save shows as a notice (LOW-1). The notification bridge's lag
+   * text means FR-006 rows never reached the user, so it leads with that and
+   * asks for a list read again; every other storage failure keeps its lead.
+   */
+  function handleStorageError(event: ServerEvent): void {
+    const message = readStorageError(event);
+    const lost = namesLostNotifications(message);
+    update({
+      notice: {
+        lead: lost ? "The office fell behind." : "The office cannot save.",
+        message,
+      },
+    });
+    if (lost) onNotificationsLost();
+  }
+
   function handleEvent(event: ServerEvent): void {
     switch (event.type) {
       case EVENT_AGENT_STATUS:
@@ -254,12 +279,7 @@ export function createOfficeController(
       case EVENT_CLIENT_RESYNC:
         return void load();
       case EVENT_STORAGE_ERROR:
-        return update({
-          notice: {
-            lead: "The office cannot save.",
-            message: readStorageError(event),
-          },
-        });
+        return handleStorageError(event);
     }
   }
 
@@ -301,6 +321,11 @@ export function createOfficeController(
     select(agentId: string): void {
       if (snapshot.selectedAgentId === agentId) return;
       showDetails(agentId);
+    },
+
+    /** Shows one notice in the panel, as the failures do. */
+    showNotice(lead: string, message: string): void {
+      update({ notice: { lead, message } });
     },
 
     retryDetails(): void {

@@ -84,3 +84,10 @@ export function readStorageError(event: ServerEvent): string {
     ? event.message
     : "The office could not save its state.";
 }
+
+/** True for the bridge's lag text, which names the lost notifications. */
+export function namesLostNotifications(message: string): boolean {
+  return (
+    message.includes("missed") && message.includes("notifications are missing")
+  );
+}

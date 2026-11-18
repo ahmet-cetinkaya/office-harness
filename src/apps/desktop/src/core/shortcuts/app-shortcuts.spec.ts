@@ -100,10 +100,12 @@ describe("app shortcut table", () => {
     expect(pressedAppShortcut(keyEvent({ key: "F10" }))).toBeNull();
   });
 
-  // The server's settings.rs refuses a focus_shortcut equal to one of these
-  // ten combinations (its RESERVED_SHORTCUTS, "agent 1" to "agent 9" and
-  // "the agent switcher"). The two lists are the same rule's two sides, so
-  // written out here: a drift on either side fails this test.
+  // SERVER_RESERVED mirrors settings.rs RESERVED_SHORTCUTS by hand ("agent 1"
+  // to "agent 9" and "the agent switcher"); nothing checks the server side
+  // automatically. This test pins the desktop table to that copy: a
+  // desktop-side drift fails here, and a server-side change to
+  // RESERVED_SHORTCUTS must be mirrored here in the same change, reviewed as
+  // such.
   test("the table matches the combinations the server reserves", () => {
     const SERVER_RESERVED = [
       "Ctrl+Shift+F1",
