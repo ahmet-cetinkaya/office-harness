@@ -361,13 +361,16 @@ fn a_bell_from_the_child_becomes_one_bell_event() {
         eprintln!("=== BELL TAP BEGIN ===");
         eprintln!("master stream after timeout: {} bytes", stream.len());
         eprintln!("hexdump of the last 400 bytes:");
-        for chunk in stream.len().saturating_sub(400)..stream.len() {
-            eprintln!("{:04x}: {:02x}", chunk, stream[chunk]);
+        let window = &stream[stream.len().saturating_sub(400)..];
+        for (offset, byte) in window.iter().enumerate() {
+            eprintln!("{offset:04x}: {byte:02x}");
         }
-        eprintln!(
-            "0x07 occurrences in master stream: {}",
-            stream.iter().filter(|byte| **byte == 0x07).count()
-        );
+        #[allow(
+            clippy::naive_bytecount,
+            reason = "temporary debug tap, reverted before merge"
+        )]
+        let bells_in_stream = stream.iter().filter(|byte| **byte == 0x07).count();
+        eprintln!("0x07 occurrences in master stream: {bells_in_stream}");
         eprintln!(
             "BELLED marker in master stream: {}",
             client.text().contains("BELLED")
