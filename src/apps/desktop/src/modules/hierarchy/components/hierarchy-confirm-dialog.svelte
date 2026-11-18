@@ -40,7 +40,10 @@
 <Dialog {title} onclose={oncancel} initialFocus={cancelButton}>
   <p class="text-neutral-700">{body} Press Escape to cancel.</p>
   {#if choices !== null && onchoose !== null}
-    <div class="flex flex-col gap-2">
+    <fieldset class="flex flex-col gap-2">
+      <!-- The legend names the radio group for screen readers; the visible
+        question is the dialog text above. -->
+      <legend class="sr-only">{title}</legend>
       {#each choices as choice, index (choice.label)}
         <label class="flex items-start gap-2 text-sm text-neutral-900">
           <input
@@ -56,7 +59,7 @@
           </span>
         </label>
       {/each}
-    </div>
+    </fieldset>
   {/if}
   <div class="flex flex-wrap gap-3">
     <Button variant="danger" onclick={onconfirm}>{confirmLabel}</Button>
