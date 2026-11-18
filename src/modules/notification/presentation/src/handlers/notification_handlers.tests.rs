@@ -6,6 +6,7 @@ use kernel::{AgentId, Timestamp};
 use notification_application::commands::read_agent_notifications::ReadAgentNotificationsHandler;
 use notification_application::commands::read_notification::ReadNotificationHandler;
 use notification_application::common::interfaces::NotificationStore;
+use notification_application::queries::list_notifications::LIST_LIMIT;
 use notification_application::queries::list_notifications::ListNotificationsHandler;
 use notification_domain::{Notification, NotificationEvent, NotificationId};
 use serde_json::{Map, Value, json};
@@ -94,6 +95,23 @@ fn unread_only_keeps_the_unread_rows() {
     };
     assert_eq!(result.as_array().expect("array").len(), 1);
     assert_eq!(result[0]["event"], "bell");
+}
+
+#[test]
+fn unread_only_caps_the_rows_like_the_store_contract() {
+    let store = Arc::new(MemoryNotifications::default());
+    let agent = AgentId::generate();
+    for created_at in 0..520 {
+        push(&store, agent, "Ana", NotificationEvent::Exited, created_at);
+    }
+    let handlers = handlers_with(Arc::clone(&store));
+
+    let response = handlers.handle(&request("notification.list", json!({"unread_only": true})));
+
+    let Response::Success { result, .. } = response else {
+        panic!("success");
+    };
+    assert_eq!(result.as_array().expect("array").len(), LIST_LIMIT);
 }
 
 #[test]
