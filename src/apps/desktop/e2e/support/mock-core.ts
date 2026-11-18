@@ -299,12 +299,13 @@ export async function installMockCore(
       if (kind === "ceo") {
         if (tree.ceo !== null) {
           // Exact server shape: the application error's Display prefixes the
-          // wire message with "invalid: ", and SecondCeo carries the CEO's
-          // AgentId (hierarchy_handlers.handler_error, tree_rules.check_ceo).
-          refuse(
-            "invalid",
-            `invalid: the office already has a CEO: ${tree.ceo.id}`,
-          );
+          // wire message with "invalid: ", and SecondCeo names the CEO by
+          // its name, falling back to the id when the name is empty
+          // (hierarchy_handlers.handler_error, tree_rules.check_ceo,
+          // hierarchy_error.SecondCeo).
+          const ceo = office.agents.find((agent) => agent.id === tree.ceo?.id);
+          const named = ceo?.name || tree.ceo.id;
+          refuse("invalid", `invalid: the office already has a CEO: ${named}`);
         }
         tree.ceo = { id: agentId, role: "ceo" };
         return;
