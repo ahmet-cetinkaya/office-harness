@@ -9,12 +9,37 @@ describe("last view parse", () => {
       parseLastView(
         JSON.stringify({ project: "p-site", agent: "a", terminal_open: true }),
       ),
-    ).toEqual({ project: "p-site", agent: "a", terminal_open: true });
+    ).toEqual({
+      project: "p-site",
+      agent: "a",
+      terminal_open: true,
+      view: "panel",
+    });
     expect(
       parseLastView(
         JSON.stringify({ project: null, agent: null, terminal_open: false }),
       ),
-    ).toEqual({ project: null, agent: null, terminal_open: false });
+    ).toEqual({
+      project: null,
+      agent: null,
+      terminal_open: false,
+      view: "panel",
+    });
+  });
+
+  test("the scene view parses, and an unknown view word means the panel", () => {
+    const stored = (view: unknown) =>
+      parseLastView(
+        JSON.stringify({
+          project: null,
+          agent: null,
+          terminal_open: false,
+          view,
+        }),
+      )?.view;
+    expect(stored("scene")).toBe("scene");
+    expect(stored("panel")).toBe("panel");
+    expect(stored("galaxy")).toBe("panel");
   });
 
   test("absent or unreadable text is ignored, so the default view stands", () => {
@@ -39,7 +64,12 @@ describe("last view resolve", () => {
 
   test("a present project and agent restore as they were", () => {
     const plan = resolveLastView(
-      { project: "p-site", agent: "agent-ada", terminal_open: true },
+      {
+        project: "p-site",
+        agent: "agent-ada",
+        terminal_open: true,
+        view: "panel",
+      },
       PROJECTS,
       AGENTS,
     );
@@ -49,7 +79,7 @@ describe("last view resolve", () => {
 
   test("a missing project falls back to all projects", () => {
     const plan = resolveLastView(
-      { project: "p-gone", agent: null, terminal_open: false },
+      { project: "p-gone", agent: null, terminal_open: false, view: "panel" },
       PROJECTS,
       AGENTS,
     );
@@ -59,7 +89,12 @@ describe("last view resolve", () => {
 
   test("a deleted agent is named and restores no selection (US3)", () => {
     const plan = resolveLastView(
-      { project: "p-site", agent: "agent-gone", terminal_open: true },
+      {
+        project: "p-site",
+        agent: "agent-gone",
+        terminal_open: true,
+        view: "panel",
+      },
       PROJECTS,
       AGENTS,
     );
@@ -69,7 +104,7 @@ describe("last view resolve", () => {
 
   test("no stored agent restores the project alone", () => {
     const plan = resolveLastView(
-      { project: "p-api", agent: null, terminal_open: false },
+      { project: "p-api", agent: null, terminal_open: false, view: "panel" },
       PROJECTS,
       AGENTS,
     );

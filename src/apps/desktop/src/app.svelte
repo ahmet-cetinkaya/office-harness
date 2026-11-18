@@ -33,7 +33,7 @@
   // second and on close. The panel restores the stored view once after its
   // first load, and only then does recording begin, so the restore's read
   // cannot be clobbered by an eager write.
-  let openView: "panel" | "scene" = $state("panel");
+  const openView = $derived(panel.openView);
   const lastView = createLastViewWriter(client);
   // The write rides the connection and the panel's restore, not the mount: a
   // pre-connection shell (not reachable, unauthorized, version mismatch)
@@ -118,11 +118,11 @@
       one step (0005 D6). The last-view write lands with the scene's T4. -->
     <div class="mx-auto flex max-w-6xl px-6 pt-6">
       {#if openView === "panel"}
-        <Button variant="secondary" onclick={() => (openView = "scene")}
+        <Button variant="secondary" onclick={() => panel.switchView("scene")}
           >To the scene</Button
         >
       {:else}
-        <Button variant="secondary" onclick={() => (openView = "panel")}
+        <Button variant="secondary" onclick={() => panel.switchView("panel")}
           >To the panel</Button
         >
       {/if}
