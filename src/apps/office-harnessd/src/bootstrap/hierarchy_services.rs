@@ -5,10 +5,11 @@ use std::sync::Arc;
 use agent_application::commands::delete_agent::DeleteAgentHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
 use agent_infrastructure::persistence::{AgentRepository, SharedConnection};
+use hierarchy_application::commands::create_role_agent::CreateRoleAgentHandler;
 use hierarchy_application::commands::send_directive::SendDirectiveHandler;
 use hierarchy_application::commands::subtree::SubtreeHandler;
 use hierarchy_application::common::ports::{
-    DirectiveJournal, SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover,
+    AgentCreator, DirectiveJournal, SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover,
 };
 use hierarchy_application::{CreateTeamHandler, DeleteTeamHandler, PlaceAgentHandler, TreeQuery};
 use hierarchy_infrastructure::persistence::migrations::{LEDGER_TABLE, SCRIPTS};
@@ -21,12 +22,16 @@ use super::{
     AgentServices, ServerLog, StartupError, StorageAlerts, TerminalServices, run_migrations,
 };
 use crate::bridges::{
-    DirectiveJournalBridge, DirectiveTargetBridge, DirectiveWriterBridge, SubtreeRequestsBridge,
+    AgentCreatorBridge, DirectiveJournalBridge, DirectiveTargetBridge, DirectiveWriterBridge,
+    RoleRequestsBridge, SubtreeRequestsBridge,
 };
 
 /// The hierarchy services: the store, the use cases, and the handlers.
 pub struct HierarchyServices {
     pub handlers: Arc<HierarchyHandlers>,
+    /// The tree the agent-call gateway reads for the descendant rule
+    /// (FR-008), the same store the use cases answer.
+    pub tree: Arc<TreeQuery>,
     /// Sends one directive from a running agent to its member (FR-009). The
     /// agent-call server answers `directive.send` with it.
     pub send_directive: Arc<SendDirectiveHandler>,
@@ -75,8 +80,24 @@ pub fn build_hierarchy_services(
     agent
         .handlers
         .with_subtree(Arc::new(SubtreeRequestsBridge::new(subtree())));
+    // The role bridge is the `agent.create` route for a request that carries
+    // a `role` object: the hierarchy's one-step create-and-place (0002,
+    // FR-003). The creator port calls the agent module's own create and
+    // delete use cases, so a seeded create answers exactly like
+    // `agent.create` and a refused place leaves no agent behind.
+    agent.handlers.with_roles(Arc::new(RoleRequestsBridge::new(
+        CreateRoleAgentHandler::new(
+            Arc::clone(&store),
+            Arc::new(AgentCreatorBridge::new(
+                agent.handlers.use_cases().create_agent.clone(),
+                agent.handlers.use_cases().delete_agent.clone(),
+            )) as Arc<dyn AgentCreator>,
+        ),
+        Arc::clone(&store),
+    )));
+    let tree = Arc::new(TreeQuery::new(Arc::clone(&store)));
     let handlers = Arc::new(HierarchyHandlers::new(HierarchyUseCases {
-        tree: Arc::new(TreeQuery::new(Arc::clone(&store))),
+        tree: Arc::clone(&tree),
         create_team: CreateTeamHandler::new(Arc::clone(&store)),
         delete_team: DeleteTeamHandler::new(Arc::clone(&store)),
         place_agent: PlaceAgentHandler::new(Arc::clone(&store)),
@@ -96,6 +117,7 @@ pub fn build_hierarchy_services(
     ));
     Ok(HierarchyServices {
         handlers,
+        tree,
         send_directive,
         directive_journal,
     })

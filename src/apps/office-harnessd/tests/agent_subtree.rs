@@ -249,3 +249,97 @@ async fn a_delete_of_a_parent_without_the_count_conflicts_and_deletes_nothing() 
     assert_eq!(listed["result"].as_array().expect("agents").len(), 2);
     office.serving.stop().await;
 }
+
+/// `agent.create` with a `role` object creates the agent and gives it its
+/// place in one step (0002, FR-003): a lead with its team shows in the
+/// tree, and a member under a lead takes the lead's team (A6). A second CEO
+/// is refused and leaves nothing behind.
+#[tokio::test]
+async fn an_agent_create_with_a_role_places_the_agent_in_one_step() {
+    let office = Office::open().await;
+    office.clis.add("fake-cli", "echo up; sleep 30");
+    let mut client = office.client().await;
+    let _plain = create_agent(&office, &mut client, 1, "Ceo", "fake-cli").await;
+    let chief = call(
+        &mut client,
+        2,
+        "agent.create",
+        json!({
+            "name": "Chief",
+            "command": "fake-cli",
+            "working_folder": office.work_path(),
+            "role": {"kind": "ceo"},
+        }),
+    )
+    .await;
+    assert_eq!(chief["ok"], true, "{chief}");
+    let chief_id = chief["result"]["id"].as_str().expect("id").to_owned();
+
+    // A lead with its team: the user's team.create carries the lead agent
+    // to pick, so the test picks the agent it just created. The tree shows
+    // lead and team together.
+    let plain_lead = create_agent(&office, &mut client, 3, "Ana", "fake-cli").await;
+    let team = call(
+        &mut client,
+        4,
+        "team.create",
+        json!({"name": "The Team", "lead_agent_id": plain_lead}),
+    )
+    .await;
+    assert_eq!(team["ok"], true, "{team}");
+    let lead_id = plain_lead;
+
+    // A member under the lead, no team sent: the lead's team is its team
+    // (A6), and the create-and-place is one request (FR-003).
+    let member = call(
+        &mut client,
+        5,
+        "agent.create",
+        json!({
+            "name": "Bo",
+            "command": "fake-cli",
+            "working_folder": office.work_path(),
+            "role": {"kind": "member", "parent_agent_id": lead_id},
+        }),
+    )
+    .await;
+    assert_eq!(member["ok"], true, "{member}");
+    let member_id = member["result"]["id"].as_str().expect("id").to_owned();
+
+    let tree = call(&mut client, 6, "hierarchy.tree", json!({})).await;
+    assert_eq!(tree["ok"], true, "{tree}");
+    assert_eq!(tree["result"]["ceo"]["id"], json!(chief_id), "{tree}");
+    let teams = tree["result"]["teams"].as_array().expect("teams");
+    assert_eq!(teams.len(), 1, "{tree}");
+    assert_eq!(teams[0]["lead"]["id"], json!(lead_id));
+    let members = teams[0]["members"].as_array().expect("members");
+    assert_eq!(members.len(), 1, "{tree}");
+    assert_eq!(members[0]["id"], json!(member_id));
+    assert_eq!(members[0]["role"], "member");
+
+    // A second CEO is refused and creates nothing (FR-003).
+    let second = call(
+        &mut client,
+        7,
+        "agent.create",
+        json!({
+            "name": "Sid",
+            "command": "fake-cli",
+            "working_folder": office.work_path(),
+            "role": {"kind": "ceo"},
+        }),
+    )
+    .await;
+    let (code, message) = error_text(&second);
+    assert_eq!(code, "invalid", "{second}");
+    assert!(message.contains("already has a CEO"), "{message}");
+    let listed = call(&mut client, 8, "agent.list", json!({})).await;
+    let names: Vec<&str> = listed["result"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .filter_map(|agent| agent["name"].as_str())
+        .collect();
+    assert!(!names.contains(&"Sid"), "{names:?}");
+    office.serving.stop().await;
+}

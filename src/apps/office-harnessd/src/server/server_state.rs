@@ -5,6 +5,7 @@ use std::sync::Arc;
 use access_application::commands::authenticate_agent_call::AgentAuthenticationHandler;
 use access_application::commands::authenticate_connection::AuthenticationHandler;
 use hierarchy_application::commands::send_directive::SendDirectiveHandler;
+use hierarchy_application::queries::tree::TreeQuery;
 use tokio::sync::{Semaphore, watch};
 
 use crate::bridges::DirectiveJournalBridge;
@@ -33,6 +34,10 @@ pub struct ServerState {
     /// Sends one directive from this agent to its member (FR-009), answered
     /// on the agent connections.
     pub send_directive: Arc<SendDirectiveHandler>,
+    /// The tree the agent-call gateway reads for the descendant rule
+    /// (FR-008): a request an agent sends names an agent in its own subtree,
+    /// or it never reaches a use case.
+    pub hierarchy_tree: Arc<TreeQuery>,
     /// Journals the refusals the agent-call gateway itself rejects; the use
     /// case journals the attempts it runs.
     pub directive_journal: Arc<DirectiveJournalBridge>,

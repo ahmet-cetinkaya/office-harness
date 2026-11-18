@@ -117,8 +117,8 @@ impl ToggledTargets {
 }
 
 impl DirectiveTarget for ToggledTargets {
-    fn is_running(&self, agent_id: AgentId) -> bool {
-        *locked(&self.stopped) != Some(agent_id)
+    fn is_running(&self, agent_id: AgentId) -> Result<bool, String> {
+        Ok(*locked(&self.stopped) != Some(agent_id))
     }
 
     fn name_of(&self, agent_id: AgentId) -> Option<String> {
@@ -200,6 +200,7 @@ fn family() -> Family {
     let member = AgentId::from_u128(4);
     let row = |agent_id: AgentId, parent_agent_id: Option<AgentId>, role: Option<Role>| TreeRow {
         agent_id,
+        name: agent_id.to_string(),
         role,
         parent_agent_id,
         team_id: None,

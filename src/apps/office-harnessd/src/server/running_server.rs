@@ -118,6 +118,7 @@ impl Server {
             agents,
             hierarchy,
             send_directive: Arc::clone(&services.hierarchy.send_directive),
+            hierarchy_tree: Arc::clone(&services.hierarchy.tree),
             directive_journal: Arc::clone(&services.hierarchy.directive_journal),
             notification,
             events,
