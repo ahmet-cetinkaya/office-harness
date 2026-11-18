@@ -148,7 +148,7 @@ fn the_unread_listing_filters_and_caps_in_sql() {
     let repository = memory_office();
     let agent = AgentId::generate();
     // 520 rows are stored, every second one already read, so only the 260
-    // unread come back; more than 500 unread would stop at the cap.
+    // unread come back and the filter did its work in the query.
     for created_at in 0..520 {
         let mut stored = row(agent, "Ana", NotificationEvent::Exited, created_at);
         if created_at % 2 == 0 {
