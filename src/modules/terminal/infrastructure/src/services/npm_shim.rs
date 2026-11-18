@@ -128,11 +128,10 @@ pub fn parse_npm_shim(shim_path: &str, content: &str) -> Option<ShimTarget> {
 
 fn starts_with_line_guard(line: &str) -> bool {
     // A batch line may start its command with `@` to hide the echo, and
-    // `cmd.exe` skips the word delimiters `, ; =` before the first word.
-    let line = line
-        .trim_start()
-        .trim_start_matches(['@', ',', ';', '='])
-        .trim_start();
+    // `cmd.exe` skips any mix of whitespace and the word delimiters `, ; =`
+    // before the first word.
+    let line =
+        line.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, '@' | ',' | ';' | '='));
     // `cmd.exe` cuts the first word at a character that ends the command, so
     // `IF/I` and `GOTO:label` are still `IF` and `GOTO`.
     let first_word = line
