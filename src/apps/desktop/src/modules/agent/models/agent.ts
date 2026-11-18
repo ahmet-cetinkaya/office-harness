@@ -95,8 +95,3 @@ export const STOPPING_TEXT = "Stopping";
 export function shownStatusText(agent: Agent, isStopping: boolean): string {
   return isStopping ? STOPPING_TEXT : statusText(agent.status);
 }
-
-/** The accessible name of an agent entry: its name and its shown status. */
-export function agentEntryName(agent: Agent, isStopping: boolean): string {
-  return `${agent.name}, ${shownStatusText(agent, isStopping)}`;
-}

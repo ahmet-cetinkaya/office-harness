@@ -11,16 +11,23 @@
     label: string;
     value: string;
     options: Option[];
+    /** Runs with the new value after each change. The caller still binds. */
+    onchange?: (value: string) => void;
   }
 
-  let { label, value = $bindable(), options }: Props = $props();
+  let { label, value = $bindable(), options, onchange }: Props = $props();
 
   const id = $props.id();
 </script>
 
 <div class="flex flex-col gap-1">
   <label for={id} class="text-sm font-medium text-neutral-900">{label}</label>
-  <select {id} bind:value class={FIELD_CLASS}>
+  <select
+    {id}
+    bind:value
+    class={FIELD_CLASS}
+    onchange={() => onchange?.(value)}
+  >
     {#each options as option (option.value)}
       <option value={option.value}>{option.label}</option>
     {/each}
