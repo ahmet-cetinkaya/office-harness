@@ -193,9 +193,10 @@ fn refused_of(
 }
 
 #[test]
-fn a_ceo_callers_create_keeps_the_requested_lead_role() {
+fn a_ceo_callers_create_keeps_the_requested_lead_role_and_team() {
     let caller = AgentId::generate();
-    let fields = create_with_role(&json!({"kind": "lead"}));
+    let team = TeamId::generate();
+    let fields = create_with_role(&json!({"kind": "lead", "team_id": team.as_uuid_text()}));
 
     let fields = allowed_fields_of(
         "agent.create",
@@ -207,9 +208,79 @@ fn a_ceo_callers_create_keeps_the_requested_lead_role() {
 
     assert_eq!(
         fields["role"],
-        json!({"kind": "lead"}),
-        "the lead takes its parent from the tree, so none travels"
+        json!({"kind": "lead", "team_id": team.as_uuid_text()}),
+        "the lead takes its parent from the tree, so only the team travels"
     );
+}
+
+#[test]
+fn a_lead_role_without_a_team_is_invalid() {
+    let caller = AgentId::generate();
+    let fields = create_with_role(&json!({"kind": "lead"}));
+
+    let Err((ErrorCode::Invalid, message)) = allowed_fields_of(
+        "agent.create",
+        &fields,
+        caller,
+        &rows_of(caller, Role::Ceo, None),
+    ) else {
+        panic!("expected an invalid outcome");
+    };
+
+    // The contract requires the team: the team is the lead's place, and a
+    // lead without one would answer success while hiding from the tree.
+    assert!(message.contains("role.team_id"), "{message}");
+    assert!(message.contains("required"), "{message}");
+}
+
+#[test]
+fn a_member_role_with_a_team_is_invalid() {
+    let caller = AgentId::generate();
+    let team = TeamId::generate();
+    for parent in [None, Some(AgentId::generate())] {
+        let mut role = json!({"kind": "member", "team_id": team.as_uuid_text()});
+        if let Some(parent) = parent {
+            role["parent_agent_id"] = json!(parent.as_uuid_text());
+        }
+        let fields = create_with_role(&role);
+
+        let Err((ErrorCode::Invalid, message)) = allowed_fields_of(
+            "agent.create",
+            &fields,
+            caller,
+            &rows_of(caller, Role::Lead, None),
+        ) else {
+            panic!("expected an invalid outcome for {role}");
+        };
+
+        // A member's team is its lead's team (A6), so a named team reads as
+        // a place the lead does not give.
+        assert!(message.contains("role.team_id"), "{role}: {message}");
+    }
+}
+
+#[test]
+fn a_role_with_an_unknown_field_is_invalid() {
+    let caller = AgentId::generate();
+    for key in ["emperor", "additions", "actor"] {
+        let mut role = json!({"kind": "member"});
+        role[key] = json!(1);
+        let fields = create_with_role(&role);
+
+        let Err((ErrorCode::Invalid, message)) = allowed_fields_of(
+            "agent.create",
+            &fields,
+            caller,
+            &rows_of(caller, Role::Lead, None),
+        ) else {
+            panic!("expected an invalid outcome for {key}");
+        };
+
+        assert!(
+            message.contains(&format!("role does not take the field \"{key}\"")),
+            "{key}: {message}"
+        );
+    }
 }
 
 #[test]
