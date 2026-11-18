@@ -404,3 +404,41 @@ test.describe("reduced motion (SC-007, research R5)", () => {
     expect(frames.first.desks).toEqual(frames.second.desks);
   });
 });
+
+test("view switches write last_view with the view field, throttled", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  // The scene is open: the write carries view "scene" plus the 0003 fields.
+  // The switch happens inside the 1s throttle window, so the scene write
+  // rides the held tail and lands within about a second.
+  const writes = async () =>
+    page.evaluate(() =>
+      (
+        window.__mockCore.calls.filter(
+          (call) =>
+            call.command === "send_request" &&
+            call.args.kind === "settings.set",
+        ) as Array<{ args: { fields?: { value?: string } } }>
+      ).map((call) => JSON.parse(String(call.args.fields?.value))),
+    );
+
+  await expect
+    .poll(async () => (await writes()).at(-1))
+    .toMatchObject({ view: "scene", project: null, terminal_open: false });
+
+  // Back to the panel: the newest write carries view "panel".
+  await page.getByRole("button", { name: "To the panel" }).click();
+  await expect
+    .poll(async () => (await writes()).at(-1))
+    .toMatchObject({ view: "panel" });
+
+  // One step each way, so at most a handful of writes ever go out (D6's
+  // at-most-once-per-second throttle; the whole test runs in well under 1s
+  // apart from polling, and the held tail never exceeds one write).
+  const sceneWrites = (await writes()).filter(
+    (value) => value.view === "scene",
+  );
+  expect(sceneWrites.length).toBeLessThanOrEqual(2);
+});
