@@ -27,9 +27,15 @@
     agentName: string;
     /** A stopped agent shows the output of its last session and takes no input. */
     isRunning: boolean;
+    /**
+     * Runs on the focus shortcut instead of the default return to this
+     * view's heading; the scene uses it to hand focus back to the desk
+     * (0005 D5). The heading keeps the default when left out.
+     */
+    onFocusLeave?: () => void;
   }
 
-  let { client, agentId, agentName, isRunning }: Props = $props();
+  let { client, agentId, agentName, isRunning, onFocusLeave }: Props = $props();
 
   const RESIZE_DEBOUNCE_MS = 100;
   const SCROLLBACK_LINES = 10_000;
@@ -126,7 +132,8 @@
           // The webview would otherwise run its own action for the key,
           // such as the developer tools on F12.
           event.preventDefault();
-          heading.focus();
+          if (onFocusLeave !== undefined) onFocusLeave();
+          else heading.focus();
         }
         return false;
       }

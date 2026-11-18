@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+export { default as SceneView } from "./views/scene-view.svelte";
 export {
   deskLastLine,
   deskStatusText,

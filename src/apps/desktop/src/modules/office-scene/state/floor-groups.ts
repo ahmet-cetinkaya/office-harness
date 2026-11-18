@@ -2,6 +2,7 @@
 
 import { shownStatusText, type Agent, type Project } from "../../agent";
 import type { HierarchyTree, HierarchyTreeTeam } from "../../hierarchy";
+import { matchesAgentName } from "../../panel";
 
 /** The floor of the agents without a project, always last (0005 D3). */
 export const NO_PROJECT_FLOOR_NAME = "No project";
@@ -180,14 +181,12 @@ export function floorGroups(
 /**
  * The agents whose name holds the text, in the given reading order. Text
  * that is empty or spaces only is no search, so every agent matches (D7).
- * The case handling is a case-insensitive substring for now: the panel's
- * switcher match function does not exist yet (research R2), and T3 swaps it
- * in here when it lands.
+ * Matching goes through the panel's switcher matcher, so both views return
+ * the same matches for the same text.
  */
 export function searchMatches(agents: Agent[], text: string): Agent[] {
-  const needle = text.trim().toLowerCase();
-  if (needle === "") return [...agents];
-  return agents.filter((agent) => agent.name.toLowerCase().includes(needle));
+  if (text.trim() === "") return [...agents];
+  return agents.filter((agent) => matchesAgentName(agent, text));
 }
 
 /** The status text of a desk: "Stopping" while the agent's stop request is open. */
