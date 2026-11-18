@@ -238,6 +238,7 @@ export async function installMockCore(
             machine_id: "machine",
             status: "stopped",
             created_at: Date.now(),
+            last_line: null,
           };
           office.agents.push(agent);
           office.additions[agent.id] = {

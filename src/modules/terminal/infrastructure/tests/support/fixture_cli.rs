@@ -32,6 +32,8 @@ fn main() {
         "pause-resume" => pause_resume(number(argument(1))),
         "counter" => counter(number(argument(1)), number(argument(2))),
         "keys" => keys(),
+        "lines" => lines(),
+        "progress" => progress(),
         "altscreen" => altscreen(),
         "size" => size(),
         "query" => query(),
@@ -60,13 +62,16 @@ fn sleep_forever() -> ! {
 }
 
 /// Raw mode makes every key reach this program unchanged, Ctrl+C included.
-/// Windows needs console calls for this, which the tests do not cover.
+/// On Unix `stty` does it; on Windows `console-control` clears the line input
+/// modes, which a pseudoconsole console starts with.
 fn enter_raw_mode() {
     if cfg!(unix) {
         let _ = Command::new("stty")
             .args(["raw", "-echo"])
             .stdin(Stdio::inherit())
             .status();
+    } else if let Err(text) = console_control::disable_line_input() {
+        announce(&format!("RAW-ERROR:{text}\r\n"));
     }
 }
 
@@ -111,6 +116,37 @@ fn keys() {
 
 fn altscreen() {
     announce("\x1b[?1049h\x1b[2J\x1b[5;10HFULLSCREEN-MARKER");
+    sleep_forever();
+}
+
+/// Prints one line per command byte and rings the bell on `b`. Tests drive
+/// it through `write_input`, so one run serves several assertions.
+fn lines() {
+    enter_raw_mode();
+    let mut byte = [0_u8; 1];
+    while stdin().read(&mut byte).is_ok_and(|count| count == 1) {
+        match byte[0] {
+            // The bell byte goes out on its own write, so a read that ends
+            // between it and the line break cannot lose it.
+            b'b' => {
+                announce("BELLED");
+                announce("\x07");
+                announce("\n");
+            }
+            other => announce(&format!("LINE:{other}\r\n")),
+        }
+    }
+}
+
+/// Redraws one row nine times, about 30 ms apart. Every redraw lands inside
+/// the report throttle's one-second window, so the tests can hold the report
+/// count without racing a monitor tick.
+fn progress() {
+    announce("PROGRESS:0%");
+    for percent in 1..=9 {
+        thread::sleep(Duration::from_millis(30));
+        announce(&format!("\rPROGRESS:{percent}%"));
+    }
     sleep_forever();
 }
 

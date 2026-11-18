@@ -123,8 +123,11 @@ fn status_event(event: TerminalEvent) -> Option<(StatusEvent, Option<String>)> {
             StatusEvent::ExitedWithFailure,
             Some(format!("the command ended with exit code {exit_code}")),
         )),
-        // The child keeps running; the bridge raises the alert instead.
-        TerminalEvent::OutputStorageFailed => None,
+        // The child keeps running; the bridge raises the alert instead. The
+        // bell is not a status change either: the notification bridge (0003
+        // T3) subscribes to the same source and turns it into the
+        // notification.
+        TerminalEvent::OutputStorageFailed | TerminalEvent::Bell => None,
     }
 }
 
