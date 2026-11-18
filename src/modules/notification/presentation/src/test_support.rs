@@ -85,6 +85,7 @@ impl NotificationStore for MemoryNotifications {
             .cloned()
             .collect();
         unread_first_then_newest(&mut rows);
+        rows.truncate(LIST_LIMIT);
         Ok(rows)
     }
 
