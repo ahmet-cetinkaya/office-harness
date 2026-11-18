@@ -310,6 +310,7 @@
   <AgentSwitcherDialog
     agents={office.agents}
     projects={office.projects}
+    stoppingAgentIds={office.stoppingAgentIds}
     onchoose={chooseFromSwitcher}
     onclose={() => (isSwitchingAgent = false)}
   />
