@@ -11,17 +11,12 @@
   import TreeRow from "../components/tree-row.svelte";
   import { buildHierarchy } from "../models/hierarchy";
   import type { HierarchyNode } from "../models/hierarchy";
-  import {
-    allowedRolesAt,
-    placeOf,
-    type CreatePlace,
-    type RoleKind,
-  } from "../models/placement";
+  import { allowedRolesAt, placeOf, type RoleKind } from "../models/placement";
   import {
     ROLE_WORDS,
+    countAgentsText,
     deleteQuestionText,
     roleKindText,
-    roleRefusalText,
     stopQuestionText,
   } from "../models/confirmations";
   import { INITIAL_HIERARCHY } from "../state/hierarchy-controller";
@@ -61,15 +56,17 @@
   let activeId = $state<string | null>(null);
 
   // The create flows. `createRole` names the dialog the button opens and
-  // `createPlace` is the place it acts at, both read when it opens. A role
-  // the place stopped allowing since the button rendered refuses with the
-  // allowed roles, as the server would (FR-003).
+  // `createLeadId` is the row it acts under, both read when it opens. A
+  // choice that stopped being valid since the button rendered still sends:
+  // the server refuses with its own reason (FR-003).
   let createRole = $state<RoleKind | null>(null);
-  let createPlace = $state<CreatePlace>({ kind: "office" });
   /** The lead a member dialog acts under, read when the dialog opens. */
   let createLeadId = $state<string | null>(null);
   let isCreatingTeam = $state(false);
   let refusal = $state<string | null>(null);
+  /** A create request is in flight; the dialog disables its submit so a
+   * double Enter or double click cannot send two creates. */
+  let isBusy = $state(false);
 
   function openCreate(role: RoleKind): void {
     if (role === "lead") {
@@ -78,21 +75,17 @@
       openCreateTeam();
       return;
     }
-    createPlace = placeOf(snapshot.tree, selectedAgentId);
     createLeadId = selectedAgentId;
     createRole = role;
     refusal = null;
   }
 
-  /** The request one role at one place makes. */
+  /** The request one role at one place makes. A place that stopped allowing
+   * the role still sends: the server refuses with its own reason, so the
+   * text cannot drift from the real rules (FR-003). */
   function submitCreateRole(agent: NewAgent): Promise<FailureText> {
     const role = createRole;
-    const place = createPlace;
     if (role === null) return Promise.resolve(null);
-    if (!allowedRolesAt(place, snapshot.tree).includes(role)) {
-      const parentRole = place.kind === "under-ceo" ? "ceo" : "member";
-      return Promise.resolve(roleRefusalText(role, parentRole));
-    }
     if (role === "ceo") return controller.createCeo(agent);
     return controller.createMember(agent, createLeadId ?? "");
   }
@@ -101,6 +94,14 @@
     isCreatingTeam = true;
     refusal = null;
   }
+
+  // A create refusal describes the tree as it was when the request was sent
+  // (the review's MEDIUM-2 case: another client took the CEO place). Once a
+  // reload changes the snapshot the text is stale, so it clears.
+  $effect(() => {
+    void snapshot;
+    refusal = null;
+  });
 
   function closeCreate(): void {
     createRole = null;
@@ -120,18 +121,27 @@
   async function submitCreate(
     work: () => Promise<FailureText>,
   ): Promise<FailureText> {
-    const answered = await work();
-    if (answered === null) closeCreate();
-    return answered;
+    isBusy = true;
+    try {
+      const answered = await work();
+      if (answered === null) closeCreate();
+      return answered;
+    } finally {
+      isBusy = false;
+    }
   }
 
   // The delete and stop flows. The question is asked with the descendant
   // count the server holds now, and the answer carries that count for the
-  // server to re-check (FR-006, FR-007).
+  // server to re-check (FR-006, FR-007). A stop with descendants is a
+  // two-choice question: stop only this agent, or stop the counted subtree.
   type PendingAction = { kind: "delete" } | { kind: "stop" };
   let pending = $state<PendingAction | null>(null);
   let pendingAgent = $state<{ id: string; name: string } | null>(null);
   let pendingDescendants = $state(0);
+  let pendingCountFailure = $state<string | null>(null);
+  /** The stop answer the user picked; delete has no choice to make. */
+  let pendingStopWithDescendants = $state(false);
 
   const pendingQuestion = $derived.by(() => {
     if (pending === null || pendingAgent === null) return null;
@@ -140,26 +150,63 @@
       : stopQuestionText(pendingAgent.name, pendingDescendants);
   });
 
+  const stopChoices = $derived.by(() => {
+    if (pending?.kind !== "stop" || pendingAgent === null) return null;
+    const below = countAgentsText(pendingDescendants);
+    return [
+      {
+        label: `Stop only ${pendingAgent.name}`,
+        body: `Sends include_descendants false: ${below} below ${pendingAgent.name} keep running.`,
+      },
+      {
+        label: `Stop ${pendingAgent.name} and ${below}`,
+        body: `Sends include_descendants true: the agents below stop in the same action.`,
+      },
+    ];
+  });
+
   async function ask(
     kind: PendingAction["kind"],
     node: HierarchyNode,
   ): Promise<void> {
     if (node.agentId === null) return;
     refusal = null;
+    pendingStopWithDescendants = false;
     try {
       pendingDescendants = await controller.countDescendants(node.agentId);
-    } catch {
+      pendingCountFailure = null;
+    } catch (rejection) {
+      // The count is part of the question; hiding its failure would read a
+      // wrong subtree size as fact (FR-006, FR-007).
       pendingDescendants = 0;
+      pendingCountFailure = controller.describeCountFailure(rejection);
     }
     pending = { kind };
     pendingAgent = { id: node.agentId, name: node.title };
+  }
+
+  /** The label of the stop answer the user picked, for the confirm button. */
+  const pendingConfirmLabel = $derived.by(() => {
+    if (pending === null) return null;
+    if (pending.kind === "delete") return "Delete agent";
+    if (pendingDescendants === 0) return "Stop agent";
+    if (pendingStopWithDescendants) {
+      return `Stop ${pendingAgent?.name} and ${countAgentsText(pendingDescendants)}`;
+    }
+    return `Stop only ${pendingAgent?.name}`;
+  });
+
+  function chooseStop(withDescendants: boolean): void {
+    pendingStopWithDescendants = withDescendants;
   }
 
   async function confirmPending(): Promise<void> {
     if (pending === null || pendingAgent === null) return;
     const { kind } = pending;
     const { id } = pendingAgent;
-    const includeDescendants = pendingDescendants > 0;
+    const includeDescendants =
+      pendingDescendants > 0 &&
+      (kind === "delete" || pendingStopWithDescendants);
     pending = null;
     pendingAgent = null;
     const answered =
@@ -496,7 +543,7 @@
 {#if createRole !== null}
   <HierarchyAgentDialog
     subject={`New ${ROLE_WORDS[createRole]}`}
-    isBusy={false}
+    {isBusy}
     onsubmit={(agent) => submitCreate(() => submitCreateRole(agent))}
     onclose={closeCreate}
   />
@@ -504,7 +551,7 @@
 {#if isCreatingTeam}
   <TeamFormDialog
     {projects}
-    isBusy={false}
+    {isBusy}
     onsubmit={(team) => submitCreate(() => controller.createTeam(team))}
     onclose={closeCreate}
   />
@@ -512,8 +559,19 @@
 {#if pending !== null && pendingAgent !== null && pendingQuestion !== null}
   <HierarchyConfirmDialog
     title={pendingQuestion.title}
-    body={pendingQuestion.body}
-    confirmLabel={pending.kind === "delete" ? "Delete agent" : "Stop agent"}
+    body={pendingCountFailure === null
+      ? pendingQuestion.body
+      : `${pendingQuestion.body} The descendant count could not be read: ${pendingCountFailure}`}
+    choices={pending.kind === "stop" && pendingDescendants > 0
+      ? stopChoices
+      : null}
+    selectedChoice={pending.kind === "stop" && pendingDescendants > 0
+      ? pendingStopWithDescendants
+      : null}
+    onchoose={pending.kind === "stop" && pendingDescendants > 0
+      ? chooseStop
+      : null}
+    confirmLabel={pendingConfirmLabel ?? "Confirm"}
     onconfirm={() => void confirmPending()}
     oncancel={cancelPending}
   />

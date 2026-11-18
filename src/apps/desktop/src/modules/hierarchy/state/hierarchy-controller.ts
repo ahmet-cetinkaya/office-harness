@@ -118,10 +118,6 @@ export function createHierarchyController(client: CoreClient) {
     createCeo: (input: NewAgent): Promise<FailureText> =>
       submit(() => service.createCeo(input)),
 
-    /** Creates a team lead in a team the dialog names by its id. */
-    createLead: (input: NewAgent, teamId: string): Promise<FailureText> =>
-      submit(() => service.createLead(input, teamId)),
-
     /** Creates a member under the team lead the dialog names. */
     createMember: (
       input: NewAgent,
@@ -133,13 +129,13 @@ export function createHierarchyController(client: CoreClient) {
     createTeam: (input: NewTeam): Promise<FailureText> =>
       submit(() => service.createTeam(input)),
 
-    /** Deletes a team record; its agents become no-role agents (PB-1). */
-    deleteTeam: (teamId: string): Promise<FailureText> =>
-      submit(() => service.deleteTeam(teamId)),
-
     /** The agents that sit below this one (FR-006, FR-007). */
     countDescendants: (agentId: string): Promise<number> =>
       service.countDescendants(agentId),
+
+    /** The server's reason a descendant count read failed, for the
+     * confirmation to show instead of a silent zero (FR-006, FR-007). */
+    describeCountFailure: (rejection: unknown): string => describe(rejection),
 
     /** Stops an agent and, when asked, its whole subtree (FR-007). */
     stopSubtree: (

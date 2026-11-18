@@ -5,7 +5,6 @@ import {
   countAgentsText,
   deleteQuestionText,
   roleKindText,
-  roleRefusalText,
   stopQuestionText,
 } from "./confirmations";
 
@@ -14,18 +13,6 @@ describe("role text and refusals", () => {
     expect(roleKindText("ceo")).toBe("CEO");
     expect(roleKindText("lead")).toBe("team lead");
     expect(roleKindText("member")).toBe("member");
-  });
-
-  test("a refusal names the roles allowed at the parent (FR-003)", () => {
-    expect(roleRefusalText("member", "ceo")).toBe(
-      "a member cannot sit under a CEO; allowed under a CEO: team lead",
-    );
-    expect(roleRefusalText("lead", "lead")).toBe(
-      "a team lead cannot sit under a team lead; allowed under a team lead: member",
-    );
-    expect(roleRefusalText("member", "member")).toBe(
-      "a member cannot sit under a member; allowed under a member: nothing",
-    );
   });
 });
 
@@ -49,15 +36,17 @@ describe("counted questions", () => {
     );
   });
 
-  test("a stop offers to stop the descendants too (FR-007)", () => {
+  test("a stop offers both request shapes and names the fields (FR-007)", () => {
     const question = stopQuestionText("Bo", 2);
     expect(question.title).toBe("Stop Bo?");
+    expect(question.body).toContain("include_descendants false");
     expect(question.body).toContain("2 agents below Bo keep running");
+    expect(question.body).toContain("include_descendants true");
   });
 
-  test("a stop without descendants is the plain stop question", () => {
+  test("a stop without descendants names the single request (FR-007)", () => {
     expect(stopQuestionText("Bo", 0).body).toBe(
-      "The agent's CLI is ended and the session stops.",
+      "The request sends include_descendants false: the agent's CLI is ended and the session stops.",
     );
   });
 });

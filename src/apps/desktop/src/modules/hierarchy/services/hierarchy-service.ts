@@ -51,12 +51,6 @@ export function createHierarchyService(client: CoreClient) {
       return await send("agent.create", { ...input, role });
     },
 
-    /** Creates a team lead under the CEO when one exists (FR-001). */
-    createLead: async (input: NewAgent, teamId: string) => {
-      const role: RolePlacement = { kind: "lead", team_id: teamId };
-      return await send("agent.create", { ...input, role });
-    },
-
     /** Creates a member under a team lead; its team is the lead's (A6). */
     createMember: async (input: NewAgent, leadAgentId: string) => {
       const role: RolePlacement = {
@@ -69,11 +63,6 @@ export function createHierarchyService(client: CoreClient) {
     /** Creates a team with its lead, in one request (FR-002). */
     createTeam: async (input: NewTeam): Promise<string> =>
       readTeamAnswer(await send("team.create", { ...input })),
-
-    /** Deletes the team record; its agents become no-role agents. */
-    deleteTeam: async (teamId: string) => {
-      await send("team.delete", { team_id: teamId, confirm: true });
-    },
 
     /** The agents that sit below this one (FR-006, FR-007). */
     countDescendants: async (agentId: string): Promise<number> => {

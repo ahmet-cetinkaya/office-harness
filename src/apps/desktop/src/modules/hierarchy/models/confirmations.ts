@@ -14,22 +14,6 @@ export function roleKindText(role: RoleKind): string {
   return ROLE_WORDS[role];
 }
 
-/** What a parent role allows under it, for the refusal's allowed list
- * (FR-003). */
-const ALLOWED_UNDER: Record<RoleKind, string> = {
-  ceo: "team lead",
-  lead: "member",
-  member: "nothing",
-};
-
-/** The refusal text the server sends for a role that cannot sit at a place
- * (the wording of `check_placement`, 0002): it names the roles allowed at
- * the parent (FR-003). The dialogs show it when the tree changed under an
- * open dialog, so the choice is no longer offered. */
-export function roleRefusalText(role: RoleKind, parentRole: RoleKind): string {
-  return `a ${ROLE_WORDS[role]} cannot sit under a ${ROLE_WORDS[parentRole]}; allowed under a ${ROLE_WORDS[parentRole]}: ${ALLOWED_UNDER[parentRole]}`;
-}
-
 /** A count as spoken text: "1 agent", "3 agents". */
 export function countAgentsText(count: number): string {
   return count === 1 ? "1 agent" : `${count} agents`;
@@ -51,7 +35,9 @@ export function deleteQuestionText(
   };
 }
 
-/** The question a stop asks, with the counted descendants (FR-007). */
+/** The question a stop asks, with the counted descendants (FR-007). When the
+ * agent has descendants the answer is a choice: stop only this agent, or
+ * stop it with the agents below it. Each body names the request it sends. */
 export function stopQuestionText(
   agentName: string,
   descendantCount: number,
@@ -61,7 +47,7 @@ export function stopQuestionText(
     title: `Stop ${agentName}?`,
     body:
       descendantCount === 0
-        ? "The agent's CLI is ended and the session stops."
-        : `The agent's CLI is ended and the session stops. ${below} below ${agentName} keep running; stop them too in the same action.`,
+        ? "The request sends include_descendants false: the agent's CLI is ended and the session stops."
+        : `The request sends include_descendants false: only ${agentName} stops, and ${below} below ${agentName} keep running. To stop them too in the same action, choose stopping them with it, which sends include_descendants true.`,
   };
 }

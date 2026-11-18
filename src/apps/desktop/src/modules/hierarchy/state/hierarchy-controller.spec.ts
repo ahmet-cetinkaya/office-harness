@@ -202,18 +202,6 @@ describe("hierarchy controller", () => {
     });
   });
 
-  test("creating a lead carries the team as its place (FR-001)", async () => {
-    const client = fakeClient(TREE);
-    const controller = createHierarchyController(client);
-
-    await controller.createLead({ name: "Bo", command: "n" }, "team-7");
-
-    expect(client.sentFields("agent.create")?.role).toEqual({
-      kind: "lead",
-      team_id: "team-7",
-    });
-  });
-
   test("creating a team sends the lead object and answers the team id", async () => {
     const client = fakeClient((kind: string) =>
       kind === "team.create" ? { id: "team-new" } : TREE,
@@ -229,18 +217,6 @@ describe("hierarchy controller", () => {
     const sent = client.sentFields("team.create");
     expect(sent?.name).toBe("Backend");
     expect(sent?.lead).toEqual({ name: "Bo", command: "claude" });
-  });
-
-  test("deleting a team sends the confirmed flag", async () => {
-    const client = fakeClient(TREE);
-    const controller = createHierarchyController(client);
-
-    await controller.deleteTeam("team-7");
-
-    expect(client.sentFields("team.delete")).toEqual({
-      team_id: "team-7",
-      confirm: true,
-    });
   });
 
   test("the descendant count reads the server's count", async () => {

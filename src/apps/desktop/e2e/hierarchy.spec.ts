@@ -794,7 +794,7 @@ test("a confirmed lead delete removes the lead and its 2 members", async ({
   });
 });
 
-test("the stop confirmation offers to stop the counted descendants too", async ({
+test("the stop confirmation offers only-this-agent and with-descendants choices", async ({
   page,
 }) => {
   await openCompany(page);
@@ -805,7 +805,16 @@ test("the stop confirmation offers to stop the counted descendants too", async (
   await pressOn(page, "Stop Bo");
   const dialog = page.getByRole("dialog", { name: "Stop Bo?" });
   await expect(dialog).toBeVisible();
+  // Both request shapes are named, and only-this-agent is the default.
+  await expect(dialog).toContainText("include_descendants false");
   await expect(dialog).toContainText("2 agents below Bo keep running");
+  await expect(dialog).toContainText("include_descendants true");
+  await expect(
+    dialog.getByRole("radio", { name: /Stop only Bo/ }),
+  ).toBeChecked();
+  await expect(
+    dialog.getByRole("radio", { name: /Stop Bo and 2 agents/ }),
+  ).not.toBeChecked();
 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -818,7 +827,7 @@ test("the stop confirmation offers to stop the counted descendants too", async (
   ).toEqual([]);
 });
 
-test("a confirmed stop with descendants sends include_descendants", async ({
+test("a confirmed only-this-agent stop sends include_descendants false", async ({
   page,
 }) => {
   await openCompany(page);
@@ -829,8 +838,37 @@ test("a confirmed stop with descendants sends include_descendants", async ({
   await pressOn(page, "Stop Bo");
   await page
     .getByRole("dialog", { name: "Stop Bo?" })
-    .getByRole("button", { name: "Stop agent" })
+    .getByRole("button", { name: "Stop only Bo" })
     .click();
+
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const stops = await page.evaluate(() => window.__mockCore.calls);
+  const sent = stops.find(
+    (call) =>
+      call.command === "send_request" && call.args.kind === "agent.stop",
+  );
+  expect(sent?.args.fields).toMatchObject({
+    agent_id: "agent-lead-bo",
+    include_descendants: false,
+  });
+  // The members keep running.
+  await expect(
+    tree.getByRole("treeitem", { name: "Cy, member, waiting for input" }),
+  ).toBeVisible();
+});
+
+test("a confirmed stop with descendants sends include_descendants", async ({
+  page,
+}) => {
+  await openCompany(page);
+
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+  await tree.getByRole("treeitem", { name: "Bo, team lead, stopped" }).click();
+
+  await pressOn(page, "Stop Bo");
+  const dialog = page.getByRole("dialog", { name: "Stop Bo?" });
+  await dialog.getByRole("radio", { name: /Stop Bo and 2 agents/ }).check();
+  await dialog.getByRole("button", { name: "Stop Bo and 2 agents" }).click();
 
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const stops = await page.evaluate(() => window.__mockCore.calls);
@@ -897,8 +935,8 @@ test("a refused create shows the server's refusal text (FR-003)", async ({
     hierarchy: { ceo: null, teams: [], unassigned: [] },
     refusals: {
       "agent.create": {
-        code: "refused",
-        message: "the office already has a CEO: Ada",
+        code: "invalid",
+        message: "invalid: the office already has a CEO: agent-ceo",
       },
     },
   });
@@ -915,7 +953,7 @@ test("a refused create shows the server's refusal text (FR-003)", async ({
   await page.keyboard.press("Enter");
 
   await expect(page.getByRole("alert")).toContainText(
-    "the office already has a CEO: Ada",
+    "invalid: the office already has a CEO: agent-ceo",
   );
   // The dialog stays open, so the user can correct or cancel.
   await expect(page.getByRole("dialog", { name: "New CEO" })).toBeVisible();
@@ -979,6 +1017,7 @@ test("the create flows run with the keyboard alone and axe stays clean", async (
   // CEO by keyboard.
   await pressOn(page, "Create CEO");
   await expect(page.getByLabel("Name", { exact: true })).toBeFocused();
+  await expectNoSeriousViolations(page);
   await page.keyboard.type("Ada");
   await page.keyboard.press("Tab");
   await page.keyboard.type("claude");
@@ -1002,6 +1041,7 @@ test("the create flows run with the keyboard alone and axe stays clean", async (
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog", { name: "New team" })).toBeVisible();
   await expect(page.getByLabel("Team name")).toBeFocused();
+  await expectNoSeriousViolations(page);
   await page.keyboard.type("Backend");
   await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
@@ -1034,4 +1074,26 @@ test("the create flows run with the keyboard alone and axe stays clean", async (
   ).toBeVisible();
 
   await expectNoSeriousViolations(page);
+});
+
+test("the stop and delete confirmations run axe clean while open", async ({
+  page,
+}) => {
+  await openCompany(page);
+
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+  await tree.getByRole("treeitem", { name: "Bo, team lead, stopped" }).click();
+
+  // The two-choice stop confirmation.
+  await pressOn(page, "Stop Bo");
+  await expect(page.getByRole("dialog", { name: "Stop Bo?" })).toBeVisible();
+  await expectNoSeriousViolations(page);
+  await page.keyboard.press("Escape");
+
+  // The counted delete confirmation.
+  await pressOn(page, "Delete Bo");
+  await expect(page.getByRole("dialog", { name: "Delete Bo?" })).toBeVisible();
+  await expectNoSeriousViolations(page);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
