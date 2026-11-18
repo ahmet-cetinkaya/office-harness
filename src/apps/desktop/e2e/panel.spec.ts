@@ -151,6 +151,8 @@ test("an empty project says so and offers to create an agent", async ({
   await expect(
     page.getByRole("button", { name: "Create an agent in this project" }),
   ).toBeVisible();
+  // The hierarchy stays reachable while the chosen project has no agents.
+  await expect(page.getByRole("region", { name: "Hierarchy" })).toBeVisible();
   await expectNoSeriousViolationsAtBothWidths(page);
 });
 
@@ -160,7 +162,26 @@ test("the empty office keeps its offer at both widths", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "The office is empty" }),
   ).toBeVisible();
+  // The hierarchy stays reachable: the first CEO is built from it (US1).
+  await expect(page.getByRole("region", { name: "Hierarchy" })).toBeVisible();
   await expectNoSeriousViolationsAtBothWidths(page);
+});
+
+test("the agent form opens with the empty project's project chosen", async ({
+  page,
+}) => {
+  await openPanel(page, { agents: [agent()] });
+
+  await chooseProject(page, "Api");
+  await page
+    .getByRole("button", { name: "Create an agent in this project" })
+    .click();
+
+  const dialog = page.getByRole("dialog", { name: "New agent" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("Project", { exact: true })).toHaveValue(
+    "project-api",
+  );
 });
 
 test("a row names the agent, its project, its status, and its role and team", async ({

@@ -11,17 +11,28 @@
   interface Props {
     projects: Project[];
     isBusy: boolean;
+    /** The project the form starts with, or null for "No project". */
+    initialProjectId?: string | null;
     onsubmit: (agent: NewAgent) => Promise<FailureText>;
     onclose: () => void;
   }
 
-  let { projects, isBusy, onsubmit, onclose }: Props = $props();
+  let {
+    projects,
+    isBusy,
+    initialProjectId = null,
+    onsubmit,
+    onclose,
+  }: Props = $props();
 
   const NO_PROJECT = "";
   let name = $state("");
   let command = $state("");
   let workingFolder = $state("");
-  let projectId = $state(NO_PROJECT);
+  // The dialog mounts for one open, so the preselected project is only the
+  // first value.
+  // svelte-ignore state_referenced_locally
+  let projectId = $state(initialProjectId ?? NO_PROJECT);
   let failure = $state<FailureText>(null);
 
   const projectOptions = $derived([

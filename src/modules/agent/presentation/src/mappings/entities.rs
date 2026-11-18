@@ -7,6 +7,9 @@ use serde_json::{Value, json};
 
 #[must_use]
 pub fn agent_json(agent: &Agent) -> Value {
+    // `last_line` stays null here because the entity holds no terminal line;
+    // the key is present so the client reads one shape (panel-protocol.md),
+    // and `agent.list` answers overwrite it with the terminal's real line.
     json!({
         "id": agent.id.to_string(),
         "name": agent.name.as_str(),
@@ -16,6 +19,7 @@ pub fn agent_json(agent: &Agent) -> Value {
         "machine_id": agent.machine_id.to_string(),
         "status": agent.status.as_str(),
         "created_at": agent.created_at.as_unix_millis(),
+        "last_line": Value::Null,
     })
 }
 
