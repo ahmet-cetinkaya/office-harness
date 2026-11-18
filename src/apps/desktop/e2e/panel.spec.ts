@@ -514,6 +514,38 @@ test.describe("the agent switcher", () => {
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
   });
+
+  test("an agent whose stop request is open shows Stopping", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: { agents: OFFICE_AGENTS, projects: PROJECTS },
+      stopDelayMs: 1_500,
+    });
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Ada, project Site, working" })
+      .click();
+    await page.getByRole("button", { name: "Stop agent" }).click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Stop agent" })
+      .click();
+
+    await page.keyboard.press("Control+Shift+F10");
+    const dialog = page.getByRole("dialog", { name: "Find an agent" });
+    // The option reads as the row does while the stop is open, not as the
+    // status the server still holds (LOW-2).
+    await expect(
+      dialog.getByRole("button", { name: "Ada, project Site, Stopping" }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("region", { name: "Agents" })
+        .getByRole("button", { name: "Ada, project Site, Stopping" }),
+    ).toBeVisible();
+  });
 });
 
 test("a shortcut reaches a live terminal with output within one second (SC-002)", async ({
