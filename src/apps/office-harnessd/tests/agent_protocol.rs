@@ -442,6 +442,90 @@ async fn settings_are_read_and_changed_and_bad_ones_name_the_setting() {
 }
 
 #[tokio::test]
+async fn the_last_view_is_stored_and_read_back() {
+    let office = Office::open().await;
+    let mut client = office.client().await;
+    let value = json!({"project": "p-1", "agent": null, "terminal_open": true}).to_string();
+
+    let set = call(
+        &mut client,
+        1,
+        "settings.set",
+        json!({"key": "last_view", "value": value}),
+    )
+    .await;
+    assert_eq!(set["result"], json!({"key": "last_view", "value": value}));
+
+    let read = call(&mut client, 2, "settings.get", json!({"key": "last_view"})).await;
+    assert_eq!(read["result"]["value"], value);
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_last_view_that_is_oversize_or_not_the_shape_is_refused() {
+    let office = Office::open().await;
+    let mut client = office.client().await;
+    let long_id = "p".repeat(1_024);
+
+    let oversize = call(
+        &mut client,
+        1,
+        "settings.set",
+        json!({"key": "last_view", "value": json!({"project": long_id, "agent": null, "terminal_open": false}).to_string()}),
+    )
+    .await;
+    assert_eq!(error_text(&oversize).0, "invalid");
+    assert!(error_text(&oversize).1.contains("last_view"));
+
+    let wrong_shape = call(
+        &mut client,
+        2,
+        "settings.set",
+        json!({"key": "last_view", "value": r#"{"project": null}"#}),
+    )
+    .await;
+    assert_eq!(error_text(&wrong_shape).0, "invalid");
+    assert!(error_text(&wrong_shape).1.contains("last_view"));
+
+    let kept = call(&mut client, 3, "settings.get", json!({"key": "last_view"})).await;
+    assert_eq!(kept["result"]["value"], "");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn every_fixed_shortcut_refuses_the_focus_shortcut_and_names_the_conflict() {
+    let office = Office::open().await;
+    let mut client = office.client().await;
+    let reserved = [
+        ("Ctrl+Shift+F1", "agent 1"),
+        ("Ctrl+Shift+F2", "agent 2"),
+        ("Ctrl+Shift+F3", "agent 3"),
+        ("Ctrl+Shift+F4", "agent 4"),
+        ("Ctrl+Shift+F5", "agent 5"),
+        ("Ctrl+Shift+F6", "agent 6"),
+        ("Ctrl+Shift+F7", "agent 7"),
+        ("Ctrl+Shift+F8", "agent 8"),
+        ("Ctrl+Shift+F9", "agent 9"),
+        ("Ctrl+Shift+F10", "the agent switcher"),
+    ];
+    for (number, (shortcut, reserved_for)) in reserved.iter().enumerate() {
+        let id = u32::try_from(number).expect("request id") + 1;
+        let answer = call(
+            &mut client,
+            id,
+            "settings.set",
+            json!({"key": "focus_shortcut", "value": shortcut}),
+        )
+        .await;
+        let (code, message) = error_text(&answer);
+        assert_eq!(code, "conflict", "{shortcut}");
+        assert!(message.contains(reserved_for), "{shortcut}: {message}");
+        assert!(message.contains(shortcut), "{shortcut}: {message}");
+    }
+    office.serving.stop().await;
+}
+
+#[tokio::test]
 async fn a_missing_working_folder_refuses_the_start_and_names_it() {
     let office = Office::open().await;
     let mut client = office.client().await;

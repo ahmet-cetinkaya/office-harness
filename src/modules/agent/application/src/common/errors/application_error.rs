@@ -29,7 +29,12 @@ pub enum ApplicationError {
 
 impl From<AgentError> for ApplicationError {
     fn from(error: AgentError) -> Self {
-        Self::Invalid(error.to_string())
+        match error {
+            // A shortcut that a fixed agent or switcher shortcut takes is a
+            // conflict, not a malformed value (0003 contract).
+            AgentError::ReservedShortcut { .. } => Self::Conflict(error.to_string()),
+            other => Self::Invalid(other.to_string()),
+        }
     }
 }
 

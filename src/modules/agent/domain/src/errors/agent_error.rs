@@ -44,6 +44,22 @@ pub enum AgentError {
     UnknownStatus(String),
     #[error("unknown setting: {0}")]
     UnknownSetting(String),
+    #[error(
+        "{field} must be JSON like {{\"project\": string or null, \"agent\": string or null, \
+         \"terminal_open\": boolean}}: {problem}"
+    )]
+    InvalidLastView {
+        field: &'static str,
+        problem: String,
+    },
+    #[error("{field} must be at most {max} bytes")]
+    TooLarge { field: &'static str, max: usize },
+    #[error("{field} {shortcut} is reserved for {reserved_for}")]
+    ReservedShortcut {
+        field: &'static str,
+        shortcut: &'static str,
+        reserved_for: &'static str,
+    },
     #[error("an agent that is {from} cannot take the event {event}")]
     InvalidTransition {
         from: AgentStatus,
