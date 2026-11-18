@@ -12,8 +12,10 @@
     type Project,
   } from "../../agent";
   import { INITIAL_HIERARCHY, type HierarchyController } from "../../hierarchy";
+  import { pressedAppShortcut } from "../../../core/shortcuts";
   import type { PanelStore } from "../state/panel-store.svelte";
   import AgentRow from "../components/agent-row.svelte";
+  import AgentSwitcherDialog from "../components/agent-switcher-dialog.svelte";
   import ProjectSwitcher from "../components/project-switcher.svelte";
   import {
     agentHierarchy,
@@ -56,6 +58,7 @@
   /** The project the agent form opens with, from an empty-project offer. */
   let createAgentInProject = $state<string | null>(null);
   let isCreatingProject = $state(false);
+  let isSwitchingAgent = $state(false);
   let projectToDelete = $state<Project | null>(null);
   let detailArea = $state<HTMLElement | null>(null);
 
@@ -77,15 +80,64 @@
   }
 
   /**
-   * A row click opens the agent's terminal in the detail area (FR-004). A
-   * freshly mounted terminal focuses itself once the attach answers; an
-   * already open one takes focus here, because nothing remounts for it.
+   * A row click or a shortcut opens the agent's terminal in the detail area
+   * (FR-004). A freshly mounted terminal focuses itself once the attach
+   * answers; an already open one takes focus here, because nothing remounts
+   * for it.
    */
-  async function openAgent(agentId: string): Promise<void> {
+  function openAgent(agentId: string): void {
     const wasSelected = office.selectedAgentId === agentId;
     controller.select(agentId);
-    await tick();
-    if (wasSelected) detailArea?.querySelector("textarea")?.focus();
+    if (wasSelected) {
+      void tick().then(() => {
+        detailArea?.querySelector("textarea")?.focus();
+      });
+    }
+  }
+
+  /**
+   * The one app-level key handler (D8). The terminal's custom key handler
+   * lets exactly the table's combinations out of xterm, and every focus in
+   * the app dispatches its keydowns here. A dialog that is not the switcher
+   * holds the user's attention, so its keys stay its own; a held key
+   * repeats, so only the first press of a burst acts.
+   */
+  function handleAppKeys(event: KeyboardEvent): void {
+    if (event.repeat) return;
+    if (isSwitchingAgent) return;
+    if (document.querySelector("dialog[open]") !== null) return;
+    const pressed = pressedAppShortcut(event);
+    if (pressed === null) return;
+    if (pressed.position === null) {
+      isSwitchingAgent = true;
+      return;
+    }
+    const agent = shown[pressed.position - 1];
+    if (agent !== undefined) openAgent(agent.id);
+  }
+
+  $effect(() => {
+    window.addEventListener("keydown", handleAppKeys);
+    return () => window.removeEventListener("keydown", handleAppKeys);
+  });
+
+  function chooseFromSwitcher(agentId: string): void {
+    isSwitchingAgent = false;
+    openAgent(agentId);
+  }
+
+  /**
+   * The form opens for one project only: the empty-project offer sets its
+   * project, and the header's action clears it again (LOW-3).
+   */
+  function offerAgentForm(projectId: string | null): void {
+    createAgentInProject = projectId;
+    isCreatingAgent = true;
+  }
+
+  function closeAgentForm(): void {
+    isCreatingAgent = false;
+    createAgentInProject = null;
   }
 </script>
 
@@ -97,7 +149,7 @@
         <Button variant="secondary" onclick={() => (isCreatingProject = true)}>
           New project
         </Button>
-        <Button onclick={() => (isCreatingAgent = true)}>New agent</Button>
+        <Button onclick={() => offerAgentForm(null)}>New agent</Button>
       </div>
     {/if}
   </header>
@@ -148,7 +200,7 @@
           No agent exists yet. An agent runs one CLI, such as claude or codex,
           in a folder that you choose.
         </p>
-        <Button onclick={() => (isCreatingAgent = true)}>
+        <Button onclick={() => offerAgentForm(null)}>
           Create the first agent
         </Button>
       </section>
@@ -167,12 +219,7 @@
         <p class="text-neutral-700">
           The project exists, but no agent runs in it yet.
         </p>
-        <Button
-          onclick={() => {
-            createAgentInProject = choice;
-            isCreatingAgent = true;
-          }}
-        >
+        <Button onclick={() => offerAgentForm(choice)}>
           Create an agent in this project
         </Button>
       </section>
@@ -256,7 +303,15 @@
     isBusy={office.isBusy}
     initialProjectId={createAgentInProject}
     onsubmit={controller.createAgent}
-    onclose={() => (isCreatingAgent = false)}
+    onclose={closeAgentForm}
+  />
+{/if}
+{#if isSwitchingAgent}
+  <AgentSwitcherDialog
+    agents={office.agents}
+    projects={office.projects}
+    onchoose={chooseFromSwitcher}
+    onclose={() => (isSwitchingAgent = false)}
   />
 {/if}
 {#if isCreatingProject}
