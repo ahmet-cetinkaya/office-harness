@@ -12,6 +12,7 @@
   import { LoginStartPanel, NotAuthorizedView } from "./modules/access";
   import { createPanelStore, PanelView } from "./modules/panel";
   import { SceneView } from "./modules/office-scene";
+  import { createLastViewWriter } from "./modules/office-scene/state/last-view";
   import {
     createHierarchyController,
     HierarchyView,
@@ -27,9 +28,34 @@
   const snapshot = $derived(connection.snapshot);
   const isConnected = $derived(snapshot.state.status === "connected");
 
-  // The shell owns the open view (0005 D6); the last-view write and its
-  // restore on start land with the scene's part 2 (T4).
+  // The shell owns the open view (0005 D6) and writes it into `last_view`
+  // (the `view` field, MODIFIED 0003/FR-008) at most once per second and on
+  // close. The scene-owned writer stands in for 0003 T7's panel writer
+  // (research R1); restore-on-start is T4's remaining piece.
   let openView: "panel" | "scene" = $state("panel");
+  const lastView = createLastViewWriter(client);
+  // The write rides the connection, not the mount: a pre-connection shell
+  // (not reachable, unauthorized, version mismatch) sends no request at
+  // all, as the office and hierarchy loads hold to below.
+  $effect(() => {
+    if (!isConnected) return;
+    lastView.write({
+      project: panel.projectChoice,
+      agent: panel.office.snapshot.selectedAgentId,
+      terminal_open: panel.office.snapshot.selectedAgentId !== null,
+      view: openView,
+    });
+  });
+  // The app-close moment flushes a held write (D6). The visibilitychange
+  // path covers webview suspension; `pagehide` covers actual teardown.
+  function onVisibility(): void {
+    if (document.visibilityState === "hidden") lastView.close();
+  }
+  $effect(() => {
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", () => lastView.close());
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  });
 
   onMount(() => {
     void connection.start();
