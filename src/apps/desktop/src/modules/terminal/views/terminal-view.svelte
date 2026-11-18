@@ -7,7 +7,7 @@
   import { onMount } from "svelte";
   import FailureMessage from "$shared/ui/failure-message.svelte";
   import { toCoreRequestError, type CoreClient } from "../../../core/api";
-  import { matchesShortcut } from "../../../core/shortcuts";
+  import { matchesShortcut, pressedAppShortcut } from "../../../core/shortcuts";
   import {
     loadFocusShortcut,
     type FocusShortcut,
@@ -115,7 +115,8 @@
       terminal.write(frame.payload);
     }
 
-    // The only key that does not reach the agent (FR-017).
+    // The keys that do not reach the agent (0003, 0001/FR-017 modified):
+    // the focus shortcut, and the app shortcut table the panel listens on.
     function handleKey(event: KeyboardEvent): boolean {
       if (
         focusShortcut !== null &&
@@ -127,6 +128,16 @@
           event.preventDefault();
           heading.focus();
         }
+        return false;
+      }
+      if (pressedAppShortcut(event) !== null) {
+        if (event.type === "keydown") {
+          // The webview would otherwise run its own action for an F-key,
+          // and xterm.js would send the key's sequence to the CLI.
+          event.preventDefault();
+        }
+        // Returning false keeps the sequence out of the terminal and lets
+        // the keydown bubble to the panel's app-level handler.
         return false;
       }
       // A stopped terminal takes no input, so Tab must reach the browser and
