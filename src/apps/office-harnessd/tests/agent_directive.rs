@@ -180,11 +180,21 @@ async fn a_lead_sends_a_directive_and_the_member_takes_it_as_one_input_with_ente
     let lead_started = client.ask("agent.start", json!({"agent_id": lead})).await;
     assert_eq!(lead_started["ok"], true, "{lead_started}");
 
+    // A redirect creates its file empty and fills it afterwards, so an
+    // existing file is not a whole one: the wait needs content, not
+    // existence.
     let code = wait_for("the helper's exit code", || {
-        fs::read_to_string(office.records_path().join("call.code")).ok()
+        fs::read_to_string(office.records_path().join("call.code"))
+            .ok()
+            .filter(|text| !text.is_empty())
     })
     .await;
-    let out = fs::read_to_string(office.records_path().join("call.out")).expect("out");
+    let out = wait_for("the helper's answer", || {
+        fs::read_to_string(office.records_path().join("call.out"))
+            .ok()
+            .filter(|text| !text.is_empty())
+    })
+    .await;
     assert_eq!(code, "0", "{out}");
     let answer: Value = serde_json::from_str(out.trim()).expect("json");
     assert_eq!(answer["ok"], true, "{answer}");
