@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 export {
+  APP_SHORTCUT_TABLE,
+  pressedAppShortcut,
+  type AppShortcut,
+} from "./app-shortcuts";
+export {
   DEFAULT_FOCUS_SHORTCUT,
   matchesShortcut,
   parseShortcut,

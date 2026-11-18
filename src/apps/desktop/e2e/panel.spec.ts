@@ -184,6 +184,30 @@ test("the agent form opens with the empty project's project chosen", async ({
   );
 });
 
+test("the header's New agent forgets the empty project's preselection (LOW-3)", async ({
+  page,
+}) => {
+  await openPanel(page, { agents: [agent()] });
+
+  await chooseProject(page, "Api");
+  await page
+    .getByRole("button", { name: "Create an agent in this project" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "New agent" });
+  await expect(dialog.getByLabel("Project", { exact: true })).toHaveValue(
+    "project-api",
+  );
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+
+  await page.getByRole("button", { name: "New agent", exact: true }).click();
+  await expect(
+    page
+      .getByRole("dialog", { name: "New agent" })
+      .getByLabel("Project", { exact: true }),
+  ).toHaveValue("");
+});
+
 test("a row names the agent, its project, its status, and its role and team", async ({
   page,
 }) => {
@@ -283,4 +307,244 @@ test("keyboard focus is visible on a row at both widths", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await expectFocusVisible(row);
   await page.setViewportSize(DESKTOP);
+});
+
+/** One agent beyond the table's nine direct shortcuts (A1). */
+function agentAt(position: number): Agent {
+  return agent({
+    id: `agent-${position}`,
+    name: `Agent ${position}`,
+    status: "working",
+  });
+}
+
+/** Twelve running agents, so every terminal takes focus: Ada and nine more. */
+const TWELVE_AGENTS = [
+  OFFICE_AGENTS[0],
+  agent({ id: "agent-bo", name: "Bo", project_id: "project-api" }),
+  agent({ id: "agent-cy", name: "Cy" }),
+  ...[4, 5, 6, 7, 8, 9, 10, 11, 12].map(agentAt),
+];
+
+/** The twelve names in list order, so a shortcut's position finds its row. */
+const TWELVE_NAMES = [
+  "Ada",
+  "Bo",
+  "Cy",
+  ...[4, 5, 6, 7, 8, 9, 10, 11, 12].map((position) => `Agent ${position}`),
+];
+
+/** The terminal's input area, the element that holds focus in a terminal. */
+function terminalInput(page: Page, name: string) {
+  return page.getByLabel(`Terminal of ${name}`, { exact: true });
+}
+
+async function sentTerminalInputs(page: Page): Promise<string[]> {
+  const calls = await page.evaluate(() => window.__mockCore.calls);
+  const sent: string[] = [];
+  for (const call of calls) {
+    if (call.command !== "send_request") continue;
+    const fields = call.args.fields as { data?: unknown } | undefined;
+    if (call.args.kind === "terminal.input") {
+      sent.push(Buffer.from(String(fields?.data ?? ""), "base64").toString());
+    }
+  }
+  return sent;
+}
+
+test.describe("agent shortcuts", () => {
+  test("shortcut 1 opens the first agent's terminal", async ({ page }) => {
+    await openPanel(page);
+    await page.getByRole("button", { name: "Cy, waiting for input" }).click();
+    const input = terminalInput(page, "Cy");
+    await expect(input).toBeFocused();
+
+    await page.keyboard.press("Control+Shift+F1");
+
+    await expect(terminalInput(page, "Ada")).toBeFocused();
+  });
+
+  for (const position of [2, 3, 4, 5, 6, 7, 8, 9]) {
+    test(`shortcut ${position} opens the agent at position ${position}`, async ({
+      page,
+    }) => {
+      await openPanel(page, { agents: TWELVE_AGENTS });
+      await page
+        .getByRole("button", { name: "Ada, project Site, working" })
+        .click();
+      await expect(terminalInput(page, "Ada")).toBeFocused();
+
+      await page.keyboard.press(`Control+Shift+F${position}`);
+
+      await expect(
+        terminalInput(page, TWELVE_NAMES[position - 1]),
+      ).toBeFocused();
+    });
+  }
+
+  test("agent 10 is reached through the switcher, by no key", async ({
+    page,
+  }) => {
+    await openPanel(page, { agents: TWELVE_AGENTS });
+    await page
+      .getByRole("button", { name: "Ada, project Site, working" })
+      .click();
+    const ada = terminalInput(page, "Ada");
+    await expect(ada).toBeFocused();
+
+    // No combination moves straight to agent 10; F10 opens the switcher,
+    // and its filter finds the agent behind the table's reach (A1).
+    for (const [index, name] of TWELVE_NAMES.slice(0, 9).entries()) {
+      await page.keyboard.press(`Control+Shift+F${index + 1}`);
+      await expect(terminalInput(page, name)).toBeFocused();
+    }
+    await page.keyboard.press("Control+Shift+F10");
+    const dialog = page.getByRole("dialog", { name: "Find an agent" });
+    await expect(dialog).toBeVisible();
+    await dialog
+      .getByRole("textbox", { name: "Filter by name" })
+      .fill("Agent 10");
+    await dialog.getByRole("button", { name: "Agent 10, working" }).click();
+    await expect(terminalInput(page, "Agent 10")).toBeFocused();
+  });
+
+  test("a key that is no table combination reaches the CLI", async ({
+    page,
+  }) => {
+    await openPanel(page);
+    await page.getByRole("button", { name: "Cy, waiting for input" }).click();
+    const input = terminalInput(page, "Cy");
+    await expect(input).toBeFocused();
+
+    await page.keyboard.type("hi");
+    // F11 is outside the table, so its sequence goes to the agent too.
+    await page.keyboard.press("Control+Shift+F11");
+    await page.keyboard.press("Enter");
+
+    // One request is in flight at a time, so fast typing may share one.
+    await expect
+      .poll(async () => (await sentTerminalInputs(page)).join(""))
+      .toBe(`hi\u001b[23;6~\r`);
+    await expect(input).toBeFocused();
+  });
+});
+
+test.describe("the agent switcher", () => {
+  test("the switcher shortcut opens the dialog with focus in the filter", async ({
+    page,
+  }) => {
+    await openPanel(page, { agents: TWELVE_AGENTS });
+    await page
+      .getByRole("button", { name: "Ada, project Site, working" })
+      .click();
+    await expect(terminalInput(page, "Ada")).toBeFocused();
+
+    await page.keyboard.press("Control+Shift+F10");
+
+    const dialog = page.getByRole("dialog", { name: "Find an agent" });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByRole("textbox", { name: "Filter by name" }),
+    ).toBeFocused();
+    await expectNoSeriousViolations(page);
+  });
+
+  test("the filter narrows the list and a choice opens that terminal", async ({
+    page,
+  }) => {
+    await openPanel(page, { agents: TWELVE_AGENTS });
+
+    await page.keyboard.press("Control+Shift+F10");
+    const dialog = page.getByRole("dialog", { name: "Find an agent" });
+    await dialog
+      .getByRole("textbox", { name: "Filter by name" })
+      .fill("Agent 1");
+
+    // "Agent 1" matches Agent 10, 11, and 12, and none of Ada, Bo, Cy.
+    await expect(dialog.getByRole("listitem")).toHaveCount(3);
+    await dialog.getByRole("button", { name: "Agent 11, working" }).click();
+
+    await expect(dialog).toHaveCount(0);
+    await expect(terminalInput(page, "Agent 11")).toBeFocused();
+  });
+
+  test("Tab stays inside the dialog and Escape returns focus", async ({
+    page,
+  }) => {
+    await openPanel(page, { agents: TWELVE_AGENTS });
+    const row = page.getByRole("button", {
+      name: "Ada, project Site, working",
+    });
+    await row.click();
+    await expect(terminalInput(page, "Ada")).toBeFocused();
+
+    await page.keyboard.press("Control+Shift+F10");
+    const dialog = page.getByRole("dialog", { name: "Find an agent" });
+    await expect(dialog).toBeVisible();
+    const filter = dialog.getByRole("textbox", { name: "Filter by name" });
+    await expect(filter).toBeFocused();
+
+    // Tab cycles inside: the dialog is modal, so the page behind is inert.
+    await page.keyboard.press("Tab");
+    await expect(
+      dialog.getByRole("button", { name: "Ada, project Site, working" }),
+    ).toBeFocused();
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(terminalInput(page, "Ada")).toBeFocused();
+  });
+
+  test("an empty match says so and Enter opens nothing", async ({ page }) => {
+    await openPanel(page);
+    await page.keyboard.press("Control+Shift+F10");
+    const dialog = page.getByRole("dialog", { name: "Find an agent" });
+    await expect(dialog).toBeVisible();
+    await dialog
+      .getByRole("textbox", { name: "Filter by name" })
+      .fill("nobody");
+
+    await expect(dialog.getByText("No agent matches.")).toBeVisible();
+
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("group", { name: "Live terminal" }),
+    ).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+  });
+});
+
+test("a shortcut reaches a live terminal with output within one second (SC-002)", async ({
+  page,
+}) => {
+  // A terminal frame carries the agent id as 16 bytes, so the seed id is a
+  // UUID, as the terminal tests use (mock-core's frame contract).
+  const adaId = "11111111-2222-4333-8444-555555555555";
+  await openPanel(page, {
+    agents: [
+      agent({ id: adaId }),
+      agent({
+        id: "agent-bo",
+        name: "Bo",
+        project_id: "project-api",
+        status: "stopped",
+      }),
+      agent({ id: "agent-cy", name: "Cy", status: "waiting_for_input" }),
+    ],
+    snapshots: { [adaId]: "saved output" },
+  });
+  await page.getByRole("button", { name: "Cy, waiting for input" }).click();
+  await expect(terminalInput(page, "Cy")).toBeFocused();
+
+  const started = Date.now();
+  await page.keyboard.press("Control+Shift+F1");
+  await expect(terminalInput(page, "Ada")).toBeFocused();
+  await expect(page.locator(".xterm-rows")).toContainText("saved output", {
+    timeout: 1_000,
+  });
+  // The clock runs while the expectations above hold it, so the whole
+  // shortcut-to-output wait is the time at the last met expectation.
+  expect(Date.now() - started).toBeLessThan(1_000);
 });
