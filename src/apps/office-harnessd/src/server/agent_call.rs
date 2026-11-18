@@ -6,7 +6,7 @@ use access_application::commands::authenticate_agent_call::AgentGrant;
 use agent_application::common::actor_scope::ActorScope;
 use axum::extract::ws::{Message, WebSocket};
 use hierarchy_application::common::errors::HierarchyApplicationError;
-use hierarchy_domain::{HierarchyError, check_descendant};
+use hierarchy_domain::{HierarchyError, Role, TreeRow, check_descendant, is_descendant_of};
 use kernel::{Actor, AgentId};
 use serde_json::{Value, json};
 use tokio::sync::watch;
@@ -234,21 +234,29 @@ async fn answer_office_request(
             return Response::failure(request.id, ErrorCode::Invalid, message);
         }
     };
-    // The descendant rule runs on a fresh snapshot, on the blocking pool,
-    // before the gateway sees the request: an agent that names a stranger
-    // (as a target or as the parent of its create) reaches no use case at
-    // all (FR-008, FR-009). The caller itself is always inside its own
-    // subtree, placed or not — a member may create before it is placed,
-    // and the tree rules then decide the place the child takes.
+    // The gates run on a fresh snapshot, on the blocking pool, before the
+    // gateway sees the request: an agent that names a stranger (as a target
+    // or as the parent of its create) reaches no use case at all (FR-008,
+    // FR-009), and a create's role must be one the caller's own place allows
+    // (A4). The caller itself is always inside its own subtree, placed or
+    // not — a member may create before it is placed, and the role rules then
+    // refuse what its place cannot pass.
     let tree_query = Arc::clone(&state.hierarchy_tree);
+    let kind = request.kind.clone();
+    let fields_in = request.fields.clone();
     let inside = spawn_blocking(move || {
-        tree_query
-            .store_snapshot()
-            .map(|rows| target == caller || check_descendant(&rows, caller, target).is_ok())
+        tree_query.store_snapshot().map(|rows| {
+            let target_ok = target == caller || check_descendant(&rows, caller, target).is_ok();
+            let role = allowed_fields_of(&kind, &fields_in, caller, &rows);
+            (target_ok, role)
+        })
     })
     .await;
-    let descendant_ok = match inside {
-        Ok(Ok(inside)) => inside,
+    let (descendant_ok, fields) = match inside {
+        Ok(Ok((target_ok, role))) => (
+            target_ok,
+            role.map_err(|(code, message)| (code, truncated(&message, MAX_REFUSAL_TEXT_CHARS))),
+        ),
         Ok(Err(error)) => {
             let message = truncated(&error.to_string(), MAX_REFUSAL_TEXT_CHARS);
             state.directive_journal.refused(caller, &message);
@@ -272,12 +280,11 @@ async fn answer_office_request(
         state.directive_journal.refused(caller, &reason);
         return Response::failure(request.id, ErrorCode::Refused, reason);
     }
-    let fields = match allowed_fields_of(request, caller) {
+    let fields = match fields {
         Ok(fields) => fields,
-        Err(message) => {
-            let message = truncated(&message, MAX_REFUSAL_TEXT_CHARS);
+        Err((code, message)) => {
             state.directive_journal.refused(caller, &message);
-            return Response::failure(request.id, ErrorCode::Invalid, message);
+            return Response::failure(request.id, code, message);
         }
     };
     let forwarded = Request {
@@ -307,8 +314,10 @@ async fn answer_office_request(
 
 /// The agent the request acts on: the named `agent_id`, or, for a create,
 /// the parent the new agent would sit under — the requested one, else the
-/// caller (`creation_parent`). That parent must sit in the caller's subtree,
-/// the same rule the other types apply to their target (FR-008).
+/// caller. That parent must sit in the caller's subtree, the same rule the
+/// other types apply to their target (FR-008); a create with no parent and
+/// no parent-naming role passes the caller itself, so an unplaced lead's
+/// create still reaches the role rules with the caller's own place.
 fn target_of(request: &Request, caller: AgentId) -> Result<AgentId, String> {
     if request.kind == "agent.create" {
         let requested = request
@@ -332,46 +341,200 @@ fn target_of(request: &Request, caller: AgentId) -> Result<AgentId, String> {
 }
 
 /// The fields an office request may carry: a create keeps the fields the
-/// agent protocol takes, but the role is the server's, not the client's;
-/// the other types keep only `agent_id`. Any other field is dropped before
-/// the gateway sees the frame (the closed allowlist of the 0002 contract).
+/// agent protocol takes, with the client's own `role` after the caller's
+/// place has allowed it against the tree rows (A4, FR-009); the other types
+/// keep only `agent_id`. Any other field is dropped before the gateway sees
+/// the frame (the closed allowlist of the 0002 contract).
+///
+/// # Errors
+/// The create refused its role: the code is `invalid` for a role the wire
+/// cannot read, `refused` for one the caller's place does not allow.
 fn allowed_fields_of(
-    request: &Request,
+    kind: &str,
+    fields_in: &serde_json::Map<String, Value>,
     caller: AgentId,
-) -> Result<serde_json::Map<String, Value>, String> {
+    rows: &[TreeRow],
+) -> Result<serde_json::Map<String, Value>, (ErrorCode, String)> {
     let mut fields = serde_json::Map::new();
-    if request.kind == "agent.create" {
+    if kind == "agent.create" {
         // An agent never sets the additions of its child: the office
         // additions belong to the user's own judgement (0002 contract, agent
         // caller).
-        if request.fields.contains_key("additions") {
-            return Err("agent.create does not take the field \"additions\"".to_owned());
+        if fields_in.contains_key("additions") {
+            return Err((
+                ErrorCode::Invalid,
+                "agent.create does not take the field \"additions\"".to_owned(),
+            ));
         }
         for key in CREATE_FIELDS {
-            if let Some(value) = request.fields.get(key) {
+            if let Some(value) = fields_in.get(key) {
                 fields.insert((*key).to_owned(), value.clone());
             }
         }
-        // The child an agent creates is a member under the caller (A4,
-        // FR-008): the parent stays the caller itself, the team is the
-        // caller's place, and the client's own `role` object never crosses,
-        // because an agent creates no CEO and no lead.
+        // The client's role crosses, but only a role the caller's place
+        // allows (A4): a CEO raises leads, a lead raises members under
+        // itself or under its own descendant leads, a member and an unplaced
+        // agent raise nothing, and no agent creates a CEO. A create without
+        // a role keeps the plain create's meaning on this connection: a
+        // member under the caller itself.
+        let (role_kind, parent) = match fields_in.get("role") {
+            None | Some(Value::Null) => (Role::Member.as_str(), Some(caller)),
+            Some(role) => role_of(role).map_err(|message| (ErrorCode::Invalid, message))?,
+        };
+        let parent = validated_parent(role_kind, parent, caller, rows)?;
         let mut role = serde_json::Map::new();
-        role.insert("kind".to_owned(), Value::String("member".to_owned()));
-        role.insert(
-            "parent_agent_id".to_owned(),
-            Value::String(caller.to_string()),
-        );
+        role.insert("kind".to_owned(), Value::String(role_kind.to_owned()));
+        if let Some(parent) = parent {
+            role.insert(
+                "parent_agent_id".to_owned(),
+                Value::String(parent.to_string()),
+            );
+        }
         fields.insert("role".to_owned(), Value::Object(role));
-    } else if let Some(agent_id) = request.fields.get("agent_id") {
+    } else if let Some(agent_id) = fields_in.get("agent_id") {
         fields.insert("agent_id".to_owned(), agent_id.clone());
     }
     Ok(fields)
 }
 
-/// The fields of `agent.create` an agent caller may set. `role` is joined
-/// separately, the client's own `role` object is replaced, and `additions`
-/// is refused outright.
+/// Reads the client's `role` object as the pair the place rules decide on:
+/// the kind in its wire form and the parent it names, if any. A role that is
+/// not an object, or whose kind is not one of the three roles, names the
+/// field at fault.
+fn role_of(role: &Value) -> Result<(&str, Option<AgentId>), String> {
+    let Value::Object(role) = role else {
+        return Err("role must be an object".to_owned());
+    };
+    let kind = role
+        .get("kind")
+        .and_then(Value::as_str)
+        .ok_or("role.kind is required")?;
+    let kind = Role::from_wire(kind)
+        .map(Role::as_str)
+        .ok_or_else(|| format!("role.kind is not a role of the company: {kind}"))?;
+    let parent = role
+        .get("parent_agent_id")
+        .and_then(Value::as_str)
+        .map(|text| AgentId::from_uuid_text(text).ok_or("role.parent_agent_id is not an agent id"))
+        .transpose()?;
+    Ok((kind, parent))
+}
+
+/// The child roles an agent caller may ask for, from its own place in the
+/// tree (A4): a CEO raises a lead (the lead's place comes from the CEO and
+/// its team from the user, so the caller names no parent for it), and a lead
+/// raises a member under itself. A member may also land under one of the
+/// caller's descendant leads, so a CEO can fill a team it can see; the tree
+/// rules still check the place the child takes. A member or an unplaced
+/// agent raises nothing, and no agent creates a CEO.
+///
+/// # Errors
+/// `refused` with the roles the caller's place allows, so the agent knows
+/// what it may ask for instead (FR-009); `invalid` for a parent a lead
+/// child cannot take.
+fn validated_parent(
+    kind: &str,
+    parent: Option<AgentId>,
+    caller: AgentId,
+    rows: &[TreeRow],
+) -> Result<Option<AgentId>, (ErrorCode, String)> {
+    if kind == Role::Ceo.as_str() {
+        return Err((ErrorCode::Refused, CEO_REFUSAL.to_owned()));
+    }
+    let caller_role = rows
+        .iter()
+        .find(|row| row.agent_id == caller)
+        .and_then(|row| row.role);
+    let Some(allowed) = caller_role.map(Role::allowed_child_roles) else {
+        return Err((ErrorCode::Refused, UNPLACED_REFUSAL.to_owned()));
+    };
+    if kind == Role::Lead.as_str() {
+        child_role_allowed(kind, allowed)?;
+        if parent.is_some() {
+            return Err((
+                ErrorCode::Invalid,
+                "role.parent_agent_id must stay unset for a lead".to_owned(),
+            ));
+        }
+        return Ok(None);
+    }
+    // The member lands under the caller, or under a lead of the caller's
+    // own subtree when one is named (FR-008): under anything else the tree
+    // rules would refuse, so the gateway refuses first with its reason.
+    let parent = parent.unwrap_or(caller);
+    if parent == caller {
+        child_role_allowed(kind, allowed)?;
+        return Ok(Some(parent));
+    }
+    let parent_is_lead = rows
+        .iter()
+        .any(|row| row.agent_id == parent && row.role == Some(Role::Lead));
+    if !is_descendant_of(rows, parent, caller) {
+        return Err((ErrorCode::Refused, PARENT_OUTSIDE_REFUSAL.to_owned()));
+    }
+    if !parent_is_lead {
+        return Err((ErrorCode::Refused, PARENT_NOT_LEAD_REFUSAL.to_owned()));
+    }
+    Ok(Some(parent))
+}
+
+/// Why an agent's create without a role of its own is refused: an unplaced
+/// agent (a role of `None`) can pass no place to a child (A4).
+const UNPLACED_REFUSAL: &str =
+    "an agent without a place in the company may not create agents; ask the user for a place first";
+
+/// Why a CEO role is never an agent's to give: the office has one CEO, and
+/// only the user creates it (A4, A5).
+const CEO_REFUSAL: &str = "no agent may create a ceo; only the user creates the company's ceo";
+
+/// Why a member's create is refused whatever it asks for: a member has no
+/// child agents in the office (A4, A3).
+const MEMBER_REFUSAL: &str = "a member may not create agents; its place allows no child roles";
+
+/// Why a member parent outside the caller's subtree is refused: an agent
+/// raises children only within its own descendants (FR-008).
+const PARENT_OUTSIDE_REFUSAL: &str =
+    "the parent of the new agent is not a descendant of the caller";
+
+/// Why a named parent that is not a lead is refused: a member sits only
+/// under a lead (A6), and under the caller the role rules say it anyway.
+const PARENT_NOT_LEAD_REFUSAL: &str =
+    "the parent of the new member is not a lead; a member sits under a lead";
+
+/// Whether the caller's place allows the child role at all: a place with no
+/// child roles (a member) refuses with its own reason, one with child roles
+/// that do not include the kind refuses with the list (A4, FR-009).
+///
+/// # Errors
+/// Always `refused`, with the reason the caller's place gives.
+fn child_role_allowed(kind: &str, allowed: &[Role]) -> Result<(), (ErrorCode, String)> {
+    if allowed.iter().any(|role| role.as_str() == kind) {
+        return Ok(());
+    }
+    Err((
+        ErrorCode::Refused,
+        if allowed.is_empty() {
+            MEMBER_REFUSAL.to_owned()
+        } else {
+            allowed_roles_refusal(allowed)
+        },
+    ))
+}
+
+/// The roles an agent's place allows, as the refusal names them (the same
+/// form the tree rules refuse with, FR-003).
+fn allowed_roles_refusal(allowed: &[Role]) -> String {
+    let allowed = allowed
+        .iter()
+        .map(|role| role.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("the caller's place allows only these child roles: {allowed}")
+}
+
+/// The fields of `agent.create` an agent caller may set. `role` joins the
+/// frame separately, validated against the caller's place (A4), and
+/// `additions` is refused outright.
 const CREATE_FIELDS: [&str; 4] = ["name", "command", "working_folder", "project_id"];
 
 /// The wire code of a directive failure: a rule between the agents is a
