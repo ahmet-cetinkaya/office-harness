@@ -9,6 +9,7 @@ use notification_domain::{Notification, NotificationEvent, NotificationId};
 
 use crate::common::errors::NotificationApplicationError;
 use crate::common::interfaces::{NotificationClock, NotificationStore};
+use crate::queries::list_notifications::LIST_LIMIT;
 
 /// The clock the tests stamp reads with.
 pub struct TestClock(pub Timestamp);
@@ -25,8 +26,9 @@ fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// Keeps the rows the way the listing orders them: unread first, then newest
-/// first. Inserts carry their own created time, so the order is by it.
+/// Keeps the rows the way the store contract hands them out: unread first,
+/// then newest first, at most `LIST_LIMIT`. Inserts carry their own created
+/// time, so the order is by it.
 #[derive(Default)]
 pub struct MemoryNotifications(Mutex<Vec<Notification>>);
 
@@ -73,6 +75,18 @@ impl NotificationStore for MemoryNotifications {
     fn list(&self) -> Result<Vec<Notification>, NotificationApplicationError> {
         let mut rows = locked(&self.0).clone();
         unread_first_then_newest(&mut rows);
+        rows.truncate(LIST_LIMIT);
+        Ok(rows)
+    }
+
+    fn list_unread(&self) -> Result<Vec<Notification>, NotificationApplicationError> {
+        let mut rows: Vec<Notification> = locked(&self.0)
+            .iter()
+            .filter(|notification| notification.is_unread())
+            .cloned()
+            .collect();
+        unread_first_then_newest(&mut rows);
+        rows.truncate(LIST_LIMIT);
         Ok(rows)
     }
 

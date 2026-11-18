@@ -3,6 +3,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use agent_application::common::errors::PortError;
 use agent_application::common::interfaces::{AgentStore, Clock};
 use kernel::AgentId;
 use notification_application::commands::create_notification::{
@@ -25,7 +26,9 @@ use crate::server::EventHub;
 /// follows only a real status-machine transition: `working` to
 /// `waiting for input` only from `working`, and nothing for `stopped` or
 /// `interrupted`. The agent name is copied at creation, so the row outlives a
-/// deleted agent.
+/// deleted agent. A failed lookup or row write records nothing and is
+/// reported like any storage failure, and a lagged broadcast is surfaced as
+/// one too, so the client learns which notifications are missing.
 #[derive(Clone)]
 pub struct NotificationBridge {
     create: CreateNotificationHandler,
@@ -78,10 +81,7 @@ impl NotificationBridge {
                                     .await;
                         }
                         Err(RecvError::Closed) => return,
-                        Err(RecvError::Lagged(missed)) => self.log.error(&format!(
-                            "the notification bridge missed {missed} status events; \
-                             notifications may be missing until the next event"
-                        )),
+                        Err(RecvError::Lagged(missed)) => self.missed(missed, "status events"),
                     },
                     item = bells.recv() => match item {
                         Ok(event) => {
@@ -90,14 +90,22 @@ impl NotificationBridge {
                                 .await;
                         }
                         Err(RecvError::Closed) => return,
-                        Err(RecvError::Lagged(missed)) => self.log.error(&format!(
-                            "the notification bridge missed {missed} terminal events; \
-                             bells may be missing until the next one"
-                        )),
+                        Err(RecvError::Lagged(missed)) => self.missed(missed, "terminal events"),
                     },
                 }
             }
         });
+    }
+
+    /// Reports the events a full broadcast channel dropped: FR-006
+    /// notifications are missing for them, so the client learns of the loss
+    /// as a storage alert, the same channel a failed row write takes, and
+    /// can resync with `notification.list`.
+    fn missed(&self, count: u64, source: &str) {
+        self.alerts.report_disk_failure(&format!(
+            "the notification bridge missed {count} {source}; \
+             notifications are missing for them"
+        ));
     }
 
     /// Records what a published `agent.status` frame asks for.
@@ -121,9 +129,13 @@ impl NotificationBridge {
     }
 
     fn record(&self, agent_id: AgentId, event: NotificationEvent) {
+        let name = match self.name_of(agent_id) {
+            Ok(name) => name,
+            Err(error) => return self.report_lookup_failure(&error, agent_id, event),
+        };
         let created = self.create.handle(CreateNotification {
             agent_id,
-            agent_name: self.name_of(agent_id),
+            agent_name: name,
             event,
             at: self.clock.now(),
         });
@@ -136,13 +148,12 @@ impl NotificationBridge {
     }
 
     /// The agent's name now, copied into the row. A deleted agent has none,
-    /// so the row says so (spec edge case).
-    fn name_of(&self, agent_id: AgentId) -> String {
-        match self.agents.find(agent_id) {
-            Ok(Some(agent)) => agent.name.as_str().to_owned(),
-            // A store failure names the agent as deleted; the row itself
-            // still records the event.
-            Ok(None) | Err(_) => DELETED_AGENT_NAME.to_owned(),
+    /// so the row says so (spec edge case). A store failure is not a delete:
+    /// it stops the record, so nothing claims a name nobody confirmed.
+    fn name_of(&self, agent_id: AgentId) -> Result<String, PortError> {
+        match self.agents.find(agent_id)? {
+            Some(agent) => Ok(agent.name.as_str().to_owned()),
+            None => Ok(DELETED_AGENT_NAME.to_owned()),
         }
     }
 
@@ -155,6 +166,30 @@ impl NotificationBridge {
         let message =
             format!("the {event} notification of agent {agent_id} could not be stored: {error}");
         if error.is_disk_failure() {
+            self.alerts.report_disk_failure(&message);
+        } else {
+            self.log.error(&message);
+        }
+    }
+
+    /// Reports a failed name lookup like a failed row write: no row is
+    /// recorded, so the notification is lost, and the failure is told the
+    /// same way.
+    fn report_lookup_failure(
+        &self,
+        error: &PortError,
+        agent_id: AgentId,
+        event: NotificationEvent,
+    ) {
+        let message =
+            format!("the {event} notification of agent {agent_id} could not be stored: {error}");
+        if matches!(
+            error,
+            PortError::Storage {
+                is_disk_failure: true,
+                ..
+            }
+        ) {
             self.alerts.report_disk_failure(&message);
         } else {
             self.log.error(&message);

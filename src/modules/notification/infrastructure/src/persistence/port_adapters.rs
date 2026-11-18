@@ -22,6 +22,10 @@ impl NotificationStore for NotificationRepository {
         Self::list(self)
     }
 
+    fn list_unread(&self) -> Result<Vec<Notification>, NotificationApplicationError> {
+        Self::list_unread(self)
+    }
+
     fn find(
         &self,
         notification_id: NotificationId,

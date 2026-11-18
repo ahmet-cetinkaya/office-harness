@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use kernel::{AgentId, Timestamp};
+use notification_application::queries::list_notifications::LIST_LIMIT;
 use notification_domain::{Notification, NotificationEvent, NotificationId};
 use notification_infrastructure::persistence::{NotificationRepository, SCRIPTS};
 use rusqlite::Connection;
@@ -71,6 +72,100 @@ fn the_listing_is_unread_first_then_newest_first() {
         .map(|notification| notification.created_at.as_unix_millis())
         .collect();
     assert_eq!(times, [20, 10, 30]);
+}
+
+#[test]
+fn read_rows_of_one_agent_list_newest_created_first() {
+    let repository = memory_office();
+    let agent = AgentId::generate();
+    for created_at in [10, 30, 20] {
+        let mut stored = row(agent, "Ana", NotificationEvent::Exited, created_at);
+        stored.mark_read(Timestamp::from_unix_millis(40));
+        repository.insert(&stored).expect("insert");
+    }
+
+    let listed = repository.list().expect("list");
+
+    let times: Vec<i64> = listed
+        .iter()
+        .map(|notification| notification.created_at.as_unix_millis())
+        .collect();
+    assert_eq!(times, [30, 20, 10]);
+}
+
+#[test]
+fn rows_of_one_millisecond_keep_their_insertion_order_newest_first() {
+    let repository = memory_office();
+    let agent = AgentId::generate();
+    // Three events in one millisecond, recorded in this order: the listing
+    // repeats it backwards, so the order never depends on the random ids.
+    for event in [
+        NotificationEvent::Exited,
+        NotificationEvent::Failed,
+        NotificationEvent::Bell,
+    ] {
+        repository
+            .insert(&row(agent, "Ana", event, 10))
+            .expect("insert");
+    }
+
+    let listed = repository.list().expect("list");
+
+    let events: Vec<NotificationEvent> = listed.iter().map(|row| row.event).collect();
+    assert_eq!(
+        events,
+        [
+            NotificationEvent::Bell,
+            NotificationEvent::Failed,
+            NotificationEvent::Exited
+        ]
+    );
+}
+
+#[test]
+fn the_listing_caps_itself_in_sql_with_the_newest_kept() {
+    let repository = memory_office();
+    let agent = AgentId::generate();
+    for created_at in 0..520 {
+        repository
+            .insert(&row(agent, "Ana", NotificationEvent::Exited, created_at))
+            .expect("insert");
+    }
+
+    let listed = repository.list().expect("list");
+
+    let times: Vec<i64> = listed
+        .iter()
+        .map(|notification| notification.created_at.as_unix_millis())
+        .collect();
+    assert_eq!(listed.len(), LIST_LIMIT);
+    assert_eq!(times[0], 519);
+    assert_eq!(times[LIST_LIMIT - 1], 20);
+}
+
+#[test]
+fn the_unread_listing_filters_and_caps_in_sql() {
+    let repository = memory_office();
+    let agent = AgentId::generate();
+    // 520 rows are stored, every second one already read, so only the 260
+    // unread come back and the filter did its work in the query.
+    for created_at in 0..520 {
+        let mut stored = row(agent, "Ana", NotificationEvent::Exited, created_at);
+        if created_at % 2 == 0 {
+            stored.mark_read(Timestamp::from_unix_millis(1_000_000));
+        }
+        repository.insert(&stored).expect("insert");
+    }
+
+    let listed = repository.list_unread().expect("unread list");
+
+    assert_eq!(listed.len(), 260);
+    assert!(
+        listed.iter().all(Notification::is_unread),
+        "only unread rows come back"
+    );
+    // The newest unread of the 260 are the odd created times from 519 down.
+    assert_eq!(listed[0].created_at.as_unix_millis(), 519);
 }
 
 #[test]

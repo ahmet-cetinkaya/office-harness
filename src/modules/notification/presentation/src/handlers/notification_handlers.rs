@@ -67,7 +67,11 @@ impl NotificationHandlers {
     fn list(&self, request: &Request) -> Result<Value, HandlerError> {
         let body =
             ListNotificationsRequest::read(&request.fields).map_err(HandlerError::invalid)?;
-        let notifications = self.use_cases.list.handle(body.unread_only)?;
+        let notifications = if body.unread_only {
+            self.use_cases.list.handle_unread()?
+        } else {
+            self.use_cases.list.handle()?
+        };
         Ok(notifications.iter().map(notification_json).collect())
     }
 
