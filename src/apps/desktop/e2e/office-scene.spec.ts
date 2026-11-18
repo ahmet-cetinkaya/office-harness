@@ -534,3 +534,170 @@ test.describe("desk opens the terminal in the scene (D5)", () => {
     expect(inputs).toEqual([]);
   });
 });
+
+test.describe("T4: return and restore", () => {
+  test("a 20-trial round trip keeps the project choice and the selected agent (SC-006)", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: { agents: OFFICE_AGENTS, projects: PROJECTS },
+    });
+    await page.goto("/");
+
+    for (let trial = 0; trial < 20; trial += 1) {
+      // Alternate the project and the agent inside it (SC-006's mixed runs).
+      const [projectLabel, rowName] =
+        trial % 2 === 0
+          ? ["Site", "Ada, project Site, working"]
+          : ["Api", "Cy, project Api, waiting for input"];
+      await page.getByLabel("Project", { exact: true }).selectOption({
+        label: projectLabel,
+      });
+      const row = page
+        .getByRole("region", { name: "Agents" })
+        .getByRole("button", { name: rowName });
+      await row.click();
+
+      await page.getByRole("button", { name: "To the scene" }).click();
+      await expect(
+        page.getByRole("region", { name: "Office scene" }),
+      ).toBeVisible();
+
+      await page.getByRole("button", { name: "To the panel" }).click();
+      await expect(
+        page.getByRole("region", { name: "Agents" }).getByRole("list"),
+      ).toBeVisible();
+
+      // The panel's choice and selection are exactly the scene-open ones.
+      expect(
+        await page.getByLabel("Project", { exact: true }).inputValue(),
+      ).toBe(projectLabel === "Site" ? "project-site" : "project-api");
+      await expect(
+        page
+          .getByRole("region", { name: "Agents" })
+          .getByRole("button", { name: rowName }),
+      ).toHaveAttribute("aria-current", "true");
+    }
+  });
+
+  test("a start with a stored view:scene reopens the scene", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: null,
+          agent: null,
+          terminal_open: false,
+          view: "scene",
+        }),
+      },
+    });
+    await page.goto("/");
+
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+    await expect(page.getByRole("region", { name: "Agents" })).toHaveCount(0);
+  });
+
+  test("a stored last_view without the view field (a 0003-era write) opens the panel", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: "project-site",
+          agent: "agent-ada",
+          terminal_open: true,
+        }),
+      },
+    });
+    await page.goto("/");
+
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    expect(
+      await page.getByRole("region", { name: "Office scene" }).count(),
+    ).toBe(0);
+    // The panel-side restore of the stored project/agent is 0003's reader;
+    // this branch proves only the view: the panel opens.
+  });
+
+  test("an unknown view word opens the panel", async ({ page }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: null,
+          agent: null,
+          terminal_open: false,
+          view: "galaxy",
+        }),
+      },
+    });
+    await page.goto("/");
+
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    expect(
+      await page.getByRole("region", { name: "Office scene" }).count(),
+    ).toBe(0);
+  });
+
+  test("departments group the floors from the seeded tree (D2, FR-003)", async ({
+    page,
+  }) => {
+    /** Ada is the CEO on Site; Bo leads Backend and sits on Site; Cy is a
+     * Backend member on Api, so Backend spans two floors; Dee has no team. */
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        hierarchy: {
+          ceo: { id: "agent-ada", role: "ceo" },
+          teams: [
+            {
+              id: "team-backend",
+              name: "Backend",
+              project_id: "project-site",
+              lead: { id: "agent-bo", role: "lead" },
+              members: [{ id: "agent-cy", role: "member" }],
+            },
+          ],
+          unassigned: [],
+        },
+      },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "To the scene" }).click();
+
+    const floor = (name: string) => scene(page).getByRole("region", { name });
+
+    // Api floor: the cross-floor department's member sits here without Bo.
+    const api = floor("Api (1)");
+    await expect(api.getByRole("heading", { name: "Backend" })).toBeVisible();
+    await expect(api.getByRole("button", { name: /Cy/ })).toBeVisible();
+
+    // Site floor: the unnamed group first (CEO Ada, no-team Dee), then the
+    // department with its lead Bo before Cy... Cy is on Api, so Bo alone.
+    const site = floor("Site (2)");
+    const siteDesks = site.getByRole("button");
+    await expect(siteDesks).toHaveCount(2);
+    expect(await siteDesks.first().getAttribute("aria-label")).toContain("Ada");
+    await expect(site.getByRole("heading", { name: "Backend" })).toBeVisible();
+
+    // Dee (no team) sits in the unnamed group on the No project floor.
+    await expect(
+      floor("No project (1)").getByRole("button", { name: /Dee/ }),
+    ).toBeVisible();
+  });
+});
