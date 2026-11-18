@@ -810,3 +810,173 @@ async fn a_ceo_creates_a_member_under_its_descendant_lead() {
 
     office.serving.stop().await;
 }
+
+/// The credential and server file the server gave the live session, from
+/// the recorded environment.
+fn session_environment(records: &Path) -> (String, String) {
+    let env = fs::read_to_string(records.join("env")).expect("env");
+    let value = |name: &str| {
+        env.lines()
+            .find_map(|line| line.strip_prefix(&format!("{name}=")))
+            .expect(name)
+            .to_owned()
+    };
+    (
+        value("OFFICE_HARNESS_AGENT_TOKEN"),
+        value("OFFICE_HARNESS_SERVER_FILE"),
+    )
+}
+
+/// Runs the helper with a live session's own credential (as the fake CLI
+/// would), so a test can make a second call from the same session.
+async fn call_as_session(credential: &str, server_file: &str, kind: &str, request: &str) -> Output {
+    let arguments = [kind.to_owned(), request.to_owned()];
+    let credential = credential.to_owned();
+    let server_file = server_file.to_owned();
+    tokio::task::spawn_blocking(move || {
+        Command::new(HELPER)
+            .args(["agent-call", &arguments[0], &arguments[1]])
+            .env("OFFICE_HARNESS_AGENT_TOKEN", credential)
+            .env("OFFICE_HARNESS_SERVER_FILE", server_file)
+            .output()
+            .expect("helper")
+    })
+    .await
+    .expect("helper task")
+}
+
+/// A fake CLI that calls the helper on the agent's own id: the credential
+/// the server gave the session names the caller, so the request targets
+/// itself. The answer goes to `<records>/<name>.out` like `calling_script`.
+fn call_on_self_script(records: &Path, name: &str, kind: &str) -> String {
+    let folder = records.display();
+    format!(
+        "env > {folder}/env.part\nmv {folder}/env.part {folder}/env\n\
+         agent_id=${{OFFICE_HARNESS_AGENT_TOKEN%%:*}}\n\
+         {HELPER} agent-call {kind} \"{{\\\"agent_id\\\":\\\"$agent_id\\\"}}\" > {folder}/{name}.out 2> {folder}/{name}.err\n\
+         printf '%s' $? > {folder}/{name}.code\nsleep 30\n"
+    )
+}
+
+/// The self-target refusals start, `new_task`, and stop stay descendants
+/// only (FR-008, FR-009; PR 40 MEDIUM-2). Each test runs one kind: a lead
+/// asks its own id over agent-call, the gateway refuses before any use case
+/// runs, and the refusal is recorded with the lead as actor.
+async fn assert_an_agent_acting_on_itself_is_refused_and_recorded(kind: &str, name: &str) {
+    let office = Office::open().await;
+    office.clis.add(
+        "lead-cli",
+        &call_on_self_script(office.records_path(), name, kind),
+    );
+    let mut client = office.client().await;
+    let lead = client.create_agent(&office, "Lead", "lead-cli", None).await;
+    place_lead_with_team(&office, &lead, "The Team");
+    client.start(&lead).await;
+
+    let (code, out) = read_output(office.records_path(), name).await;
+    assert_eq!(code, "1", "{out}");
+    let answer: Value = serde_json::from_str(out.trim()).expect("json");
+    assert_eq!(answer["ok"], false, "{answer}");
+    assert_eq!(answer["error"]["code"], "refused", "{answer}");
+    assert!(
+        answer["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("itself"),
+        "{answer}"
+    );
+
+    // The refusal sits in the action record with the lead as actor and the
+    // reason as the result (FR-008, FR-009).
+    let entries = actions_of(&mut client, &lead).await;
+    let refused = entries
+        .iter()
+        .find(|entry| entry["action"] == "refused")
+        .expect("the refusal is recorded");
+    assert_eq!(
+        refused["actor"],
+        json!(format!("agent:{lead}")),
+        "{refused}"
+    );
+    assert!(
+        refused["result"]
+            .as_str()
+            .expect("result")
+            .contains("itself"),
+        "{refused}"
+    );
+
+    office.serving.stop().await;
+}
+
+/// An agent that asks to start itself over agent-call is refused and the
+/// refusal is recorded: start, `new_task`, and stop stay descendants only
+/// (FR-008, FR-009; PR 40 MEDIUM-2).
+#[tokio::test]
+async fn an_agent_starting_itself_over_agent_call_is_refused_and_recorded() {
+    assert_an_agent_acting_on_itself_is_refused_and_recorded("agent.start", "start").await;
+}
+
+/// An agent that sends itself a new task over agent-call is refused and the
+/// refusal is recorded: `new_task` stays descendants only, like stop
+/// (FR-008, FR-009; PR 40 MEDIUM-2).
+#[tokio::test]
+async fn an_agent_tasking_itself_over_agent_call_is_refused_and_recorded() {
+    assert_an_agent_acting_on_itself_is_refused_and_recorded("agent.new_task", "new_task").await;
+}
+
+/// An agent that asks to stop itself over agent-call is refused and the
+/// refusal is recorded (FR-008, FR-009; PR 40 MEDIUM-2).
+#[tokio::test]
+async fn an_agent_stopping_itself_over_agent_call_is_refused_and_recorded() {
+    assert_an_agent_acting_on_itself_is_refused_and_recorded("agent.stop", "stop").await;
+}
+
+/// A request with a field the type does not take is refused as `invalid`
+/// and recorded, not silently trimmed (PR 40 LOW).
+#[tokio::test]
+async fn an_agent_stop_with_an_extra_field_is_refused_and_recorded() {
+    let office = Office::open().await;
+    // A CLI that records the session environment and stays alive, so the
+    // test can hold the live credential for its own helper call.
+    office.clis.add(
+        "lead-cli",
+        &calling_script(office.records_path(), "noop", "agent.whoami", "{}"),
+    );
+    let mut client = office.client().await;
+    let lead = client.create_agent(&office, "Lead", "lead-cli", None).await;
+    place_lead_with_team(&office, &lead, "The Team");
+    client.start(&lead).await;
+    let (credential, server_file) = session_environment(office.records_path());
+
+    // The extra field rides on an otherwise fine stop of the caller's own
+    // id — the strict-field rule refuses before any use case runs.
+    let padded = r#"{"agent_id":"x","include_descendants":true}"#;
+    let outcome = call_as_session(&credential, &server_file, "agent.stop", padded).await;
+    assert!(!outcome.status.success(), "{outcome:?}");
+    let answer: Value =
+        serde_json::from_str(String::from_utf8_lossy(&outcome.stdout).trim()).expect("json");
+    assert_eq!(answer["error"]["code"], "invalid", "{answer}");
+    assert!(
+        answer["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("include_descendants"),
+        "{answer}"
+    );
+
+    let entries = actions_of(&mut client, &lead).await;
+    let refused = entries
+        .iter()
+        .find(|entry| entry["action"] == "refused")
+        .expect("the refusal is recorded");
+    assert!(
+        refused["result"]
+            .as_str()
+            .expect("result")
+            .contains("include_descendants"),
+        "{refused}"
+    );
+
+    office.serving.stop().await;
+}
