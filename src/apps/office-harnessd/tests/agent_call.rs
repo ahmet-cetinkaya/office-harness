@@ -42,11 +42,21 @@ fn call_script(records: &Path, calls: &[(&str, &str)]) -> String {
 }
 
 async fn read_output(records: &Path, name: &str) -> (String, String) {
+    // A redirect creates its file empty and fills it afterwards, so an
+    // existing file is not a whole one: the wait needs content, not
+    // existence.
     let code = wait_for("the helper's exit code", || {
-        fs::read_to_string(records.join(format!("{name}.code"))).ok()
+        fs::read_to_string(records.join(format!("{name}.code")))
+            .ok()
+            .filter(|text| !text.is_empty())
     })
     .await;
-    let out = fs::read_to_string(records.join(format!("{name}.out"))).expect("out");
+    let out = wait_for("the helper's answer", || {
+        fs::read_to_string(records.join(format!("{name}.out")))
+            .ok()
+            .filter(|text| !text.is_empty())
+    })
+    .await;
     (code, out)
 }
 
