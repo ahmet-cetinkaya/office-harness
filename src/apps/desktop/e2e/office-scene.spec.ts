@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Scene e2e. Part 1 (0005 T3) covered floors, desks, switcher, search, and
-// the empty state. The part 2 additions here cover the keyboard traversal,
-// the status announcements, and the deletion focus moves (T5 a, b); the
-// reduced-motion scan (T5 c) sits at the bottom. Still waiting for other
-// work: departments from a seeded tree, in-place desk updates (SC-002,
-// SC-003 shapes), the PB-4 recorded-calls assertion, the terminal embed
-// (D5), and the role, team, and settings seeds that
-// test/mock-core-extensions adds to mock-core.
+// Scene e2e. Landed: floors, desks, switcher, search, empty states; the
+// keyboard traversal, announcements, and deletion focus moves (T5 a, b);
+// the reduced-motion scan (T5 c); the desk terminal embed (D5); and the
+// review acceptance tests (SC-002 shape under a search, PB-1, PB-4).
+// Still waiting for test/mock-core-extensions: departments from a seeded
+// tree and the SC-004 100-agent measurement.
 
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
@@ -177,6 +175,105 @@ test("the search filters desks, focuses the match, and says when nothing matches
   await search.fill("dE");
   await expect(desks(page)).toHaveCount(1);
   await expect(desks(page).filter({ hasText: "Dee" })).toBeFocused();
+});
+
+test("a pushed status and line change update the desk under an active search (SC-002 shape)", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  const search = page.getByLabel("Search agents");
+  // Only Bo matches, so the update must land on the one rendered desk.
+  await search.fill("bo");
+  await expect(desks(page)).toHaveCount(1);
+  await expect(desks(page).filter({ hasText: "Bo" })).toBeFocused();
+
+  await page.evaluate(() => {
+    window.__mockCore.pushEvent({
+      type: "agent.status",
+      agent_id: "agent-bo",
+      status: "starting",
+    });
+    window.__mockCore.pushEvent({
+      type: "agent.line",
+      agent_id: "agent-bo",
+      line: "Rebuilt from clean.",
+    });
+  });
+
+  // The desk updates in place; the search text and the focus hold.
+  const updated = desks(page).filter({ hasText: "Bo" });
+  await expect(updated).toHaveAttribute(
+    "aria-label",
+    "Bo, project Site, starting, Rebuilt from clean.",
+  );
+  await expect(desks(page)).toHaveCount(1);
+  await expect(search).toHaveValue("bo");
+  await expect(updated).toBeFocused();
+});
+
+test("the scene exposes no create, start, stop, or delete control (PB-1)", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  for (const label of [
+    "New agent",
+    "New project",
+    "Start agent",
+    "Stop agent",
+    "Delete agent",
+    "Delete project",
+  ]) {
+    await expect(scene(page).getByRole("button", { name: label })).toHaveCount(
+      0,
+    );
+  }
+  // The only desk buttons are desks; nothing acts on an agent beyond the
+  // (D5) desk open itself.
+  await expect(desks(page)).toHaveCount(4);
+});
+
+test("switching views sends no agent request (PB-4, recorded calls)", async ({
+  page,
+}) => {
+  await installMockCore(page, {
+    initialState: { status: "connected" },
+    office: { agents: OFFICE_AGENTS, projects: PROJECTS },
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "To the scene" }).click();
+
+  const agentRequests = async () =>
+    page.evaluate(() =>
+      window.__mockCore.calls
+        .filter((call) => call.command === "send_request")
+        .map((call) => String(call.args.kind))
+        .filter((kind) => kind.startsWith("agent.")),
+    );
+
+  const before = await agentRequests();
+  await page.getByRole("button", { name: "To the panel" }).click();
+  await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+  await page.getByRole("button", { name: "To the scene" }).click();
+  await expect(
+    page.getByRole("region", { name: "Office scene" }),
+  ).toBeVisible();
+
+  // Only settings.set rides the switch (last_view); agent.list and friends
+  // are the initial loads, unchanged by the switches (PB-4).
+  const after = await agentRequests();
+  expect(after).toEqual(before);
+  const settings = await page.evaluate(() =>
+    (
+      window.__mockCore.calls.filter(
+        (call) =>
+          call.command === "send_request" && call.args.kind === "settings.set",
+      ) as Array<{ args: { fields?: { key?: string } } }>
+    ).map((call) => String(call.args.fields?.key)),
+  );
+  expect(settings.length).toBeGreaterThan(0);
+  expect(settings.every((key) => key === "last_view")).toBe(true);
 });
 
 test("the empty office says so and the shell returns to the panel", async ({
