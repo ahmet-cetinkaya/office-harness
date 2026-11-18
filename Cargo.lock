@@ -2379,6 +2379,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "notification-application"
+version = "0.1.0"
+dependencies = [
+ "kernel",
+ "notification-domain",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "notification-domain"
+version = "0.1.0"
+dependencies = [
+ "kernel",
+ "serde",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
+name = "notification-infrastructure"
+version = "0.1.0"
+dependencies = [
+ "kernel",
+ "notification-application",
+ "notification-domain",
+ "rusqlite",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "notification-presentation"
+version = "0.1.0"
+dependencies = [
+ "kernel",
+ "notification-application",
+ "notification-domain",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "wire",
+]
+
+[[package]]
 name = "num-conv"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2680,6 +2725,10 @@ dependencies = [
  "hierarchy-infrastructure",
  "hierarchy-presentation",
  "kernel",
+ "notification-application",
+ "notification-domain",
+ "notification-infrastructure",
+ "notification-presentation",
  "private-fs",
  "rusqlite",
  "serde",

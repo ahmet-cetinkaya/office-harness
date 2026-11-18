@@ -31,12 +31,16 @@ pub(crate) fn process_ctrl_c() -> Result<(), String> {
 const LINE_INPUT_MODES: u32 = ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT;
 
 pub(crate) fn disable_line_input() -> Result<(), String> {
+    // SAFETY: `GetStdHandle` takes no pointer. It hands back the calling
+    // process's own standard input handle from the process std handle table;
+    // a null return means no handle, which the check below reports.
     let console = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
     if console.is_null() {
         return Err("the process has no standard input handle".to_owned());
     }
-    // A pseudoconsole child gets `INVALID_HANDLE_VALUE` from `GetStdHandle`
-    // when its stdin is not a console; there is nothing to change then.
+    // `INVALID_HANDLE_VALUE` here only marks a `GetStdHandle` failure. A
+    // redirected stdin is not caught by this comparison: it yields a pipe
+    // handle, whose mode read `GetConsoleMode` rejects below.
     if console == INVALID_HANDLE_VALUE {
         return Err("the process has no input console".to_owned());
     }

@@ -22,6 +22,10 @@ audit-application = { path = "../../modules/audit/application" }
 audit-domain = { path = "../../modules/audit/domain" }
 audit-infrastructure = { path = "../../modules/audit/infrastructure" }
 audit-presentation = { path = "../../modules/audit/presentation" }
+notification-application = { path = "../../modules/notification/application" }
+notification-domain = { path = "../../modules/notification/domain" }
+notification-infrastructure = { path = "../../modules/notification/infrastructure" }
+notification-presentation = { path = "../../modules/notification/presentation" }
 auto-launch.workspace = true
 axum.workspace = true
 directories.workspace = true
