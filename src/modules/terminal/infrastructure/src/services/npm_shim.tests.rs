@@ -130,7 +130,14 @@ fn a_guard_glued_to_its_command_word_is_rejected() {
 #[test]
 fn a_guard_after_a_leading_delimiter_is_rejected() {
     let launch = "node \"%dp0%\\node_modules\\x\\cli.js\" %*";
-    for guard in [",IF 1==2 ", ";GOTO end ", "=REM "] {
+    for guard in [
+        ",IF 1==2 ",
+        ";GOTO end ",
+        "=REM ",
+        "; ,IF 1==2 ",
+        "@ ;GOTO end ",
+        "= ,REM ",
+    ] {
         assert_eq!(
             parse_npm_shim(SHIM, &format!("{guard}{launch}")),
             None,
