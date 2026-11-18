@@ -2,11 +2,13 @@
 
 use kernel::AgentId;
 
-/// Whether a target agent's session can take input right now. The bool is
-/// enough: it only gates the write, and the write itself reports the failure.
+/// Whether a target agent's session can take input right now. A store
+/// failure is its own error (Efe r2 LOW): a silent "not running" would
+/// dress a broken store as a stopped member.
 pub trait DirectiveTarget: Send + Sync {
-    #[must_use]
-    fn is_running(&self, agent_id: AgentId) -> bool;
+    /// # Errors
+    /// The store's own failure when the target cannot be read.
+    fn is_running(&self, agent_id: AgentId) -> Result<bool, String>;
 
     /// The agent's name as the office shows it, so a refusal can name the
     /// agent instead of its id. `None` when the id cannot be resolved, for

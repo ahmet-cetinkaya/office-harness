@@ -17,10 +17,12 @@ pub struct Placement {
     pub team_id: Option<crate::entities::TeamId>,
 }
 
-/// One row of the tree as storage reads it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One row of the tree as storage reads it. The name travels with the row,
+/// so a refusal can name the agent instead of its id.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TreeRow {
     pub agent_id: AgentId,
+    pub name: String,
     pub role: Option<Role>,
     pub parent_agent_id: Option<AgentId>,
     pub team_id: Option<crate::entities::TeamId>,
@@ -46,7 +48,9 @@ fn check_ceo(tree: &[TreeRow], agent_id: AgentId) -> Result<(), HierarchyError> 
         // The same agent keeps its own role on a re-check.
         if existing.agent_id != agent_id {
             return Err(HierarchyError::SecondCeo {
-                name: existing.agent_id.to_string(),
+                // An empty name reads as the id, the only text the store
+                // guarantees (the agent module owns the name column).
+                name: non_empty_name_of(existing),
             });
         }
     }
@@ -152,14 +156,24 @@ pub fn is_descendant_of(tree: &[TreeRow], agent_id: AgentId, ancestor_id: AgentI
 }
 
 fn ceo_of(tree: &[TreeRow]) -> Option<TreeRow> {
-    tree.iter().copied().find(|row| row.role == Some(Role::Ceo))
+    tree.iter().find(|row| row.role == Some(Role::Ceo)).cloned()
 }
 
 fn row_of(tree: &[TreeRow], agent_id: AgentId) -> Result<TreeRow, HierarchyError> {
     tree.iter()
-        .copied()
         .find(|row| row.agent_id == agent_id)
+        .cloned()
         .ok_or(HierarchyError::ParentNotFound)
+}
+
+/// The name a refusal shows: the stored name when it says something, else
+/// the id.
+fn non_empty_name_of(row: &TreeRow) -> String {
+    if row.name.is_empty() {
+        row.agent_id.to_string()
+    } else {
+        row.name.clone()
+    }
 }
 
 fn role_not_allowed(child: Role, parent: Role) -> HierarchyError {

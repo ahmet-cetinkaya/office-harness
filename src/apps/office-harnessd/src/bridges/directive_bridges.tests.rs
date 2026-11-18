@@ -159,8 +159,8 @@ fn is_running_follows_the_stored_status() {
         AgentStatus::WaitingForInput,
     ))));
 
-    assert!(bridge.is_running(agent_id));
-    assert!(!bridge.is_running(AgentId::generate()));
+    assert_eq!(bridge.is_running(agent_id), Ok(true));
+    assert_eq!(bridge.is_running(AgentId::generate()), Ok(false));
 }
 
 #[test]
@@ -172,7 +172,51 @@ fn a_stopped_or_exited_member_is_not_running() {
         AgentStatus::Stopped,
     ))));
 
-    assert!(!bridge.is_running(agent_id));
+    assert_eq!(bridge.is_running(agent_id), Ok(false));
+}
+
+/// A store that cannot read: the bridge surfaces its failure instead of
+/// dressing it as a stopped member (Efe r2 LOW).
+struct BrokenStore;
+
+impl AgentStore for BrokenStore {
+    fn insert(&self, _agent: &Agent) -> Result<(), PortError> {
+        Ok(())
+    }
+
+    fn find(&self, _id: AgentId) -> Result<Option<Agent>, PortError> {
+        Err(PortError::Storage {
+            message: "the agent store cannot be read".to_owned(),
+            is_disk_failure: false,
+        })
+    }
+
+    fn list(&self) -> Result<Vec<Agent>, PortError> {
+        Err(PortError::Storage {
+            message: "the agent store cannot be read".to_owned(),
+            is_disk_failure: false,
+        })
+    }
+
+    fn update_status(&self, _id: AgentId, _status: AgentStatus) -> Result<(), PortError> {
+        Ok(())
+    }
+
+    fn delete(&self, _id: AgentId) -> Result<(), PortError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_store_failure_in_is_running_is_the_error_not_a_no() {
+    let bridge = DirectiveTargetBridge::new(Arc::new(BrokenStore));
+
+    let running = bridge.is_running(AgentId::generate());
+    assert_eq!(
+        running.as_ref().err().map(String::as_str),
+        Some("storage failure: the agent store cannot be read"),
+        "{running:?}"
+    );
 }
 
 #[test]
@@ -343,4 +387,24 @@ fn a_journal_write_failure_is_an_alert_and_not_a_panic() {
     // The bridge owns the failure: the record write failing must not turn a
     // refusal into a panic of the request thread.
     journal.record(sender, target, "text", Some("refused"));
+}
+
+#[test]
+fn a_refusal_of_an_empty_text_keeps_the_colon_in_the_journal() {
+    let sender = AgentId::generate();
+    let target = AgentId::generate();
+    let recorder = Arc::new(RecordingRecorder::default());
+    let journal = journal_of(&recorder);
+
+    // The use case refused an empty directive: the record shows the reason
+    // and the empty text it refused, so the audit sees what was sent (r2
+    // LOW: the colon went missing and read as a reason without a text).
+    journal.record(sender, target, "", Some("text must not be empty"));
+
+    let entry = &recorder.entries()[0];
+    assert_eq!(
+        entry.failure.as_deref(),
+        Some("text must not be empty: "),
+        "{entry:?}"
+    );
 }

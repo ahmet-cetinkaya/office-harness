@@ -100,7 +100,11 @@ impl AgentGateway {
 }
 
 impl AgentGateway {
-    fn run(&self, request: &Request) -> Response {
+    /// The answer, and the events it causes, of one request on the
+    /// blocking pool it always runs on. The agent-call gateway forwards a
+    /// checked request here, so both entrances share one handler and one
+    /// ordering.
+    pub(crate) fn run(&self, request: &Request) -> Response {
         if request.kind == ACTIONS_REQUEST {
             let (response, disk_failure) = self.audit.handle(request);
             self.raise(disk_failure.as_deref());

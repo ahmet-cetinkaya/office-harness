@@ -118,6 +118,7 @@ fn family() -> (Vec<TreeRow>, AgentId, AgentId, AgentId) {
     let member = AgentId::generate();
     let row = |agent_id: AgentId, parent_agent_id: Option<AgentId>, role: Option<Role>| TreeRow {
         agent_id,
+        name: agent_id.to_string(),
         role,
         parent_agent_id,
         team_id: None,

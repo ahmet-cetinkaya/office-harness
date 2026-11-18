@@ -9,9 +9,11 @@ pub enum HierarchyApplicationError {
     #[error("invalid: {0}")]
     Invalid(#[from] HierarchyError),
     /// The agent module refused what it was given on its own rules; the
-    /// text is its message and the wire code stays `invalid`, so a seeded
-    /// create answers like `agent.create` always did (0001).
-    #[error("invalid: {0}")]
+    /// text is its message alone and the wire code stays `invalid`, so a
+    /// seeded create answers with exactly the text `agent.create` answers
+    /// with (0001, and #33 r2 LOW: no `invalid: ` prefix in front of a
+    /// message that already speaks for itself).
+    #[error("{0}")]
     InvalidInput(String),
     #[error("not found: {0}")]
     NotFound(String),
