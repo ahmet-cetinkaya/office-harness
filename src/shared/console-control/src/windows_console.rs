@@ -41,10 +41,10 @@ pub(crate) fn disable_line_input() -> Result<(), String> {
         return Err("the process has no input console".to_owned());
     }
     let mut mode = 0_u32;
-    // SAFETY: `console` is a console handle from `GetStdHandle`, and `mode`
-    // is a valid out parameter. The call reads and writes the input mode of
-    // the calling process's own console.
-    if unsafe { GetConsoleMode(console, &mut mode) } == 0 {
+    // SAFETY: `console` is a console handle from `GetStdHandle`, and the
+    // pointer is the valid `mode` out parameter. The call reads and writes
+    // the input mode of the calling process's own console.
+    if unsafe { GetConsoleMode(console, std::ptr::addr_of_mut!(mode)) } == 0 {
         return Err(std::io::Error::last_os_error().to_string());
     }
     // SAFETY: `console` is the console handle this process read the mode of;
