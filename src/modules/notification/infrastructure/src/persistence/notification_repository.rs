@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use kernel::{AgentId, Timestamp};
 use notification_application::common::errors::NotificationApplicationError;
+use notification_application::queries::list_notifications::LIST_LIMIT;
 use notification_domain::{Notification, NotificationEvent, NotificationId};
 use rusqlite::ffi::ErrorCode;
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -14,6 +15,14 @@ pub type SharedHandle = Arc<Mutex<Connection>>;
 
 const SELECT_NOTIFICATION: &str = "SELECT id, agent_id, agent_name, event, created_at, read_at \
                                    FROM notification_notifications";
+
+/// The order of every listing (D4): unread first, then newest first. The
+/// `rowid` breaks the ties of one created millisecond by insertion, newest
+/// insert first, so the order never depends on the random ids.
+const LIST_ORDER: &str = "ORDER BY read_at IS NOT NULL, created_at DESC, rowid DESC";
+
+/// The newest rows only, without the read ones.
+const LIST_UNREAD_ORDER: &str = "WHERE read_at IS NULL ORDER BY created_at DESC, rowid DESC";
 
 struct NotificationRow {
     id: String,
@@ -193,17 +202,31 @@ impl NotificationRepository {
         self.store(notification)
     }
 
-    /// The rows, unread first, then newest first.
+    /// The newest rows, unread first, then newest first, at most
+    /// [`LIST_LIMIT`] of them: the cap and the order are the query's, so a
+    /// growing table is never loaded whole.
     ///
     /// # Errors
     /// A storage failure or a stored row that the domain rejects.
     pub fn list(&self) -> Result<Vec<Notification>, NotificationApplicationError> {
+        self.list_capped(LIST_ORDER)
+    }
+
+    /// The newest unread rows of the whole office, at most [`LIST_LIMIT`] of
+    /// them: the unread filter, the order, and the cap are the query's.
+    ///
+    /// # Errors
+    /// A storage failure or a stored row that the domain rejects.
+    pub fn list_unread(&self) -> Result<Vec<Notification>, NotificationApplicationError> {
+        self.list_capped(LIST_UNREAD_ORDER)
+    }
+
+    /// Runs one capped listing: the tail joins the filter and order, the cap
+    /// is the shared one.
+    fn list_capped(&self, tail: &str) -> Result<Vec<Notification>, NotificationApplicationError> {
         let connection = self.connection();
         let mut statement = connection
-            .prepare(&format!(
-                "{SELECT_NOTIFICATION} \
-                 ORDER BY read_at IS NOT NULL, read_at, created_at DESC, id"
-            ))
+            .prepare(&format!("{SELECT_NOTIFICATION} {tail} LIMIT {LIST_LIMIT}"))
             .map_err(|error| storage_failure(&error))?;
         let rows = statement
             .query_map([], NotificationRow::read)

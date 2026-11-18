@@ -13,6 +13,7 @@ use kernel::{AgentId, Timestamp};
 use notification_application::commands::create_notification::CreateNotificationHandler;
 use notification_application::common::errors::NotificationApplicationError;
 use notification_application::common::interfaces::NotificationStore;
+use notification_application::queries::list_notifications::LIST_LIMIT;
 use notification_domain::{Notification, NotificationId};
 use terminal_application::common::errors::TerminalRuntimeError;
 use terminal_application::common::interfaces::{OutputSubscriber, TerminalRuntime};
@@ -47,6 +48,26 @@ impl NotificationStore for MemoryNotifications {
 
     fn list(&self) -> Result<Vec<Notification>, NotificationApplicationError> {
         let mut rows = self.0.lock().expect("lock").clone();
+        rows.sort_by(|left, right| {
+            let left_unread = u8::from(left.is_unread());
+            let right_unread = u8::from(right.is_unread());
+            right_unread
+                .cmp(&left_unread)
+                .then_with(|| right.created_at.cmp(&left.created_at))
+        });
+        rows.truncate(LIST_LIMIT);
+        Ok(rows)
+    }
+
+    fn list_unread(&self) -> Result<Vec<Notification>, NotificationApplicationError> {
+        let mut rows: Vec<Notification> = self
+            .0
+            .lock()
+            .expect("lock")
+            .iter()
+            .filter(|row| row.is_unread())
+            .cloned()
+            .collect();
         rows.sort_by(|left, right| {
             let left_unread = u8::from(left.is_unread());
             let right_unread = u8::from(right.is_unread());

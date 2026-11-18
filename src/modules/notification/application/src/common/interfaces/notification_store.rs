@@ -16,11 +16,19 @@ pub trait NotificationStore: Send + Sync {
         notification: &Notification,
     ) -> Result<Notification, NotificationApplicationError>;
 
-    /// The rows, unread first, then newest first.
+    /// The newest rows, unread first, then newest first, at most
+    /// [`crate::queries::list_notifications::LIST_LIMIT`] of them.
     ///
     /// # Errors
     /// `Storage` when the rows cannot be read.
     fn list(&self) -> Result<Vec<Notification>, NotificationApplicationError>;
+
+    /// The newest unread rows, newest first, at most
+    /// [`crate::queries::list_notifications::LIST_LIMIT`] of them.
+    ///
+    /// # Errors
+    /// `Storage` when the rows cannot be read.
+    fn list_unread(&self) -> Result<Vec<Notification>, NotificationApplicationError>;
 
     /// The row with the id, if it is still there.
     ///
