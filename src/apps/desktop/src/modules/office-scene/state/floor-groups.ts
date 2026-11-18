@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { Agent, Project } from "../../agent";
+import { shownStatusText, type Agent, type Project } from "../../agent";
+import type { HierarchyTree, HierarchyTreeTeam } from "../../hierarchy";
 
 /** The floor of the agents without a project, always last (0005 D3). */
 export const NO_PROJECT_FLOOR_NAME = "No project";
@@ -8,33 +9,6 @@ export const NO_PROJECT_FLOOR_NAME = "No project";
 /** The project choice the switcher holds: every project, or one project (D7). */
 export type ProjectChoice =
   { kind: "all" } | { kind: "one"; projectId: string };
-
-/**
- * One agent as the `hierarchy.tree` answer carries it (contract 0002). The
- * names mirror `modules/hierarchy/models/hierarchy.ts`, whose public face
- * does not export the types yet; the scene takes the read tree as its second
- * input because the agent snapshot carries no role or team (research R3).
- */
-export interface HierarchyTreeAgent {
-  id: string;
-  role: string | null;
-}
-
-/** One team branch of the `hierarchy.tree` answer (contract 0002). */
-export interface HierarchyTreeTeam {
-  id: string;
-  name: string;
-  project_id: string | null;
-  lead: HierarchyTreeAgent;
-  members: HierarchyTreeAgent[];
-}
-
-/** The whole `hierarchy.tree` answer: the CEO, the teams, the agents without a role. */
-export interface HierarchyTree {
-  ceo: HierarchyTreeAgent | null;
-  teams: HierarchyTreeTeam[];
-  unassigned: HierarchyTreeAgent[];
-}
 
 /** One department of a floor, or the whole floor when no department splits it. */
 export interface DeskGroup {
@@ -216,15 +190,9 @@ export function searchMatches(agents: Agent[], text: string): Agent[] {
   return agents.filter((agent) => agent.name.toLowerCase().includes(needle));
 }
 
-/**
- * The status text of a desk. It mirrors `shownStatusText` from
- * `modules/agent/models/agent.ts` — "Stopping" while the agent's stop
- * request is open — because the agent module's public face does not export
- * that function yet; a change there must be mirrored here.
- */
+/** The status text of a desk: "Stopping" while the agent's stop request is open. */
 export function deskStatusText(agent: Agent, isStopping: boolean): string {
-  if (isStopping) return "Stopping";
-  return agent.status.replaceAll("_", " ");
+  return shownStatusText(agent, isStopping);
 }
 
 /** The last output line of a desk, empty before any output (D4). */
