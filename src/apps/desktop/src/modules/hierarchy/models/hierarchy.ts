@@ -137,6 +137,25 @@ export function readHierarchyTree(answer: unknown): HierarchyTree {
   };
 }
 
+/** The branch an agent sits in, as the tree answers it: the team's id, or
+ * null at the top (the CEO, the agents without a role). Undefined when the
+ * tree does not hold the agent. */
+export function branchOfAgent(
+  tree: HierarchyTree,
+  agentId: string,
+): string | null | undefined {
+  if (tree.ceo?.id === agentId) return null;
+  const team = tree.teams.find(
+    (known) =>
+      known.lead.id === agentId ||
+      known.members.some((member) => member.id === agentId),
+  );
+  if (team !== undefined) return team.id;
+  return tree.unassigned.some((known) => known.id === agentId)
+    ? null
+    : undefined;
+}
+
 function nodeName(title: string, meta: string): string {
   return meta === "" ? title : `${title}, ${meta}`;
 }

@@ -17,12 +17,15 @@ export interface OfficeSeed {
   projects?: Project[];
   sessions?: Record<string, Session[]>;
   additions?: Record<string, AdditionsView>;
-  /** The 0002 tree shape that `hierarchy.tree` answers with. */
+  /** The 0002 tree shape that `hierarchy.tree` answers with. Left out, the
+   * office holds no tree answer at all and `hierarchy.tree` answers empty. */
   hierarchy?: HierarchyTree;
   /** The text of the snapshot frame that follows `terminal.attach`. */
   snapshots?: Record<string, string>;
   /** The `focus_shortcut` setting. The server's default when left out. */
   focusShortcut?: string;
+  /** A refusal to answer with, by request type. The tree reads it too. */
+  refusals?: Record<string, { code: string; message: string }>;
 }
 
 export interface MockCoreOptions {
@@ -118,6 +121,7 @@ export async function installMockCore(
         applies_next_session: false,
       };
     }
+
     const pushEvent = (event: ServerEvent) => {
       eventChannels.forEach((id) => send(id, event));
     };
@@ -185,12 +189,171 @@ export async function installMockCore(
       return session;
     };
 
+    // The tree the faked server keeps in step with the agents: the CEO, the
+    // teams with their leads and members, and the agents without a role.
+    interface TreeAgentRow {
+      id: string;
+      role: string | null;
+    }
+    interface TreeTeamRow {
+      id: string;
+      name: string;
+      project_id: string | null;
+      lead: TreeAgentRow;
+      members: TreeAgentRow[];
+    }
+    interface TreeRow {
+      ceo: TreeAgentRow | null;
+      teams: TreeTeamRow[];
+      unassigned: TreeAgentRow[];
+    }
+
+    const EMPTY_TREE: TreeRow = { ceo: null, teams: [], unassigned: [] };
+    const treeOf = (): TreeRow => {
+      office.hierarchy ??= structuredClone(EMPTY_TREE);
+      return office.hierarchy;
+    };
+    const treeChanged = (cause: string) => {
+      if (office.hierarchy !== null) {
+        pushEvent({ type: "hierarchy.changed", cause });
+      }
+    };
+
+    /** Every agent's parent as the tree holds it: the CEO has none, a lead's
+     * is the CEO, a member's is its lead. */
+    const parentOf = (): Map<string, string | null> => {
+      const tree = treeOf();
+      const up = new Map<string, string | null>();
+      if (tree.ceo !== null) up.set(tree.ceo.id, null);
+      for (const team of tree.teams) {
+        up.set(team.lead.id, tree.ceo?.id ?? null);
+        for (const member of team.members) up.set(member.id, team.lead.id);
+      }
+      for (const agent of tree.unassigned) up.set(agent.id, null);
+      return up;
+    };
+
+    /** The agents that sit below one agent, in tree order (FR-006, FR-007). */
+    const descendantsOf = (agentId: string): string[] => {
+      const up = parentOf();
+      const below: string[] = [];
+      const walk = (parent: string): void => {
+        for (const [child, of] of up) {
+          if (of === parent) {
+            below.push(child);
+            walk(child);
+          }
+        }
+      };
+      walk(agentId);
+      return below;
+    };
+
+    /** Drops deleted agents from the tree rows, as the server's cascade
+     * does: a deleted lead or member leaves its team list. */
+    const removeFromTree = (agentIds: readonly string[]): void => {
+      const gone = new Set(agentIds);
+      const tree = treeOf();
+      if (tree.ceo !== null && gone.has(tree.ceo.id)) tree.ceo = null;
+      for (const team of tree.teams) {
+        team.members = team.members.filter((member) => !gone.has(member.id));
+      }
+      tree.teams = tree.teams.filter((team) => !gone.has(team.lead.id));
+      tree.unassigned = tree.unassigned.filter((agent) => !gone.has(agent.id));
+    };
+
+    /** One new agent row, with its additions, as `agent.create` makes. */
+    const createAgentRow = (fields: Record<string, unknown>): Agent => {
+      if (!fields.name) refuse("invalid", "name is required");
+      const agent: Agent = {
+        id: `agent-${office.nextId++}`,
+        name: String(fields.name),
+        command: String(fields.command),
+        working_folder: (fields.working_folder as string) ?? null,
+        project_id: (fields.project_id as string) ?? null,
+        machine_id: "machine",
+        status: "stopped",
+        created_at: Date.now(),
+        last_line: null,
+      };
+      office.agents.push(agent);
+      office.additions[agent.id] = {
+        flags: [],
+        env: [],
+        startup_prompt: null,
+        updated_at: Date.now(),
+        applies_next_session: false,
+      };
+      return agent;
+    };
+
+    /** Places one new agent by its `role` object, or refuses as the tree
+     * rules refuse (FR-003). The refusal names the allowed roles. */
+    const placeByRole = (
+      agentId: string,
+      role: Record<string, unknown> | undefined,
+    ): void => {
+      if (role === undefined) return;
+      const kind = String(role.kind ?? "");
+      const tree = treeOf();
+      if (kind === "ceo") {
+        if (tree.ceo !== null) {
+          // Exact server shape: the application error's Display prefixes the
+          // wire message with "invalid: ", and SecondCeo carries the CEO's
+          // AgentId (hierarchy_handlers.handler_error, tree_rules.check_ceo).
+          refuse(
+            "invalid",
+            `invalid: the office already has a CEO: ${tree.ceo.id}`,
+          );
+        }
+        tree.ceo = { id: agentId, role: "ceo" };
+        return;
+      }
+      if (kind === "lead") {
+        const team = tree.teams.find((known) => known.id === role.team_id);
+        if (team === undefined) {
+          return refuse(
+            "invalid",
+            "invalid: the parent is not an agent of the office",
+          );
+        }
+        tree.teams = tree.teams.filter((known) => known !== team);
+        tree.teams.push({ ...team, lead: { id: agentId, role: "lead" } });
+        return;
+      }
+      if (kind === "member") {
+        const up = parentOf();
+        const leadId = String(role.parent_agent_id ?? "");
+        if (leadId === "") {
+          return refuse("invalid", "invalid: a team needs its lead");
+        }
+        if (!up.has(leadId)) {
+          return refuse(
+            "invalid",
+            "invalid: the parent is not an agent of the office",
+          );
+        }
+        const team = tree.teams.find((known) => known.lead.id === leadId);
+        if (team === undefined) {
+          return refuse(
+            "invalid",
+            "invalid: a member cannot sit under a lead; allowed under a lead: member",
+          );
+        }
+        team.members.push({ id: agentId, role: "member" });
+        return;
+      }
+      refuse("invalid", `invalid: role is not a role of the company: ${kind}`);
+    };
+
     // The requests that the real server answers, in the shapes of the
     // contract. Each change also sends the events that the server sends.
     const answer = async (
       kind: string,
       fields: Record<string, unknown>,
     ): Promise<unknown> => {
+      const scripted = mock.office?.refusals?.[kind];
+      if (scripted !== undefined) refuse(scripted.code, scripted.message);
       switch (kind) {
         case "project.list":
           return office.projects;
@@ -227,31 +390,62 @@ export async function installMockCore(
           }
           return office.hierarchy ?? { ceo: null, teams: [], unassigned: [] };
         }
-        case "agent.create": {
-          if (!fields.name) refuse("invalid", "name is required");
-          const agent: Agent = {
-            id: `agent-${office.nextId++}`,
-            name: String(fields.name),
-            command: String(fields.command),
-            working_folder: (fields.working_folder as string) ?? null,
+        case "hierarchy.descendants": {
+          findAgent(fields.agent_id);
+          return { count: descendantsOf(String(fields.agent_id)).length };
+        }
+        case "team.create": {
+          const name = String(fields.name ?? "");
+          if (name.trim() === "")
+            refuse("invalid", "invalid: team name must not be empty");
+          const tree = treeOf();
+          const clash = tree.teams.some(
+            (team) => team.name.toLowerCase() === name.toLowerCase(),
+          );
+          if (clash)
+            refuse("conflict", `conflict: a team named ${name} already exists`);
+          const lead = (fields.lead ?? {}) as Record<string, unknown>;
+          if (!lead.name) refuse("invalid", "name is required");
+          const leadAgent = createAgentRow(lead);
+          const team: TreeTeamRow = {
+            id: `team-${office.nextId++}`,
+            name,
             project_id: (fields.project_id as string) ?? null,
-            machine_id: "machine",
-            status: "stopped",
-            created_at: Date.now(),
-            last_line: null,
+            lead: { id: leadAgent.id, role: "lead" },
+            members: [],
           };
-          office.agents.push(agent);
-          office.additions[agent.id] = {
-            flags: [],
-            env: [],
-            startup_prompt: null,
-            updated_at: Date.now(),
-            applies_next_session: false,
-          };
-          pushEvent({ type: "agent.changed", agent });
-          if (office.hierarchy !== null) {
-            pushEvent({ type: "hierarchy.changed", cause: "agent.placed" });
+          tree.teams.push(team);
+          pushEvent({ type: "agent.changed", agent: leadAgent });
+          pushEvent({ type: "hierarchy.changed", cause: "team.created" });
+          record(leadAgent.id, "create");
+          return { id: team.id, name: team.name, lead_agent_id: leadAgent.id };
+        }
+        case "team.delete": {
+          if (fields.confirm !== true) {
+            return refuse("invalid", "invalid: confirm must not be empty");
           }
+          const tree = treeOf();
+          const team = tree.teams.find((known) => known.id === fields.team_id);
+          if (team === undefined) {
+            return refuse("not_found", "not found: the team does not exist");
+          }
+          tree.teams = tree.teams.filter((known) => known !== team);
+          tree.unassigned.push(team.lead, ...team.members);
+          pushEvent({ type: "hierarchy.changed", cause: "team.deleted" });
+          record(team.lead.id, "team_delete");
+          return null;
+        }
+        case "agent.create": {
+          // The agent-module refusal kinds (invalid, not_found, conflict) are
+          // unreachable on this branch: the real core drops `role` until S5
+          // slice 2 wires create_role_agent onto agent.create.
+          const agent = createAgentRow(fields);
+          placeByRole(
+            agent.id,
+            fields.role as Record<string, unknown> | undefined,
+          );
+          pushEvent({ type: "agent.changed", agent });
+          treeChanged("agent.placed");
           record(agent.id, "create");
           return agent;
         }
@@ -274,7 +468,19 @@ export async function installMockCore(
           return session;
         }
         case "agent.stop": {
-          const agent = findAgent(fields.agent_id);
+          // include_descendants false stops only the agent itself; the real
+          // server (subtree_handler.affected) never refuses a plain stop for
+          // having descendants.
+          const agentId = String(fields.agent_id);
+          const agent = findAgent(agentId);
+          const descendants = descendantsOf(agentId);
+          if (fields.include_descendants === true) {
+            for (const below of descendants) {
+              const stopped = findAgent(below);
+              endSessions(stopped.id);
+              setStatus(stopped, "stopped");
+            }
+          }
           if (mock.stopDelayMs) {
             await new Promise((resolve) =>
               setTimeout(resolve, mock.stopDelayMs),
@@ -282,16 +488,41 @@ export async function installMockCore(
           }
           endSessions(agent.id);
           setStatus(agent, "stopped");
-          record(agent.id, "stop");
+          record(agentId, "stop");
           return null;
         }
         case "agent.delete": {
-          const agent = findAgent(fields.agent_id);
-          office.agents = office.agents.filter((known) => known !== agent);
-          pushEvent({ type: "agent.deleted", agent_id: agent.id });
-          if (office.hierarchy !== null) {
-            pushEvent({ type: "hierarchy.changed", cause: "subtree.deleted" });
+          const agentId = String(fields.agent_id);
+          findAgent(agentId);
+          const descendants = descendantsOf(agentId);
+          if (descendants.length > 0) {
+            const subject =
+              descendants.length === 1 ? "descendant" : "descendants";
+            if (fields.include_descendants !== true) {
+              refuse(
+                "conflict",
+                `conflict: the agent still has ${descendants.length} ${subject}; delete them too by sending include_descendants=true and descendant_count ${descendants.length}`,
+              );
+            }
+            const count = Number(fields.descendant_count ?? -1);
+            if (count !== descendants.length) {
+              refuse(
+                "conflict",
+                `conflict: the agent has ${descendants.length} ${subject} now; send descendant_count ${descendants.length} to confirm the delete`,
+              );
+            }
+            for (const below of descendantsOf(agentId)) {
+              office.agents = office.agents.filter(
+                (known) => known.id !== below,
+              );
+              pushEvent({ type: "agent.deleted", agent_id: below });
+            }
           }
+          office.agents = office.agents.filter((known) => known.id !== agentId);
+          removeFromTree([...descendantsOf(agentId), agentId]);
+          pushEvent({ type: "agent.deleted", agent_id: agentId });
+          treeChanged("agent.deleted");
+          record(agentId, "delete");
           return null;
         }
         case "agent.additions.get": {

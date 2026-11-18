@@ -4,12 +4,26 @@
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import Button from "$shared/ui/button.svelte";
   import FailureMessage from "$shared/ui/failure-message.svelte";
-  import type { Agent, Project } from "../../agent";
+  import type { Agent, NewAgent, Project } from "../../agent";
+  import HierarchyAgentDialog from "../components/hierarchy-agent-dialog.svelte";
+  import HierarchyConfirmDialog from "../components/hierarchy-confirm-dialog.svelte";
+  import TeamFormDialog from "../components/team-form-dialog.svelte";
   import TreeRow from "../components/tree-row.svelte";
-  import { buildHierarchy } from "../models/hierarchy";
+  import { branchOfAgent, buildHierarchy } from "../models/hierarchy";
   import type { HierarchyNode } from "../models/hierarchy";
+  import { allowedRolesAt, placeOf, type RoleKind } from "../models/placement";
+  import {
+    ROLE_WORDS,
+    countAgentsText,
+    deleteQuestionText,
+    roleKindText,
+    stopQuestionText,
+  } from "../models/confirmations";
   import { INITIAL_HIERARCHY } from "../state/hierarchy-controller";
-  import type { HierarchyController } from "../state/hierarchy-controller";
+  import type {
+    FailureText,
+    HierarchyController,
+  } from "../state/hierarchy-controller";
 
   interface Props {
     controller: HierarchyController;
@@ -40,6 +54,189 @@
 
   const collapsedIds = new SvelteSet<string>();
   let activeId = $state<string | null>(null);
+
+  // The create flows. `createRole` names the dialog the button opens and
+  // `createLeadId` is the row it acts under, both read when it opens. A
+  // choice that stopped being valid since the button rendered still sends:
+  // the server refuses with its own reason (FR-003).
+  let createRole = $state<RoleKind | null>(null);
+  /** The lead a member dialog acts under, read when the dialog opens. */
+  let createLeadId = $state<string | null>(null);
+  let isCreatingTeam = $state(false);
+  /** A create request is in flight; the dialog disables its submit so a
+   * double Enter or double click cannot send two creates. */
+  let isBusy = $state(false);
+
+  function openCreate(role: RoleKind): void {
+    if (role === "lead") {
+      // A team lead comes with its team in one request (FR-002), so the
+      // lead's dialog is the team dialog.
+      openCreateTeam();
+      return;
+    }
+    createLeadId = selectedAgentId;
+    createRole = role;
+  }
+
+  /** The request one role at one place makes. A place that stopped allowing
+   * the role still sends: the server refuses with its own reason, so the
+   * text cannot drift from the real rules (FR-003). */
+  function submitCreateRole(agent: NewAgent): Promise<FailureText> {
+    const role = createRole;
+    if (role === null) return Promise.resolve(null);
+    if (role === "ceo") return controller.createCeo(agent);
+    return controller.createMember(agent, createLeadId ?? "");
+  }
+
+  function openCreateTeam(): void {
+    isCreatingTeam = true;
+  }
+
+  // The delete and stop refusal describes the agent as the tree held it when
+  // the request was sent, so it is kept with the branch the agent sat in.
+  // It shows while the agent still sits there: another client's unrelated
+  // change must not wipe the message, and a move or removal must.
+  let refusal = $state<{
+    agentId: string;
+    branch: string | null;
+    text: string;
+  } | null>(null);
+  const shownRefusal = $derived.by(() => {
+    if (refusal === null) return null;
+    return branchOfAgent(snapshot.tree, refusal.agentId) === refusal.branch
+      ? refusal.text
+      : null;
+  });
+
+  function closeCreate(): void {
+    createRole = null;
+    isCreatingTeam = false;
+  }
+
+  /** The tree row of the agent the user last activated, when it is still
+   * in the tree. */
+  function selectedRow(): HierarchyNode | null {
+    const row = rowById.get(selectedAgentId ?? "");
+    return row?.agentId !== undefined && row.agentId !== null ? row : null;
+  }
+
+  /** The agent row the row actions act on, as reactive state for the view. */
+  const actionRow = $derived(selectedRow());
+
+  async function submitCreate(
+    work: () => Promise<FailureText>,
+  ): Promise<FailureText> {
+    isBusy = true;
+    try {
+      const answered = await work();
+      if (answered === null) closeCreate();
+      return answered;
+    } finally {
+      isBusy = false;
+    }
+  }
+
+  // The delete and stop flows. The question is asked with the descendant
+  // count the server holds now, and the answer carries that count for the
+  // server to re-check (FR-006, FR-007). A stop with descendants is a
+  // two-choice question: stop only this agent, or stop the counted subtree.
+  type PendingAction = { kind: "delete" } | { kind: "stop" };
+  let pending = $state<PendingAction | null>(null);
+  let pendingAgent = $state<{ id: string; name: string } | null>(null);
+  let pendingDescendants = $state(0);
+  let pendingCountFailure = $state<string | null>(null);
+  /** The stop answer the user picked; delete has no choice to make. */
+  let pendingStopWithDescendants = $state(false);
+
+  const pendingQuestion = $derived.by(() => {
+    if (pending === null || pendingAgent === null) return null;
+    return pending.kind === "delete"
+      ? deleteQuestionText(pendingAgent.name, pendingDescendants)
+      : stopQuestionText(pendingAgent.name, pendingDescendants);
+  });
+
+  const stopChoices = $derived.by(() => {
+    if (pending?.kind !== "stop" || pendingAgent === null) return null;
+    const below = countAgentsText(pendingDescendants);
+    return [
+      {
+        label: `Stop only ${pendingAgent.name}`,
+        body: `${below} below ${pendingAgent.name} keep running.`,
+      },
+      {
+        label: `Stop ${pendingAgent.name} and ${below}`,
+        body: `The agents below stop in the same action.`,
+      },
+    ];
+  });
+
+  async function ask(
+    kind: PendingAction["kind"],
+    node: HierarchyNode,
+  ): Promise<void> {
+    if (node.agentId === null) return;
+    pendingStopWithDescendants = false;
+    try {
+      pendingDescendants = await controller.countDescendants(node.agentId);
+      pendingCountFailure = null;
+    } catch (rejection) {
+      // The count is part of the question; hiding its failure would read a
+      // wrong subtree size as fact (FR-006, FR-007).
+      pendingDescendants = 0;
+      pendingCountFailure = controller.describeCountFailure(rejection);
+    }
+    pending = { kind };
+    pendingAgent = { id: node.agentId, name: node.title };
+  }
+
+  /** The label of the stop answer the user picked, for the confirm button. */
+  const pendingConfirmLabel = $derived.by(() => {
+    if (pending === null) return null;
+    if (pending.kind === "delete") return "Delete agent";
+    if (pendingDescendants === 0) return "Stop agent";
+    if (pendingStopWithDescendants) {
+      return `Stop ${pendingAgent?.name} and ${countAgentsText(pendingDescendants)}`;
+    }
+    return `Stop only ${pendingAgent?.name}`;
+  });
+
+  function chooseStop(withDescendants: boolean): void {
+    pendingStopWithDescendants = withDescendants;
+  }
+
+  async function confirmPending(): Promise<void> {
+    if (pending === null || pendingAgent === null) return;
+    const { kind } = pending;
+    const { id } = pendingAgent;
+    const includeDescendants =
+      pendingDescendants > 0 &&
+      (kind === "delete" || pendingStopWithDescendants);
+    pending = null;
+    pendingAgent = null;
+    const answered =
+      kind === "delete"
+        ? await controller.deleteSubtree(
+            id,
+            includeDescendants,
+            pendingDescendants,
+          )
+        : await controller.stopSubtree(id, includeDescendants);
+    // A refusal is kept with the branch the agent sat in when it was
+    // refused; a request that went through drops the last one.
+    refusal =
+      answered === null
+        ? null
+        : {
+            agentId: id,
+            branch: branchOfAgent(snapshot.tree, id) ?? null,
+            text: answered,
+          };
+  }
+
+  function cancelPending(): void {
+    pending = null;
+    pendingAgent = null;
+  }
 
   // Whether keyboard focus sits inside the tree. A row that is removed while
   // focused drops focus to the page body, and Chromium reports that as a
@@ -266,6 +463,13 @@
     Hierarchy
   </h2>
 
+  {#if shownRefusal !== null}
+    <FailureMessage
+      lead="The hierarchy did not change."
+      message={shownRefusal}
+    />
+  {/if}
+
   {#if snapshot.phase === "loading"}
     <p role="status" class="text-neutral-700">Loading the hierarchy.</p>
   {:else if snapshot.phase === "failed"}
@@ -286,7 +490,24 @@
         The office has no CEO and no team. Create them to build the hierarchy.
       </p>
     {/if}
+    <div class="flex flex-wrap gap-3">
+      {#each allowedRolesAt({ kind: "office" }, snapshot.tree) as role (role)}
+        <Button onclick={() => openCreate(role)}>
+          Create {roleKindText(role)}
+        </Button>
+      {/each}
+    </div>
   {:else}
+    <div class="flex flex-wrap gap-3">
+      {#each allowedRolesAt(placeOf(snapshot.tree, selectedAgentId), snapshot.tree) as role (role)}
+        <Button
+          variant={role === "ceo" ? "primary" : "secondary"}
+          onclick={() => openCreate(role)}
+        >
+          Create {roleKindText(role)}
+        </Button>
+      {/each}
+    </div>
     <!--
       Each row is the key handler for its own key events, and the rows carry
       the one tab stop (roving tabindex), as the tree pattern asks.
@@ -312,5 +533,62 @@
         />
       {/each}
     </div>
+    {#if actionRow !== null}
+      <div
+        aria-labelledby="row-actions-heading"
+        class="flex flex-wrap gap-3"
+        role="group"
+      >
+        <h3 id="row-actions-heading" class="sr-only">
+          Actions for {actionRow.title}
+        </h3>
+        <Button variant="secondary" onclick={() => void ask("stop", actionRow)}>
+          Stop {actionRow.title}
+        </Button>
+        <Button
+          variant="secondary"
+          onclick={() => void ask("delete", actionRow)}
+        >
+          Delete {actionRow.title}
+        </Button>
+      </div>
+    {/if}
   {/if}
 </section>
+
+{#if createRole !== null}
+  <HierarchyAgentDialog
+    subject={`New ${ROLE_WORDS[createRole]}`}
+    {isBusy}
+    onsubmit={(agent) => submitCreate(() => submitCreateRole(agent))}
+    onclose={closeCreate}
+  />
+{/if}
+{#if isCreatingTeam}
+  <TeamFormDialog
+    {projects}
+    {isBusy}
+    onsubmit={(team) => submitCreate(() => controller.createTeam(team))}
+    onclose={closeCreate}
+  />
+{/if}
+{#if pending !== null && pendingAgent !== null && pendingQuestion !== null}
+  <HierarchyConfirmDialog
+    title={pendingQuestion.title}
+    body={pendingCountFailure === null
+      ? pendingQuestion.body
+      : `${pendingQuestion.body} The descendant count could not be read: ${pendingCountFailure}`}
+    choices={pending.kind === "stop" && pendingDescendants > 0
+      ? stopChoices
+      : null}
+    selectedChoice={pending.kind === "stop" && pendingDescendants > 0
+      ? pendingStopWithDescendants
+      : null}
+    onchoose={pending.kind === "stop" && pendingDescendants > 0
+      ? chooseStop
+      : null}
+    confirmLabel={pendingConfirmLabel ?? "Confirm"}
+    onconfirm={() => void confirmPending()}
+    oncancel={cancelPending}
+  />
+{/if}
