@@ -318,3 +318,89 @@ test("deleting the focused desk's agent moves focus forward, back, or to the emp
     page.getByRole("heading", { name: "The office is empty" }),
   ).toBeFocused();
 });
+
+test.describe("reduced motion (SC-007, research R5)", () => {
+  test.use({ reducedMotion: "reduce" });
+
+  test("12 pushed status changes move or flash no element", async ({
+    page,
+  }) => {
+    await openScene(page);
+    expect(
+      await page.evaluate(
+        () => matchMedia("(prefers-reduced-motion: reduce)").matches,
+      ),
+    ).toBe(true);
+
+    // 12 statuses change in the same second (the plan's SC-007 fixture).
+    await page.evaluate(() => {
+      const agents = ["agent-ada", "agent-bo", "agent-cy", "agent-dee"];
+      for (let round = 0; round < 3; round += 1) {
+        for (const agentId of agents) {
+          window.__mockCore.pushEvent({
+            type: "agent.status",
+            agent_id: agentId,
+            status: round % 2 === 0 ? "waiting_for_input" : "working",
+          });
+        }
+      }
+    });
+    await expect(desks(page).filter({ hasText: "Ada" })).toContainText(
+      "waiting for input",
+    );
+
+    // Pass 1 (deterministic): no motion-producing computed style anywhere
+    // in the scene. Color/opacity-only changes are not motion (R4/R5).
+    const motion = await page.evaluate(() => {
+      const sceneRoot = document.querySelector(
+        '[role="region"][aria-labelledby="scene-heading"]',
+      );
+      const offenders: Array<Record<string, string>> = [];
+      if (sceneRoot === null) return offenders;
+      for (const element of sceneRoot.querySelectorAll("*")) {
+        const style = getComputedStyle(element);
+        const transitionActive =
+          style.transitionProperty !== "none" &&
+          style.transitionDuration.split(",").some((d) => d.trim() !== "0s");
+        if (
+          style.animationName !== "none" ||
+          transitionActive ||
+          style.transform !== "none"
+        ) {
+          offenders.push({
+            tag: element.tagName,
+            cls: String(element.className).slice(0, 40),
+            animation: style.animationName,
+            transition: style.transitionProperty,
+            transform: style.transform,
+          });
+        }
+      }
+      return offenders;
+    });
+    expect(motion).toEqual([]);
+
+    // Pass 2 (runtime): two animation frames with no scroll input — every
+    // desk rect must hold still, and the scroll position must not move.
+    const frames = await page.evaluate(async () => {
+      const raf = () =>
+        new Promise((resolve) => requestAnimationFrame(resolve));
+      const snapshot = () => {
+        const desks = [...document.querySelectorAll("[data-agent-id]")].map(
+          (element) => element.getBoundingClientRect().toJSON(),
+        );
+        return {
+          scrollTop: document.scrollingElement?.scrollTop ?? 0,
+          desks,
+        };
+      };
+      await raf();
+      const first = snapshot();
+      await raf();
+      const second = snapshot();
+      return { first, second };
+    });
+    expect(frames.first.scrollTop).toBe(frames.second.scrollTop);
+    expect(frames.first.desks).toEqual(frames.second.desks);
+  });
+});
