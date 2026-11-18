@@ -51,13 +51,13 @@ fn listing_is_unread_first_then_newest_first() {
     store.seed(read_row);
     let list = list_handler(&store);
 
-    let listed = list.handle(false).expect("list");
+    let listed = list.handle().expect("list");
 
     assert_eq!(created_times(&listed), [20, 10, 30]);
 }
 
 #[test]
-fn unread_only_drops_the_read_rows() {
+fn the_unread_list_drops_the_read_rows() {
     let store = Arc::new(MemoryNotifications::default());
     let agent = AgentId::generate();
     let mut read_row = stored(agent, "Ana", NotificationEvent::Exited, 10);
@@ -66,7 +66,7 @@ fn unread_only_drops_the_read_rows() {
     store.seed(stored(agent, "Ana", NotificationEvent::Bell, 20));
     let list = list_handler(&store);
 
-    let listed = list.handle(true).expect("list unread only");
+    let listed = list.handle_unread().expect("list unread only");
 
     assert_eq!(created_times(&listed), [20]);
 }
@@ -80,7 +80,7 @@ fn the_list_stops_at_500_rows_with_the_newest_kept() {
     }
     let list = list_handler(&store);
 
-    let listed = list.handle(false).expect("list");
+    let listed = list.handle().expect("list");
 
     assert_eq!(listed.len(), LIST_LIMIT);
     assert_eq!(created_times(&listed)[0], 519);
@@ -102,7 +102,7 @@ fn read_agent_marks_only_that_agents_rows() {
 
     assert_eq!(marked, 2);
     let unread_agents: Vec<AgentId> = list
-        .handle(true)
+        .handle_unread()
         .expect("unread list")
         .iter()
         .map(|notification| notification.agent_id)

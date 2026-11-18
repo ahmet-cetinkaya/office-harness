@@ -23,20 +23,20 @@ impl ListNotificationsHandler {
         Self { store }
     }
 
-    /// `unread_only` keeps only the rows with no read time.
+    /// The rows for the panel's list: unread first, then newest first, capped
+    /// in the store.
     ///
     /// # Errors
     /// `Storage`.
-    pub fn handle(
-        &self,
-        unread_only: bool,
-    ) -> Result<Vec<Notification>, NotificationApplicationError> {
-        let rows = self.store.list()?;
-        let rows = rows
-            .into_iter()
-            .filter(|notification| !unread_only || notification.is_unread())
-            .take(LIST_LIMIT)
-            .collect();
-        Ok(rows)
+    pub fn handle(&self) -> Result<Vec<Notification>, NotificationApplicationError> {
+        self.store.list()
+    }
+
+    /// The same rows without the read ones.
+    ///
+    /// # Errors
+    /// `Storage`.
+    pub fn handle_unread(&self) -> Result<Vec<Notification>, NotificationApplicationError> {
+        self.store.list_unread()
     }
 }

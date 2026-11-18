@@ -86,7 +86,9 @@ async fn events_without_a_client_list_as_unread_after_a_client_connects() {
         tokio::time::sleep(POLL).await;
     };
     let rows = listed["result"].as_array().expect("rows");
-    // Newest first, and the stopped frame is absent.
+    // Newest first, and the stopped frame is absent. The events share one
+    // created millisecond on a fast machine, so this holds only because the
+    // query breaks such ties by insertion, newest insert first.
     assert_eq!(names_of(&listed["result"]), ["Kim", "Raj", "Ana"]);
     let kinds: Vec<&str> = rows
         .iter()
