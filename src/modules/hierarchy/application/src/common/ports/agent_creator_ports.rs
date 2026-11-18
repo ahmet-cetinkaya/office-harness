@@ -74,8 +74,8 @@ impl CreatorError {
     pub fn into_application(self) -> HierarchyApplicationError {
         match self.kind {
             CreatorErrorKind::Invalid => HierarchyApplicationError::InvalidInput(self.message),
-            CreatorErrorKind::NotFound => HierarchyApplicationError::NotFound(self.message),
-            CreatorErrorKind::Conflict => HierarchyApplicationError::Conflict(self.message),
+            CreatorErrorKind::NotFound => HierarchyApplicationError::NotFoundInput(self.message),
+            CreatorErrorKind::Conflict => HierarchyApplicationError::ConflictInput(self.message),
             CreatorErrorKind::Internal => HierarchyApplicationError::Storage(self.message),
         }
     }

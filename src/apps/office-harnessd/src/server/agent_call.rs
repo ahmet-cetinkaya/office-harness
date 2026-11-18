@@ -226,6 +226,14 @@ async fn answer_office_request(
     request: &Request,
 ) -> Response {
     let caller = grant.agent_id;
+    // The field allowlist runs before anything else: a frame the type does
+    // not take is refused as `invalid` before any rule reads its fields
+    // (the same shape as `parse_directive`, PR 40 LOW).
+    if let Err(message) = refuse_extra_fields(&request.kind, &request.fields) {
+        let message = truncated(&message, MAX_REFUSAL_TEXT_CHARS);
+        state.directive_journal.refused(caller, &message);
+        return Response::failure(request.id, ErrorCode::Invalid, message);
+    }
     let target = match target_of(request, caller) {
         Ok(target) => target,
         Err(message) => {
@@ -234,28 +242,42 @@ async fn answer_office_request(
             return Response::failure(request.id, ErrorCode::Invalid, message);
         }
     };
+    // An agent does not start, task, or stop itself over agent-call: the
+    // contract keeps start, new_task, and stop to descendants only (FR-008).
+    // Only `agent.create` may name the caller — as the default parent of the
+    // child — so the self case cannot reach the tree check below.
+    if request.kind != "agent.create" && target == caller {
+        let reason = "an agent does not act on itself".to_owned();
+        state.log.refusal(&format!(
+            "agent {caller} asked for {:?} on itself",
+            truncated(&request.kind, MAX_REFUSAL_TEXT_CHARS)
+        ));
+        state.directive_journal.refused(caller, &reason);
+        return Response::failure(request.id, ErrorCode::Refused, reason);
+    }
     // The gates run on a fresh snapshot, on the blocking pool, before the
     // gateway sees the request: an agent that names a stranger (as a target
     // or as the parent of its create) reaches no use case at all (FR-008,
     // FR-009), and a create's role must be one the caller's own place allows
     // (A4). The caller itself is always inside its own subtree, placed or
     // not — a member may create before it is placed, and the role rules then
-    // refuse what its place cannot pass.
+    // refuse what its place cannot pass. Past the self refusal above, a
+    // target equal to the caller is a create parent.
     let tree_query = Arc::clone(&state.hierarchy_tree);
     let kind = request.kind.clone();
     let fields_in = request.fields.clone();
     let inside = spawn_blocking(move || {
         tree_query.store_snapshot().map(|rows| {
             let target_ok = target == caller || check_descendant(&rows, caller, target).is_ok();
-            let role = allowed_fields_of(&kind, &fields_in, caller, &rows);
-            (target_ok, role)
+            let fields = allowed_fields_of(&kind, &fields_in, caller, &rows);
+            (target_ok, fields)
         })
     })
     .await;
     let (descendant_ok, fields) = match inside {
-        Ok(Ok((target_ok, role))) => (
+        Ok(Ok((target_ok, fields))) => (
             target_ok,
-            role.map_err(|(code, message)| (code, truncated(&message, MAX_REFUSAL_TEXT_CHARS))),
+            fields.map_err(|(code, message)| (code, truncated(&message, MAX_REFUSAL_TEXT_CHARS))),
         ),
         Ok(Err(error)) => {
             let message = truncated(&error.to_string(), MAX_REFUSAL_TEXT_CHARS);
@@ -340,11 +362,37 @@ fn target_of(request: &Request, caller: AgentId) -> Result<AgentId, String> {
     AgentId::from_uuid_text(text).ok_or_else(|| "agent_id is not an agent id".to_owned())
 }
 
-/// The fields an office request may carry: a create keeps the fields the
-/// agent protocol takes, with the client's own `role` after the caller's
-/// place has allowed it against the tree rows (A4, FR-009); the other types
-/// keep only `agent_id`. Any other field is dropped before the gateway sees
-/// the frame (the closed allowlist of the 0002 contract).
+/// The fields each office type takes, and no others: a field the type does
+/// not take is refused, not dropped — the same closed allowlist as
+/// `directive.send` (PR 40 LOW: a silently trimmed `include_descendants`
+/// answered success while stopping the target alone). A create also takes
+/// the `role` object, which `allowed_fields_of` validates and replaces, so
+/// the allowlist is `CREATE_FIELDS` plus that one key.
+///
+/// # Errors
+/// The name of the first field the type does not take.
+fn refuse_extra_fields(kind: &str, fields: &serde_json::Map<String, Value>) -> Result<(), String> {
+    for key in fields.keys() {
+        let taken = if kind == "agent.create" {
+            CREATE_FIELDS.contains(&key.as_str()) || key == "role"
+        } else {
+            key == "agent_id"
+        };
+        if !taken {
+            return Err(format!(
+                "{kind} does not take the field {:?}",
+                truncated(key, MAX_REFUSAL_TEXT_CHARS)
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The fields an office request keeps for the gateway: a create keeps the
+/// fields the agent protocol takes, with the client's own `role` after the
+/// caller's place has allowed it against the tree rows (A4, FR-009); the
+/// other types keep only `agent_id`. The frame's keys are already the type's
+/// own (`refuse_extra_fields` ran first), so nothing is dropped here.
 ///
 /// # Errors
 /// The create refused its role: the code is `invalid` for a role the wire
@@ -357,15 +405,6 @@ fn allowed_fields_of(
 ) -> Result<serde_json::Map<String, Value>, (ErrorCode, String)> {
     let mut fields = serde_json::Map::new();
     if kind == "agent.create" {
-        // An agent never sets the additions of its child: the office
-        // additions belong to the user's own judgement (0002 contract, agent
-        // caller).
-        if fields_in.contains_key("additions") {
-            return Err((
-                ErrorCode::Invalid,
-                "agent.create does not take the field \"additions\"".to_owned(),
-            ));
-        }
         for key in CREATE_FIELDS {
             if let Some(value) = fields_in.get(key) {
                 fields.insert((*key).to_owned(), value.clone());
@@ -533,8 +572,9 @@ fn allowed_roles_refusal(allowed: &[Role]) -> String {
 }
 
 /// The fields of `agent.create` an agent caller may set. `role` joins the
-/// frame separately, validated against the caller's place (A4), and
-/// `additions` is refused outright.
+/// frame beside them and is validated against the caller's place (A4);
+/// `additions` is refused outright, named by the gate like any other field
+/// the type does not take.
 const CREATE_FIELDS: [&str; 4] = ["name", "command", "working_folder", "project_id"];
 
 /// The wire code of a directive failure: a rule between the agents is a
@@ -549,8 +589,14 @@ fn wire_code(error: &HierarchyApplicationError) -> ErrorCode {
         HierarchyApplicationError::Invalid(_) | HierarchyApplicationError::InvalidInput(_) => {
             ErrorCode::Invalid
         }
-        HierarchyApplicationError::NotFound(_) => ErrorCode::NotFound,
-        HierarchyApplicationError::Conflict(_) => ErrorCode::Conflict,
+        // The `*Input` variants carry an agent-module message, so they keep
+        // the code of their kind — only the prefix is bare.
+        HierarchyApplicationError::NotFoundInput(_) | HierarchyApplicationError::NotFound(_) => {
+            ErrorCode::NotFound
+        }
+        HierarchyApplicationError::ConflictInput(_) | HierarchyApplicationError::Conflict(_) => {
+            ErrorCode::Conflict
+        }
         HierarchyApplicationError::Storage(_) => ErrorCode::Internal,
     }
 }

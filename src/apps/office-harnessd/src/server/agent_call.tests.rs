@@ -396,7 +396,7 @@ fn a_member_parent_outside_the_callers_subtree_is_refused() {
 }
 
 #[test]
-fn a_create_still_refuses_additions_and_drops_unknown_fields() {
+fn a_create_refuses_additions_and_any_unknown_field() {
     let caller = AgentId::generate();
     let mut fields: serde_json::Map<String, Value> = serde_json::from_value(json!({
         "name": "Bo",
@@ -407,15 +407,10 @@ fn a_create_still_refuses_additions_and_drops_unknown_fields() {
     .expect("fields");
     fields.insert("additions".to_owned(), json!({"flags": ["--x"]}));
 
-    let Err((ErrorCode::Invalid, message)) = allowed_fields_of(
-        "agent.create",
-        &fields,
-        caller,
-        &rows_of(caller, Role::Lead, None),
-    ) else {
-        panic!("expected an invalid outcome");
-    };
-    assert!(message.contains("additions"), "{message}");
+    // The gate refuses, it never trims: `additions` names the field at
+    // fault, and so would any other key outside the allowlist.
+    let error = refuse_extra_fields("agent.create", &fields).expect_err("additions are refused");
+    assert!(error.contains("additions"), "{error}");
 
     let plain = create_with_role(&json!({"kind": "member"}));
     let allowed = allowed_fields_of(
@@ -437,9 +432,12 @@ fn the_non_create_types_keep_only_the_agent_id() {
     let agent = AgentId::generate();
     let fields = serde_json::from_value(json!({
         "agent_id": agent.as_uuid_text(),
-        "include_descendants": true,
     }))
     .expect("fields");
+    assert!(
+        refuse_extra_fields("agent.stop", &fields).is_ok(),
+        "the type's own fields pass the gate"
+    );
 
     let fields = allowed_fields_of(
         "agent.stop",
@@ -456,4 +454,63 @@ fn the_non_create_types_keep_only_the_agent_id() {
         }))
         .expect("map")
     );
+}
+
+/// An office request with only the fields its type takes.
+fn office_request(fields: &[(&str, Value)]) -> serde_json::Map<String, Value> {
+    fields
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), value.clone()))
+        .collect()
+}
+
+#[test]
+fn an_office_request_with_an_extra_field_is_refused_not_dropped() {
+    // A stop that smuggles `include_descendants`: dropped silently, it
+    // would answer success while stopping the target alone (PR 40 LOW).
+    let fields = office_request(&[("agent_id", json!(AgentId::generate().as_uuid_text()))]);
+    let mut padded = fields.clone();
+    padded.insert("include_descendants".to_owned(), json!(true));
+
+    let error = refuse_extra_fields("agent.stop", &padded).expect_err("an extra field is refused");
+
+    assert!(error.contains("include_descendants"), "{error}");
+    assert!(refuse_extra_fields("agent.stop", &fields).is_ok());
+}
+
+#[test]
+fn a_create_with_an_extra_field_is_refused_not_dropped() {
+    let fields = office_request(&[
+        ("name", json!("Bo")),
+        ("command", json!("fake-cli")),
+        ("unknown_thing", json!(1)),
+    ]);
+
+    let error =
+        refuse_extra_fields("agent.create", &fields).expect_err("an extra field is refused");
+
+    assert!(error.contains("unknown_thing"), "{error}");
+}
+
+#[test]
+fn an_office_request_with_only_its_own_fields_passes_the_allowlist() {
+    let caller = AgentId::generate();
+    let target = AgentId::generate();
+    let stop = office_request(&[("agent_id", json!(target.as_uuid_text()))]);
+    assert!(refuse_extra_fields("agent.stop", &stop).is_ok());
+
+    let create = office_request(&[
+        ("name", json!("Bo")),
+        ("command", json!("fake-cli")),
+        ("role", json!({"kind": "member"})),
+    ]);
+    assert!(refuse_extra_fields("agent.create", &create).is_ok());
+    let fields = allowed_fields_of(
+        "agent.create",
+        &create,
+        caller,
+        &rows_of(caller, Role::Lead, None),
+    )
+    .expect("a placed caller's create passes gate and place rules");
+    assert!(fields.contains_key("role"), "{fields:?}");
 }
