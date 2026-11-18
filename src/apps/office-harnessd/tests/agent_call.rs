@@ -1037,3 +1037,159 @@ async fn an_agent_stop_with_an_extra_field_is_refused_and_recorded() {
 
     office.serving.stop().await;
 }
+
+/// A lead starts its member over agent-call (FR-008): the answer is the
+/// session the start made, the member runs, and the record keeps the start
+/// with the lead as the actor.
+#[tokio::test]
+async fn a_lead_starts_its_member_over_agent_call() {
+    let office = Office::open().await;
+    office.clis.add("member-cli", "echo ready; sleep 30");
+    let request = json!({
+        "name": "Bo",
+        "command": "member-cli",
+        "working_folder": office.work_path(),
+    });
+    office.clis.add(
+        "lead-cli",
+        &calling_script(
+            office.records_path(),
+            "create",
+            "agent.create",
+            &request.to_string(),
+        ),
+    );
+    let mut client = office.client().await;
+    let lead = client.create_agent(&office, "Lead", "lead-cli", None).await;
+    place_lead_with_team(&office, &lead, "The Team");
+    client.start(&lead).await;
+    let (code, out) = read_output(office.records_path(), "create").await;
+    assert_eq!(code, "0", "{out}");
+    let answer: Value = serde_json::from_str(out.trim()).expect("json");
+    let member = answer["result"]["id"].as_str().expect("id").to_owned();
+
+    // The lead's live session calls the helper once more, and this time it
+    // starts its member.
+    let (credential, server_file) = session_environment(office.records_path()).await;
+    let start = json!({"agent_id": member}).to_string();
+    let outcome = call_as_session(&credential, &server_file, "agent.start", &start).await;
+    assert!(outcome.status.success(), "{outcome:?}");
+    let started: Value =
+        serde_json::from_str(String::from_utf8_lossy(&outcome.stdout).trim()).expect("json");
+    assert_eq!(started["ok"], true, "{started}");
+    let session = started["result"]["id"]
+        .as_str()
+        .expect("session id")
+        .to_owned();
+
+    // The member runs, and the session the answer named is its own.
+    client.wait_for_status(&member, "working").await;
+    let sessions = client.sessions(&member).await;
+    assert_eq!(sessions.len(), 1, "{sessions:?}");
+    assert_eq!(sessions[0]["id"], json!(session), "{sessions:?}");
+
+    // The record keeps the start with the lead as the actor (FR-011).
+    let entries = actions_of(&mut client, &member).await;
+    let entry = entries
+        .iter()
+        .find(|entry| entry["action"] == "start")
+        .expect("the start is recorded");
+    assert_eq!(entry["agent_id"], json!(member), "{entry}");
+    assert_eq!(entry["actor"], json!(format!("agent:{lead}")), "{entry}");
+    assert_eq!(entry["result"], "ok", "{entry}");
+
+    office.serving.stop().await;
+}
+
+/// A lead gives its member a new task over agent-call (FR-008, FR-024):
+/// the new task starts the member's session, the typed task text lands in
+/// it, and the record keeps the new task with the lead as the actor.
+#[tokio::test]
+async fn a_lead_gives_its_member_a_new_task_over_agent_call() {
+    let office = Office::open().await;
+    let task = "report to the lead";
+    let task_bytes = task.len();
+    let typed = office.records_path().join("typed");
+    // The member reads exactly the bytes of one typed prompt: the raw mode
+    // is set before its first output, so the typing that follows the first
+    // output finds the mode ready (the pattern of `sessions.rs`).
+    office.clis.add(
+        "member-cli",
+        &format!(
+            "stty raw -echo\necho ready\ndd bs=1 count={task_bytes} of={} 2>/dev/null\nsleep 30",
+            typed.display()
+        ),
+    );
+    let request = json!({
+        "name": "Bo",
+        "command": "member-cli",
+        "working_folder": office.work_path(),
+    });
+    office.clis.add(
+        "lead-cli",
+        &calling_script(
+            office.records_path(),
+            "create",
+            "agent.create",
+            &request.to_string(),
+        ),
+    );
+    let mut client = office.client().await;
+    let lead = client.create_agent(&office, "Lead", "lead-cli", None).await;
+    place_lead_with_team(&office, &lead, "The Team");
+    client.start(&lead).await;
+    let (code, out) = read_output(office.records_path(), "create").await;
+    assert_eq!(code, "0", "{out}");
+    let answer: Value = serde_json::from_str(out.trim()).expect("json");
+    let member = answer["result"]["id"].as_str().expect("id").to_owned();
+
+    // The user gives the member the text its next session receives as one
+    // typed input: a create over agent-call carries no additions.
+    let set = client
+        .ask(
+            "agent.additions.set",
+            json!({"agent_id": member, "additions": {"startup_prompt": task}}),
+        )
+        .await;
+    assert_eq!(set["ok"], true, "{set}");
+
+    // The lead's live session calls the helper once more, and this time it
+    // gives its member the new task.
+    let (credential, server_file) = session_environment(office.records_path()).await;
+    let new_task = json!({"agent_id": member}).to_string();
+    let outcome = call_as_session(&credential, &server_file, "agent.new_task", &new_task).await;
+    assert!(outcome.status.success(), "{outcome:?}");
+    let started: Value =
+        serde_json::from_str(String::from_utf8_lossy(&outcome.stdout).trim()).expect("json");
+    assert_eq!(started["ok"], true, "{started}");
+    let session = started["result"]["id"]
+        .as_str()
+        .expect("session id")
+        .to_owned();
+
+    // The member runs its first session, and the task text lands in it
+    // typed in, never an argument.
+    client.wait_for_status(&member, "working").await;
+    let sessions = client.sessions(&member).await;
+    assert_eq!(sessions.len(), 1, "{sessions:?}");
+    assert_eq!(sessions[0]["id"], json!(session), "{sessions:?}");
+    let received = wait_for("the typed task", || {
+        fs::read_to_string(&typed)
+            .ok()
+            .filter(|text| text.len() == task_bytes)
+    })
+    .await;
+    assert_eq!(received, task);
+
+    // The record keeps the new task with the lead as the actor (FR-011).
+    let entries = actions_of(&mut client, &member).await;
+    let entry = entries
+        .iter()
+        .find(|entry| entry["action"] == "new_task")
+        .expect("the new task is recorded");
+    assert_eq!(entry["agent_id"], json!(member), "{entry}");
+    assert_eq!(entry["actor"], json!(format!("agent:{lead}")), "{entry}");
+    assert_eq!(entry["result"], "ok", "{entry}");
+
+    office.serving.stop().await;
+}
