@@ -13,6 +13,7 @@ use super::agent_requests::AgentGateway;
 use super::dispatcher::Dispatcher;
 use super::event_hub::EventHub;
 use super::hierarchy_requests::HierarchyGateway;
+use super::notification_requests::NotificationGateway;
 use super::restart_signal::RestartSignal;
 use super::server_options::ServerOptions;
 use super::terminal_requests::TerminalGateway;
@@ -35,6 +36,7 @@ pub struct ServerState {
     /// Journals the refusals the agent-call gateway itself rejects; the use
     /// case journals the attempts it runs.
     pub directive_journal: Arc<DirectiveJournalBridge>,
+    pub notification: NotificationGateway,
     pub events: EventHub,
     /// Raised by `server.restart`.
     pub restart: RestartSignal,
