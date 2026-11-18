@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Scene e2e, part 1 (0005 T3): only what today's mock core supports. The
-// part 2 run adds: departments from a seeded tree, a pushed status and line
-// change updating a desk in place while the search text and focus hold
-// (SC-002, SC-003 shapes), the PB-4 recorded-calls assertion on the switch,
-// the terminal embed and its focus (D5), and the `view` field restore (D6).
-// The role, team, and settings seeds themselves wait for
-// test/mock-core-extensions, which is editing e2e/support/mock-core.ts.
+// Scene e2e. Part 1 (0005 T3) covered floors, desks, switcher, search, and
+// the empty state. The part 2 additions here cover the keyboard traversal,
+// the status announcements, and the deletion focus moves (T5 a, b); the
+// reduced-motion scan (T5 c) sits at the bottom. Still waiting for other
+// work: departments from a seeded tree, in-place desk updates (SC-002,
+// SC-003 shapes), the PB-4 recorded-calls assertion, the terminal embed
+// (D5), and the role, team, and settings seeds that
+// test/mock-core-extensions adds to mock-core.
 
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
@@ -198,4 +199,122 @@ test("the empty office says so and the shell returns to the panel", async ({
   await expect(
     page.getByRole("button", { name: "Create the first agent" }),
   ).toBeVisible();
+});
+
+test("the keyboard alone moves over every desk in reading order", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  // Reading order: floors sort by name, so Api (Cy) comes first, then
+  // Site (Ada, Bo), then No project (Dee). Tab walks all four desks in
+  // DOM order across floor edges; the arrows stop inside one floor.
+  const cy = desks(page).filter({ hasText: "Cy" });
+  await cy.focus();
+  await expect(cy).toBeFocused();
+
+  await page.keyboard.press("Tab");
+  await expect(desks(page).filter({ hasText: "Ada" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(desks(page).filter({ hasText: "Bo" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(desks(page).filter({ hasText: "Dee" })).toBeFocused();
+
+  // The arrows move inside one floor and stop at its edge, no wrap. The
+  // Site floor has two desks (Ada, Bo); the Api and No project floors
+  // have one each, so arrows hold there.
+  await desks(page).filter({ hasText: "Ada" }).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(desks(page).filter({ hasText: "Bo" })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(desks(page).filter({ hasText: "Bo" })).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(desks(page).filter({ hasText: "Ada" })).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(desks(page).filter({ hasText: "Ada" })).toBeFocused();
+
+  // The focus mark is the shared focus-visible outline, always there.
+  const outline = await desks(page)
+    .filter({ hasText: "Ada" })
+    .evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { width: style.outlineWidth, style: style.outlineStyle };
+    });
+  expect(outline.style).not.toBe("none");
+  expect(Number.parseFloat(outline.width)).toBeGreaterThanOrEqual(2);
+
+  await expectNoSeriousViolations(page);
+});
+
+test("a pushed status change is announced with the agent's name", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  const region = page
+    .locator('[role="region"][aria-labelledby="scene-heading"]')
+    .getByRole("status")
+    .first();
+  await expect(region).toHaveText("");
+
+  await page.evaluate(() => {
+    window.__mockCore.pushEvent({
+      type: "agent.status",
+      agent_id: "agent-ada",
+      status: "waiting_for_input",
+    });
+  });
+
+  await expect(region).toHaveText("Ada, waiting for input");
+});
+
+test("deleting the focused desk's agent moves focus forward, back, or to the empty state", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  // Reading order: Cy (Api), Dee (Site), Ada (Site), Bo (Site).
+  const ada = desks(page).filter({ hasText: "Ada" });
+  const bo = desks(page).filter({ hasText: "Bo" });
+  await ada.focus();
+
+  // The next desk in reading order takes the focus.
+  await page.evaluate(() => {
+    window.__mockCore.pushEvent({
+      type: "agent.deleted",
+      agent_id: "agent-ada",
+    });
+  });
+  await expect(bo).toBeFocused();
+
+  // The last desk's deletion falls back to the previous one.
+  const boAgain = desks(page).filter({ hasText: "Bo" });
+  await boAgain.focus();
+  await page.evaluate(() => {
+    window.__mockCore.pushEvent({
+      type: "agent.deleted",
+      agent_id: "agent-bo",
+    });
+  });
+  await expect(desks(page).filter({ hasText: "Dee" })).toBeFocused();
+
+  // The last desk left drops the scene into its empty state heading.
+  await desks(page).filter({ hasText: "Dee" }).focus();
+  await page.evaluate(() => {
+    window.__mockCore.pushEvent({
+      type: "agent.deleted",
+      agent_id: "agent-dee",
+    });
+    window.__mockCore.pushEvent({
+      type: "agent.deleted",
+      agent_id: "agent-cy",
+    });
+    window.__mockCore.pushEvent({
+      type: "agent.deleted",
+      agent_id: "agent-bo",
+    });
+  });
+  await expect(
+    page.getByRole("heading", { name: "The office is empty" }),
+  ).toBeFocused();
 });

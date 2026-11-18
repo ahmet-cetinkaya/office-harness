@@ -3,15 +3,15 @@
   Part 1 of the scene build (0005 T3): the skeleton. A later commit in
   this phase adds on top: the terminal embed on desk open with focus (D5),
   the `view` field in `last_view` and its restore (D6), the panel's name
-  matcher swapped into `searchMatches` (D7, research R2), the keyboard
-  roving tabindex, the live region, and the reduced-motion scan (D9, D10),
-  plus the e2e for departments from a seeded tree, in-place updates
-  (SC-002, SC-003), the PB-4 recorded-call assertion, and the role, team,
-  and settings seeds that test/mock-core-extensions adds to mock-core.
+  matcher swapped into `searchMatches` (D7, research R2), plus the e2e for
+  departments from a seeded tree, in-place updates (SC-002, SC-003), the
+  PB-4 recorded-call assertion, and the role, team, and settings seeds that
+  test/mock-core-extensions adds to mock-core.
 -->
 <script lang="ts">
   import { tick } from "svelte";
   import type { OfficeStore } from "../../agent";
+  import { shownStatusText } from "../../agent";
   import { INITIAL_HIERARCHY, type HierarchyController } from "../../hierarchy";
   import { ALL_PROJECTS, ProjectSwitcher } from "../../panel";
   import Button from "$shared/ui/button.svelte";
@@ -105,20 +105,137 @@
     void tick().then(() => {
       const [firstMatch] = searchMatches(deskOrder, text);
       if (firstMatch === undefined) return;
-      document
-        .querySelector<HTMLElement>(
-          `[data-agent-id="${CSS.escape(firstMatch.id)}"]`,
-        )
-        ?.focus();
+      deskElement(firstMatch.id)?.focus();
     });
   });
 
   function isStopping(agentId: string): boolean {
     return office.stoppingAgentIds.has(agentId);
   }
+
+  /** The desk button of one agent, searched inside the scene only. */
+  function deskElement(agentId: string): HTMLElement | null {
+    return (
+      sceneRoot?.querySelector<HTMLElement>(
+        `[data-agent-id="${CSS.escape(agentId)}"]`,
+      ) ?? null
+    );
+  }
+
+  let sceneRoot = $state<HTMLElement | null>(null);
+
+  // --- Keyboard (D9): roving tabindex across the desks (0005 T5, part 2).
+  // Tab moves desk to desk in reading order, because each desk is a plain
+  // button in DOM order. The arrows additionally move within one floor,
+  // per the APG layout-grid practice (research R4), and stop at the floor
+  // edge instead of wrapping.
+  /** The desk ids of one floor, in reading order, for the arrow moves. */
+  function deskIdsOfFloor(floor: FloorModel): string[] {
+    return floor.groups.flatMap((group) =>
+      group.agents.map((agent) => agent.id),
+    );
+  }
+
+  function ondeskskeydown(event: KeyboardEvent): void {
+    const isArrow =
+      event.key === "ArrowDown" ||
+      event.key === "ArrowUp" ||
+      event.key === "ArrowLeft" ||
+      event.key === "ArrowRight";
+    if (!isArrow) return;
+    const desk = event.target as HTMLElement;
+    const agentId = desk.getAttribute("data-agent-id");
+    if (agentId === null) return;
+    const floor = floors.find((candidate) =>
+      deskIdsOfFloor(candidate).includes(agentId),
+    );
+    if (floor === undefined) return;
+    const ids = deskIdsOfFloor(floor);
+    const index = ids.indexOf(agentId);
+    const step =
+      event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
+    const next = ids[index + step];
+    if (next === undefined) return;
+    event.preventDefault();
+    deskElement(next)?.focus();
+  }
+
+  // --- Announcements (D9): one polite live region. A status change writes
+  // "name, status"; a deletion that moves focus writes where focus went.
+  let announcement = $state("");
+
+  function announce(text: string): void {
+    announcement = text;
+  }
+
+  // The snapshot comparison walks the previous agents by id, so a desk
+  // status change is found however it arrives (event, resync, reload).
+  let knownStatuses = new Map<string, string>();
+  $effect(() => {
+    const statuses = new Map(
+      office.agents.map((agent) => [agent.id, agent.status]),
+    );
+    for (const [agentId, status] of statuses) {
+      const before = knownStatuses.get(agentId);
+      if (before === undefined || before === status) continue;
+      const agent = office.agents.find((candidate) => candidate.id === agentId);
+      if (agent === undefined) continue;
+      announce(`${agent.name}, ${shownStatusText(agent, isStopping(agentId))}`);
+    }
+    knownStatuses = statuses;
+  });
+
+  // When the focused desk's agent is deleted, focus moves to the next desk
+  // in reading order, to the previous when none follows, and to the
+  // empty-state heading when no desk is left; each move is announced (D9).
+  let focusedAgentId = $state<string | null>(null);
+  /** The focused desk's seat in the reading order, kept from focusin. */
+  let focusedSeat = $state(0);
+  const EMPTY_HEADING_ID = "scene-empty-heading";
+
+  // A removed focused desk fires focusout with no relatedTarget after the
+  // snapshot has already dropped it, so both the id and its reading-order
+  // seat are kept from focusin. The fate is decided one tick later, as the
+  // hierarchy view does: a desk rebuilt by the same change takes the focus
+  // back through focusin, and only a truly deleted agent stays gone.
+  function ondesksfocusin(event: FocusEvent): void {
+    const desk = event.target as HTMLElement;
+    const agentId = desk.getAttribute("data-agent-id");
+    if (agentId === null) return;
+    focusedAgentId = agentId;
+    focusedSeat = deskOrder.findIndex((agent) => agent.id === agentId);
+  }
+
+  function ondesksfocusout(event: FocusEvent): void {
+    if (sceneRoot?.contains(event.relatedTarget as Node | null)) return;
+    const gone = focusedAgentId;
+    const seat = focusedSeat;
+    focusedAgentId = null;
+    if (gone === null) return;
+    void tick().then(() => {
+      if (
+        office.agents.some((agent) => agent.id === gone) &&
+        deskElement(gone) !== null
+      ) {
+        return;
+      }
+      const survivors = deskOrder.map((agent) => agent.id);
+      const next = survivors[seat] ?? survivors[seat - 1];
+      const heading = document.getElementById(EMPTY_HEADING_ID);
+      if (next !== undefined) {
+        deskElement(next)?.focus();
+        const agent = office.agents.find((candidate) => candidate.id === next);
+        announce(`Focus moved to ${agent?.name ?? next}.`);
+      } else if (heading !== null) {
+        heading.focus();
+        announce("Focus moved to the empty state.");
+      }
+    });
+  }
 </script>
 
 <div
+  bind:this={sceneRoot}
   role="region"
   aria-labelledby="scene-heading"
   class="mx-auto flex max-w-6xl flex-col gap-6 p-6"
@@ -126,6 +243,10 @@
   <h1 id="scene-heading" class="text-2xl font-semibold text-neutral-900">
     Office scene
   </h1>
+
+  <!-- One polite region for the whole scene; the newest message wins, which
+    coalesces a burst of changes into the last one (D9, research R4). -->
+  <p role="status" class="sr-only">{announcement}</p>
 
   {#if office.notice !== null}
     <FailureMessage lead={office.notice.lead} message={office.notice.message} />
@@ -145,11 +266,11 @@
     </div>
   {:else if office.agents.length === 0}
     <section
-      aria-labelledby="scene-empty-heading"
+      aria-labelledby={EMPTY_HEADING_ID}
       class="flex flex-col items-start gap-3"
     >
       <h2
-        id="scene-empty-heading"
+        id={EMPTY_HEADING_ID}
         tabindex="-1"
         class="text-xl font-semibold text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
       >
@@ -186,7 +307,11 @@
     {#if shown.length === 0}
       <p role="status" class="text-neutral-700">No desk matches the search.</p>
     {:else}
-      <div class="flex flex-col gap-4">
+      <div
+        class="flex flex-col gap-4"
+        onfocusin={ondesksfocusin}
+        onfocusout={ondesksfocusout}
+      >
         {#each shown as floor (floor.projectId ?? "none")}
           {@const floorProjectName =
             floor.projectId === null
@@ -194,7 +319,12 @@
               : (office.projects.find(
                   (project) => project.id === floor.projectId,
                 )?.name ?? null)}
-          <Floor {floor} projectName={floorProjectName} {isStopping} />
+          <Floor
+            {floor}
+            projectName={floorProjectName}
+            {isStopping}
+            onnavigate={ondeskskeydown}
+          />
         {/each}
       </div>
     {/if}
