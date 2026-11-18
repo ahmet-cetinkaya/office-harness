@@ -90,10 +90,10 @@ pub fn resolve_npm_shim(
 /// Returns `None` for anything that is not an npm shim of a known
 /// interpreter, that cannot be resolved to absolute paths without variables,
 /// or whose `%*` line starts with a guard `cmd.exe` may obey instead of
-/// running it: `IF` (also cut short as `IF/I`, `IF(`), `GOTO` (also
-/// `GOTO:label`), `REM` (also `REM.`, `REM:`, `REM=`), or a label line that
-/// begins with a single `:` (which covers `::`). A guard deeper in a line is
-/// not followed.
+/// running it, even after leading word delimiters `, ; =` (`,IF`): `IF`
+/// (also cut short as `IF/I`, `IF(`), `GOTO` (also `GOTO:label`), `REM`
+/// (also `REM.`, `REM:`, `REM=`), or a label line that begins with a single
+/// `:` (which covers `::`). A guard deeper in a line is not followed.
 #[must_use]
 pub fn parse_npm_shim(shim_path: &str, content: &str) -> Option<ShimTarget> {
     if content.len() > MAX_SHIM_BYTES || content.contains('\0') {
@@ -127,8 +127,12 @@ pub fn parse_npm_shim(shim_path: &str, content: &str) -> Option<ShimTarget> {
 }
 
 fn starts_with_line_guard(line: &str) -> bool {
-    // A batch line may start its command with `@` to hide the echo.
-    let line = line.trim_start().trim_start_matches('@').trim_start();
+    // A batch line may start its command with `@` to hide the echo, and
+    // `cmd.exe` skips the word delimiters `, ; =` before the first word.
+    let line = line
+        .trim_start()
+        .trim_start_matches(['@', ',', ';', '='])
+        .trim_start();
     // `cmd.exe` cuts the first word at a character that ends the command, so
     // `IF/I` and `GOTO:label` are still `IF` and `GOTO`.
     let first_word = line
