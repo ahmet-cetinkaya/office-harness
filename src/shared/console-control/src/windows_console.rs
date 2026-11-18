@@ -4,6 +4,7 @@
 //! server outside the private files.
 #![allow(unsafe_code)]
 
+use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
 use windows_sys::Win32::System::Console::{
     ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT, GetConsoleMode, GetStdHandle,
     STD_INPUT_HANDLE, SetConsoleCtrlHandler, SetConsoleMode,
@@ -36,7 +37,7 @@ pub(crate) fn disable_line_input() -> Result<(), String> {
     }
     // A pseudoconsole child gets `INVALID_HANDLE_VALUE` from `GetStdHandle`
     // when its stdin is not a console; there is nothing to change then.
-    if console == u64::MAX as _ {
+    if console == INVALID_HANDLE_VALUE {
         return Err("the process has no input console".to_owned());
     }
     let mut mode = 0_u32;
