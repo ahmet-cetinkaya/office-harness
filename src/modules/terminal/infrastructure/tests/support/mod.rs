@@ -124,20 +124,15 @@ impl Client {
         }
     }
 
-    /// The snapshot followed by the live output, as raw bytes.
-    pub fn raw(&self) -> Vec<u8> {
+    /// The snapshot followed by the live output, as text.
+    pub fn text(&self) -> String {
         let mut bytes = self.snapshot.clone();
         for item in locked(&self.live.items).iter() {
             if let LiveOutput::Bytes(chunk) = item {
                 bytes.extend_from_slice(chunk);
             }
         }
-        bytes
-    }
-
-    /// The snapshot followed by the live output, as text.
-    pub fn text(&self) -> String {
-        String::from_utf8_lossy(&self.raw()).into_owned()
+        String::from_utf8_lossy(&bytes).into_owned()
     }
 
     pub fn dropped_notices(&self) -> usize {
