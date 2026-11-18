@@ -27,7 +27,8 @@ use crate::server::EventHub;
 /// `waiting for input` only from `working`, and nothing for `stopped` or
 /// `interrupted`. The agent name is copied at creation, so the row outlives a
 /// deleted agent. A failed lookup or row write records nothing and is
-/// reported like any storage failure, so the client learns of the loss.
+/// reported like any storage failure, and a lagged broadcast is surfaced as
+/// one too, so the client learns which notifications are missing.
 #[derive(Clone)]
 pub struct NotificationBridge {
     create: CreateNotificationHandler,
@@ -80,10 +81,7 @@ impl NotificationBridge {
                                     .await;
                         }
                         Err(RecvError::Closed) => return,
-                        Err(RecvError::Lagged(missed)) => self.log.error(&format!(
-                            "the notification bridge missed {missed} status events; \
-                             notifications may be missing until the next event"
-                        )),
+                        Err(RecvError::Lagged(missed)) => self.missed(missed, "status events"),
                     },
                     item = bells.recv() => match item {
                         Ok(event) => {
@@ -92,14 +90,22 @@ impl NotificationBridge {
                                 .await;
                         }
                         Err(RecvError::Closed) => return,
-                        Err(RecvError::Lagged(missed)) => self.log.error(&format!(
-                            "the notification bridge missed {missed} terminal events; \
-                             bells may be missing until the next one"
-                        )),
+                        Err(RecvError::Lagged(missed)) => self.missed(missed, "terminal events"),
                     },
                 }
             }
         });
+    }
+
+    /// Reports the events a full broadcast channel dropped: FR-006
+    /// notifications are missing for them, so the client learns of the loss
+    /// as a storage alert, the same channel a failed row write takes, and
+    /// can resync with `notification.list`.
+    fn missed(&self, count: u64, source: &str) {
+        self.alerts.report_disk_failure(&format!(
+            "the notification bridge missed {count} {source}; \
+             notifications are missing for them"
+        ));
     }
 
     /// Records what a published `agent.status` frame asks for.
