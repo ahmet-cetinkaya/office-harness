@@ -53,6 +53,8 @@
   const EMPTY_HEADING_ID = "panel-empty-heading";
 
   let isCreatingAgent = $state(false);
+  /** The project the agent form opens with, from an empty-project offer. */
+  let createAgentInProject = $state<string | null>(null);
   let isCreatingProject = $state(false);
   let projectToDelete = $state<Project | null>(null);
   let detailArea = $state<HTMLElement | null>(null);
@@ -123,6 +125,13 @@
       onchange={store.setProjectChoice}
     />
 
+    <!-- The hierarchy stays reachable in both empty states: US1 builds the
+      first CEO from it, and an empty project must not hide it. With agents
+      present it keeps its place at the top of the left column below. -->
+    {#if (office.agents.length === 0 || emptyProject) && side}
+      {@render side()}
+    {/if}
+
     {#if office.agents.length === 0}
       <section
         aria-labelledby={EMPTY_HEADING_ID}
@@ -158,7 +167,12 @@
         <p class="text-neutral-700">
           The project exists, but no agent runs in it yet.
         </p>
-        <Button onclick={() => (isCreatingAgent = true)}>
+        <Button
+          onclick={() => {
+            createAgentInProject = choice;
+            isCreatingAgent = true;
+          }}
+        >
           Create an agent in this project
         </Button>
       </section>
@@ -240,6 +254,7 @@
   <AgentFormDialog
     projects={office.projects}
     isBusy={office.isBusy}
+    initialProjectId={createAgentInProject}
     onsubmit={controller.createAgent}
     onclose={() => (isCreatingAgent = false)}
   />

@@ -165,11 +165,9 @@ fn fill_last_lines(result: &mut Value, last_line: &dyn Fn(AgentId) -> Option<Str
         let Ok(agent_id) = AgentId::from_str(id) else {
             continue;
         };
-        let Some(line) = last_line(agent_id) else {
-            continue;
-        };
+        let line = last_line(agent_id).map_or(Value::Null, Value::String);
         if let Some(agent) = agent.as_object_mut() {
-            agent.insert("last_line".to_owned(), Value::String(line));
+            agent.insert("last_line".to_owned(), line);
         }
     }
 }
