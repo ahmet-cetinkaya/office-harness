@@ -143,6 +143,67 @@ fn a_focus_shortcut_outside_the_fixed_table_is_stored() {
 }
 
 #[test]
+fn a_reserved_shortcut_is_refused_in_every_spelling_the_desktop_matches() {
+    let spellings = [
+        "ctrl+shift+f1",
+        "Shift+Ctrl+F1",
+        "Ctrl + Shift + F1",
+        "  Ctrl+Shift+F1  ",
+    ];
+    for value in spellings {
+        let mut settings = Settings::default();
+        assert_eq!(
+            settings.set_from_text(SettingKey::FocusShortcut, value),
+            Err(AgentError::ReservedShortcut {
+                field: "focus_shortcut",
+                shortcut: "Ctrl+Shift+F1",
+                reserved_for: "agent 1",
+            }),
+            "{value}"
+        );
+    }
+}
+
+#[test]
+fn the_flag_tokens_are_the_ones_the_desktop_reads() {
+    // "control" is a modifier name in the desktop's key check, but it does
+    // not set the ctrl flag, so this spelling is a different combination.
+    let mut settings = Settings::default();
+    settings
+        .set_from_text(SettingKey::FocusShortcut, "Control+shift+f1")
+        .expect("stored as the desktop reads it");
+}
+
+#[test]
+fn a_text_that_names_no_key_stores_as_before_and_conflicts_nothing() {
+    let mut settings = Settings::default();
+
+    // Only modifiers: the desktop reads no key here, so no conflict applies,
+    // and the 0001 behavior of storing any non-blank text stays.
+    for value in ["Ctrl+Shift", "+", "Ctrl++Shift"] {
+        settings
+            .set_from_text(SettingKey::FocusShortcut, value)
+            .expect("stored");
+        assert_eq!(settings.focus_shortcut, value);
+    }
+
+    settings
+        .set_from_text(SettingKey::FocusShortcut, "Ctrl+Shift+F11")
+        .expect("a key outside the table is free");
+}
+
+#[test]
+fn a_reserved_shortcut_with_an_extra_modifier_is_not_the_same_combination() {
+    let mut settings = Settings::default();
+
+    settings
+        .set_from_text(SettingKey::FocusShortcut, "Ctrl+Alt+Shift+F1")
+        .expect("a different combination is free");
+
+    assert_eq!(settings.focus_shortcut, "Ctrl+Alt+Shift+F1");
+}
+
+#[test]
 fn rejects_text_that_is_not_a_positive_number() {
     let mut settings = Settings::default();
     assert_eq!(
