@@ -805,15 +805,17 @@ test("the stop confirmation offers only-this-agent and with-descendants choices"
   await pressOn(page, "Stop Bo");
   const dialog = page.getByRole("dialog", { name: "Stop Bo?" });
   await expect(dialog).toBeVisible();
-  // Both request shapes are named, and only-this-agent is the default.
-  await expect(dialog).toContainText("include_descendants false");
+  // Both outcomes are named in plain words, and only-this-agent is the
+  // default. The radios sit in a named group: the legend is the question.
+  await expect(dialog).toContainText("Only Bo stops");
   await expect(dialog).toContainText("2 agents below Bo keep running");
-  await expect(dialog).toContainText("include_descendants true");
+  await expect(dialog).toContainText("The agents below stop in the same");
+  const choices = dialog.getByRole("group", { name: "Stop Bo?" });
   await expect(
-    dialog.getByRole("radio", { name: /Stop only Bo/ }),
+    choices.getByRole("radio", { name: /Stop only Bo/ }),
   ).toBeChecked();
   await expect(
-    dialog.getByRole("radio", { name: /Stop Bo and 2 agents/ }),
+    choices.getByRole("radio", { name: /Stop Bo and 2 agents/ }),
   ).not.toBeChecked();
 
   await page.keyboard.press("Escape");
@@ -1005,6 +1007,93 @@ test("a stale counted delete shows the server's recount refusal", async ({
   await expect(
     tree.getByRole("treeitem", { name: "Bo, team lead, stopped" }),
   ).toBeVisible();
+});
+
+/** The tree with Bo's members gone, as another client's stop would leave it. */
+const TREE_WITHOUT_BO_MEMBERS: HierarchyTree = {
+  ceo: { id: "agent-ceo", role: "ceo" },
+  teams: [
+    {
+      id: "team-backend",
+      name: "Backend",
+      project_id: null,
+      lead: { id: "agent-lead-bo", role: "lead" },
+      members: [],
+    },
+    {
+      id: "team-web",
+      name: "Web",
+      project_id: null,
+      lead: { id: "agent-lead-el", role: "lead" },
+      members: [
+        { id: "agent-member-fay", role: "member" },
+        { id: "agent-member-gus", role: "member" },
+      ],
+    },
+  ],
+  unassigned: [],
+};
+
+/** The tree with Bo gone, as another client's delete would leave it. */
+const TREE_WITHOUT_BO: HierarchyTree = {
+  ceo: { id: "agent-ceo", role: "ceo" },
+  teams: [
+    {
+      id: "team-web",
+      name: "Web",
+      project_id: null,
+      lead: { id: "agent-lead-el", role: "lead" },
+      members: [
+        { id: "agent-member-fay", role: "member" },
+        { id: "agent-member-gus", role: "member" },
+      ],
+    },
+  ],
+  unassigned: [],
+};
+
+/** Another client changes the tree and tells this view about it. */
+async function changeTreeFromElsewhere(
+  page: Page,
+  tree: HierarchyTree,
+): Promise<void> {
+  await page.evaluate((nextTree) => {
+    window.__mockCore.setHierarchy(nextTree);
+    window.__mockCore.pushEvent({
+      type: "hierarchy.changed",
+      cause: "agent.changed",
+    });
+  }, tree);
+}
+
+test("an unrelated tree change keeps the refusal of the agent it is about", async ({
+  page,
+}) => {
+  const tree = page.getByRole("tree", { name: "Hierarchy" });
+  const REFUSAL = "conflict: the agent is stopping somewhere else";
+
+  // Bo's stop refuses, and the message shows under the tree.
+  await openOffice(page, {
+    agents: COMPANY_AGENTS,
+    hierarchy: COMPANY_TREE,
+    refusals: { "agent.stop": { code: "conflict", message: REFUSAL } },
+  });
+  await tree.getByRole("treeitem", { name: "Bo, team lead, stopped" }).click();
+  await pressOn(page, "Stop Bo");
+  await page
+    .getByRole("dialog", { name: "Stop Bo?" })
+    .getByRole("button", { name: "Stop only Bo" })
+    .click();
+  await expect(page.getByRole("alert")).toContainText(REFUSAL);
+
+  // Another client's change to a different agent reloads the tree; the
+  // refusal of Bo stands, because it still describes Bo.
+  await changeTreeFromElsewhere(page, TREE_WITHOUT_BO_MEMBERS);
+  await expect(page.getByRole("alert")).toContainText(REFUSAL);
+
+  // Bo leaves the tree; the refusal no longer describes the tree and goes.
+  await changeTreeFromElsewhere(page, TREE_WITHOUT_BO);
+  await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
 test("the create flows run with the keyboard alone and axe stays clean", async ({

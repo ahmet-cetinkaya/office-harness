@@ -9,7 +9,7 @@
   import HierarchyConfirmDialog from "../components/hierarchy-confirm-dialog.svelte";
   import TeamFormDialog from "../components/team-form-dialog.svelte";
   import TreeRow from "../components/tree-row.svelte";
-  import { buildHierarchy } from "../models/hierarchy";
+  import { branchOfAgent, buildHierarchy } from "../models/hierarchy";
   import type { HierarchyNode } from "../models/hierarchy";
   import { allowedRolesAt, placeOf, type RoleKind } from "../models/placement";
   import {
@@ -63,7 +63,6 @@
   /** The lead a member dialog acts under, read when the dialog opens. */
   let createLeadId = $state<string | null>(null);
   let isCreatingTeam = $state(false);
-  let refusal = $state<string | null>(null);
   /** A create request is in flight; the dialog disables its submit so a
    * double Enter or double click cannot send two creates. */
   let isBusy = $state(false);
@@ -77,7 +76,6 @@
     }
     createLeadId = selectedAgentId;
     createRole = role;
-    refusal = null;
   }
 
   /** The request one role at one place makes. A place that stopped allowing
@@ -92,15 +90,22 @@
 
   function openCreateTeam(): void {
     isCreatingTeam = true;
-    refusal = null;
   }
 
-  // A create refusal describes the tree as it was when the request was sent
-  // (the review's MEDIUM-2 case: another client took the CEO place). Once a
-  // reload changes the snapshot the text is stale, so it clears.
-  $effect(() => {
-    void snapshot;
-    refusal = null;
+  // The delete and stop refusal describes the agent as the tree held it when
+  // the request was sent, so it is kept with the branch the agent sat in.
+  // It shows while the agent still sits there: another client's unrelated
+  // change must not wipe the message, and a move or removal must.
+  let refusal = $state<{
+    agentId: string;
+    branch: string | null;
+    text: string;
+  } | null>(null);
+  const shownRefusal = $derived.by(() => {
+    if (refusal === null) return null;
+    return branchOfAgent(snapshot.tree, refusal.agentId) === refusal.branch
+      ? refusal.text
+      : null;
   });
 
   function closeCreate(): void {
@@ -156,11 +161,11 @@
     return [
       {
         label: `Stop only ${pendingAgent.name}`,
-        body: `Sends include_descendants false: ${below} below ${pendingAgent.name} keep running.`,
+        body: `${below} below ${pendingAgent.name} keep running.`,
       },
       {
         label: `Stop ${pendingAgent.name} and ${below}`,
-        body: `Sends include_descendants true: the agents below stop in the same action.`,
+        body: `The agents below stop in the same action.`,
       },
     ];
   });
@@ -170,7 +175,6 @@
     node: HierarchyNode,
   ): Promise<void> {
     if (node.agentId === null) return;
-    refusal = null;
     pendingStopWithDescendants = false;
     try {
       pendingDescendants = await controller.countDescendants(node.agentId);
@@ -217,7 +221,16 @@
             pendingDescendants,
           )
         : await controller.stopSubtree(id, includeDescendants);
-    if (answered !== null) refusal = answered;
+    // A refusal is kept with the branch the agent sat in when it was
+    // refused; a request that went through drops the last one.
+    refusal =
+      answered === null
+        ? null
+        : {
+            agentId: id,
+            branch: branchOfAgent(snapshot.tree, id) ?? null,
+            text: answered,
+          };
   }
 
   function cancelPending(): void {
@@ -450,8 +463,11 @@
     Hierarchy
   </h2>
 
-  {#if refusal !== null}
-    <FailureMessage lead="The hierarchy did not change." message={refusal} />
+  {#if shownRefusal !== null}
+    <FailureMessage
+      lead="The hierarchy did not change."
+      message={shownRefusal}
+    />
   {/if}
 
   {#if snapshot.phase === "loading"}

@@ -37,7 +37,8 @@ export function deleteQuestionText(
 
 /** The question a stop asks, with the counted descendants (FR-007). When the
  * agent has descendants the answer is a choice: stop only this agent, or
- * stop it with the agents below it. Each body names the request it sends. */
+ * stop it with the agents below it. Each body says what happens, not which
+ * wire field carries it. */
 export function stopQuestionText(
   agentName: string,
   descendantCount: number,
@@ -47,7 +48,7 @@ export function stopQuestionText(
     title: `Stop ${agentName}?`,
     body:
       descendantCount === 0
-        ? "The request sends include_descendants false: the agent's CLI is ended and the session stops."
-        : `The request sends include_descendants false: only ${agentName} stops, and ${below} below ${agentName} keep running. To stop them too in the same action, choose stopping them with it, which sends include_descendants true.`,
+        ? "The agent's CLI is ended and the session stops."
+        : `Only ${agentName} stops, and ${below} below ${agentName} keep running. To stop them too in the same action, choose stopping them with it.`,
   };
 }

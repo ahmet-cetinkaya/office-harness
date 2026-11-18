@@ -36,17 +36,17 @@ describe("counted questions", () => {
     );
   });
 
-  test("a stop offers both request shapes and names the fields (FR-007)", () => {
+  test("a stop offers both outcomes in plain words (FR-007)", () => {
     const question = stopQuestionText("Bo", 2);
     expect(question.title).toBe("Stop Bo?");
-    expect(question.body).toContain("include_descendants false");
+    expect(question.body).toContain("Only Bo stops");
     expect(question.body).toContain("2 agents below Bo keep running");
-    expect(question.body).toContain("include_descendants true");
+    expect(question.body).not.toContain("include_descendants");
   });
 
-  test("a stop without descendants names the single request (FR-007)", () => {
+  test("a stop without descendants names the single outcome (FR-007)", () => {
     expect(stopQuestionText("Bo", 0).body).toBe(
-      "The request sends include_descendants false: the agent's CLI is ended and the session stops.",
+      "The agent's CLI is ended and the session stops.",
     );
   });
 });
