@@ -3,6 +3,7 @@
   import Dialog from "$shared/ui/dialog.svelte";
   import { FIELD_CLASS } from "$shared/ui/field-class";
   import { shownStatusText, type Agent, type Project } from "../../agent";
+  import { matchesAgentName } from "../models/name-matcher";
   import { projectNameOf } from "../models/panel";
 
   interface Props {
@@ -24,9 +25,7 @@
   let options = $state<HTMLElement | null>(null);
 
   const matches = $derived(
-    agents.filter((agent) =>
-      agent.name.toLowerCase().includes(query.trim().toLowerCase()),
-    ),
+    agents.filter((agent) => matchesAgentName(agent, query)),
   );
 
   // The name reads as one sentence, as the panel's rows do (D11).
