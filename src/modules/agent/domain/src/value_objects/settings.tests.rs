@@ -204,6 +204,47 @@ fn a_reserved_shortcut_with_an_extra_modifier_is_not_the_same_combination() {
 }
 
 #[test]
+fn combinations_that_lose_or_gain_a_modifier_are_not_reserved() {
+    let mut settings = Settings::default();
+
+    // A subset of the modifiers: a different combination, so the desktop
+    // matches nothing in the fixed table there either.
+    settings
+        .set_from_text(SettingKey::FocusShortcut, "Ctrl+F1")
+        .expect("stored");
+    settings
+        .set_from_text(SettingKey::FocusShortcut, "Alt+Ctrl+Shift+F1")
+        .expect("stored");
+
+    assert_eq!(settings.focus_shortcut, "Alt+Ctrl+Shift+F1");
+}
+
+#[test]
+fn each_reserved_shortcut_normalizes_to_its_canonical_form() {
+    for (text, reserved_for) in RESERVED_SHORTCUTS {
+        let key = text.rsplit('+').next().expect("the key is the last part");
+        let canonical = format!("ctrl+shift+{}", key.to_lowercase());
+        assert_eq!(
+            normalized_shortcut(text).as_deref(),
+            Some(canonical.as_str()),
+            "{reserved_for}"
+        );
+    }
+    assert_eq!(
+        normalized_shortcut("Ctrl+Shift+F10").as_deref(),
+        Some("ctrl+shift+f10"),
+    );
+}
+
+#[test]
+fn a_value_normalizes_with_each_modifier_counted_once() {
+    assert_eq!(
+        normalized_shortcut("Shift+Ctrl+Shift+F1").as_deref(),
+        Some("ctrl+shift+f1"),
+    );
+}
+
+#[test]
 fn rejects_text_that_is_not_a_positive_number() {
     let mut settings = Settings::default();
     assert_eq!(
