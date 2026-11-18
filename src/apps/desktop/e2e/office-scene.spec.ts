@@ -170,6 +170,13 @@ test("the search filters desks, focuses the match, and says when nothing matches
   // Spaces-only is no search: every desk is back.
   await search.fill("   ");
   await expect(desks(page)).toHaveCount(4);
+
+  // Mixed case goes through the panel's matchesAgentName, so the scene
+  // search agrees with the panel switcher's semantics (D7): "dE" matches
+  // only Dee, case-insensitively.
+  await search.fill("dE");
+  await expect(desks(page)).toHaveCount(1);
+  await expect(desks(page).filter({ hasText: "Dee" })).toBeFocused();
 });
 
 test("the empty office says so and the shell returns to the panel", async ({
@@ -441,4 +448,89 @@ test("view switches write last_view with the view field, throttled", async ({
     (value) => value.view === "scene",
   );
   expect(sceneWrites.length).toBeLessThanOrEqual(2);
+});
+
+test.describe("desk opens the terminal in the scene (D5)", () => {
+  test("a click embeds the terminal with focus, no second window", async ({
+    page,
+  }) => {
+    await openScene(page);
+
+    await desks(page).filter({ hasText: "Cy" }).click();
+    const terminal = page.getByLabel("Terminal of Cy", { exact: true });
+    await expect(terminal).toBeFocused();
+    await expect(page.getByText("Every key goes to the agent")).toBeVisible();
+    // One page only: the desk click never spawns a second window (D5).
+    // Bo is stopped, so its readonly embed proves itself via its note.
+    const contexts = page.context().pages().length;
+    await desks(page).filter({ hasText: "Bo" }).click();
+    await expect(page.getByText("The agent is stopped.")).toBeVisible();
+    expect(page.context().pages().length).toBe(contexts);
+  });
+
+  test("Enter on a focused desk opens the same terminal", async ({ page }) => {
+    await openScene(page);
+
+    await desks(page).filter({ hasText: "Bo" }).focus();
+    await page.keyboard.press("Enter");
+    // Bo is stopped: the embed shows recent output and takes no stdin, so
+    // the focus mark sits on the terminal heading region instead of the
+    // textarea; the embed itself is proven by the stopped-terminal note.
+    await expect(page.getByText("The agent is stopped.")).toBeVisible();
+    await expect(
+      page.getByLabel("Terminal of Bo", { exact: true }),
+    ).toHaveAttribute("readonly", "");
+  });
+
+  test("the focus-leave shortcut returns focus to the desk", async ({
+    page,
+  }) => {
+    await openScene(page);
+
+    await desks(page).filter({ hasText: "Cy" }).click();
+    await expect(
+      page.getByLabel("Terminal of Cy", { exact: true }),
+    ).toBeFocused();
+
+    await page.keyboard.press("Control+Shift+F12");
+    await expect(desks(page).filter({ hasText: "Cy" })).toBeFocused();
+  });
+
+  test("a stopped agent's desk opens with its recent output", async ({
+    page,
+  }) => {
+    // The terminal frame format encodes a 16-byte UUID, so the seeded id
+    // must be one (terminal.spec's convention), or the snapshot drops.
+    const agentId = "11111111-2222-4333-8444-555555555555";
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: [
+          agent({ id: agentId, project_id: "project-site", status: "stopped" }),
+        ],
+        projects: PROJECTS,
+        snapshots: { [agentId]: "recent saved output" },
+      },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "To the scene" }).click();
+
+    await desks(page).filter({ hasText: "Ada" }).click();
+    const input = page.getByLabel("Terminal of Ada", { exact: true });
+    // A stopped terminal takes no input (isRunning false; readonly) and the
+    // snapshot reaches the screen-reader buffer (terminal.spec convention).
+    await expect(page.getByText(/The agent is stopped/)).toBeVisible();
+    await expect(page.locator(".xterm-accessibility-tree")).toContainText(
+      "recent saved output",
+    );
+    await input.press("x");
+    const inputs = await page.evaluate(() =>
+      window.__mockCore.calls.filter(
+        (call) =>
+          call.command === "send_request" &&
+          call.args.kind === "terminal.input",
+      ),
+    );
+    expect(inputs).toEqual([]);
+  });
 });

@@ -11,9 +11,11 @@
     isStopping: (agentId: string) => boolean;
     /** Moves focus within the floor on an arrow key (D9). */
     onnavigate?: (event: KeyboardEvent) => void;
+    /** Opens the agent's terminal in the scene (D5). */
+    onopen?: (agentId: string) => void;
   }
 
-  let { floor, projectName, isStopping, onnavigate }: Props = $props();
+  let { floor, projectName, isStopping, onnavigate, onopen }: Props = $props();
 
   // The no-project floor's id is the one null maps to, so two floors can
   // never share a label id.
@@ -49,6 +51,7 @@
               {projectName}
               isStopping={isStopping(agent.id)}
               {onnavigate}
+              {onopen}
             />
           </li>
         {/each}

@@ -10,9 +10,11 @@
     isStopping: boolean;
     /** Moves focus within the floor on an arrow key (D9). */
     onnavigate?: (event: KeyboardEvent) => void;
+    /** Opens the agent's terminal in the scene (D5). */
+    onopen?: (agentId: string) => void;
   }
 
-  let { agent, projectName, isStopping, onnavigate }: Props = $props();
+  let { agent, projectName, isStopping, onnavigate, onopen }: Props = $props();
 
   // The name is set by hand so that it reads as one sentence (D4). It
   // carries everything the desk shows, as in the panel row, so axe accepts
@@ -33,6 +35,7 @@
   aria-label={entryName}
   class="flex w-full flex-col items-start gap-1 rounded-md border border-neutral-400 bg-white px-3 py-2 text-left text-sm text-neutral-900 hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
   onkeydown={onnavigate}
+  onclick={() => onopen?.(agent.id)}
 >
   <span class="w-full truncate font-medium">{agent.name}</span>
   {#if projectName !== null}

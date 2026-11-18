@@ -1,18 +1,18 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!--
-  Part 1 of the scene build (0005 T3): the skeleton. A later commit in
-  this phase adds on top: the terminal embed on desk open with focus (D5),
-  the `view` field in `last_view` and its restore (D6), the panel's name
-  matcher swapped into `searchMatches` (D7, research R2), plus the e2e for
+  Scene build progress (0005): T3 skeleton, T5 keyboard/announce/reduced
+  motion, and the last_view writer have landed. A later commit adds: the
+  panel's name matcher swapped into `searchMatches` (D7, research R2), the
+  restore-on-start read of the `view` field (T4c), plus the e2e for
   departments from a seeded tree, in-place updates (SC-002, SC-003), the
   PB-4 recorded-call assertion, and the role, team, and settings seeds that
   test/mock-core-extensions adds to mock-core.
 -->
 <script lang="ts">
   import { tick } from "svelte";
-  import type { OfficeStore } from "../../agent";
-  import { shownStatusText } from "../../agent";
+  import { shownStatusText, isActive, type OfficeStore } from "../../agent";
   import { INITIAL_HIERARCHY, type HierarchyController } from "../../hierarchy";
+  import { TerminalView } from "../../terminal";
   import { ALL_PROJECTS, ProjectSwitcher } from "../../panel";
   import Button from "$shared/ui/button.svelte";
   import FailureMessage from "$shared/ui/failure-message.svelte";
@@ -38,6 +38,7 @@
 
   const office = $derived(store.snapshot);
   const controller = $derived(store.controller);
+  const client = $derived(store.client);
   // Same subscription pattern as the panel view: the controller's snapshot
   // is a plain value, and the effect's cleanup stops the subscription when
   // the view unmounts. Subscribe calls back at once, so the tree starts
@@ -232,6 +233,27 @@
       }
     });
   }
+
+  // --- Open a desk (D5, FR-005): the agent's terminal embeds in the scene,
+  // no second window; the office selection is never touched (FR-006). A
+  // freshly mounted terminal focuses itself once the attach answers; an
+  // already open one takes focus here, as the panel does.
+  let openAgentId = $state<string | null>(null);
+
+  function openDesk(agentId: string): void {
+    const wasOpen = openAgentId === agentId;
+    openAgentId = agentId;
+    if (wasOpen) {
+      void tick().then(() => {
+        sceneRoot?.querySelector("textarea")?.focus();
+      });
+    }
+  }
+
+  /** The focus shortcut hands focus back to the desk that opened it (D5). */
+  function leaveTerminalToDesk(): void {
+    if (openAgentId !== null) deskElement(openAgentId)?.focus();
+  }
 </script>
 
 <div
@@ -292,8 +314,6 @@
         <label for="scene-search" class="text-sm font-medium text-neutral-900">
           Search agents
         </label>
-        <!-- TODO(0005 part 2, D7): swap in the panel's name matcher when it
-          lands, so both views return the same matches. -->
         <input
           id="scene-search"
           bind:value={searchText}
@@ -324,9 +344,29 @@
             projectName={floorProjectName}
             {isStopping}
             onnavigate={ondeskskeydown}
+            onopen={openDesk}
           />
         {/each}
       </div>
+    {/if}
+
+    {#if openAgentId !== null}
+      {@const openAgent = office.agents.find(
+        (agent) => agent.id === openAgentId,
+      )}
+      {#if openAgent !== undefined}
+        <section aria-label="Desk terminal">
+          {#key openAgent.id}
+            <TerminalView
+              {client}
+              agentId={openAgent.id}
+              agentName={openAgent.name}
+              isRunning={isActive(openAgent.status)}
+              onFocusLeave={leaveTerminalToDesk}
+            />
+          {/key}
+        </section>
+      {/if}
     {/if}
   {/if}
 </div>
