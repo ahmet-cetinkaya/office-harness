@@ -119,6 +119,7 @@ Paths are relative to `src/apps/desktop/src/` unless they start at the repositor
 ### T2: Scene model: floors, departments, search
 
 - **Files:** `M/office-scene/state/floor-groups.ts`, `M/office-scene/state/floor-groups.spec.ts`, `M/office-scene/index.ts`.
+- **Inputs (research R3):** `floor-groups.ts` takes the office snapshot plus the `hierarchy.tree` answer as its two inputs. The agent snapshot carries no role or team: the role, the team name, the team lead, and the CEO live only in the tree answer (`research.md` R3).
 - **Work:**
   - (a) Floors from the project choice sorted by name, plus "No project" last when any chosen agent lacks a project; each floor with its name and agent count (D3).
   - (b) Departments where the 0002 fields are present, with the lead first, cross-floor departments, the CEO first in the unnamed group, and floors-only grouping when the fields are absent (D3).
