@@ -813,8 +813,11 @@ async fn a_ceo_creates_a_member_under_its_descendant_lead() {
 
 /// The credential and server file the server gave the live session, from
 /// the recorded environment.
-fn session_environment(records: &Path) -> (String, String) {
-    let env = fs::read_to_string(records.join("env")).expect("env");
+async fn session_environment(records: &Path) -> (String, String) {
+    let env = wait_for("the session's recorded environment", || {
+        fs::read_to_string(records.join("env")).ok()
+    })
+    .await;
     let value = |name: &str| {
         env.lines()
             .find_map(|line| line.strip_prefix(&format!("{name}=")))
@@ -947,7 +950,7 @@ async fn an_agent_stop_with_an_extra_field_is_refused_and_recorded() {
     let lead = client.create_agent(&office, "Lead", "lead-cli", None).await;
     place_lead_with_team(&office, &lead, "The Team");
     client.start(&lead).await;
-    let (credential, server_file) = session_environment(office.records_path());
+    let (credential, server_file) = session_environment(office.records_path()).await;
 
     // The extra field rides on an otherwise fine stop of the caller's own
     // id — the strict-field rule refuses before any use case runs.
