@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::sync::LazyLock;
+
 use serde::{Deserialize, Serialize};
 
 use crate::errors::AgentError;
@@ -26,6 +28,48 @@ const RESERVED_SHORTCUTS: [(&str, &str); 10] = [
     ("Ctrl+Shift+F9", "agent 9"),
     ("Ctrl+Shift+F10", "the agent switcher"),
 ];
+
+/// The reserved table in the form a value is compared in, built once.
+static RESERVED_SHORTCUTS_PARSED: LazyLock<Vec<(&'static str, &'static str, String)>> =
+    LazyLock::new(|| {
+        RESERVED_SHORTCUTS
+            .iter()
+            .filter_map(|(text, reserved_for)| {
+                Some((*text, *reserved_for, normalized_shortcut(text)?))
+            })
+            .collect()
+    });
+
+const KEY_SEPARATOR: char = '+';
+const MODIFIER_NAMES: [&str; 5] = ["ctrl", "control", "alt", "shift", "meta"];
+
+/// One key combination in the canonical form `ctrl+shift+f1`, the form the
+/// desktop's `parseShortcut` reads: modifiers first, lowercase, trimmed, with
+/// `esc` and `space` under their `KeyboardEvent.key` names. Modifier order,
+/// spaces around the parts, and case no longer matter. `None` when the text
+/// names no key, or only a modifier, which the desktop matches to nothing.
+fn normalized_shortcut(text: &str) -> Option<String> {
+    let mut parts = text
+        .split(KEY_SEPARATOR)
+        .map(|part| part.trim().to_lowercase());
+    let key = parts.next_back()?;
+    if key.is_empty() || MODIFIER_NAMES.contains(&key.as_str()) {
+        return None;
+    }
+    // The desktop reads only these exact tokens as flags; "control" is a
+    // modifier name for key rejection, but it does not set the ctrl flag.
+    let mut normalized: Vec<String> = ["ctrl", "alt", "shift", "meta"]
+        .iter()
+        .filter(|name| parts.any(|part| part == **name))
+        .map(|name| (*name).to_owned())
+        .collect();
+    normalized.push(match key.as_str() {
+        "esc" => "escape".to_owned(),
+        "space" => " ".to_owned(),
+        _ => key,
+    });
+    Some(normalized.join(&KEY_SEPARATOR.to_string()))
+}
 
 /// The office settings, stored as key and value rows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,13 +185,16 @@ fn parse_shortcut(key: SettingKey, text: &str) -> Result<String, AgentError> {
             field: key.as_str(),
         });
     }
-    if let Some((shortcut, reserved_for)) = RESERVED_SHORTCUTS
-        .iter()
-        .find(|(reserved, _)| *reserved == text)
-    {
+    let conflict = normalized_shortcut(text).and_then(|combination| {
+        RESERVED_SHORTCUTS_PARSED
+            .iter()
+            .find(|(_, _, normalized)| *normalized == combination)
+            .map(|(reserved, reserved_for, _)| (*reserved, *reserved_for))
+    });
+    if let Some((reserved, reserved_for)) = conflict {
         return Err(AgentError::ReservedShortcut {
             field: key.as_str(),
-            shortcut,
+            shortcut: reserved,
             reserved_for,
         });
     }
