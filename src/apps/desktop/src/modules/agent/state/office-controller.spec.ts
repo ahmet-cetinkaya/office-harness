@@ -12,6 +12,7 @@ import {
   createOfficeController,
   type OfficeSnapshot,
 } from "./office-controller";
+import { namesLostNotifications } from "./office-events";
 
 function agent(id: string, status = "stopped"): Agent {
   return {
@@ -73,7 +74,7 @@ function officeHandler(agents: Agent[]): Handler {
   };
 }
 
-function observe(client: CoreClient) {
+function observe(client: CoreClient, onNotificationsLost?: () => void) {
   let last: OfficeSnapshot | undefined;
   const actionRecord = {
     list: async (agentId: string) =>
@@ -91,6 +92,7 @@ function observe(client: CoreClient) {
       last = next;
     },
     actionRecord,
+    onNotificationsLost,
   );
   return { controller, state: () => last as OfficeSnapshot };
 }
@@ -373,5 +375,64 @@ describe("office controller", () => {
     ).toMatchObject({
       agent_id: "a",
     });
+  });
+
+  test("the bridge's lag text leads with the fall-behind and refetches the list (LOW-1)", async () => {
+    let lostCalls = 0;
+    const { client, push } = fakeClient((kind) =>
+      officeHandler([agent("a")])(kind),
+    );
+    const { controller, state } = observe(client, () => {
+      lostCalls += 1;
+      void client.sendRequest("notification.list");
+    });
+
+    await controller.watch();
+    push({
+      type: "storage.error",
+      message:
+        "the notification bridge missed 3 status events; notifications are missing for them",
+    });
+
+    expect(state().notice?.lead).toBe("The office fell behind.");
+    expect(state().notice?.message).toContain("missed 3 status events");
+    expect(lostCalls).toBe(1);
+  });
+
+  test("any other storage failure keeps its lead and reads no list (LOW-1)", async () => {
+    let lostCalls = 0;
+    const { client, push } = fakeClient((kind) =>
+      officeHandler([agent("a")])(kind),
+    );
+    const { controller, state } = observe(client, () => {
+      lostCalls += 1;
+    });
+
+    await controller.watch();
+    push({ type: "storage.error", message: "the disk is full" });
+
+    expect(state().notice).toEqual({
+      lead: "The office cannot save.",
+      message: "the disk is full",
+    });
+    expect(lostCalls).toBe(0);
+  });
+});
+
+/** The classifier behind the LOW-1 fold, on the bridge's exact words. */
+describe("the lost-notification classifier", () => {
+  test("the bridge's lag text names both the miss and the missing rows", () => {
+    expect(
+      namesLostNotifications(
+        "the notification bridge missed 2 status events; notifications are missing for them",
+      ),
+    ).toBe(true);
+  });
+
+  test("a plain save failure names neither", () => {
+    expect(namesLostNotifications("the disk is full")).toBe(false);
+    expect(namesLostNotifications("missed one row; the save failed")).toBe(
+      false,
+    );
   });
 });

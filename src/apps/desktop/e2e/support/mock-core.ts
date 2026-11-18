@@ -10,6 +10,7 @@ import type {
 } from "../../src/modules/agent/models/agent";
 import type { ActionEntry } from "../../src/modules/audit/models/action-entry";
 import type { HierarchyTree } from "../../src/modules/hierarchy/models/hierarchy";
+import type { NotificationRow } from "../../src/modules/notification/models/notification";
 
 /** One seeded agent with the fields the 0003 suites assert on. The mock
  * answers them on every agent it returns; left out, the office holds none. */
@@ -33,6 +34,10 @@ export interface OfficeSeed {
   snapshots?: Record<string, string>;
   /** The `focus_shortcut` setting. The server's default when left out. */
   focusShortcut?: string;
+  /** The notifications the faked server keeps. None when left out. */
+  notifications?: NotificationRow[];
+  /** The stored `last_view` JSON text, as `settings.get` answers with it. */
+  lastView?: string;
   /** A refusal to answer with, by request type. The tree reads it too. */
   refusals?: Record<string, { code: string; message: string }>;
 }
@@ -93,8 +98,8 @@ declare global {
       setHierarchy(tree: HierarchyTree): void;
       /** Sends one `agent.line` frame, as the line bridge does (0003). */
       pushAgentLine(agentId: string, line: string): void;
-      /** Sends one `notification.created` frame, as the bridge does (0003). */
-      pushNotificationCreated(notification: NotificationSeed): void;
+      /** Creates one notification, as the bridge does, with its event. */
+      notify(agentName: string, agentId: string, event: string): void;
       calls: RecordedCall[];
       /** Every `settings.set` invoke, oldest first, beside `calls`. */
       settings: RecordedSetting[];
@@ -142,6 +147,11 @@ export async function installMockCore(
       /** The 0002 hierarchy shape, kept in step with the agents. */
       hierarchy: structuredClone(mock.office?.hierarchy ?? null),
       actions: [] as ActionEntry[],
+      notifications: structuredClone(mock.office?.notifications ?? []),
+      settings: {
+        focus_shortcut: mock.office?.focusShortcut ?? "Ctrl+Shift+F12",
+        last_view: mock.office?.lastView ?? null,
+      } as Record<string, string | null>,
       nextId: 1,
     };
     for (const agent of office.agents) {
@@ -184,6 +194,31 @@ export async function installMockCore(
     };
     const refuse = (code: string, message: string): never => {
       throw { code, message };
+    };
+    /** One new notification row, as the bridge makes it, with its event. */
+    const createNotification = (
+      agent: Agent,
+      event: NotificationRow["event"],
+    ): NotificationRow => {
+      const row: NotificationRow = {
+        id: `notification-${office.nextId++}`,
+        agent_id: agent.id,
+        agent_name: agent.name,
+        event,
+        created_at: Date.now(),
+        read_at: null,
+      };
+      office.notifications.unshift(row);
+      pushEvent({ type: "notification.created", notification: row });
+      return row;
+    };
+    /** Marks one agent's unread rows read, as `notification.read_agent` does. */
+    const readAgentRows = (agentId: string) => {
+      for (const row of office.notifications) {
+        if (row.agent_id === agentId && row.read_at === null) {
+          row.read_at = Date.now();
+        }
+      }
     };
     const isActive = (status: string) =>
       ["starting", "working", "waiting_for_input"].includes(status);
@@ -594,6 +629,31 @@ export async function installMockCore(
         }
         case "session.list":
           return office.sessions[String(fields.agent_id)] ?? [];
+        case "notification.list": {
+          const unread = office.notifications.filter(
+            (row) => row.read_at === null,
+          );
+          const read = office.notifications.filter(
+            (row) => row.read_at !== null,
+          );
+          const byAge = (first: NotificationRow, second: NotificationRow) =>
+            second.created_at - first.created_at;
+          return [...unread.sort(byAge), ...read.sort(byAge)].slice(0, 500);
+        }
+        case "notification.read": {
+          const row = office.notifications.find(
+            (known) => known.id === fields.notification_id,
+          );
+          if (row === undefined) {
+            return refuse("not_found", "not found: no such notification");
+          }
+          row.read_at ??= Date.now();
+          return null;
+        }
+        case "notification.read_agent": {
+          readAgentRows(String(fields.agent_id));
+          return null;
+        }
         case "terminal.attach": {
           const agent = findAgent(fields.agent_id);
           const text = mock.office?.snapshots?.[agent.id] ?? "";
@@ -607,15 +667,17 @@ export async function installMockCore(
         case "settings.get":
           return {
             key: fields.key,
-            value: mock.office?.focusShortcut ?? "Ctrl+Shift+F12",
+            value: office.settings[String(fields.key)] ?? "",
           };
         case "settings.set": {
-          const recorded = {
-            key: String(fields.key),
-            value: fields.value,
-          };
-          settings.push(recorded);
-          return recorded;
+          const key = String(fields.key);
+          const value = String(fields.value ?? "");
+          if (key === "last_view" && value.length > 1024) {
+            refuse("invalid", "invalid: last_view is longer than 1 KiB");
+          }
+          office.settings[key] = value;
+          settings.push({ key, value: fields.value });
+          return { key, value: fields.value };
         }
         case "agent.actions":
           return office.actions.filter(
@@ -694,6 +756,12 @@ export async function installMockCore(
         pushNotificationCreated,
         setHierarchy: (tree: HierarchyTree) => {
           office.hierarchy = structuredClone(tree);
+        },
+        notify: (agentName: string, agentId: string, event: string) => {
+          createNotification(
+            { id: agentId, name: agentName } as Agent,
+            event as NotificationRow["event"],
+          );
         },
         calls,
         settings,
