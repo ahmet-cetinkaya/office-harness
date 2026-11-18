@@ -11,9 +11,18 @@ import type {
 import type { ActionEntry } from "../../src/modules/audit/models/action-entry";
 import type { HierarchyTree } from "../../src/modules/hierarchy/models/hierarchy";
 
+/** One seeded agent with the fields the 0003 suites assert on. The mock
+ * answers them on every agent it returns; left out, the office holds none. */
+export type SeededAgent = Agent & {
+  /** The agent's place in the company, as the tree names it. */
+  role?: "ceo" | "lead" | "member" | null;
+  /** The name of the team the agent sits in. */
+  team?: string | null;
+};
+
 /** What the faked office holds when the page opens. */
 export interface OfficeSeed {
-  agents?: Agent[];
+  agents?: SeededAgent[];
   projects?: Project[];
   sessions?: Record<string, Session[]>;
   additions?: Record<string, AdditionsView>;
@@ -56,6 +65,22 @@ export interface RecordedCall {
   args: Record<string, unknown>;
 }
 
+/** One `settings.set` invoke, as the mock records it beside `calls`. */
+export interface RecordedSetting {
+  key: string;
+  value: unknown;
+}
+
+/** One `notification.list` entry, as the 0003 contract carries it. */
+export interface NotificationSeed {
+  id: string;
+  agent_id: string;
+  agent_name: string;
+  event: "exited" | "failed" | "waiting_for_input" | "bell";
+  created_at: number;
+  read_at: number | null;
+}
+
 declare global {
   interface Window {
     __mockCore: {
@@ -66,7 +91,13 @@ declare global {
       pushTerminalFrame(kind: number, agentId: string, text: string): void;
       /** Replaces the tree that `hierarchy.tree` answers with. */
       setHierarchy(tree: HierarchyTree): void;
+      /** Sends one `agent.line` frame, as the line bridge does (0003). */
+      pushAgentLine(agentId: string, line: string): void;
+      /** Sends one `notification.created` frame, as the bridge does (0003). */
+      pushNotificationCreated(notification: NotificationSeed): void;
       calls: RecordedCall[];
+      /** Every `settings.set` invoke, oldest first, beside `calls`. */
+      settings: RecordedSetting[];
     };
   }
 }
@@ -87,6 +118,7 @@ export async function installMockCore(
     const eventChannels: number[] = [];
     const terminalChannels: number[] = [];
     const calls: RecordedCall[] = [];
+    const settings: RecordedSetting[] = [];
     let nextCallbackId = 1;
     let current = mock.initialState;
     let loginStartRegistered = mock.loginStart?.registered ?? false;
@@ -113,6 +145,10 @@ export async function installMockCore(
       nextId: 1,
     };
     for (const agent of office.agents) {
+      // Seeded roles and teams answer as given, or as no role at all, so
+      // every existing seed keeps its old shape.
+      agent.role ??= null;
+      agent.team ??= null;
       office.additions[agent.id] ??= {
         flags: [],
         env: [],
@@ -124,6 +160,14 @@ export async function installMockCore(
 
     const pushEvent = (event: ServerEvent) => {
       eventChannels.forEach((id) => send(id, event));
+    };
+    // The 0003 line event, as the line bridge sends it.
+    const pushAgentLine = (agentId: string, line: string) => {
+      pushEvent({ type: "agent.line", agent_id: agentId, line });
+    };
+    // The 0003 notification event, as the notification bridge sends it.
+    const pushNotificationCreated = (notification: NotificationSeed) => {
+      pushEvent({ type: "notification.created", notification });
     };
     // The contract's frame: 1 byte kind, 16 bytes agent UUID, then the payload.
     const pushTerminalFrame = (kind: number, agentId: string, text: string) => {
@@ -565,6 +609,14 @@ export async function installMockCore(
             key: fields.key,
             value: mock.office?.focusShortcut ?? "Ctrl+Shift+F12",
           };
+        case "settings.set": {
+          const recorded = {
+            key: String(fields.key),
+            value: fields.value,
+          };
+          settings.push(recorded);
+          return recorded;
+        }
         case "agent.actions":
           return office.actions.filter(
             (entry) => entry.agent_id === fields.agent_id,
@@ -638,10 +690,13 @@ export async function installMockCore(
         push,
         pushEvent,
         pushTerminalFrame,
+        pushAgentLine,
+        pushNotificationCreated,
         setHierarchy: (tree: HierarchyTree) => {
           office.hierarchy = structuredClone(tree);
         },
         calls,
+        settings,
       },
     });
   }, options);
