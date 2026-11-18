@@ -162,8 +162,14 @@ test("the search filters desks, focuses the match, and says when nothing matches
   await search.fill("zzz");
   await expect(desks(page)).toHaveCount(0);
   await expect(
-    scene(page).getByText("No desk matches the search."),
+    scene(page).getByRole("paragraph").filter({
+      hasText: "No desk matches the search.",
+    }),
   ).toBeVisible();
+  // The zero-match case is heard through the one live region as well (D9).
+  await expect(scene(page).getByRole("status")).toContainText(
+    "No desk matches the search.",
+  );
 
   // Spaces-only is no search: every desk is back.
   await search.fill("   ");
@@ -747,6 +753,112 @@ test.describe("T4: return and restore", () => {
     expect(
       await page.getByRole("region", { name: "Office scene" }).count(),
     ).toBe(0);
+  });
+
+  test("last_view's terminal_open follows the view that owns the terminal", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: { agents: OFFICE_AGENTS, projects: PROJECTS },
+    });
+    await page.goto("/");
+    const lastWrite = async () =>
+      page.evaluate(() => {
+        const writes = window.__mockCore.calls.filter(
+          (call) =>
+            call.command === "send_request" &&
+            call.args.kind === "settings.set",
+        ) as Array<{ args: { fields?: { value?: string } } }>;
+        return JSON.parse(String(writes.at(-1)?.args.fields?.value ?? "{}"));
+      });
+
+    // Open Cy's desk in the scene: the scene owns the open terminal.
+    await page.getByRole("button", { name: "To the scene" }).click();
+    await desks(page).filter({ hasText: "Cy" }).click();
+    await expect(
+      page.getByLabel("Terminal of Cy", { exact: true }),
+    ).toBeFocused();
+    await expect
+      .poll(lastWrite)
+      .toMatchObject({ view: "scene", terminal_open: true });
+
+    // Back in the panel with no selection: the scene's desk must not leak
+    // into the write; terminal_open is false.
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    await expect
+      .poll(lastWrite)
+      .toMatchObject({ view: "panel", terminal_open: false });
+
+    // The panel opens Ada's terminal through its selection: true again.
+    await page
+      .getByRole("region", { name: "Agents" })
+      .getByRole("button", { name: "Ada, project Site, working" })
+      .click();
+    await expect(
+      page.getByLabel("Terminal of Ada", { exact: true }),
+    ).toBeFocused();
+    await expect.poll(lastWrite).toMatchObject({
+      view: "panel",
+      terminal_open: true,
+      agent: "agent-ada",
+    });
+  });
+
+  test("a delayed restore never disables the writes after an early switch", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: null,
+          agent: null,
+          terminal_open: false,
+          view: "scene",
+        }),
+        lastViewDelayMs: 3_000,
+      },
+    });
+    await page.goto("/");
+
+    // The user switches before the slow restore answers: the early choice
+    // wins the view...
+    await page.getByRole("button", { name: "To the scene" }).click();
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+
+    // ...and the writes keep flowing afterwards (the restore gate opens
+    // even when the stored view is discarded).
+    const writes = async () =>
+      page.evaluate(() =>
+        (
+          window.__mockCore.calls.filter(
+            (call) =>
+              call.command === "send_request" &&
+              call.args.kind === "settings.set",
+          ) as Array<{ args: { fields?: { value?: string } } }>
+        ).map((call) => JSON.parse(String(call.args.fields?.value))),
+      );
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    await expect
+      .poll(async () => (await writes()).at(-1))
+      .toMatchObject({ view: "panel" });
+
+    // Once the delayed answer lands, the user's view still stands.
+    await page.waitForTimeout(3_500);
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    expect(
+      await page.getByRole("region", { name: "Office scene" }).count(),
+    ).toBe(0);
+    await expect
+      .poll(async () => (await writes()).at(-1))
+      .toMatchObject({ view: "panel" });
   });
 
   test("departments group the floors from the seeded tree (D2, FR-003)", async ({
