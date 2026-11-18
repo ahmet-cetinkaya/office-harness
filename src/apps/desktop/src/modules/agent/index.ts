@@ -6,3 +6,4 @@ export {
 } from "./state/office.store.svelte";
 export { default as OfficeView } from "./views/office-view.svelte";
 export type { Agent, Project } from "./models/agent";
+export { shownStatusText } from "./models/agent";

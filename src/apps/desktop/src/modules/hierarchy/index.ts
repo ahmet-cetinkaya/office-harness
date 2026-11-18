@@ -5,3 +5,8 @@ export {
   type HierarchyController,
 } from "./state/hierarchy-controller";
 export { default as HierarchyView } from "./views/hierarchy-view.svelte";
+export type {
+  HierarchyTree,
+  HierarchyTreeAgent,
+  HierarchyTreeTeam,
+} from "./models/hierarchy";

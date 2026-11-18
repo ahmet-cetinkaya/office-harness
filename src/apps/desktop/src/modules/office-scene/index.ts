@@ -8,8 +8,10 @@ export {
   searchMatches,
   type DeskGroup,
   type Floor,
-  type HierarchyTree,
-  type HierarchyTreeAgent,
-  type HierarchyTreeTeam,
   type ProjectChoice,
 } from "./state/floor-groups";
+export type {
+  HierarchyTree,
+  HierarchyTreeAgent,
+  HierarchyTreeTeam,
+} from "../hierarchy";
