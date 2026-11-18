@@ -10,7 +10,7 @@
     VersionMismatchView,
   } from "./core/connection";
   import { LoginStartPanel, NotAuthorizedView } from "./modules/access";
-  import { createOfficeStore, OfficeView } from "./modules/agent";
+  import { createPanelStore, PanelView } from "./modules/panel";
   import {
     createHierarchyController,
     HierarchyView,
@@ -20,14 +20,14 @@
 
   const client = createTauriCoreClient();
   const connection = createConnectionStore(client);
-  const office = createOfficeStore(client);
+  const panel = createPanelStore(client);
   const hierarchy = createHierarchyController(client);
   const snapshot = $derived(connection.snapshot);
   const isConnected = $derived(snapshot.state.status === "connected");
 
   onMount(() => {
     void connection.start();
-    void office.controller.watch();
+    void panel.office.controller.watch();
     void hierarchy.watch();
   });
 
@@ -35,7 +35,7 @@
   // arrived while the app was disconnected are lost.
   $effect(() => {
     if (isConnected) {
-      void office.controller.load();
+      void panel.office.controller.load();
       void hierarchy.load();
     }
   });
@@ -69,17 +69,17 @@
       onrestart={connection.restartServer}
     />
   {:else}
-    <OfficeView store={office}>
+    <PanelView store={panel} {hierarchy}>
       {#snippet side()}
         <HierarchyView
           controller={hierarchy}
-          agents={office.snapshot.agents}
-          projects={office.snapshot.projects}
-          selectedAgentId={office.snapshot.selectedAgentId}
-          onselect={office.controller.select}
+          agents={panel.office.snapshot.agents}
+          projects={panel.office.snapshot.projects}
+          selectedAgentId={panel.office.snapshot.selectedAgentId}
+          onselect={panel.office.controller.select}
         />
       {/snippet}
-    </OfficeView>
+    </PanelView>
     <LoginStartPanel {client} />
   {/if}
 </main>

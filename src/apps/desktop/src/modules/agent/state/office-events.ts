@@ -6,6 +6,7 @@ import type { AdditionsView, Agent } from "../models/agent";
 
 export const EVENT_AGENT_STATUS = "agent.status";
 export const EVENT_AGENT_CHANGED = "agent.changed";
+export const EVENT_AGENT_LINE = "agent.line";
 export const EVENT_AGENT_DELETED = "agent.deleted";
 export const EVENT_ADDITIONS_CHANGED = "agent.additions.changed";
 export const EVENT_ACTION_RECORDED = "action.recorded";
@@ -31,6 +32,20 @@ export function withStatus(
   return agents.map((agent) =>
     agent.id === agentId ? { ...agent, status } : agent,
   );
+}
+
+export function withLine(
+  agents: Agent[],
+  agentId: string,
+  line: string,
+): Agent[] {
+  return agents.map((agent) =>
+    agent.id === agentId ? { ...agent, last_line: line } : agent,
+  );
+}
+
+export function readLineEvent(event: ServerEvent): string {
+  return typeof event.line === "string" ? event.line : "";
 }
 
 export function withoutAgent(agents: Agent[], agentId: string): Agent[] {
