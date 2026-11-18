@@ -464,3 +464,349 @@ async fn an_unsupported_command_or_field_is_refused_and_recorded() {
 
     office.serving.stop().await;
 }
+
+/// Places one agent through the same store the server built, as
+/// `agent_subtree.rs` does for its tree: the caller must hold its place
+/// before its create can raise a child (A4).
+fn place(office: &Office, agent_id: &str, role: hierarchy_domain::Role, parent: Option<&str>) {
+    let connection =
+        rusqlite::Connection::open(office.serving.office.config.database_path()).expect("database");
+    let store: Arc<dyn HierarchyStore> = Arc::new(HierarchyRepository::new(
+        SharedConnection::new(connection).handle(),
+        AgentPlaces::new(),
+    ));
+    hierarchy_application::PlaceAgentHandler::new(store)
+        .handle(
+            hierarchy_application::commands::place_agent::PlaceAgentRequest {
+                agent_id: agent_id.parse().expect("agent id"),
+                role,
+                parent_agent_id: parent.map(|id| id.parse().expect("agent id")),
+                team_id: None,
+            },
+        )
+        .expect("placement");
+}
+
+/// A CEO agent raises a team lead over agent-call, and the lead lands
+/// placed (A4, FR-003, SC-006).
+#[tokio::test]
+async fn a_ceo_creates_a_lead_through_agent_call_and_the_tree_shows_it() {
+    let office = Office::open().await;
+    office.clis.add("lead-cli", "echo ready; sleep 30");
+    let lead_request = json!({
+        "name": "Bo",
+        "command": "lead-cli",
+        "working_folder": office.work_path(),
+        "role": {"kind": "lead"},
+    });
+    office.clis.add(
+        "ceo-cli",
+        &calling_script(
+            office.records_path(),
+            "create",
+            "agent.create",
+            &lead_request.to_string(),
+        ),
+    );
+    let mut client = office.client().await;
+    let ceo = client.create_agent(&office, "Chief", "ceo-cli", None).await;
+    place(&office, &ceo, hierarchy_domain::Role::Ceo, None);
+    client.start(&ceo).await;
+
+    let (code, out) = read_output(office.records_path(), "create").await;
+    assert_eq!(code, "0", "{out}");
+    let answer: Value = serde_json::from_str(out.trim()).expect("json");
+    assert_eq!(answer["ok"], true, "{answer}");
+    let lead = answer["result"]["id"].as_str().expect("id").to_owned();
+
+    // The created row is placed: the role column says lead, and the parent
+    // is the CEO (a teamless lead shows in no tree branch until the user
+    // gives it its team, so the row is the witness here).
+    let connection =
+        rusqlite::Connection::open(office.serving.office.config.database_path()).expect("database");
+    let (role, parent): (String, Option<String>) = connection
+        .query_row(
+            "SELECT role, parent_agent_id FROM agent_agents WHERE id = ?1",
+            [&lead],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("the placed row");
+    assert_eq!(role, "lead", "{parent:?}");
+    assert_eq!(parent, Some(ceo.clone()), "{role}");
+    let tree = client.ask("hierarchy.tree", json!({})).await;
+    assert_eq!(tree["ok"], true, "{tree}");
+    assert_eq!(tree["result"]["ceo"]["id"], json!(ceo), "{tree}");
+
+    // The user gives the lead its team; the tree then shows it as the team's
+    // lead, the place the CEO's create prepared.
+    let team = client
+        .ask(
+            "team.create",
+            json!({"name": "The Team", "lead_agent_id": lead}),
+        )
+        .await;
+    assert_eq!(team["ok"], true, "{team}");
+    let tree = client.ask("hierarchy.tree", json!({})).await;
+    let teams = tree["result"]["teams"].as_array().expect("teams");
+    assert_eq!(teams.len(), 1, "{tree}");
+    assert_eq!(teams[0]["lead"]["id"], json!(lead), "{tree}");
+    assert_eq!(teams[0]["lead"]["role"], "lead", "{tree}");
+
+    office.serving.stop().await;
+}
+
+/// A member caller asking for a child role is refused with the reason its
+/// own place gives, and the refusal is recorded with the member as the
+/// actor (A4, FR-009).
+#[tokio::test]
+async fn a_member_caller_asking_for_a_child_role_is_refused_and_recorded() {
+    let office = Office::open().await;
+    office.clis.add("member-cli", "echo ready; sleep 30");
+    let create = json!({
+        "name": "Cy",
+        "command": "member-cli",
+        "working_folder": office.work_path(),
+        "role": {"kind": "member"},
+    });
+    office.clis.add(
+        "member-cli",
+        &calling_script(
+            office.records_path(),
+            "create",
+            "agent.create",
+            &create.to_string(),
+        ),
+    );
+    let mut client = office.client().await;
+    let lead = client
+        .create_agent(&office, "Lead", "member-cli", None)
+        .await;
+    place(&office, &lead, hierarchy_domain::Role::Lead, None);
+    let team = client
+        .ask(
+            "team.create",
+            json!({"name": "The Team", "lead_agent_id": lead}),
+        )
+        .await;
+    assert_eq!(team["ok"], true, "{team}");
+    let member = client
+        .create_agent(&office, "Mel", "member-cli", None)
+        .await;
+    place(
+        &office,
+        &member,
+        hierarchy_domain::Role::Member,
+        Some(&lead),
+    );
+    client.start(&member).await;
+
+    let (code, out) = read_output(office.records_path(), "create").await;
+    assert_eq!(code, "1", "{out}");
+    let answer: Value = serde_json::from_str(out.trim()).expect("json");
+    assert_eq!(answer["ok"], false, "{answer}");
+    assert_eq!(answer["error"]["code"], "refused", "{answer}");
+    let message = answer["error"]["message"].as_str().expect("message");
+    assert!(
+        message.contains("a member may not create agents"),
+        "{answer}"
+    );
+
+    // Nothing was created: the member's own create is the only new agent.
+    let listed = client.ask("agent.list", json!({})).await;
+    let names: Vec<&str> = listed["result"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .filter_map(|agent| agent["name"].as_str())
+        .collect();
+    assert!(!names.contains(&"Cy"), "{names:?}");
+
+    // The refusal sits in the action record with the member as the actor
+    // (FR-009).
+    let entries = actions_of(&mut client, &member).await;
+    let entry = entries
+        .iter()
+        .find(|entry| entry["action"] == "refused")
+        .expect("the refusal is recorded");
+    assert_eq!(entry["actor"], json!(format!("agent:{member}")), "{entry}");
+    assert!(
+        entry["result"]
+            .as_str()
+            .expect("result")
+            .contains("a member may not create agents"),
+        "{entry}"
+    );
+
+    office.serving.stop().await;
+}
+
+/// A lead caller asking for a lead child is refused: its place allows
+/// members only (A4, FR-009). The refusal is recorded too.
+#[tokio::test]
+async fn a_lead_caller_asking_for_a_lead_child_is_refused() {
+    let office = Office::open().await;
+    let create = json!({
+        "name": "Cy",
+        "command": "member-cli",
+        "working_folder": office.work_path(),
+        "role": {"kind": "lead"},
+    });
+    office.clis.add(
+        "lead-cli",
+        &calling_script(
+            office.records_path(),
+            "create",
+            "agent.create",
+            &create.to_string(),
+        ),
+    );
+    let mut client = office.client().await;
+    let lead = client.create_agent(&office, "Lead", "lead-cli", None).await;
+    place(&office, &lead, hierarchy_domain::Role::Lead, None);
+    let team = client
+        .ask(
+            "team.create",
+            json!({"name": "The Team", "lead_agent_id": lead}),
+        )
+        .await;
+    assert_eq!(team["ok"], true, "{team}");
+    client.start(&lead).await;
+
+    let (code, out) = read_output(office.records_path(), "create").await;
+    assert_eq!(code, "1", "{out}");
+    let answer: Value = serde_json::from_str(out.trim()).expect("json");
+    assert_eq!(answer["error"]["code"], "refused", "{answer}");
+    assert!(
+        answer["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("member"),
+        "{answer}"
+    );
+
+    let entries = actions_of(&mut client, &lead).await;
+    assert!(
+        entries.iter().any(|entry| entry["action"] == "refused"),
+        "{entries:?}"
+    );
+
+    office.serving.stop().await;
+}
+
+/// An agent asking to create a ceo is refused whatever its own place (A4,
+/// A5): the office has one ceo, and only the user creates it.
+#[tokio::test]
+async fn an_agent_asking_for_a_ceo_child_is_refused() {
+    let office = Office::open().await;
+    let create = json!({
+        "name": "Cy",
+        "command": "member-cli",
+        "working_folder": office.work_path(),
+        "role": {"kind": "ceo"},
+    });
+    office.clis.add(
+        "lead-cli",
+        &calling_script(
+            office.records_path(),
+            "create",
+            "agent.create",
+            &create.to_string(),
+        ),
+    );
+    let mut client = office.client().await;
+    let lead = client.create_agent(&office, "Lead", "lead-cli", None).await;
+    place(&office, &lead, hierarchy_domain::Role::Lead, None);
+    let team = client
+        .ask(
+            "team.create",
+            json!({"name": "The Team", "lead_agent_id": lead}),
+        )
+        .await;
+    assert_eq!(team["ok"], true, "{team}");
+    client.start(&lead).await;
+
+    let (code, out) = read_output(office.records_path(), "create").await;
+    assert_eq!(code, "1", "{out}");
+    let answer: Value = serde_json::from_str(out.trim()).expect("json");
+    assert_eq!(answer["error"]["code"], "refused", "{answer}");
+    assert!(
+        answer["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("ceo"),
+        "{answer}"
+    );
+    let listed = client.ask("agent.list", json!({})).await;
+    let names: Vec<&str> = listed["result"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .filter_map(|agent| agent["name"].as_str())
+        .collect();
+    assert!(!names.contains(&"Cy"), "{names:?}");
+
+    office.serving.stop().await;
+}
+
+/// A CEO caller may also fill a team seat: a member named under one of its
+/// own descendant leads lands under that lead, not under the CEO (A4). The
+/// lead's team takes the member (A6).
+#[tokio::test]
+async fn a_ceo_creates_a_member_under_its_descendant_lead() {
+    let office = Office::open().await;
+    office.clis.add("member-cli", "echo ready; sleep 30");
+    let mut client = office.client().await;
+    // The CEO's command names the script the test writes later, with the
+    // lead's id inside: a script only has to exist when the session starts.
+    let ceo = client.create_agent(&office, "Chief", "ceo-cli", None).await;
+    place(&office, &ceo, hierarchy_domain::Role::Ceo, None);
+    let lead = client
+        .create_agent(&office, "Lead", "member-cli", None)
+        .await;
+    place(&office, &lead, hierarchy_domain::Role::Lead, None);
+    let team = client
+        .ask(
+            "team.create",
+            json!({"name": "The Team", "lead_agent_id": lead}),
+        )
+        .await;
+    assert_eq!(team["ok"], true, "{team}");
+
+    let create = json!({
+        "name": "Cy",
+        "command": "member-cli",
+        "working_folder": office.work_path(),
+        "role": {"kind": "member", "parent_agent_id": lead},
+    });
+    office.clis.add(
+        "ceo-cli",
+        &calling_script(
+            office.records_path(),
+            "create",
+            "agent.create",
+            &create.to_string(),
+        ),
+    );
+    client.start(&ceo).await;
+
+    let (code, out) = read_output(office.records_path(), "create").await;
+    assert_eq!(code, "0", "{out}");
+    let answer: Value = serde_json::from_str(out.trim()).expect("json");
+    assert_eq!(answer["ok"], true, "{answer}");
+    let member = answer["result"]["id"].as_str().expect("id").to_owned();
+
+    // The member sits in the lead's team, under the lead the CEO named
+    // (A6), not under the CEO itself.
+    let tree = client.ask("hierarchy.tree", json!({})).await;
+    assert_eq!(tree["ok"], true, "{tree}");
+    assert_eq!(tree["result"]["ceo"]["id"], json!(ceo), "{tree}");
+    let teams = tree["result"]["teams"].as_array().expect("teams");
+    assert_eq!(teams.len(), 1, "{tree}");
+    assert_eq!(teams[0]["lead"]["id"], json!(lead), "{tree}");
+    let members = teams[0]["members"].as_array().expect("members");
+    assert_eq!(members.len(), 1, "{tree}");
+    assert_eq!(members[0]["id"], json!(member), "{tree}");
+    assert_eq!(members[0]["role"], "member", "{tree}");
+
+    office.serving.stop().await;
+}
