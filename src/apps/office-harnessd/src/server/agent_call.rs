@@ -6,7 +6,7 @@ use access_application::commands::authenticate_agent_call::AgentGrant;
 use agent_application::common::actor_scope::ActorScope;
 use axum::extract::ws::{Message, WebSocket};
 use hierarchy_application::common::errors::HierarchyApplicationError;
-use hierarchy_domain::{HierarchyError, Role, TreeRow, check_descendant, is_descendant_of};
+use hierarchy_domain::{HierarchyError, Role, TeamId, TreeRow, check_descendant, is_descendant_of};
 use kernel::{Actor, AgentId};
 use serde_json::{Value, json};
 use tokio::sync::watch;
@@ -411,16 +411,16 @@ fn allowed_fields_of(
             }
         }
         // The client's role crosses, but only a role the caller's place
-        // allows (A4): a CEO raises leads, a lead raises members under
-        // itself or under its own descendant leads, a member and an unplaced
-        // agent raise nothing, and no agent creates a CEO. A create without
-        // a role keeps the plain create's meaning on this connection: a
-        // member under the caller itself.
-        let (role_kind, parent) = match fields_in.get("role") {
-            None | Some(Value::Null) => (Role::Member.as_str(), Some(caller)),
+        // allows (A4): a CEO raises a lead, whose team the caller names,
+        // a lead raises members under itself or under its own descendant
+        // leads, a member and an unplaced agent raise nothing, and no agent
+        // creates a CEO. A create without a role keeps the plain create's
+        // meaning on this connection: a member under the caller itself.
+        let (role_kind, parent, team) = match fields_in.get("role") {
+            None | Some(Value::Null) => (Role::Member.as_str(), Some(caller), None),
             Some(role) => role_of(role).map_err(|message| (ErrorCode::Invalid, message))?,
         };
-        let parent = validated_parent(role_kind, parent, caller, rows)?;
+        let (parent, team) = validated_place(role_kind, parent, team, caller, rows)?;
         let mut role = serde_json::Map::new();
         role.insert("kind".to_owned(), Value::String(role_kind.to_owned()));
         if let Some(parent) = parent {
@@ -429,6 +429,9 @@ fn allowed_fields_of(
                 Value::String(parent.to_string()),
             );
         }
+        if let Some(team) = team {
+            role.insert("team_id".to_owned(), Value::String(team.as_uuid_text()));
+        }
         fields.insert("role".to_owned(), Value::Object(role));
     } else if let Some(agent_id) = fields_in.get("agent_id") {
         fields.insert("agent_id".to_owned(), agent_id.clone());
@@ -436,14 +439,27 @@ fn allowed_fields_of(
     Ok(fields)
 }
 
-/// Reads the client's `role` object as the pair the place rules decide on:
-/// the kind in its wire form and the parent it names, if any. A role that is
-/// not an object, or whose kind is not one of the three roles, names the
-/// field at fault.
-fn role_of(role: &Value) -> Result<(&str, Option<AgentId>), String> {
+/// The fields the `role` object takes, and no others: a key outside this
+/// list is `invalid` before any place rule reads the role (the same closed
+/// allowlist the frame itself passes, PR 40 r2 LOW).
+const ROLE_FIELDS: [&str; 3] = ["kind", "parent_agent_id", "team_id"];
+
+/// Reads the client's `role` object as the triple the place rules decide on:
+/// the kind in its wire form, the parent it names, and the team it names, if
+/// any. A role that is not an object, a kind that is not one of the three
+/// roles, or a field the role does not take, names the field at fault.
+fn role_of(role: &Value) -> Result<(&str, Option<AgentId>, Option<TeamId>), String> {
     let Value::Object(role) = role else {
         return Err("role must be an object".to_owned());
     };
+    for key in role.keys() {
+        if !ROLE_FIELDS.contains(&key.as_str()) {
+            return Err(format!(
+                "role does not take the field {:?}",
+                truncated(key, MAX_REFUSAL_TEXT_CHARS)
+            ));
+        }
+    }
     let kind = role
         .get("kind")
         .and_then(Value::as_str)
@@ -456,27 +472,33 @@ fn role_of(role: &Value) -> Result<(&str, Option<AgentId>), String> {
         .and_then(Value::as_str)
         .map(|text| AgentId::from_uuid_text(text).ok_or("role.parent_agent_id is not an agent id"))
         .transpose()?;
-    Ok((kind, parent))
+    let team = role
+        .get("team_id")
+        .and_then(Value::as_str)
+        .map(|text| TeamId::from_uuid_text(text).ok_or("role.team_id is not a team id"))
+        .transpose()?;
+    Ok((kind, parent, team))
 }
 
 /// The child roles an agent caller may ask for, from its own place in the
-/// tree (A4): a CEO raises a lead (the lead's place comes from the CEO and
-/// its team from the user, so the caller names no parent for it), and a lead
-/// raises a member under itself. A member may also land under one of the
-/// caller's descendant leads, so a CEO can fill a team it can see; the tree
-/// rules still check the place the child takes. A member or an unplaced
-/// agent raises nothing, and no agent creates a CEO.
+/// tree (A4): a CEO raises a lead, whose team the caller names (the team is
+/// the lead's place; the parent comes from the tree), and a lead raises a
+/// member under itself. A member may also land under one of the caller's
+/// descendant leads, so a CEO can fill a team it can see; the tree rules
+/// still check the place the child takes. A member or an unplaced agent
+/// raises nothing, and no agent creates a CEO.
 ///
 /// # Errors
 /// `refused` with the roles the caller's place allows, so the agent knows
-/// what it may ask for instead (FR-009); `invalid` for a parent a lead
-/// child cannot take.
-fn validated_parent(
+/// what it may ask for instead (FR-009); `invalid` for a place a lead child
+/// cannot take.
+fn validated_place(
     kind: &str,
     parent: Option<AgentId>,
+    team: Option<TeamId>,
     caller: AgentId,
     rows: &[TreeRow],
-) -> Result<Option<AgentId>, (ErrorCode, String)> {
+) -> Result<(Option<AgentId>, Option<TeamId>), (ErrorCode, String)> {
     if kind == Role::Ceo.as_str() {
         return Err((ErrorCode::Refused, CEO_REFUSAL.to_owned()));
     }
@@ -495,7 +517,24 @@ fn validated_parent(
                 "role.parent_agent_id must stay unset for a lead".to_owned(),
             ));
         }
-        return Ok(None);
+        // The team is the lead's place (0002 contract: a lead REQUIRES a
+        // team_id). Without one the lead would be placed outside every
+        // team, hidden from the tree, so the gateway refuses instead of
+        // answering success for a lead the office cannot show.
+        let team = team.ok_or((
+            ErrorCode::Invalid,
+            "role.team_id is required for a lead; the team is the lead's place".to_owned(),
+        ))?;
+        return Ok((None, Some(team)));
+    }
+    // A member's team is its lead's team (A6), so the caller names no team
+    // for it; a named team would read as a place the lead does not give.
+    if team.is_some() {
+        return Err((
+            ErrorCode::Invalid,
+            "role.team_id must stay unset for a member; the member takes its lead's team"
+                .to_owned(),
+        ));
     }
     // The member lands under the caller, or under a lead of the caller's
     // own subtree when one is named (FR-008): under anything else the tree
@@ -503,7 +542,7 @@ fn validated_parent(
     let parent = parent.unwrap_or(caller);
     if parent == caller {
         child_role_allowed(kind, allowed)?;
-        return Ok(Some(parent));
+        return Ok((Some(parent), None));
     }
     let parent_is_lead = rows
         .iter()
@@ -514,7 +553,7 @@ fn validated_parent(
     if !parent_is_lead {
         return Err((ErrorCode::Refused, PARENT_NOT_LEAD_REFUSAL.to_owned()));
     }
-    Ok(Some(parent))
+    Ok((Some(parent), None))
 }
 
 /// Why an agent's create without a role of its own is refused: an unplaced

@@ -53,7 +53,7 @@ The `auth` frame of an agent adds `agent_id`; its proof is the office proof keye
 
 ## New requests (agent caller, via `office-harnessd agent-call`)
 
-Same envelope, but the connection proves an agent call token instead of the office token, and the server fixes the actor to that agent. Allowed types: `agent.create` (with `role`, within its own descendants and the role rules), `agent.start`, `agent.new_task`, `agent.stop` (descendants only), `directive.send`. Any other type, including `agent.delete`, `team.*`, and `hierarchy.tree`, is `refused` with the reason recorded (FR-008, FR-009).
+Same envelope, but the connection proves an agent call token instead of the office token, and the server fixes the actor to that agent. Allowed types: `agent.create` (with `role`, within its own descendants and the role rules), `agent.start`, `agent.new_task`, `agent.stop` (descendants only), `directive.send`. Any other type, including `agent.delete`, `team.*`, and `hierarchy.tree`, is `refused` with the reason recorded (FR-008, FR-009). The `role` object of an agent's `agent.create` follows the user rules above: `kind: "lead"` requires `team_id` of an existing team (the user's `team.create` makes one), `kind: "member"` takes no `team_id` of its own (its lead's team applies, A6), and a field `role` does not take is `invalid`.
 
 ### `directive.send`
 
