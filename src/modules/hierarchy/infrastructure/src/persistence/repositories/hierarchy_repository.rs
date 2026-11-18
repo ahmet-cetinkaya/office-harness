@@ -185,7 +185,9 @@ impl HierarchyStore for HierarchyRepository {
         team_id: Option<TeamId>,
     ) -> Result<(), HierarchyApplicationError> {
         let places = &self.places;
-        let _exclusion = self.tree_exclusion();
+        // No exclusion of its own: the caller holds it across the check and
+        // this write (the create-role handler's contract), and a second
+        // take of the same mutex would never return.
         self.locked(|connection| {
             places.write_place(connection, agent_id, role, parent_agent_id, team_id)?;
             if let Some(team) = team_id {

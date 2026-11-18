@@ -8,6 +8,12 @@ use hierarchy_domain::{Role, TreeRow};
 use crate::common::interfaces::{TreeExclusion, TreeSnapshot};
 use crate::common::ports::SubtreeActionError;
 
+/// The name a test row carries: the id text, since these rules do not read
+/// names (only the CEO refusal does, and its test names its row itself).
+fn name_of(agent_id: AgentId) -> String {
+    agent_id.to_string()
+}
+
 fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex
         .lock()
@@ -139,6 +145,7 @@ struct Family {
 fn row(agent_id: AgentId, parent_agent_id: Option<AgentId>, role: Option<Role>) -> TreeRow {
     TreeRow {
         agent_id,
+        name: name_of(agent_id),
         role,
         parent_agent_id,
         team_id: None,

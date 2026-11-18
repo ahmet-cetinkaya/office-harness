@@ -5,6 +5,15 @@ use serde_json::{Map, Value};
 
 use super::{Fields, read_additions};
 
+/// The `role` object of `agent.create` (contract 0002, FR-003). Absent means
+/// the no-role behavior of 0001 (PB-1).
+#[derive(Debug)]
+pub struct RolePlacement {
+    pub kind: String,
+    pub parent_agent_id: Option<String>,
+    pub team_id: Option<String>,
+}
+
 /// `agent.create`.
 #[derive(Debug)]
 pub struct CreateAgentRequest {
@@ -13,6 +22,7 @@ pub struct CreateAgentRequest {
     pub working_folder: Option<String>,
     pub project_id: Option<String>,
     pub additions: Option<AdditionsInput>,
+    pub role: Option<RolePlacement>,
 }
 
 impl CreateAgentRequest {
@@ -29,8 +39,35 @@ impl CreateAgentRequest {
                 None | Some(Value::Null) => None,
                 Some(value) => Some(read_additions(value)?),
             },
+            role: match body.get("role") {
+                None | Some(Value::Null) => None,
+                Some(value) => Some(read_role(value)?),
+            },
         })
     }
+}
+
+/// Reads the `role` object: `kind` names the role, the other two fields are
+/// optional ids. Every failure names the field at fault.
+///
+/// # Errors
+/// The text names the field at fault.
+fn read_role(value: &Value) -> Result<RolePlacement, String> {
+    let Value::Object(role) = value else {
+        return Err("role must be an object".to_owned());
+    };
+    let fields = Fields(role);
+    Ok(RolePlacement {
+        kind: fields
+            .required_text("kind")
+            .map_err(|error| format!("role.{error}"))?,
+        parent_agent_id: fields
+            .optional_text("parent_agent_id")
+            .map_err(|error| format!("role.{error}"))?,
+        team_id: fields
+            .optional_text("team_id")
+            .map_err(|error| format!("role.{error}"))?,
+    })
 }
 
 /// `agent.delete`, `agent.start`, `agent.stop`, `agent.new_task`,

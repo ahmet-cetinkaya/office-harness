@@ -6,7 +6,7 @@ use access_application::commands::authenticate_agent_call::AgentGrant;
 use agent_application::common::actor_scope::ActorScope;
 use axum::extract::ws::{Message, WebSocket};
 use hierarchy_application::common::errors::HierarchyApplicationError;
-use hierarchy_domain::HierarchyError;
+use hierarchy_domain::{HierarchyError, check_descendant};
 use kernel::{Actor, AgentId};
 use serde_json::{Value, json};
 use tokio::sync::watch;
@@ -101,6 +101,9 @@ async fn answer_request(state: &ServerState, grant: &AgentGrant, frame: &str) ->
                     );
                 }
                 "directive.send" => return answer_directive(state, grant, &request).await,
+                "agent.create" | "agent.start" | "agent.new_task" | "agent.stop" => {
+                    return answer_office_request(state, grant, &request).await;
+                }
                 _ => Refusal::NotYet,
             }
         }
@@ -210,6 +213,166 @@ fn parse_directive(fields: &serde_json::Map<String, Value>) -> Result<(AgentId, 
         .to_owned();
     Ok((target, text))
 }
+
+/// Runs an office request (`agent.create`, `agent.start`, `agent.new_task`,
+/// `agent.stop`) from the caller's actor (0002, FR-008). Before anything
+/// runs, the request's own target must sit in the caller's subtree, checked
+/// on a fresh tree snapshot; the answer is the `AgentGateway`'s own, so the
+/// request behaves like the user had sent it (PB-1), under the caller's
+/// actor. `agent.delete` never reaches here: it is outside the allowlist.
+async fn answer_office_request(
+    state: &ServerState,
+    grant: &AgentGrant,
+    request: &Request,
+) -> Response {
+    let caller = grant.agent_id;
+    let target = match target_of(request, caller) {
+        Ok(target) => target,
+        Err(message) => {
+            let message = truncated(&message, MAX_REFUSAL_TEXT_CHARS);
+            state.directive_journal.refused(caller, &message);
+            return Response::failure(request.id, ErrorCode::Invalid, message);
+        }
+    };
+    // The descendant rule runs on a fresh snapshot, on the blocking pool,
+    // before the gateway sees the request: an agent that names a stranger
+    // (as a target or as the parent of its create) reaches no use case at
+    // all (FR-008, FR-009). The caller itself is always inside its own
+    // subtree, placed or not — a member may create before it is placed,
+    // and the tree rules then decide the place the child takes.
+    let tree_query = Arc::clone(&state.hierarchy_tree);
+    let inside = spawn_blocking(move || {
+        tree_query
+            .store_snapshot()
+            .map(|rows| target == caller || check_descendant(&rows, caller, target).is_ok())
+    })
+    .await;
+    let descendant_ok = match inside {
+        Ok(Ok(inside)) => inside,
+        Ok(Err(error)) => {
+            let message = truncated(&error.to_string(), MAX_REFUSAL_TEXT_CHARS);
+            state.directive_journal.refused(caller, &message);
+            return Response::failure(request.id, wire_code(&error), message);
+        }
+        Err(error) => {
+            let message = format!("the request task failed: {error}");
+            state.directive_journal.refused(caller, &message);
+            return Response::failure(request.id, ErrorCode::Internal, message);
+        }
+    };
+    if !descendant_ok {
+        let reason = format!(
+            "the agent is not a descendant of {}",
+            truncated(&caller.to_string(), MAX_REFUSAL_TEXT_CHARS)
+        );
+        state.log.refusal(&format!(
+            "agent {caller} asked for {:?} outside its subtree",
+            truncated(&request.kind, MAX_REFUSAL_TEXT_CHARS)
+        ));
+        state.directive_journal.refused(caller, &reason);
+        return Response::failure(request.id, ErrorCode::Refused, reason);
+    }
+    let fields = match allowed_fields_of(request, caller) {
+        Ok(fields) => fields,
+        Err(message) => {
+            let message = truncated(&message, MAX_REFUSAL_TEXT_CHARS);
+            state.directive_journal.refused(caller, &message);
+            return Response::failure(request.id, ErrorCode::Invalid, message);
+        }
+    };
+    let forwarded = Request {
+        id: request.id,
+        kind: request.kind.clone(),
+        fields,
+    };
+    let gateway = state.agents.clone();
+    let journaled = Arc::clone(&state.directive_journal);
+    let actor = caller;
+    let answered = spawn_blocking(move || {
+        // The gateway's handlers journal and record under the actor this
+        // scope names, so the record keeps the calling agent (FR-011).
+        let _scope = ActorScope::enter(Actor::Agent(actor));
+        gateway.run(&forwarded)
+    })
+    .await;
+    match answered {
+        Ok(response) => response,
+        Err(error) => {
+            let message = format!("the request task failed: {error}");
+            journaled.refused(caller, &message);
+            Response::failure(request.id, ErrorCode::Internal, message)
+        }
+    }
+}
+
+/// The agent the request acts on: the named `agent_id`, or, for a create,
+/// the parent the new agent would sit under — the requested one, else the
+/// caller (`creation_parent`). That parent must sit in the caller's subtree,
+/// the same rule the other types apply to their target (FR-008).
+fn target_of(request: &Request, caller: AgentId) -> Result<AgentId, String> {
+    if request.kind == "agent.create" {
+        let requested = request
+            .fields
+            .get("role")
+            .and_then(|role| role.get("parent_agent_id"))
+            .and_then(Value::as_str);
+        return Ok(match requested {
+            Some(text) => {
+                AgentId::from_uuid_text(text).ok_or("role.parent_agent_id is not an agent id")?
+            }
+            None => caller,
+        });
+    }
+    let text = request
+        .fields
+        .get("agent_id")
+        .and_then(Value::as_str)
+        .ok_or("agent_id is required")?;
+    AgentId::from_uuid_text(text).ok_or_else(|| "agent_id is not an agent id".to_owned())
+}
+
+/// The fields an office request may carry: a create keeps the fields the
+/// agent protocol takes, but the role is the server's, not the client's;
+/// the other types keep only `agent_id`. Any other field is dropped before
+/// the gateway sees the frame (the closed allowlist of the 0002 contract).
+fn allowed_fields_of(
+    request: &Request,
+    caller: AgentId,
+) -> Result<serde_json::Map<String, Value>, String> {
+    let mut fields = serde_json::Map::new();
+    if request.kind == "agent.create" {
+        // An agent never sets the additions of its child: the office
+        // additions belong to the user's own judgement (0002 contract, agent
+        // caller).
+        if request.fields.contains_key("additions") {
+            return Err("agent.create does not take the field \"additions\"".to_owned());
+        }
+        for key in CREATE_FIELDS {
+            if let Some(value) = request.fields.get(key) {
+                fields.insert((*key).to_owned(), value.clone());
+            }
+        }
+        // The child an agent creates is a member under the caller (A4,
+        // FR-008): the parent stays the caller itself, the team is the
+        // caller's place, and the client's own `role` object never crosses,
+        // because an agent creates no CEO and no lead.
+        let mut role = serde_json::Map::new();
+        role.insert("kind".to_owned(), Value::String("member".to_owned()));
+        role.insert(
+            "parent_agent_id".to_owned(),
+            Value::String(caller.to_string()),
+        );
+        fields.insert("role".to_owned(), Value::Object(role));
+    } else if let Some(agent_id) = request.fields.get("agent_id") {
+        fields.insert("agent_id".to_owned(), agent_id.clone());
+    }
+    Ok(fields)
+}
+
+/// The fields of `agent.create` an agent caller may set. `role` is joined
+/// separately, the client's own `role` object is replaced, and `additions`
+/// is refused outright.
+const CREATE_FIELDS: [&str; 4] = ["name", "command", "working_folder", "project_id"];
 
 /// The wire code of a directive failure: a rule between the agents is a
 /// refusal (the contract names not-a-descendant and not-running `refused`),

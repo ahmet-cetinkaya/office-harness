@@ -59,7 +59,13 @@ impl SendDirectiveHandler {
         if let Err(error) = validate_directive_text(text) {
             return Err(self.journaled(sender, target, text, error.into()));
         }
-        if !self.targets.is_running(target) {
+        // A store failure behind the lookup is `Storage`, its own message:
+        // the target may run, but the office cannot say so (Efe r2 LOW).
+        if !self
+            .targets
+            .is_running(target)
+            .map_err(HierarchyApplicationError::Storage)?
+        {
             let name = self
                 .targets
                 .name_of(target)

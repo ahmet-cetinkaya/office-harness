@@ -50,6 +50,16 @@ impl TreeQuery {
         let snapshot = self.store.snapshot()?;
         Ok(assemble(&snapshot.rows, &snapshot.teams))
     }
+
+    /// The tree rows as they are right now, for the rules that walk a chain
+    /// (the agent-call descendant check, FR-008). The tree query itself
+    /// assembles; this is the raw walk's input.
+    ///
+    /// # Errors
+    /// `Storage` when the read fails.
+    pub fn store_snapshot(&self) -> Result<Vec<TreeRow>, HierarchyApplicationError> {
+        Ok(self.store.snapshot()?.rows)
+    }
 }
 
 /// Assembles the tree: the CEO, every team with its lead and members, and

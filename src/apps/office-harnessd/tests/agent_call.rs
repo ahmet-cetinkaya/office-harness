@@ -13,9 +13,14 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
+use std::sync::Arc;
 
+use agent_infrastructure::persistence::SharedConnection;
+use hierarchy_application::common::interfaces::HierarchyStore;
+use hierarchy_infrastructure::persistence::repositories::hierarchy_repository::HierarchyRepository;
+use hierarchy_infrastructure::services::agent_places::AgentPlaces;
 use serde_json::{Value, json};
-use support::office_client::{Office, wait_for};
+use support::office_client::{Client, Office, wait_for};
 
 /// The real server binary that the fake CLI runs as the helper.
 const HELPER: &str = env!("CARGO_BIN_EXE_office-harnessd");
@@ -183,4 +188,279 @@ async fn a_stopped_agents_credential_stops_working_and_a_restart_gets_a_new_one(
     assert_ne!(first, second);
     assert!(!call_with(&first, &server_file).await.status.success());
     assert!(call_with(&second, &server_file).await.status.success());
+}
+
+/// A fake CLI that dumps its environment, calls the helper once with the
+/// given type and request, keeps both, and stays alive for the test (the
+/// pattern of `agent_directive.rs`).
+fn calling_script(records: &Path, name: &str, kind: &str, request: &str) -> String {
+    let folder = records.display();
+    format!(
+        "env > {folder}/env.part\nmv {folder}/env.part {folder}/env\n\
+         {HELPER} agent-call {kind} '{request}' > {folder}/{name}.out 2> {folder}/{name}.err\n\
+         printf '%s' $? > {folder}/{name}.code\nsleep 30\n"
+    )
+}
+
+/// The action entries the wire holds for `agent_id` (as in
+/// `agent_directive.rs`).
+async fn actions_of(client: &mut Client, agent_id: &str) -> Vec<Value> {
+    let actions = client
+        .ask("agent.actions", json!({"agent_id": agent_id}))
+        .await;
+    assert_eq!(actions["ok"], true, "{actions}");
+    actions["result"].as_array().expect("entries").clone()
+}
+
+/// Gives an agent its team through the same store the server built (as
+/// `agent_directive.rs` writes a place): the wire has no team.create with a
+/// picked lead yet in these tests, so the test writes the team directly.
+/// The lead's place columns go with the team row, and the members an agent
+/// creates then show under it in `hierarchy.tree`.
+fn place_lead_with_team(office: &Office, lead_agent_id: &str, team_name: &str) {
+    let connection =
+        rusqlite::Connection::open(office.serving.office.config.database_path()).expect("database");
+    let store: Arc<dyn HierarchyStore> = Arc::new(HierarchyRepository::new(
+        SharedConnection::new(connection).handle(),
+        AgentPlaces::new(),
+    ));
+    hierarchy_application::CreateTeamHandler::new(store)
+        .handle(
+            &hierarchy_application::commands::create_team::CreateTeamRequest {
+                name: team_name.to_owned(),
+                project_id: None,
+                lead_agent_id: lead_agent_id.parse().expect("agent id"),
+            },
+        )
+        .expect("team");
+}
+
+/// A lead agent-creates a member over agent-call: the child is placed in
+/// the tree under the lead, in the lead's own place (FR-008, SC-006).
+#[tokio::test]
+async fn a_lead_creates_a_member_through_agent_call_and_the_tree_shows_it() {
+    let office = Office::open().await;
+    // The lead's CLI creates a member through the helper, then keeps the
+    // session alive.
+    // The lead holds a team, as the user sets it up: a member can only
+    // sit under a lead, so the caller itself must be one.
+    office.clis.add("member-cli", "echo ready; sleep 30");
+    let request = json!({
+        "name": "Bo",
+        "command": "member-cli",
+        "working_folder": office.work_path(),
+    });
+    office.clis.add(
+        "lead-cli",
+        &calling_script(
+            office.records_path(),
+            "create",
+            "agent.create",
+            &request.to_string(),
+        ),
+    );
+    let mut client = office.client().await;
+    let lead = client.create_agent(&office, "Lead", "lead-cli", None).await;
+    // The lead holds a team, as the user sets it up: a member can only
+    // sit under a lead, so the caller itself must be one.
+    place_lead_with_team(&office, &lead, "The Team");
+    client.start(&lead).await;
+
+    let (code, out) = read_output(office.records_path(), "create").await;
+    assert_eq!(code, "0", "{out}");
+    let answer: Value = serde_json::from_str(out.trim()).expect("json");
+    assert_eq!(answer["ok"], true, "{answer}");
+    let member = answer["result"]["id"].as_str().expect("id").to_owned();
+
+    // The tree names the new agent with its role and parent.
+    let tree = client.ask("hierarchy.tree", json!({})).await;
+    assert_eq!(tree["ok"], true, "{tree}");
+    // The lead holds a team; the member sits under it with the member role.
+    let teams = tree["result"]["teams"].as_array().expect("teams");
+    assert_eq!(teams.len(), 1, "{tree}");
+    assert_eq!(teams[0]["lead"]["id"], json!(lead), "{tree}");
+    let members = teams[0]["members"].as_array().expect("members");
+    assert_eq!(members.len(), 1, "{tree}");
+    assert_eq!(members[0]["id"], json!(member), "{tree}");
+    assert_eq!(members[0]["role"], "member", "{tree}");
+
+    // The member record reads back like any `agent.create` answer.
+    let listed = client.ask("agent.list", json!({})).await;
+    let found = listed["result"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .find(|agent| agent["id"] == json!(member))
+        .expect("the member is listed")
+        .clone();
+    assert_eq!(found["name"], "Bo", "{found}");
+
+    office.serving.stop().await;
+}
+
+/// A lead stops its member over agent-call (FR-008).
+#[tokio::test]
+async fn a_lead_stops_its_member_through_agent_call() {
+    let office = Office::open().await;
+    office.clis.add("member-cli", "echo ready; sleep 30");
+    let request = json!({
+        "name": "Bo",
+        "command": "member-cli",
+        "working_folder": office.work_path(),
+    });
+    office.clis.add(
+        "lead-cli",
+        &calling_script(
+            office.records_path(),
+            "create",
+            "agent.create",
+            &request.to_string(),
+        ),
+    );
+    let mut client = office.client().await;
+    let lead = client.create_agent(&office, "Lead", "lead-cli", None).await;
+    place_lead_with_team(&office, &lead, "The Team");
+    client.start(&lead).await;
+    let (code, out) = read_output(office.records_path(), "create").await;
+    assert_eq!(code, "0", "{out}");
+    let answer: Value = serde_json::from_str(out.trim()).expect("json");
+    let member = answer["result"]["id"].as_str().expect("id").to_owned();
+    client.start(&member).await;
+    client.wait_for_status(&member, "working").await;
+
+    // A second helper call from the same live session stops the member:
+    // the test holds the session credential the server gave the lead.
+    let stop = json!({"agent_id": member});
+    let env = fs::read_to_string(office.records_path().join("env")).expect("env");
+    let value = |name: &str| {
+        env.lines()
+            .find_map(|line| line.strip_prefix(&format!("{name}=")))
+            .expect(name)
+            .to_owned()
+    };
+    let credential = value("OFFICE_HARNESS_AGENT_TOKEN");
+    let server_file = value("OFFICE_HARNESS_SERVER_FILE");
+    let outcome = {
+        let credential = credential.clone();
+        let server_file = server_file.clone();
+        let stop = stop.clone();
+        tokio::task::spawn_blocking(move || {
+            std::process::Command::new(HELPER)
+                .args(["agent-call", "agent.stop", &stop.to_string()])
+                .env("OFFICE_HARNESS_AGENT_TOKEN", credential)
+                .env("OFFICE_HARNESS_SERVER_FILE", server_file)
+                .output()
+                .expect("helper")
+        })
+        .await
+        .expect("helper task")
+    };
+    assert!(outcome.status.success(), "{outcome:?}");
+    client.wait_for_status(&member, "stopped").await;
+
+    office.serving.stop().await;
+}
+
+/// An unsupported command (here the project request the allowlist already
+/// names) is refused and recorded; so is an `additions` field (0002
+/// contract, agent caller).
+#[tokio::test]
+async fn an_unsupported_command_or_field_is_refused_and_recorded() {
+    let office = Office::open().await;
+    let create = json!({
+        "name": "Bo",
+        "command": "echo ready; sleep 30",
+        "working_folder": office.work_path(),
+    });
+    office.clis.add(
+        "lead-cli",
+        &calling_script(
+            office.records_path(),
+            "create",
+            "agent.create",
+            &create.to_string(),
+        ),
+    );
+    let mut client = office.client().await;
+    let lead = client.create_agent(&office, "Lead", "lead-cli", None).await;
+    place_lead_with_team(&office, &lead, "The Team");
+    client.start(&lead).await;
+    let (code, out) = read_output(office.records_path(), "create").await;
+    assert_eq!(code, "0", "{out}");
+    let answer: Value = serde_json::from_str(out.trim()).expect("json");
+    let member = answer["result"]["id"].as_str().expect("id").to_owned();
+
+    let env = fs::read_to_string(office.records_path().join("env")).expect("env");
+    let value = |name: &str| {
+        env.lines()
+            .find_map(|line| line.strip_prefix(&format!("{name}=")))
+            .expect(name)
+            .to_owned()
+    };
+    let credential = value("OFFICE_HARNESS_AGENT_TOKEN");
+    let server_file = value("OFFICE_HARNESS_SERVER_FILE");
+
+    // The additions field is refused before any use case runs.
+    let additions = json!({
+        "name": "Cy",
+        "command": "echo hi",
+        "additions": {"flags": ["--x"]},
+    });
+    let with_additions = {
+        let credential = credential.clone();
+        let server_file = server_file.clone();
+        tokio::task::spawn_blocking(move || {
+            std::process::Command::new(HELPER)
+                .args(["agent-call", "agent.create", &additions.to_string()])
+                .env("OFFICE_HARNESS_AGENT_TOKEN", credential)
+                .env("OFFICE_HARNESS_SERVER_FILE", server_file)
+                .output()
+                .expect("helper")
+        })
+        .await
+        .expect("helper task")
+    };
+    assert!(!with_additions.status.success(), "{with_additions:?}");
+    let refused: Value =
+        serde_json::from_str(String::from_utf8_lossy(&with_additions.stdout).trim()).expect("json");
+    assert_eq!(refused["error"]["code"], "invalid", "{refused}");
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("additions"),
+        "{refused}"
+    );
+
+    // `agent.delete` is outside the allowlist: refused and recorded.
+    let delete = json!({"agent_id": member});
+    let delete_call = {
+        let credential = credential.clone();
+        let server_file = server_file.clone();
+        tokio::task::spawn_blocking(move || {
+            std::process::Command::new(HELPER)
+                .args(["agent-call", "agent.delete", &delete.to_string()])
+                .env("OFFICE_HARNESS_AGENT_TOKEN", credential)
+                .env("OFFICE_HARNESS_SERVER_FILE", server_file)
+                .output()
+                .expect("helper")
+        })
+        .await
+        .expect("helper task")
+    };
+    assert!(!delete_call.status.success(), "{delete_call:?}");
+    let refused: Value =
+        serde_json::from_str(String::from_utf8_lossy(&delete_call.stdout).trim()).expect("json");
+    assert_eq!(refused["error"]["code"], "refused", "{refused}");
+
+    // Both refusals sit in the action record with the lead as actor
+    // (FR-008, FR-009).
+    let entries = actions_of(&mut client, &lead).await;
+    let recorded = entries
+        .iter()
+        .filter(|entry| entry["action"] == "refused")
+        .count();
+    assert!(recorded >= 2, "{entries:?}");
+
+    office.serving.stop().await;
 }
