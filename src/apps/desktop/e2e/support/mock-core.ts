@@ -298,10 +298,13 @@ export async function installMockCore(
       const tree = treeOf();
       if (kind === "ceo") {
         if (tree.ceo !== null) {
-          const name =
-            office.agents.find((agent) => agent.id === tree.ceo?.id)?.name ??
-            tree.ceo.id;
-          refuse("refused", `the office already has a CEO: ${name}`);
+          // Exact server shape: the application error's Display prefixes the
+          // wire message with "invalid: ", and SecondCeo carries the CEO's
+          // AgentId (hierarchy_handlers.handler_error, tree_rules.check_ceo).
+          refuse(
+            "invalid",
+            `invalid: the office already has a CEO: ${tree.ceo.id}`,
+          );
         }
         tree.ceo = { id: agentId, role: "ceo" };
         return;
@@ -309,7 +312,10 @@ export async function installMockCore(
       if (kind === "lead") {
         const team = tree.teams.find((known) => known.id === role.team_id);
         if (team === undefined) {
-          return refuse("invalid", "the team of a team lead does not exist");
+          return refuse(
+            "invalid",
+            "invalid: the parent is not an agent of the office",
+          );
         }
         tree.teams = tree.teams.filter((known) => known !== team);
         tree.teams.push({ ...team, lead: { id: agentId, role: "lead" } });
@@ -319,22 +325,25 @@ export async function installMockCore(
         const up = parentOf();
         const leadId = String(role.parent_agent_id ?? "");
         if (leadId === "") {
-          return refuse("invalid", "a team lead needs its lead");
+          return refuse("invalid", "invalid: a team needs its lead");
         }
         if (!up.has(leadId)) {
-          return refuse("invalid", "the parent is not an agent of the office");
+          return refuse(
+            "invalid",
+            "invalid: the parent is not an agent of the office",
+          );
         }
         const team = tree.teams.find((known) => known.lead.id === leadId);
         if (team === undefined) {
           return refuse(
             "invalid",
-            "a member cannot sit under a team lead; allowed under a team lead: member",
+            "invalid: a member cannot sit under a lead; allowed under a lead: member",
           );
         }
         team.members.push({ id: agentId, role: "member" });
         return;
       }
-      refuse("invalid", `${kind} is not a role of the company`);
+      refuse("invalid", `invalid: role is not a role of the company: ${kind}`);
     };
 
     // The requests that the real server answers, in the shapes of the
@@ -381,6 +390,10 @@ export async function installMockCore(
           }
           return office.hierarchy ?? { ceo: null, teams: [], unassigned: [] };
         }
+        case "hierarchy.descendants": {
+          findAgent(fields.agent_id);
+          return { count: descendantsOf(String(fields.agent_id)).length };
+        }
         case "team.create": {
           const name = String(fields.name ?? "");
           if (name.trim() === "")
@@ -409,15 +422,12 @@ export async function installMockCore(
         }
         case "team.delete": {
           if (fields.confirm !== true) {
-            return refuse(
-              "invalid",
-              "the delete needs the user's confirmation",
-            );
+            return refuse("invalid", "invalid: confirm must not be empty");
           }
           const tree = treeOf();
           const team = tree.teams.find((known) => known.id === fields.team_id);
           if (team === undefined) {
-            return refuse("not_found", "the team does not exist");
+            return refuse("not_found", "not found: the team does not exist");
           }
           tree.teams = tree.teams.filter((known) => known !== team);
           tree.unassigned.push(team.lead, ...team.members);
@@ -426,6 +436,9 @@ export async function installMockCore(
           return null;
         }
         case "agent.create": {
+          // The agent-module refusal kinds (invalid, not_found, conflict) are
+          // unreachable on this branch: the real core drops `role` until S5
+          // slice 2 wires create_role_agent onto agent.create.
           const agent = createAgentRow(fields);
           placeByRole(
             agent.id,
@@ -455,6 +468,9 @@ export async function installMockCore(
           return session;
         }
         case "agent.stop": {
+          // include_descendants false stops only the agent itself; the real
+          // server (subtree_handler.affected) never refuses a plain stop for
+          // having descendants.
           const agentId = String(fields.agent_id);
           const agent = findAgent(agentId);
           const descendants = descendantsOf(agentId);
@@ -464,11 +480,6 @@ export async function installMockCore(
               endSessions(stopped.id);
               setStatus(stopped, "stopped");
             }
-          } else if (descendants.length > 0) {
-            refuse(
-              "conflict",
-              `the agent still has ${descendants.length} descendants; stop them too by sending include_descendants=true`,
-            );
           }
           if (mock.stopDelayMs) {
             await new Promise((resolve) =>
@@ -485,17 +496,19 @@ export async function installMockCore(
           findAgent(agentId);
           const descendants = descendantsOf(agentId);
           if (descendants.length > 0) {
+            const subject =
+              descendants.length === 1 ? "descendant" : "descendants";
             if (fields.include_descendants !== true) {
               refuse(
                 "conflict",
-                `the agent still has ${descendants.length} descendants; delete them too by sending include_descendants=true and descendant_count ${descendants.length}`,
+                `conflict: the agent still has ${descendants.length} ${subject}; delete them too by sending include_descendants=true and descendant_count ${descendants.length}`,
               );
             }
             const count = Number(fields.descendant_count ?? -1);
             if (count !== descendants.length) {
               refuse(
-                "invalid",
-                `the confirmation counted ${count} descendants, but there are ${descendants.length}`,
+                "conflict",
+                `conflict: the agent has ${descendants.length} ${subject} now; send descendant_count ${descendants.length} to confirm the delete`,
               );
             }
             for (const below of descendantsOf(agentId)) {
