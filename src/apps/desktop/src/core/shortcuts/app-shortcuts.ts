@@ -43,3 +43,23 @@ export function pressedAppShortcut(event: ShortcutEvent): AppShortcut | null {
     ) ?? null
   );
 }
+
+/**
+ * True when the text names a combination of the table, compared as the
+ * server's settings validator compares (settings.rs `normalized_shortcut`):
+ * the focus shortcut must not take any of them, so this is the one list the
+ * desktop checks a focus shortcut against.
+ */
+export function isAppShortcut(text: string): boolean {
+  const shortcut = parseShortcut(text);
+  if (shortcut === null) return false;
+  return (
+    pressedAppShortcut({
+      key: shortcut.key,
+      ctrlKey: shortcut.ctrl,
+      altKey: shortcut.alt,
+      shiftKey: shortcut.shift,
+      metaKey: shortcut.meta,
+    }) !== null
+  );
+}
