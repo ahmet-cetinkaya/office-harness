@@ -4218,6 +4218,7 @@ dependencies = [
 name = "terminal-infrastructure"
 version = "0.1.0"
 dependencies = [
+ "console-control",
  "kernel",
  "nix 0.28.0",
  "portable-pty",

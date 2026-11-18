@@ -22,7 +22,7 @@ use super::server_options::ServerOptions;
 use super::server_state::ServerState;
 use super::terminal_requests::TerminalGateway;
 use crate::bootstrap::{ServerLog, Services};
-use crate::bridges::AgentStatusBridge;
+use crate::bridges::{AgentLineBridge, AgentStatusBridge};
 use crate::config::Config;
 
 /// The loopback WebSocket server, bound and announced in `server.json` but
@@ -72,6 +72,8 @@ impl Server {
             calls: services.access.agent_calls.clone(),
         }
         .spawn(services.terminal.events.subscribe());
+        AgentLineBridge::new(services.terminal.events.clone(), events.clone())
+            .spawn(services.terminal.events.subscribe_lines());
         let agents = AgentGateway::new(
             Arc::clone(&services.agent.handlers),
             services.agent.audit.clone(),
@@ -79,6 +81,8 @@ impl Server {
             services.storage_alerts.clone(),
             Arc::clone(&services.agent.status_order),
             Arc::clone(&services.agent.stopping),
+            services.terminal.events.clone(),
+            Arc::clone(&services.terminal.runtime),
         );
         let hierarchy =
             HierarchyGateway::new(Arc::clone(&services.hierarchy.handlers), events.clone());

@@ -20,6 +20,7 @@ function runningAgent(): Agent {
     machine_id: "machine",
     status: "working",
     created_at: 1_700_000_000_000,
+    last_line: null,
   };
 }
 

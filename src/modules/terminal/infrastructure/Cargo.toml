@@ -13,6 +13,9 @@ kernel = { path = "../../../kernel" }
 private-fs = { path = "../../../shared/private-fs" }
 portable-pty.workspace = true
 vt100.workspace = true
+# The test fixture binary clears the Windows line input modes to read single
+# keys; this crate holds the one console `unsafe` of the server.
+console-control = { path = "../../../shared/console-control" }
 
 # Signals to a process group need no `unsafe` through nix's wrappers.
 [target.'cfg(unix)'.dependencies]

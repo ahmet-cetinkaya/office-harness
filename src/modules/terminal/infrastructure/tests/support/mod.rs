@@ -47,6 +47,7 @@ pub fn size(columns: u16, rows: u16) -> TerminalSize {
 pub struct RecordingSink {
     events: Mutex<Vec<TerminalEvent>>,
     runs: Mutex<Vec<RunId>>,
+    lines: Mutex<Vec<String>>,
 }
 
 impl RecordingSink {
@@ -57,6 +58,11 @@ impl RecordingSink {
     /// The run named by each event, in order.
     pub fn runs(&self) -> Vec<RunId> {
         locked(&self.runs).clone()
+    }
+
+    /// The lines in the order their reports arrived.
+    pub fn lines(&self) -> Vec<String> {
+        locked(&self.lines).clone()
     }
 
     pub fn has_exited(&self) -> bool {
@@ -70,6 +76,10 @@ impl TerminalEventSink for RecordingSink {
     fn publish(&self, _agent_id: AgentId, run: RunId, event: TerminalEvent) {
         locked(&self.runs).push(run);
         locked(&self.events).push(event);
+    }
+
+    fn publish_line(&self, _agent_id: AgentId, _run: RunId, line: String) {
+        locked(&self.lines).push(line);
     }
 }
 

@@ -5,5 +5,6 @@ mod events;
 
 pub use entities::{additions_json, agent_json, project_json, session_json, setting_json};
 pub use events::{
-    additions_changed_event, agent_changed_event, agent_deleted_event, agent_status_event,
+    additions_changed_event, agent_changed_event, agent_deleted_event, agent_line_event,
+    agent_status_event,
 };

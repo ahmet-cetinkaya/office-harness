@@ -319,6 +319,55 @@ fn a_command_that_cannot_start_keeps_the_saved_output_of_the_last_session() {
 }
 
 #[test]
+fn the_last_line_is_reported_when_it_changes_and_throttled_after() {
+    let folder = TempDir::new().expect("temp folder");
+    let (runtime, sink) = runtime_in(folder.path(), limits(1000));
+    let agent = AgentId::generate();
+    spawn_fixture(&runtime, agent, &["progress"]);
+    // The monitor reports the screen as it stands on its first tick, then at
+    // most once per second. The nine redraws all land inside that first
+    // window, so the newest text arrives in the second report at the latest.
+    wait_until("the last redraw to be reported", || {
+        sink.lines().last() == Some(&"PROGRESS:9%".to_owned())
+    });
+    // The screen no longer changes, so a whole report interval later there
+    // is still no further report.
+    std::thread::sleep(Duration::from_millis(1100));
+    let reports = sink.lines();
+    assert_eq!(reports.last(), Some(&"PROGRESS:9%".to_owned()));
+    assert!(
+        reports.len() <= 2,
+        "the throttle holds the unchanged screen back: {reports:?}"
+    );
+    runtime.stop(agent, GRACE).expect("stop");
+}
+
+#[test]
+fn a_bell_from_the_child_becomes_one_bell_event() {
+    let folder = TempDir::new().expect("temp folder");
+    let (runtime, sink) = runtime_in(folder.path(), limits(1000));
+    let agent = AgentId::generate();
+    spawn_fixture(&runtime, agent, &["lines"]);
+    runtime
+        .write_input(agent, b"a")
+        .expect("write to confirm the child reads");
+    wait_until("the child to be reading", || !sink.lines().is_empty());
+    runtime.write_input(agent, b"b").expect("ring the bell");
+    wait_until("the bell to be reported", || {
+        sink.events()
+            .iter()
+            .any(|event| matches!(event, TerminalEvent::Bell))
+    });
+    let bells = sink
+        .events()
+        .iter()
+        .filter(|event| matches!(event, TerminalEvent::Bell))
+        .count();
+    assert_eq!(bells, 1);
+    runtime.stop(agent, GRACE).expect("stop");
+}
+
+#[test]
 fn the_runtime_refuses_an_unsafe_batch_script_whoever_calls_it() {
     let folder = TempDir::new().expect("temp folder");
     let (runtime, _sink) = runtime_in(folder.path(), limits(1000));

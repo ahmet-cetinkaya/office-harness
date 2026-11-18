@@ -22,6 +22,80 @@ fn a_query_split_across_two_reads_gets_exactly_one_answer() {
 }
 
 #[test]
+fn the_last_line_is_the_last_non_empty_line_without_codes() {
+    let mut screen = emulator(80, 24);
+    screen.process(b"first\r\n\x1b[31mred plain\x1b[0m\r\n");
+    assert_eq!(screen.last_line().as_deref(), Some("red plain"));
+}
+
+#[test]
+fn a_carriage_return_redraw_counts_once_in_the_last_line() {
+    let mut screen = emulator(80, 24);
+    screen.process(b"0%\r50%\r100%\r\n");
+    assert_eq!(screen.last_line().as_deref(), Some("100%"));
+}
+
+#[test]
+fn a_line_wrapped_across_rows_reads_as_one_line() {
+    let mut screen = emulator(10, 24);
+    screen.process(b"0123456789ABCDEFGHIJ\r\n");
+    assert_eq!(screen.last_line().as_deref(), Some("0123456789ABCDEFGHIJ"));
+}
+
+#[test]
+fn an_empty_screen_has_no_last_line() {
+    let mut screen = emulator(80, 24);
+    assert_eq!(screen.last_line(), None);
+    screen.process(b"\r\n\r\n");
+    assert_eq!(screen.last_line(), None);
+}
+
+#[test]
+fn the_last_line_follows_the_alternate_screen() {
+    let mut screen = emulator(80, 24);
+    screen.process(b"main line\r\n");
+    screen.process(b"\x1b[?1049h\x1b[2J\x1b[1;1Hprogress: 40%");
+    assert_eq!(screen.last_line().as_deref(), Some("progress: 40%"));
+    screen.process(b"\x1b[?1049l");
+    assert_eq!(screen.last_line().as_deref(), Some("main line"));
+}
+
+#[test]
+fn a_bell_outside_an_osc_string_is_counted_and_taken_once() {
+    let mut screen = emulator(80, 24);
+    screen.process(b"ready\x07");
+    assert_eq!(screen.last_line().as_deref(), Some("ready"));
+    assert_eq!(screen.take_bells(), 1);
+    assert_eq!(screen.take_bells(), 0);
+}
+
+#[test]
+fn every_bell_of_a_repeated_ring_is_counted() {
+    let mut screen = emulator(80, 24);
+    screen.process(b"\x07\x07\x07");
+    assert_eq!(screen.take_bells(), 3);
+}
+
+#[test]
+fn a_bell_that_ends_a_window_title_is_not_a_bell() {
+    let mut screen = emulator(80, 24);
+    screen.process(b"\x1b]2;window title\x07after\x07");
+    assert_eq!(screen.last_line().as_deref(), Some("after"));
+    assert_eq!(screen.take_bells(), 1);
+}
+
+#[test]
+fn a_bell_split_across_reads_is_counted_once_when_it_completes() {
+    let mut screen = emulator(80, 24);
+    screen.process(b"\x07");
+    assert_eq!(screen.take_bells(), 1);
+    screen.process(b"\x1b]2;ti");
+    assert_eq!(screen.take_bells(), 0);
+    screen.process(b"tle\x07");
+    assert_eq!(screen.take_bells(), 0);
+}
+
+#[test]
 fn a_snapshot_redraws_the_alternate_screen_and_the_input_modes() {
     let mut original = emulator(40, 10);
     original.process(b"\x1b[?1049h\x1b[2J\x1b[3;5HFULL-SCREEN\x1b[?2004h\x1b[?1h");
