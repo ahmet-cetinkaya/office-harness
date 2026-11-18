@@ -168,11 +168,18 @@
    * way back and revert the user's choices since.
    */
   $effect(() => {
-    if (office.phase !== "ready" || store.lastView.isRestored) return;
+    if (
+      office.phase !== "ready" ||
+      store.lastView.isRestoring ||
+      store.lastView.isRestored
+    ) {
+      return;
+    }
     void restoreLastView();
   });
 
   async function restoreLastView(): Promise<void> {
+    store.lastView.markRestoring();
     const stored = await store.lastView.read(store.client);
     if (stored !== null) {
       const plan = resolveLastView(
@@ -181,11 +188,14 @@
         office.agents.map((agent) => agent.id),
       );
       store.setProjectChoice(plan.choice);
+      store.restoreView(stored.view);
       if (plan.agent.kind === "missing") {
         controller.showNotice(LAST_AGENT_GONE_LEAD, LAST_AGENT_GONE_MESSAGE);
       } else if (plan.agent.kind === "present") {
         controller.select(plan.agent.agentId);
-        if (stored.terminal_open) openAgent(plan.agent.agentId);
+        if (stored.terminal_open && stored.view === "panel") {
+          openAgent(plan.agent.agentId);
+        }
       }
     }
     // The shell writes the last view only from here on, so its eager write
