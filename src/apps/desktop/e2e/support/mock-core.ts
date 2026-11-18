@@ -38,6 +38,9 @@ export interface OfficeSeed {
   notifications?: NotificationRow[];
   /** The stored `last_view` JSON text, as `settings.get` answers with it. */
   lastView?: string;
+  /** Milliseconds the `last_view` read waits before it answers, as a slow
+   * server. Answers at once when left out. */
+  lastViewDelayMs?: number;
   /** A refusal to answer with, by request type. The tree reads it too. */
   refusals?: Record<string, { code: string; message: string }>;
 }
@@ -664,11 +667,21 @@ export async function installMockCore(
         case "terminal.resize":
         case "terminal.detach":
           return null;
-        case "settings.get":
-          return {
+        case "settings.get": {
+          const answer = {
             key: fields.key,
             value: office.settings[String(fields.key)] ?? "",
           };
+          if (
+            fields.key === "last_view" &&
+            mock.office?.lastViewDelayMs !== undefined
+          ) {
+            return new Promise((resolve) =>
+              setTimeout(() => resolve(answer), mock.office?.lastViewDelayMs),
+            );
+          }
+          return answer;
+        }
         case "settings.set": {
           const key = String(fields.key);
           const value = String(fields.value ?? "");
