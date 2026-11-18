@@ -47,14 +47,19 @@ impl SubtreeRequests for SubtreeRequestsBridge {
 /// The wire code of a failed subtree action: the hierarchy's error kinds
 /// mapped as the agent handlers mapped them before.
 fn failed(error: &HierarchyApplicationError) -> SubtreeResult {
-    let code = match error {
-        HierarchyApplicationError::Invalid(_) | HierarchyApplicationError::InvalidInput(_) => {
-            ErrorCode::Invalid
-        }
-        HierarchyApplicationError::NotFound(_) => ErrorCode::NotFound,
-        HierarchyApplicationError::Conflict(_) => ErrorCode::Conflict,
-        HierarchyApplicationError::Storage(_) => ErrorCode::Internal,
-    };
+    let code =
+        match error {
+            HierarchyApplicationError::Invalid(_) | HierarchyApplicationError::InvalidInput(_) => {
+                ErrorCode::Invalid
+            }
+            // The `*Input` variants carry an agent-module message, so they keep
+            // the code of their kind — only the prefix is bare.
+            HierarchyApplicationError::NotFoundInput(_)
+            | HierarchyApplicationError::NotFound(_) => ErrorCode::NotFound,
+            HierarchyApplicationError::ConflictInput(_)
+            | HierarchyApplicationError::Conflict(_) => ErrorCode::Conflict,
+            HierarchyApplicationError::Storage(_) => ErrorCode::Internal,
+        };
     SubtreeResult::Failed {
         code,
         message: error.to_string(),

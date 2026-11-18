@@ -9,6 +9,7 @@ pub mod handlers;
 pub mod mappings;
 
 pub use handlers::{
-    AgentHandlers, AgentUseCases, Handled, REQUEST_PREFIXES, SubtreeRequests, SubtreeResult,
+    AgentHandlers, AgentUseCases, Handled, REQUEST_PREFIXES, RoleRequests, RoleResult, RoleSeed,
+    SubtreeRequests, SubtreeResult,
 };
 pub use mappings::{agent_line_event, agent_status_event};

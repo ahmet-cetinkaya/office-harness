@@ -34,6 +34,9 @@ impl PlaceAgentHandler {
     /// `Invalid` naming the broken rule: a second CEO, a parent that is not
     /// in the tree, or a role that cannot sit under that parent.
     pub fn handle(&self, request: PlaceAgentRequest) -> Result<(), HierarchyApplicationError> {
+        // The exclusion covers the check and the write, so a placement that
+        // races a subtree count never joins the tree unseen (FR-006).
+        let _tree = self.store.tree_exclusion();
         let snapshot = self.store.snapshot()?;
         // A member's team is its lead's team (A6); the lead's team wins over
         // whatever the caller sent.

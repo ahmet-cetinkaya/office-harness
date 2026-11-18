@@ -23,35 +23,47 @@ fn fixed_ids() -> Ids {
     }
 }
 
+/// The name a test row carries: the id text, since these rules do not read
+/// names (only the CEO refusal does, and its test names its row itself).
+fn name_of(agent_id: AgentId) -> String {
+    agent_id.to_string()
+}
+
 fn tree() -> Vec<TreeRow> {
     let ids = fixed_ids();
+
     vec![
         TreeRow {
             agent_id: ids.ceo,
+            name: name_of(ids.ceo),
             role: Some(Role::Ceo),
             parent_agent_id: None,
             team_id: None,
         },
         TreeRow {
             agent_id: ids.lead_a,
+            name: name_of(ids.lead_a),
             role: Some(Role::Lead),
             parent_agent_id: Some(ids.ceo),
             team_id: Some(TeamId::from_u128(10)),
         },
         TreeRow {
             agent_id: ids.lead_b,
+            name: name_of(ids.lead_b),
             role: Some(Role::Lead),
             parent_agent_id: Some(ids.ceo),
             team_id: Some(TeamId::from_u128(11)),
         },
         TreeRow {
             agent_id: ids.member,
+            name: name_of(ids.member),
             role: Some(Role::Member),
             parent_agent_id: Some(ids.lead_a),
             team_id: Some(TeamId::from_u128(10)),
         },
         TreeRow {
             agent_id: ids.plain,
+            name: name_of(ids.plain),
             role: None,
             parent_agent_id: None,
             team_id: None,
@@ -87,6 +99,30 @@ fn a_second_ceo_is_refused_and_names_the_first() {
     assert_eq!(
         check_placement(&tree(), placement(ids.ceo, Role::Ceo, None, None)),
         Ok(())
+    );
+}
+
+#[test]
+fn a_second_ceo_refusal_names_the_stored_ceo_not_its_id() {
+    // The row carries the office's name for the CEO; the refusal shows that
+    // name, not the id text (Efe, PR 36 r2 LOW). An empty name falls back
+    // to the id, the only text the store guarantees.
+    let ids = fixed_ids();
+    let fresh = AgentId::from_u128(9);
+    let mut rows = tree();
+    rows[0].name = "Ada".to_owned();
+    assert_eq!(
+        check_placement(&rows, placement(fresh, Role::Ceo, None, None)),
+        Err(HierarchyError::SecondCeo {
+            name: "Ada".to_owned()
+        })
+    );
+    rows[0].name = String::new();
+    assert_eq!(
+        check_placement(&rows, placement(fresh, Role::Ceo, None, None)),
+        Err(HierarchyError::SecondCeo {
+            name: ids.ceo.to_string()
+        })
     );
 }
 
@@ -198,6 +234,7 @@ fn a_generated_tree_never_loops_or_overflows() {
     let ceo = new_id(&mut next);
     built.push(TreeRow {
         agent_id: ceo,
+        name: name_of(ceo),
         role: Some(Role::Ceo),
         parent_agent_id: None,
         team_id: None,
@@ -208,6 +245,7 @@ fn a_generated_tree_never_loops_or_overflows() {
         check_placement(&built, placement(lead, Role::Lead, None, Some(team))).expect("lead ok");
         built.push(TreeRow {
             agent_id: lead,
+            name: name_of(lead),
             role: Some(Role::Lead),
             parent_agent_id: resolved_parent(&built, placement(lead, Role::Lead, None, Some(team))),
             team_id: Some(team),
@@ -221,6 +259,7 @@ fn a_generated_tree_never_loops_or_overflows() {
             .expect("member ok");
             built.push(TreeRow {
                 agent_id: member,
+                name: name_of(member),
                 role: Some(Role::Member),
                 parent_agent_id: Some(lead),
                 team_id: Some(team),
@@ -230,14 +269,14 @@ fn a_generated_tree_never_loops_or_overflows() {
     // Every chain reaches the ids.ceo in at most 2 steps and never loops.
     for row in &built {
         let mut steps = 0;
-        let mut current = *row;
+        let mut current = row.clone();
         while let Some(parent) = current.parent_agent_id {
             steps += 1;
             assert!(steps <= 2, "chain too deep");
             current = built
                 .iter()
-                .copied()
                 .find(|candidate| candidate.agent_id == parent)
+                .cloned()
                 .expect("parent exists");
         }
         assert_eq!(current.role, Some(Role::Ceo));
@@ -255,12 +294,14 @@ fn a_looped_tree_terminates_instead_of_hanging() {
     let looped = vec![
         TreeRow {
             agent_id: a,
+            name: name_of(a),
             role: None,
             parent_agent_id: Some(b),
             team_id: None,
         },
         TreeRow {
             agent_id: b,
+            name: name_of(b),
             role: None,
             parent_agent_id: Some(a),
             team_id: None,

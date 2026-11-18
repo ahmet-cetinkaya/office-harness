@@ -260,16 +260,46 @@ impl HandlerError {
 }
 
 fn handler_error(error: &HierarchyApplicationError) -> HandlerError {
-    let code = match error {
-        HierarchyApplicationError::Invalid(_) | HierarchyApplicationError::InvalidInput(_) => {
-            wire::ErrorCode::Invalid
-        }
-        HierarchyApplicationError::NotFound(_) => wire::ErrorCode::NotFound,
-        HierarchyApplicationError::Conflict(_) => wire::ErrorCode::Conflict,
-        HierarchyApplicationError::Storage(_) => wire::ErrorCode::Internal,
-    };
+    let code =
+        match error {
+            HierarchyApplicationError::Invalid(_) | HierarchyApplicationError::InvalidInput(_) => {
+                wire::ErrorCode::Invalid
+            }
+            // The `*Input` variants carry an agent-module message, so they keep
+            // the code `agent.create` answers with — only the prefix is bare.
+            HierarchyApplicationError::NotFoundInput(_)
+            | HierarchyApplicationError::NotFound(_) => wire::ErrorCode::NotFound,
+            HierarchyApplicationError::ConflictInput(_)
+            | HierarchyApplicationError::Conflict(_) => wire::ErrorCode::Conflict,
+            HierarchyApplicationError::Storage(_) => wire::ErrorCode::Internal,
+        };
     HandlerError {
         code,
         message: error.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A creator refusal rides to the wire as `invalid` with the agent
+    /// module's own text (#33 r2 LOW: the mapping is small, but the code a
+    /// client sees is the contract, so it is asserted).
+    #[test]
+    fn an_invalid_input_maps_to_the_wire_invalid_code() {
+        let error =
+            HierarchyApplicationError::InvalidInput("agent name must not be empty".to_owned());
+        let mapped = handler_error(&error);
+        assert_eq!(mapped.code, wire::ErrorCode::Invalid);
+        assert_eq!(mapped.message, "agent name must not be empty");
+    }
+
+    #[test]
+    fn a_not_found_maps_to_the_wire_not_found_code() {
+        let error = HierarchyApplicationError::NotFound("the team is gone".to_owned());
+        let mapped = handler_error(&error);
+        assert_eq!(mapped.code, wire::ErrorCode::NotFound);
+        assert_eq!(mapped.message, "not found: the team is gone");
     }
 }
