@@ -1,9 +1,11 @@
 ---
-status: draft
+status: approved
 capability: office
 plan:
 supersedes:
 ---
+
+<!-- Approved by the owner on 2026-11-19 (ACF-144). -->
 
 # 0007: Hold switch and agent action limits
 
