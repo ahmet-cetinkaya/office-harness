@@ -57,6 +57,14 @@ export function createPanelStore(client: CoreClient) {
     },
   };
 
+  // The restore selects without reading: FR-009 marks notifications read when
+  // the agent's terminal opens, and only the panel shows it. The scene's
+  // restore leaves them unread.
+  function selectRestoredAgent(agentId: string): void {
+    office.controller.select(agentId);
+    if (openView === "panel") void notifications.readAgent(agentId);
+  }
+
   /**
    * The last view's restore (FR-008, D6), run once from the shell when the
    * office's first load has brought its projects and agents, whichever view
@@ -78,7 +86,7 @@ export function createPanelStore(client: CoreClient) {
       if (plan.agent.kind === "missing") {
         controller.showNotice(LAST_AGENT_GONE_LEAD, LAST_AGENT_GONE_MESSAGE);
       } else if (plan.agent.kind === "present") {
-        controller.select(plan.agent.agentId);
+        selectRestoredAgent(plan.agent.agentId);
       }
     }
     // The shell writes the last view only from here on, so its eager write
