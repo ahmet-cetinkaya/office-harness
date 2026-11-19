@@ -139,6 +139,35 @@ test.describe("office hold", () => {
     await expect(bar.getByText(OFFICE_ON_HOLD, { exact: true })).toHaveCount(0);
   });
 
+  test("Ctrl+Shift+H is ignored while focus is in a terminal", async ({
+    page,
+  }) => {
+    await openPanel(page);
+    await page.getByRole("button", { name: "Ada, working" }).click();
+    const input = page.getByLabel("Terminal of Ada", { exact: true });
+    await expect(input).toBeFocused();
+
+    await page.keyboard.press("Control+Shift+H");
+
+    // A later key reaching the terminal shows the shortcut was handled by then.
+    await page.keyboard.type("x");
+    await expect
+      .poll(async () =>
+        (await requestFields(page, "terminal.input"))
+          .map((fields) =>
+            Buffer.from(
+              String((fields as { data?: string }).data),
+              "base64",
+            ).toString(),
+          )
+          .join(""),
+      )
+      .toContain("x");
+    expect(await requestFields(page, "hold.set")).toEqual([]);
+    const bar = page.getByRole("region", { name: "Office hold" });
+    await expect(bar.getByText(OFFICE_ON_HOLD, { exact: true })).toHaveCount(0);
+  });
+
   test("the server's already-held message reaches the user", async ({
     page,
   }) => {
