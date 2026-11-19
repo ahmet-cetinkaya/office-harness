@@ -1,6 +1,6 @@
 # Requirements checklist: 0007-hold-and-limits
 
-Spec: `specs/changes/0007-hold-and-limits/SPEC.md` · Status: approved by the owner on 2026-11-19 · Date: 2026-11-19 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker; the owner answered both on 2026-11-19 (see the spec's Clarifications). Every `0001/` and `0002/` reference was checked against the approved specs on `main` at 19f2148.
+Spec: `specs/changes/0007-hold-and-limits/SPEC.md` · Status: approved by the owner on 2026-11-19 · Date: 2026-11-19 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker; the owner answered both on 2026-11-19 (see the spec's Clarifications). Every `0001/`, `0002/`, and `0003/` reference was checked against the approved specs on `main` at 19f2148.
 
 ## Content quality
 
@@ -32,3 +32,20 @@ Spec: `specs/changes/0007-hold-and-limits/SPEC.md` · Status: approved by the ow
 - FR-007 refers to the limit table in A3, so the values and the requirement cannot drift apart.
 - SC-005 says "from any panel view": while a terminal has focus, keys go to the CLI except the documented app shortcuts (0003, MODIFIED 0001/FR-017). Adding the hold shortcut to that list is a plan decision that would need a 0003 amendment; the spec does not promise it.
 - The 0002 out-of-scope line "Limits on how many agents an agent may create" stays true: this change limits the creation rate, not the count. The owner declined a size cap on 2026-11-19, so that line stays true.
+
+## Spec gate (Efe, round 1 at 51d1b5e)
+
+| Finding | Fix |
+|---|---|
+| MEDIUM-1: `supersedes:` empty despite MODIFIED 0002/FR-009. | `supersedes: 0002/FR-009, 0003/FR-006 (in part)`. |
+| MEDIUM-2: SC-001 and the US3 test said every refusal names the limit, but after the automatic hold the reason is the hold. | Both now say: limit reasons before the automatic hold, the hold reason after it. |
+| MEDIUM-3: the automatic-hold notification is a fifth 0003/FR-006 event without a MODIFIED entry. | Added MODIFIED 0003/FR-006 (in part); exception (b) does not apply to the automatic hold. |
+| LOW-1: the SC-005 limit with a focused terminal was only in the checklist. | A9 and SC-005 state it. |
+| LOW-2: no precedence between hold and limit reasons. | A10. |
+| LOW-3: where office-level record entries show. | A11 and the Office record UX state. |
+| LOW-4: holds are not a security boundary; limit changes are not recorded. | A12. |
+| LOW-5: stale PR body. | PR body updated. |
+| LOW-6: PB-1 cited the superseded 0001/FR-017. | PB-1 cites 0001/FR-017 as modified by 0003. |
+
+These are consistency fixes; scope is unchanged, so the owner's approval of 2026-11-19 stands (god, 2026-11-19).
+
