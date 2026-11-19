@@ -310,7 +310,7 @@ fn a_query_split_across_two_reads_gets_one_answer() {
     let saved = OutputStore::read_saved(folder.path(), &key)
         .expect("read")
         .expect("file exists");
-    assert!(String::from_utf8_lossy(&saved).contains("REPLIES:1"));
+    assert!(String::from_utf8_lossy(&saved).contains("REPLIES:1\r\n"));
 }
 
 fn support_null() -> impl terminal_application::common::interfaces::OutputSubscriber {
