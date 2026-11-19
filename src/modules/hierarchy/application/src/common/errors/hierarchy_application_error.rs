@@ -34,6 +34,17 @@ pub enum HierarchyApplicationError {
 }
 
 impl HierarchyApplicationError {
+    /// Maps a broken place rule to its wire class: a second lead is a
+    /// conflict, because the seat is taken, and keeps the domain rule's own
+    /// wording; every other broken rule stays invalid (FR-003).
+    #[must_use]
+    pub fn from_place(error: HierarchyError) -> Self {
+        match error {
+            HierarchyError::SecondLead { .. } => Self::Conflict(error.to_string()),
+            other => Self::Invalid(other),
+        }
+    }
+
     /// Maps a stop or delete failure of one subtree member.
     #[must_use]
     pub fn from_stop(error: crate::common::ports::SubtreeActionError) -> Self {

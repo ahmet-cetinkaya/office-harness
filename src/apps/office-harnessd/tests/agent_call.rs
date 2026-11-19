@@ -498,7 +498,8 @@ fn place(office: &Office, agent_id: &str, role: hierarchy_domain::Role, parent: 
 }
 
 /// A CEO agent raises a team lead over agent-call, naming the team the lead
-/// will hold: the row lands placed with the team (A4, FR-003).
+/// will hold: the lead becomes the leadless team's lead, in the row and in
+/// the tree (A4, FR-003).
 #[tokio::test]
 async fn a_ceo_creates_a_lead_through_agent_call_and_the_row_carries_the_team() {
     let office = Office::open().await;
@@ -506,11 +507,12 @@ async fn a_ceo_creates_a_lead_through_agent_call_and_the_row_carries_the_team() 
     let mut client = office.client().await;
     let ceo = client.create_agent(&office, "Chief", "ceo-cli", None).await;
     place(&office, &ceo, hierarchy_domain::Role::Ceo, None);
-    // The team exists first, as the user sets it up with an unassigned
-    // agent as its lead; the CEO's create then names that team for the
-    // lead it raises. The command names the script the test writes later,
-    // with the team id inside: a script only has to exist when the session
-    // starts.
+    // The team exists first, without a lead of its own in the tree: the
+    // user's `team.create` needs a lead agent, so this test deletes the
+    // placeholder again, which leaves the team row but clears its seat.
+    // The CEO's create then names that team for the lead it raises. The
+    // command names the script the test writes later, with the team id
+    // inside: a script only has to exist when the session starts.
     let scout = client
         .create_agent(&office, "Scout", "member-cli", None)
         .await;
@@ -522,6 +524,8 @@ async fn a_ceo_creates_a_lead_through_agent_call_and_the_row_carries_the_team() 
         .await;
     assert_eq!(team["ok"], true, "{team}");
     let team_id = team["result"]["id"].as_str().expect("team id").to_owned();
+    let deleted = client.ask("agent.delete", json!({"agent_id": scout})).await;
+    assert_eq!(deleted["ok"], true, "{deleted}");
     let lead_request = json!({
         "name": "Bo",
         "command": "lead-cli",
@@ -559,7 +563,97 @@ async fn a_ceo_creates_a_lead_through_agent_call_and_the_row_carries_the_team() 
         .expect("the placed row");
     assert_eq!(role, "lead", "{parent:?}");
     assert_eq!(parent, Some(ceo.clone()), "{role}");
-    assert_eq!(row_team, Some(team_id), "{role}");
+    assert_eq!(row_team, Some(team_id.clone()), "{role}");
+
+    // The placement set the team's lead column in the same write, so the
+    // tree shows the new lead on the team at once (the placement did not
+    // only fill the agent row's place columns).
+    let tree = client.ask("hierarchy.tree", json!({})).await;
+    assert_eq!(tree["ok"], true, "{tree}");
+    let teams = tree["result"]["teams"].as_array().expect("teams");
+    assert_eq!(teams.len(), 1, "{tree}");
+    assert_eq!(teams[0]["id"], json!(team_id), "{tree}");
+    assert_eq!(teams[0]["lead"]["id"], json!(lead), "{tree}");
+    assert_eq!(teams[0]["lead"]["role"], "lead", "{tree}");
+    assert_eq!(teams[0]["members"].as_array().expect("members").len(), 0);
+
+    office.serving.stop().await;
+}
+
+/// A second lead for a held team is refused over agent-call as `conflict`
+/// and recorded: one lead per team (FR-003), and the tree keeps exactly the
+/// seated lead.
+#[tokio::test]
+async fn a_second_lead_for_a_held_team_is_refused_and_recorded() {
+    let office = Office::open().await;
+    office.clis.add("member-cli", "echo ready; sleep 30");
+    let mut client = office.client().await;
+    let ceo = client.create_agent(&office, "Chief", "ceo-cli", None).await;
+    place(&office, &ceo, hierarchy_domain::Role::Ceo, None);
+    let lead = client.create_agent(&office, "Bo", "member-cli", None).await;
+    place(&office, &lead, hierarchy_domain::Role::Lead, None);
+    let team = client
+        .ask(
+            "team.create",
+            json!({"name": "The Team", "lead_agent_id": lead}),
+        )
+        .await;
+    assert_eq!(team["ok"], true, "{team}");
+    let team_id = team["result"]["id"].as_str().expect("team id").to_owned();
+    let second = json!({
+        "name": "Cy",
+        "command": "member-cli",
+        "working_folder": office.work_path(),
+        "role": {"kind": "lead", "team_id": team_id},
+    });
+    office.clis.add(
+        "ceo-cli",
+        &calling_script(
+            office.records_path(),
+            "create",
+            "agent.create",
+            &second.to_string(),
+        ),
+    );
+    client.start(&ceo).await;
+
+    let (code, out) = read_output(office.records_path(), "create").await;
+    assert_eq!(code, "1", "{out}");
+    let answer: Value = serde_json::from_str(out.trim()).expect("json");
+    assert_eq!(answer["ok"], false, "{answer}");
+    assert_eq!(answer["error"]["code"], "conflict", "{answer}");
+    assert!(
+        answer["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("the team already has a lead"),
+        "{answer}"
+    );
+
+    // The refusal is recorded with the caller as the actor (FR-009).
+    let entries = actions_of(&mut client, &ceo).await;
+    let refused = entries
+        .iter()
+        .find(|entry| entry["action"] == "refused")
+        .expect("the refusal is recorded");
+    assert_eq!(refused["actor"], json!(format!("agent:{ceo}")), "{refused}");
+    assert!(
+        refused["result"]
+            .as_str()
+            .expect("result")
+            .contains("the team already has a lead"),
+        "{refused}"
+    );
+
+    // The tree keeps exactly the seated lead: the refused create left no
+    // second lead row on the team.
+    let tree = client.ask("hierarchy.tree", json!({})).await;
+    assert_eq!(tree["ok"], true, "{tree}");
+    let teams = tree["result"]["teams"].as_array().expect("teams");
+    assert_eq!(teams.len(), 1, "{tree}");
+    assert_eq!(teams[0]["id"], json!(team_id), "{tree}");
+    assert_eq!(teams[0]["lead"]["id"], json!(lead), "{tree}");
+    assert_eq!(teams[0]["members"].as_array().expect("members").len(), 0);
 
     office.serving.stop().await;
 }

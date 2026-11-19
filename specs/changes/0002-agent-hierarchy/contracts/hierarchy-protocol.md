@@ -39,7 +39,7 @@ One read; no pagination (FR-005 forbids a cap; the report of a huge office is a 
 
 ### `agent.create` — extended
 
-Optional `role` object: `{ kind: "ceo" | "lead" | "member", parent_agent_id: string?, team_id: string? }`. `kind: "ceo"` takes no parent or team. `kind: "lead"` requires `team_id` and no CEO parent (the team is its place; its parent becomes the CEO when one exists, else none). `kind: "member"` requires `parent_agent_id` of a lead and takes that lead's team. Refusal `refused` names the roles allowed at the given place (FR-003). Omitted `role` = 0001 behavior (PB-1).
+Optional `role` object: `{ kind: "ceo" | "lead" | "member", parent_agent_id: string?, team_id: string? }`. `kind: "ceo"` takes no parent or team. `kind: "lead"` requires `team_id` and no CEO parent (the team is its place; its parent becomes the CEO when one exists, else none); a team that already holds its lead refuses the create with `conflict`, and a lead placement names that team's lead. `kind: "member"` requires `parent_agent_id` of a lead and takes that lead's team. Refusal `refused` names the roles allowed at the given place (FR-003). Omitted `role` = 0001 behavior (PB-1).
 
 ### `agent.stop` / `agent.delete` — extended
 
