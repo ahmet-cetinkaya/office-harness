@@ -33,17 +33,30 @@
   // second and on close. The panel restores the stored view once after its
   // first load, and only then does recording begin, so the restore's read
   // cannot be clobbered by an eager write.
-  let openView: "panel" | "scene" = $state("panel");
+  const openView = $derived(panel.openView);
   const lastView = createLastViewWriter(client);
   // The write rides the connection and the panel's restore, not the mount: a
   // pre-connection shell (not reachable, unauthorized, version mismatch)
   // sends no request at all, as the office and hierarchy loads hold to below.
+  // The scene's open desk is the terminal that is open in the scene; the
+  // panel's is its selected agent's embedded terminal (D6). The scene
+  // reports its desk through the bindable `openAgentId` prop, and the
+  // shell derives the panel side per view so the value never outlives the
+  // view that owns it.
+  let openAgentId = $state<string | null>(null);
   $effect(() => {
     if (!isConnected || !panel.lastView.isRestored) return;
+    const terminalOpen =
+      openView === "scene"
+        ? openAgentId !== null
+        : panel.office.snapshot.selectedAgentId !== null &&
+          panel.office.snapshot.details !== null;
     lastView.write({
       project: panel.projectChoice,
+      // The scene never changes the selection, so the agent is the panel's
+      // in both views (0003 FR-008: the value restores the panel's place).
       agent: panel.office.snapshot.selectedAgentId,
-      terminal_open: panel.office.snapshot.selectedAgentId !== null,
+      terminal_open: terminalOpen,
       view: openView,
     });
   });
@@ -52,10 +65,16 @@
   function onVisibility(): void {
     if (document.visibilityState === "hidden") lastView.close();
   }
+  function onPageHide(): void {
+    lastView.close();
+  }
   $effect(() => {
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("pagehide", () => lastView.close());
-    return () => document.removeEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+    };
   });
 
   onMount(() => {
@@ -115,14 +134,14 @@
     />
   {:else}
     <!-- The shell owns the view switch, so both views offer the other in
-      one step (0005 D6). The last-view write lands with the scene's T4. -->
+      one step (0005 D6). -->
     <div class="mx-auto flex max-w-6xl px-6 pt-6">
       {#if openView === "panel"}
-        <Button variant="secondary" onclick={() => (openView = "scene")}
+        <Button variant="secondary" onclick={() => panel.switchView("scene")}
           >To the scene</Button
         >
       {:else}
-        <Button variant="secondary" onclick={() => (openView = "panel")}
+        <Button variant="secondary" onclick={() => panel.switchView("panel")}
           >To the panel</Button
         >
       {/if}
@@ -145,6 +164,7 @@
         {hierarchy}
         projectChoice={panel.projectChoice}
         onProjectChoice={panel.setProjectChoice}
+        bind:openAgentId
       />
     {/if}
     <LoginStartPanel {client} />

@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Scene e2e. Part 1 (0005 T3) covered floors, desks, switcher, search, and
-// the empty state. The part 2 additions here cover the keyboard traversal,
-// the status announcements, and the deletion focus moves (T5 a, b); the
-// reduced-motion scan (T5 c) sits at the bottom. Still waiting for other
-// work: departments from a seeded tree, in-place desk updates (SC-002,
-// SC-003 shapes), the PB-4 recorded-calls assertion, the terminal embed
-// (D5), and the role, team, and settings seeds that
-// test/mock-core-extensions adds to mock-core.
+// Scene e2e. Landed: floors, desks, switcher, search, empty states; the
+// keyboard traversal, announcements, and deletion focus moves (T5 a, b);
+// the reduced-motion scan (T5 c); the desk terminal embed (D5); and the
+// review acceptance tests (SC-002 shape under a search, PB-1, PB-4).
+// Still waiting for test/mock-core-extensions: departments from a seeded
+// tree and the SC-004 100-agent measurement.
 
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
@@ -164,8 +162,14 @@ test("the search filters desks, focuses the match, and says when nothing matches
   await search.fill("zzz");
   await expect(desks(page)).toHaveCount(0);
   await expect(
-    scene(page).getByText("No desk matches the search."),
+    scene(page).getByRole("paragraph").filter({
+      hasText: "No desk matches the search.",
+    }),
   ).toBeVisible();
+  // The zero-match case is heard through the one live region as well (D9).
+  await expect(scene(page).getByRole("status")).toContainText(
+    "No desk matches the search.",
+  );
 
   // Spaces-only is no search: every desk is back.
   await search.fill("   ");
@@ -177,6 +181,105 @@ test("the search filters desks, focuses the match, and says when nothing matches
   await search.fill("dE");
   await expect(desks(page)).toHaveCount(1);
   await expect(desks(page).filter({ hasText: "Dee" })).toBeFocused();
+});
+
+test("a pushed status and line change update the desk under an active search (SC-002 shape)", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  const search = page.getByLabel("Search agents");
+  // Only Bo matches, so the update must land on the one rendered desk.
+  await search.fill("bo");
+  await expect(desks(page)).toHaveCount(1);
+  await expect(desks(page).filter({ hasText: "Bo" })).toBeFocused();
+
+  await page.evaluate(() => {
+    window.__mockCore.pushEvent({
+      type: "agent.status",
+      agent_id: "agent-bo",
+      status: "starting",
+    });
+    window.__mockCore.pushEvent({
+      type: "agent.line",
+      agent_id: "agent-bo",
+      line: "Rebuilt from clean.",
+    });
+  });
+
+  // The desk updates in place; the search text and the focus hold.
+  const updated = desks(page).filter({ hasText: "Bo" });
+  await expect(updated).toHaveAttribute(
+    "aria-label",
+    "Bo, project Site, starting, Rebuilt from clean.",
+  );
+  await expect(desks(page)).toHaveCount(1);
+  await expect(search).toHaveValue("bo");
+  await expect(updated).toBeFocused();
+});
+
+test("the scene exposes no create, start, stop, or delete control (PB-1)", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  for (const label of [
+    "New agent",
+    "New project",
+    "Start agent",
+    "Stop agent",
+    "Delete agent",
+    "Delete project",
+  ]) {
+    await expect(scene(page).getByRole("button", { name: label })).toHaveCount(
+      0,
+    );
+  }
+  // The only desk buttons are desks; nothing acts on an agent beyond the
+  // (D5) desk open itself.
+  await expect(desks(page)).toHaveCount(4);
+});
+
+test("switching views sends no agent request (PB-4, recorded calls)", async ({
+  page,
+}) => {
+  await installMockCore(page, {
+    initialState: { status: "connected" },
+    office: { agents: OFFICE_AGENTS, projects: PROJECTS },
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "To the scene" }).click();
+
+  const agentRequests = async () =>
+    page.evaluate(() =>
+      window.__mockCore.calls
+        .filter((call) => call.command === "send_request")
+        .map((call) => String(call.args.kind))
+        .filter((kind) => kind.startsWith("agent.")),
+    );
+
+  const before = await agentRequests();
+  await page.getByRole("button", { name: "To the panel" }).click();
+  await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+  await page.getByRole("button", { name: "To the scene" }).click();
+  await expect(
+    page.getByRole("region", { name: "Office scene" }),
+  ).toBeVisible();
+
+  // Only settings.set rides the switch (last_view); agent.list and friends
+  // are the initial loads, unchanged by the switches (PB-4).
+  const after = await agentRequests();
+  expect(after).toEqual(before);
+  const settings = await page.evaluate(() =>
+    (
+      window.__mockCore.calls.filter(
+        (call) =>
+          call.command === "send_request" && call.args.kind === "settings.set",
+      ) as Array<{ args: { fields?: { key?: string } } }>
+    ).map((call) => String(call.args.fields?.key)),
+  );
+  expect(settings.length).toBeGreaterThan(0);
+  expect(settings.every((key) => key === "last_view")).toBe(true);
 });
 
 test("the empty office says so and the shell returns to the panel", async ({
@@ -532,5 +635,322 @@ test.describe("desk opens the terminal in the scene (D5)", () => {
       ),
     );
     expect(inputs).toEqual([]);
+  });
+});
+
+test.describe("T4: return and restore", () => {
+  test("a 20-trial round trip keeps the project choice and the selected agent (SC-006)", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: { agents: OFFICE_AGENTS, projects: PROJECTS },
+    });
+    await page.goto("/");
+
+    for (let trial = 0; trial < 20; trial += 1) {
+      // Alternate the project and the agent inside it (SC-006's mixed runs).
+      const [projectLabel, rowName] =
+        trial % 2 === 0
+          ? ["Site", "Ada, project Site, working"]
+          : ["Api", "Cy, project Api, waiting for input"];
+      await page.getByLabel("Project", { exact: true }).selectOption({
+        label: projectLabel,
+      });
+      const row = page
+        .getByRole("region", { name: "Agents" })
+        .getByRole("button", { name: rowName });
+      await row.click();
+
+      await page.getByRole("button", { name: "To the scene" }).click();
+      await expect(
+        page.getByRole("region", { name: "Office scene" }),
+      ).toBeVisible();
+
+      await page.getByRole("button", { name: "To the panel" }).click();
+      await expect(
+        page.getByRole("region", { name: "Agents" }).getByRole("list"),
+      ).toBeVisible();
+
+      // The panel's choice and selection are exactly the scene-open ones.
+      expect(
+        await page.getByLabel("Project", { exact: true }).inputValue(),
+      ).toBe(projectLabel === "Site" ? "project-site" : "project-api");
+      await expect(
+        page
+          .getByRole("region", { name: "Agents" })
+          .getByRole("button", { name: rowName }),
+      ).toHaveAttribute("aria-current", "true");
+    }
+  });
+
+  test("a start with a stored view:scene reopens the scene", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: null,
+          agent: null,
+          terminal_open: false,
+          view: "scene",
+        }),
+      },
+    });
+    await page.goto("/");
+
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+    await expect(page.getByRole("region", { name: "Agents" })).toHaveCount(0);
+  });
+
+  test("a stored last_view without the view field (a 0003-era write) opens the panel", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: "project-site",
+          agent: "agent-ada",
+          terminal_open: true,
+        }),
+      },
+    });
+    await page.goto("/");
+
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    expect(
+      await page.getByRole("region", { name: "Office scene" }).count(),
+    ).toBe(0);
+    // The panel-side restore of the stored project/agent is 0003's reader;
+    // this branch proves only the view: the panel opens.
+  });
+
+  test("an unknown view word opens the panel", async ({ page }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: null,
+          agent: null,
+          terminal_open: false,
+          view: "galaxy",
+        }),
+      },
+    });
+    await page.goto("/");
+
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    expect(
+      await page.getByRole("region", { name: "Office scene" }).count(),
+    ).toBe(0);
+  });
+
+  test("last_view's terminal_open follows the view that owns the terminal", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: { agents: OFFICE_AGENTS, projects: PROJECTS },
+    });
+    await page.goto("/");
+    const lastWrite = async () =>
+      page.evaluate(() => {
+        const writes = window.__mockCore.calls.filter(
+          (call) =>
+            call.command === "send_request" &&
+            call.args.kind === "settings.set",
+        ) as Array<{ args: { fields?: { value?: string } } }>;
+        return JSON.parse(String(writes.at(-1)?.args.fields?.value ?? "{}"));
+      });
+
+    // Open Cy's desk in the scene: the scene owns the open terminal.
+    await page.getByRole("button", { name: "To the scene" }).click();
+    await desks(page).filter({ hasText: "Cy" }).click();
+    await expect(
+      page.getByLabel("Terminal of Cy", { exact: true }),
+    ).toBeFocused();
+    await expect
+      .poll(lastWrite)
+      .toMatchObject({ view: "scene", terminal_open: true });
+
+    // Back in the panel with no selection: the scene's desk must not leak
+    // into the write; terminal_open is false.
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    await expect
+      .poll(lastWrite)
+      .toMatchObject({ view: "panel", terminal_open: false });
+
+    // The panel opens Ada's terminal through its selection: true again.
+    await page
+      .getByRole("region", { name: "Agents" })
+      .getByRole("button", { name: "Ada, project Site, working" })
+      .click();
+    await expect(
+      page.getByLabel("Terminal of Ada", { exact: true }),
+    ).toBeFocused();
+    await expect.poll(lastWrite).toMatchObject({
+      view: "panel",
+      terminal_open: true,
+      agent: "agent-ada",
+    });
+  });
+
+  test("a delayed restore never disables the writes after an early switch", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: null,
+          agent: null,
+          terminal_open: false,
+          view: "scene",
+        }),
+        lastViewDelayMs: 3_000,
+      },
+    });
+    await page.goto("/");
+
+    // The user switches before the slow restore answers: the early choice
+    // wins the view...
+    await page.getByRole("button", { name: "To the scene" }).click();
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+
+    // ...and the writes keep flowing afterwards (the restore gate opens
+    // even when the stored view is discarded).
+    const writes = async () =>
+      page.evaluate(() =>
+        (
+          window.__mockCore.calls.filter(
+            (call) =>
+              call.command === "send_request" &&
+              call.args.kind === "settings.set",
+          ) as Array<{ args: { fields?: { value?: string } } }>
+        ).map((call) => JSON.parse(String(call.args.fields?.value))),
+      );
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    await expect
+      .poll(async () => (await writes()).at(-1))
+      .toMatchObject({ view: "panel" });
+
+    // Once the delayed answer lands, the user's view still stands.
+    await page.waitForTimeout(3_500);
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    expect(
+      await page.getByRole("region", { name: "Office scene" }).count(),
+    ).toBe(0);
+    await expect
+      .poll(async () => (await writes()).at(-1))
+      .toMatchObject({ view: "panel" });
+  });
+
+  test("a scene round trip during the restore read starts no second restore", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: null,
+          agent: "agent-bo",
+          terminal_open: false,
+          view: "panel",
+        }),
+        lastViewDelayMs: 1_500,
+      },
+    });
+    await page.goto("/");
+
+    // The panel's restore read is in flight; the panel unmounts and mounts
+    // again, and the second mount must find the restore already under way.
+    await page.getByRole("button", { name: "To the scene" }).click();
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "To the panel" }).click();
+
+    await expect(
+      page.getByRole("button", { name: "Bo, project Site, stopped" }),
+    ).toHaveAttribute("aria-current", "true");
+    const reads = () =>
+      page.evaluate(
+        () =>
+          window.__mockCore.calls.filter(
+            (call) =>
+              call.command === "send_request" &&
+              call.args.kind === "settings.get" &&
+              (call.args.fields as { key?: string })?.key === "last_view",
+          ).length,
+      );
+    await page.waitForTimeout(500);
+    expect(await reads()).toBe(1);
+  });
+
+  test("departments group the floors from the seeded tree (D2, FR-003)", async ({
+    page,
+  }) => {
+    /** Ada is the CEO on Site; Bo leads Backend and sits on Site; Cy is a
+     * Backend member on Api, so Backend spans two floors; Dee has no team. */
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        hierarchy: {
+          ceo: { id: "agent-ada", role: "ceo" },
+          teams: [
+            {
+              id: "team-backend",
+              name: "Backend",
+              project_id: "project-site",
+              lead: { id: "agent-bo", role: "lead" },
+              members: [{ id: "agent-cy", role: "member" }],
+            },
+          ],
+          unassigned: [],
+        },
+      },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "To the scene" }).click();
+
+    const floor = (name: string) => scene(page).getByRole("region", { name });
+
+    // Api floor: the cross-floor department's member sits here without Bo.
+    const api = floor("Api (1)");
+    await expect(api.getByRole("heading", { name: "Backend" })).toBeVisible();
+    await expect(api.getByRole("button", { name: /Cy/ })).toBeVisible();
+
+    // Site floor: the unnamed group first (CEO Ada, no-team Dee), then the
+    // department with its lead Bo before Cy... Cy is on Api, so Bo alone.
+    const site = floor("Site (2)");
+    const siteDesks = site.getByRole("button");
+    await expect(siteDesks).toHaveCount(2);
+    expect(await siteDesks.first().getAttribute("aria-label")).toContain("Ada");
+    await expect(site.getByRole("heading", { name: "Backend" })).toBeVisible();
+
+    // Dee (no team) sits in the unnamed group on the No project floor.
+    await expect(
+      floor("No project (1)").getByRole("button", { name: /Dee/ }),
+    ).toBeVisible();
   });
 });
