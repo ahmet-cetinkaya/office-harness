@@ -9,12 +9,12 @@ use std::io::{BufReader, Read, Write, stdin, stdout};
 use std::process::{Command, Stdio, exit};
 use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const WATCHDOG: Duration = Duration::from_secs(60);
 const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 const SPLIT_QUERY_GAP: Duration = Duration::from_millis(150);
-const SPLIT_QUERY_WINDOW: Duration = Duration::from_millis(700);
+const RELEASE_POLL: Duration = Duration::from_millis(10);
 const SIZE_POLL: Duration = Duration::from_millis(50);
 const USAGE_EXIT_CODE: i32 = 64;
 const TIMEOUT_EXIT_CODE: i32 = 2;
@@ -28,7 +28,7 @@ fn main() {
     let argument = |index: usize| arguments.get(index).map_or("", String::as_str);
     match argument(0) {
         "exit" => exit(number(argument(1))),
-        "delayed-exit" => delayed_exit(number(argument(1)), number(argument(2))),
+        "exit-on-file" => exit_on_file(argument(1), number(argument(2))),
         "pause-resume" => pause_resume(number(argument(1))),
         "counter" => counter(number(argument(1)), number(argument(2))),
         "keys" => keys(),
@@ -75,9 +75,14 @@ fn enter_raw_mode() {
     }
 }
 
-fn delayed_exit(milliseconds: u64, code: i32) {
+/// Writes one line, stays silent until the file at `path` exists, and exits
+/// with `code`. The test creates the file, so the silence lasts as long as
+/// the test needs, whatever the scheduling.
+fn exit_on_file(path: &str, code: i32) {
     announce("HELLO\n");
-    thread::sleep(Duration::from_millis(milliseconds));
+    while !std::path::Path::new(path).exists() {
+        thread::sleep(RELEASE_POLL);
+    }
     exit(code);
 }
 
@@ -209,11 +214,18 @@ fn query_split() {
     announce("\x1b[6");
     thread::sleep(SPLIT_QUERY_GAP);
     announce("n");
-    let started = Instant::now();
+    // A device status query after it is answered with ESC [ 0 n, in order,
+    // so every cursor reply (ending in R) arrives before that n: the count
+    // needs no time window.
+    announce("\x1b[5n");
     let mut replies = 0;
-    while let Some(remaining) = SPLIT_QUERY_WINDOW.checked_sub(started.elapsed()) {
-        if input.recv_timeout(remaining) == Ok(b'R') {
-            replies += 1;
+    loop {
+        match input.recv_timeout(REPLY_TIMEOUT) {
+            Ok(b'R') => replies += 1,
+            Ok(b'n') => break,
+            Ok(_) => {}
+            // No end marker: the count proves nothing, so the run fails.
+            Err(_) => exit(TIMEOUT_EXIT_CODE),
         }
     }
     announce(&format!("REPLIES:{replies}\r\n"));
