@@ -861,6 +861,50 @@ test.describe("T4: return and restore", () => {
       .toMatchObject({ view: "panel" });
   });
 
+  test("a scene round trip during the restore read starts no second restore", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: null,
+          agent: "agent-bo",
+          terminal_open: false,
+          view: "panel",
+        }),
+        lastViewDelayMs: 1_500,
+      },
+    });
+    await page.goto("/");
+
+    // The panel's restore read is in flight; the panel unmounts and mounts
+    // again, and the second mount must find the restore already under way.
+    await page.getByRole("button", { name: "To the scene" }).click();
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "To the panel" }).click();
+
+    await expect(
+      page.getByRole("button", { name: "Bo, project Site, stopped" }),
+    ).toHaveAttribute("aria-current", "true");
+    const reads = () =>
+      page.evaluate(
+        () =>
+          window.__mockCore.calls.filter(
+            (call) =>
+              call.command === "send_request" &&
+              call.args.kind === "settings.get" &&
+              (call.args.fields as { key?: string })?.key === "last_view",
+          ).length,
+      );
+    await page.waitForTimeout(500);
+    expect(await reads()).toBe(1);
+  });
+
   test("departments group the floors from the seeded tree (D2, FR-003)", async ({
     page,
   }) => {
