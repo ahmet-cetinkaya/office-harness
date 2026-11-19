@@ -2,4 +2,4 @@
 
 mod create_team_handler;
 
-pub use create_team_handler::{CreateTeamHandler, CreateTeamRequest};
+pub use create_team_handler::{CreateTeamHandler, CreateTeamRequest, CreateTeamWithLeadRequest};

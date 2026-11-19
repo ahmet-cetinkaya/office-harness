@@ -72,6 +72,9 @@ pub struct AgentServices {
     pub record_action: RecordActionHandler,
     /// The office-level entries, for `office.actions`.
     pub office_actions: ListOfficeActionsHandler,
+    /// Reads back an agent that another module's request created (the lead
+    /// of `team.create`), so its `agent.changed` event can be sent.
+    pub agent_reader: ListAgentsHandler,
 }
 
 /// The stores and services that the use cases share.
@@ -130,6 +133,7 @@ pub fn build_agent_services(
         audit: AuditHandlers::new(ListActionsHandler::new(Arc::clone(&action_log))),
         office_actions: ListOfficeActionsHandler::new(action_log),
         record_action,
+        agent_reader: ListAgentsHandler::new(Arc::clone(&wiring.agents)),
         change_status: ChangeAgentStatusHandler::new(Arc::clone(&wiring.agents)),
         end_session: EndSessionHandler::new(
             Arc::clone(&wiring.sessions),
