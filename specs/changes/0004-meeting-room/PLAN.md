@@ -176,7 +176,7 @@ Paths are relative to the repository root. `M/` stands for `src/modules/`. `D/` 
 ### T5: Notification suppression (MODIFIED 0003/FR-006)
 
 - **Files:** `src/apps/office-harnessd/src/bridges/notification_bridge.rs` (the merged 0003 file, name from T1 R4), `src/apps/office-harnessd/src/bootstrap/`.
-- **Work:** before the bridge creates a `waiting for input` notification, it asks the meeting registry; a participant of a running meeting notifies nobody. Exits, failures, and bells notify as before (D10). No `meeting` crate appears in the `notification` module.
+- **Work:** before the bridge creates a `waiting for input` notification, it asks the meeting registry; a participant of a running meeting notifies nobody. Exits, failures, bells, and the automatic hold of 0007 notify as before (D10). No `meeting` crate appears in the `notification` module.
 - **Depends on:** T4 (the registry exists), and the gate (0003's bridge is merged).
 - **Acceptance:** bridge tests with fake events: a participant of a running meeting creates no `waiting for input` notification; the same agent after its meeting ends notifies again; an exit, a failure, and a bell during a meeting still notify. fmt, clippy, `cargo test`.
 
