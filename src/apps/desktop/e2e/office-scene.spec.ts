@@ -149,6 +149,96 @@ test("the switcher shows one project's floor and All projects brings the rest ba
   ).toBeVisible();
 });
 
+test("the floors name their departments and the roles order the desks (FR-003)", async ({
+  page,
+}) => {
+  /** Ada is the CEO; Bo leads Backend and Cy sits in it; El leads Web with
+   * Fi in it; Dee has no team. Cy sits on Api, so its department spans two
+   * floors and shows there without its lead. */
+  const agents = [
+    agent({ project_id: "project-site" }),
+    agent({
+      id: "agent-bo",
+      name: "Bo",
+      project_id: "project-site",
+      status: "stopped",
+    }),
+    agent({
+      id: "agent-cy",
+      name: "Cy",
+      project_id: "project-api",
+      status: "waiting_for_input",
+    }),
+    agent({ id: "agent-el", name: "El", project_id: "project-api" }),
+    agent({ id: "agent-fi", name: "Fi", project_id: "project-api" }),
+    agent({ id: "agent-dee", name: "Dee", status: "exited" }),
+  ];
+  await installMockCore(page, {
+    initialState: { status: "connected" },
+    office: {
+      agents,
+      projects: PROJECTS,
+      hierarchy: {
+        ceo: { id: "agent-ada", role: "ceo" },
+        teams: [
+          {
+            id: "team-backend",
+            name: "Backend",
+            project_id: "project-site",
+            lead: { id: "agent-bo", role: "lead" },
+            members: [{ id: "agent-cy", role: "member" }],
+          },
+          {
+            id: "team-web",
+            name: "Web",
+            project_id: "project-api",
+            lead: { id: "agent-el", role: "lead" },
+            members: [{ id: "agent-fi", role: "member" }],
+          },
+        ],
+        unassigned: [],
+      },
+    },
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "To the scene" }).click();
+
+  const floor = (name: string) => scene(page).getByRole("region", { name });
+  // The desk's accessible name opens with the agent's name.
+  const deskNames = (area: ReturnType<typeof scene>) =>
+    area
+      .getByRole("button")
+      .evaluateAll((desks) =>
+        desks.map(
+          (desk) => desk.getAttribute("aria-label")?.split(",")[0] ?? "",
+        ),
+      );
+
+  // Departments sort by team name after the unnamed group; a department
+  // shows on every floor where one of its agents sits.
+  const api = floor("Api (3)");
+  await expect(api.getByRole("heading", { name: "Backend" })).toBeVisible();
+  await expect(api.getByRole("heading", { name: "Web" })).toBeVisible();
+  // Cy's department's lead sits on Site, so Cy is first on Api; El leads
+  // Web here, so El comes before Fi.
+  expect(await deskNames(api)).toEqual(["Cy", "El", "Fi"]);
+
+  // The unnamed group goes first on its floor with the CEO at its head,
+  // and the lead Bo heads his department alone (Cy is on Api). Dee has no
+  // team and no project, so it sits on the No project floor instead.
+  const site = floor("Site (2)");
+  await expect(site.getByRole("heading", { name: "Backend" })).toBeVisible();
+  expect(await deskNames(site)).toEqual(["Ada", "Bo"]);
+
+  // The switcher narrows to one floor with its departments intact.
+  await page.getByLabel("Project", { exact: true }).selectOption({
+    label: "Api",
+  });
+  await expect(api.getByRole("heading", { name: "Web" })).toBeVisible();
+  await expect(desks(page)).toHaveCount(3);
+  expect(await deskNames(scene(page))).toEqual(["Cy", "El", "Fi"]);
+});
+
 test("the search filters desks, focuses the match, and says when nothing matches", async ({
   page,
 }) => {
