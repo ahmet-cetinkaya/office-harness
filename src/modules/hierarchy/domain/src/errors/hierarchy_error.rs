@@ -28,6 +28,8 @@ pub enum HierarchyError {
     SecondCeo { name: String },
     #[error("the team already has a lead: {name}")]
     SecondLead { name: String },
+    #[error("the agent already leads another team")]
+    LeadsAnotherTeam,
     #[error("the parent is not an agent of the office")]
     ParentNotFound,
     #[error("a {child} cannot sit under a {parent}; allowed under a {parent}: {allowed}")]

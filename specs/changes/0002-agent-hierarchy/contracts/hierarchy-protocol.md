@@ -12,7 +12,7 @@ Date: 2026-11-16. Extends the 0001 wire protocol (`src/shared/wire/src/`): a req
 | `project_id` | string? | optional; an existing project |
 | `lead` | object | the lead agent to create or pick, as in `agent.create` fields plus nothing else |
 
-Result: `{team}` (see `team` below). Errors: `conflict` when the name (case-insensitive) exists; `invalid` when the lead fields fail validation; `refused` when a second CEO would be needed.
+Result: `{team}` (see `team` below). Errors: `conflict` when the name (case-insensitive) exists, or when the lead already leads another team (refused, never moved, so no team keeps a stale seat); `invalid` when the lead fields fail validation; `refused` when a second CEO would be needed.
 
 ### `team.delete`
 
@@ -34,6 +34,10 @@ agent := { id, name, role, status, project_id }   // role: "ceo"|"lead"|"member"
 ```
 
 One read; no pagination (FR-005 forbids a cap; the report of a huge office is a 0003 concern).
+
+### Agent rows carry `role` and `team`
+
+Every agent object in an `agent.*` answer (the `agent.list` rows, the `agent.create` result, and the others) carries `role`: `"ceo" | "lead" | "member" | null` and `team`: the team's display name as a string, or `null`. Both are read at answer time, so a placement or a team rename shows in the next answer. `team` is display-only, never a key: joins and identity go through `hierarchy.tree` (team ids live there). An agent outside the hierarchy carries `null` for both. The `agent.changed` event keeps its 0001 shape; clients re-read on `hierarchy.changed`.
 
 ## Changed requests (user client)
 

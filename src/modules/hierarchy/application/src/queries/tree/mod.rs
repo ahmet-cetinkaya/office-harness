@@ -2,4 +2,4 @@
 
 mod tree_query;
 
-pub use tree_query::{Tree, TreeAgent, TreeQuery, TreeTeam};
+pub use tree_query::{RowPlace, Tree, TreeAgent, TreeQuery, TreeTeam};

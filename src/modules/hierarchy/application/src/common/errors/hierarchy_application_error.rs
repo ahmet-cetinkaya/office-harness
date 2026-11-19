@@ -40,7 +40,9 @@ impl HierarchyApplicationError {
     #[must_use]
     pub fn from_place(error: HierarchyError) -> Self {
         match error {
-            HierarchyError::SecondLead { .. } => Self::Conflict(error.to_string()),
+            HierarchyError::SecondLead { .. } | HierarchyError::LeadsAnotherTeam => {
+                Self::Conflict(error.to_string())
+            }
             other => Self::Invalid(other),
         }
     }
