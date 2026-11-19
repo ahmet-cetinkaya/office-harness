@@ -483,6 +483,10 @@ mod hold_guard {
         fn now(&self) -> Timestamp {
             Timestamp::from_unix_millis(NOW_MILLIS)
         }
+
+        fn steady_now(&self) -> Timestamp {
+            Timestamp::from_unix_millis(NOW_MILLIS)
+        }
     }
 
     /// Counts what the guard reports; the guard journals no refusal itself.
