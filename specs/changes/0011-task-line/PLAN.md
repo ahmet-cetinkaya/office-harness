@@ -15,11 +15,11 @@ Each agent row gets one more line: the last task the office gave the agent, with
 **What you get:**
 - Three nullable columns on `agent_agents` (migration `0006_task_text.sql`) and a `task` value on the agent, sent in `agent_json`.
 - The directive path sets the task text right after the terminal write succeeds. A new task clears it. A new request, `agent.task.set`, lets the user set, edit, or clear it, recorded in the action record as `task_text`.
-- `agent.changed` is published on every task-text change, so the list updates live.
+- A dedicated event `agent.task {agent_id, task}` is published on every task-text change, so the list updates live without touching the row's last line or status.
 - In the desktop app: a task line in each row ("Task given 3 min ago: ..."), the full text with Edit and Clear in the details, and control characters shown as visible symbols, never applied.
 
 **Why this approach:**
-- The agent module already owns the agent row and its JSON. Hierarchy reaches it through directive ports and bridges (`H/directive_bridges.rs`), so one more port method keeps the module boundary.
+- The agent module already owns the agent row and its JSON. Hierarchy reaches it through directive ports and bridges (`H/bridges/directive_bridges.rs`), so one more port method keeps the module boundary.
 - The directive handler already marks the exact point of receipt (`send_directive_handler.rs:120`, after the write). Refused directives return earlier, so they cannot set the text (edge case).
 
 **What it will not do:** read output, prompts, or titles; type anything into the CLI; show the line on the scene's desks or in Needs you (spec Out of scope).
@@ -27,8 +27,8 @@ Each agent row gets one more line: the last task the office gave the agent, with
 **Shape of the work:** 5 tasks in one PR, one local commit per task. **Effort:** S to M.
 
 **Main risks:**
-- **Live updates.** `agent.changed` is published today only on create. Every task-text change publishes it explicitly; a missed path would leave a stale line until reload. Integration tests cover each of the three paths.
-- **Safe display.** The desktop has no control-character helper today. D5 adds one, with unit tests over C0, DEL, C1, and escape sequences.
+- **Live updates.** `agent.changed` carries `last_line: null` and the stored status (`entities.rs:22`), and the desktop replaces the whole agent on it (`office-events.ts:20-25`), so it must not be used for task changes. A dedicated `agent.task` event patches only the task; a missed path would leave a stale line until reload. Integration tests cover each of the three paths, and a desktop test proves the last line and status survive the event.
+- **Safe display.** The desktop has no control-character helper today. D5 adds one, with unit tests over C0, DEL, C1, bidirectional format characters, and escape sequences.
 
 **Decisions made for you:** column storage in the agent module, the hook points, the request name and its rules, the new action kind, and the display helper.
 
@@ -47,12 +47,12 @@ Deliver spec 0011. Each agent row shows the task given (first line, at most 80 c
   - Store port: `M/agent/application/src/common/interfaces/agent_store.rs`. In-memory fake: `application/src/test_support.rs:95`.
   - Agent migrations: they end at `0005_hierarchy_columns.sql` (plain `ADD COLUMN`); the ledger is `migrations/mod.rs:21-29`.
   - JSON: `agent_json` is at `M/agent/presentation/src/mappings/entities.rs:9-24`. `agent_changed_event` is at `mappings/events.rs:28`, emitted only at `agent_handlers.rs:243,280`.
-  - Directive: `M/hierarchy/application/src/commands/send_directive/send_directive_handler.rs:59-122`. The write is at `:112-119`, and receipt at `:120`. Ports are in `M/hierarchy/application/src/common/ports/directive_ports.rs`, bridged in `H/directive_bridges.rs` and wired in `H/bootstrap/hierarchy_services.rs:121-136`. `answer_directive` (`H/server/agent_call.rs:159-192`) publishes no event.
+  - Directive: `M/hierarchy/application/src/commands/send_directive/send_directive_handler.rs:59-122`. The write is at `:112-119`, and receipt at `:120`. Ports are in `M/hierarchy/application/src/common/ports/directive_ports.rs`, bridged in `H/bridges/directive_bridges.rs` and wired in `H/bootstrap/hierarchy_services.rs:121-136`. `answer_directive` (`H/server/agent_call.rs:159-192`) publishes no event.
   - New task: `M/agent/application/src/commands/start_new_task/start_new_task_handler.rs:45-68`. Continue: `continue_session_handler.rs:53-84`.
   - Action record:
     - `M/audit/domain/src/action_kind.rs:10-23` has 12 kinds, none of them an edit.
     - `ActionJournal::record` is at `M/agent/application/src/common/action_journal.rs:28`.
-    - `AgentAction` is at `common/models/agent_action.rs:7-18`, and its match in `H/action_recorder.rs:68-81`.
+    - `AgentAction` is at `common/models/agent_action.rs:7-18`, and its match in `H/bridges/action_recorder.rs:68-81`.
     - The desktop labels are `D/modules/audit/models/action-entry.ts:16-25`.
     - The `audit_actions.action` column is `TEXT` with no CHECK, so no audit migration is needed.
   - Desktop:
@@ -68,24 +68,27 @@ Deliver spec 0011. Each agent row shows the task given (first line, at most 80 c
 
 - **D1 Storage:** `Agent.task: Option<TaskText>`, where `TaskText { text: String, set_at: Timestamp, source: TaskSource (Directive | User) }`. Migration `0006_task_text.sql` adds nullable `task_text TEXT`, `task_set_at INTEGER`, `task_source TEXT`. `SELECT_AGENT` reads them. A new store method `update_task(agent, Option<TaskText>)` writes them. The row is deleted with the agent, so the text goes with it (edge case).
 - **D2 Directive receipt** (FR-002, A4, edge cases):
-  - A new hierarchy port, `DirectiveTask::received(target, text, at)`, is called at `send_directive_handler.rs:120`, after the write succeeds and before the journal call.
-  - The bridge sets the task text with source `Directive` and the server clock time, then publishes `agent.changed`. Hierarchy's ports cannot publish, so the bridge holds the `EventHub`.
-  - A refused directive returns before this point and changes nothing.
-  - Two directives at once: the handler order decides, so the text is the last one written.
+  - A new hierarchy port, `fn received(&self, target: AgentId, text: &str)` (no time, no return value), is called at `send_directive_handler.rs:120`, after the write succeeds and before the journal call.
+  - The bridge stamps the server clock, sets the task text with source `Directive`, and publishes `agent.task`. Hierarchy's ports cannot publish, so the bridge holds the `EventHub`. On a store error the bridge calls `alerts.report_disk_failure`, as `DirectiveJournalBridge` does (`H/bridges/directive_bridges.rs:125-128`); the directive still answers Ok and is recorded once.
+  - A refused directive, or a failed terminal write, returns before this point and changes nothing.
+  - Two directives at once: the handler holds one `Mutex<()>` from `writer.write` through `received`, so the order of writes is the order of receipts and the text is the one entered last. Today nothing orders them (`send_directive_handler.rs:112-121`, one `spawn_blocking` per request, `directive.send` not in `ORDERED_REQUESTS`).
   - No record entry is added, because the directive is already recorded (A4).
-- **D3 New task and continue** (FR-004, PB-2): `StartNewTaskHandler::begin` clears the task after `launcher.start` succeeds. A failed start keeps it. The `agent.new_task` route adds `agent_changed_event` to its events. Continue and start do not touch the task.
+- **D3 New task and continue** (FR-004, PB-2): only `agent.new_task` clears the task, decided by god under the owner's spec delegation on 2026-11-19 (spec Clarifications). `agent.start` also launches with `LaunchKind::NewTask` (`start_agent_handler.rs:42`) but keeps the text, so a text set on a stopped agent survives its first start.
+  - `StartNewTaskHandler::begin` clears the task when the launch succeeds, meaning `Ok` with `failure == None` (a command that cannot start answers `Ok` with `failure: Some(...)`, `session_launcher.rs:43,351`). A failed launch keeps it.
+  - The outcome's agent carries the cleared task before the event is built, and the `agent.new_task` route adds the `agent.task` event to its events.
+  - Continue and start do not touch the task.
 - **D4 User request** (FR-003): `agent.task.set {agent_id, text}`, for user clients only. It is not in the agent connection's `ALLOWED_REQUESTS`.
-  - Text that is empty or only whitespace clears the task (edge case).
+  - The checks run in the order of `call_rules.rs:60-63`: blank first, then the length. Text that is empty or only whitespace clears the task (edge case), so 9,000 spaces clear it rather than being refused.
   - More than 8,192 characters, counted as Unicode scalar values like the directive check, answers `invalid` with "a task text has at most 8,192 characters".
   - Control characters are accepted and stored as is; FR-006 is a display rule.
-  - A success sets source `User`, records `ActionKind::TaskText` (text `task_text`, desktop label "task text") with the user as actor, returns the agent, and publishes `agent.changed`.
+  - A success sets source `User`, records `ActionKind::TaskText` (text `task_text`, desktop label "task text") with the user as actor, returns the agent, and publishes `agent.task`.
   - A user edit and a directive in the same moment: the later store write wins, and both are recorded (the edit as `task_text`, the directive as `directive`).
 - **D5 Display** (FR-001, FR-005, FR-006, A1, A3): a desktop helper module `D/modules/agent/models/task-text.ts`.
-  - `visibleText(s)` maps C0 controls to their Unicode control pictures (U+2400 + code, so ESC shows as ␛). DEL shows as ␡. C1 controls show as `\u00XX`. Applied everywhere the text is shown.
+  - `visibleText(s)` maps C0 controls to their Unicode control pictures (U+2400 + code, so ESC shows as ␛). DEL shows as ␡. C1 controls show as `\u00XX`. Bidirectional format characters (U+202A to U+202E, U+2066 to U+2069) show as `\u202E`-style escapes, so they cannot reorder the row text or its accessible name. Applied everywhere the text is shown.
   - `taskLine(s)` takes the first line (split on `\r\n`, `\n`, `\r`) and keeps 80 grapheme clusters (`Intl.Segmenter`), adding "…" only when it cut something. Exactly 80 shows whole.
   - `taskAge(setAt, now)` returns "0 min ago" to "59 min ago", then "N h ago".
   - The row shows `Task given <age>: <line>` under the last line. The row's accessible name includes it.
-  - The details show a "Task" row with the full visible text (pre-wrapped), plus Edit (a textarea with Save and Cancel) and Clear buttons, all by keyboard.
+  - The details show a "Task" row with the full visible text (pre-wrapped), plus Edit (a textarea with Save and Cancel, without `maxlength`, because it counts UTF-16 units and would disagree with the server's count) and Clear buttons, all by keyboard.
   - The age ticks once a minute.
 - **D6 Out of the desks:** the scene and Needs you do not read `task`. The scene's like-for-like comparison of 0005 SC-003 is unaffected.
 - **Constitution check:** module boundaries hold (the new port is bridged in `H/`), no CLI configuration is touched (PB-3), every new action works from the keyboard (PB-5), and no other project's name is in the repository.
@@ -107,13 +110,13 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 ### T1: Design artifacts (no product code)
 
 - **Files:** `specs/changes/0011-task-line/{data-model.md,contracts/task-protocol.md}`.
-- **Work:** the three columns and their rules (D1); `agent.task.set` with codes and the 8,192 message; the `task` object in `agent_json` (`{text, set_at, source}` or `null`); `agent.changed` on each change; the `task_text` action kind.
+- **Work:** the three columns and their rules (D1); `agent.task.set` with codes and the 8,192 message; the `task` object in `agent_json` (`{text, set_at, source}` or `null`); the event `agent.task {agent_id, task}` on each change, with no `last_line` and no `status`; the `task_text` action kind.
 - **Depends on:** none.
 - **Acceptance:** every server-side FR names its message or column; style as `0007-hold-and-limits/contracts/hold-protocol.md`.
 
 ### T2: Agent task value, storage, action kind (FR-003 rules, FR-004, SC-005)
 
-- **Files:** `M/agent/domain/src/` (`entities/agent.rs`, new `value_objects/task_text.rs` with tests), `M/agent/application/src/` (store port, `test_support.rs`, `common/models/agent_action.rs`, new `commands/set_task_text/`, `commands/start_new_task/`), `M/agent/infrastructure/src/persistence/` (migration, repository, port adapter), `M/audit/domain/src/action_kind.rs`, `H/action_recorder.rs`.
+- **Files:** `M/agent/domain/src/` (`entities/agent.rs`, new `value_objects/task_text.rs` with tests), `M/agent/application/src/` (store port, `test_support.rs`, `common/models/agent_action.rs`, new `commands/set_task_text/`, `commands/start_new_task/`), `M/agent/infrastructure/src/persistence/` (migration, repository, port adapter), `M/audit/domain/src/{action_kind.rs,action_record.tests.rs}`, `H/bridges/action_recorder.rs`, and the `AgentStore` fakes in `H/bridges/{notification_bridge,directive_bridges,agent_status_bridge}.tests.rs`.
 - **Work:** the D1 value and storage; `SetTaskTextHandler` with the D4 rules and journal; the D3 clear in `begin`; `ActionKind::TaskText`.
 - **Depends on:** T1.
 - **Acceptance:**
@@ -121,32 +124,38 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
   - The new task clears after a successful start and keeps the text after a failed start. Continue keeps it.
   - Repository: the task survives closing and reopening the database (SC-005).
   - Migration test: an office at agent `0005` upgrades with every agent intact and `task` empty.
-  - fmt, clippy, per-crate tests.
+  - `ActionKind::ALL` has 13 kinds (the count assert in `action_record.tests.rs:35` changes to 13).
+  - fmt, clippy, per-crate tests, and `cargo test -p office-harnessd --no-run`, so the commit builds with the new store method.
 
 ### T3: Directive hook, request, events (FR-002, FR-003, FR-007, PB-1, SC-001, SC-002, SC-004)
 
-- **Files:** `M/hierarchy/application/src/common/ports/directive_ports.rs`, `send_directive_handler.rs` (+ tests), `H/directive_bridges.rs` (+ tests), `H/bootstrap/hierarchy_services.rs`, `M/agent/presentation/src/{handlers/agent_handlers.rs,mappings/entities.rs,contracts/}`, `src/apps/office-harnessd/tests/task_text.rs`.
-- **Work:** the D2 port, bridge, and publish; the `agent.task.set` route; `task` in `agent_json`; `agent_changed_event` on new task.
+- **Files:** `M/hierarchy/application/src/common/ports/directive_ports.rs`, `send_directive_handler.rs` (+ tests), `H/bridges/directive_bridges.rs` (+ tests), `H/bootstrap/hierarchy_services.rs`, `M/agent/presentation/src/{handlers/agent_handlers.rs,mappings/entities.rs,contracts/}`, `src/apps/office-harnessd/tests/task_text.rs`.
+- **Work:** the D2 port, lock, bridge, and publish; the `agent.task.set` route; `task` in `agent_json`; the `agent.task` event on new task.
 - **Depends on:** T2.
 - **Acceptance:** integration tests through real clients:
-  - A lead's directive sets the member's task text, and `agent.changed` with the text arrives within 2 s (SC-001).
-  - A refused directive (a non-descendant, blank text, a held office) changes nothing.
+  - A lead's directive sets the member's task text, and `agent.task` with the text arrives within 2 s (SC-001). The event carries no `last_line` and no `status`.
+  - A refused directive (a non-descendant, blank text, a control character, a held office) changes nothing. A failed terminal write leaves the text unchanged.
+  - One directive adds exactly one `directive` record entry and no `task_text` entry (A4).
+  - Two threads send directives at once: the stored text equals the text written last.
+  - A user edit racing a directive leaves both entries in the record.
+  - Deleting the agent removes its text.
   - The terminal receives exactly the directive bytes as before (PB-1).
   - A member that prints output for a while keeps its task text (FR-007, SC-002, machine part).
-  - `agent.new_task` clears the text and publishes it (SC-004). `session.continue` keeps it (PB-2).
+  - `agent.new_task` clears the text and publishes it (SC-004). `agent.start` and `session.continue` keep it (D3, PB-2).
   - A server restart keeps text and time (SC-005).
   - An agent connection asking for `agent.task.set` is refused as not allowed.
   - fmt, clippy, per-crate tests, `scripts/check-boundaries.sh`.
 
 ### T4: Desktop line, details, safe text (FR-001, FR-005, FR-006, MODIFIED 0003/FR-002, PB-4, PB-5, SC-003)
 
-- **Files:** `D/modules/agent/models/{agent.ts,task-text.ts,task-text.spec.ts}`, `D/modules/panel/components/agent-row.svelte`, `D/modules/agent/components/agent-details.svelte` (+ a small task editor component), `D/modules/agent/{state/office-controller.ts,services/agent-service.ts}`, `D/modules/audit/models/action-entry.ts`, `src/apps/desktop/e2e/support/mock-core.ts`, `src/apps/desktop/e2e/task-line.spec.ts`.
+- **Files:** `D/modules/agent/models/{agent.ts,task-text.ts,task-text.spec.ts}`, `D/modules/agent/state/office-events.ts` (a `withTask` helper next to `withLine`), `D/modules/panel/components/agent-row.svelte`, `D/modules/agent/components/agent-details.svelte` (+ a small task editor component), `D/modules/agent/{state/office-controller.ts,services/agent-service.ts}`, `D/modules/audit/models/action-entry.ts`, `src/apps/desktop/e2e/support/mock-core.ts`, `src/apps/desktop/e2e/task-line.spec.ts`.
 - **Work:** the D5 helper, row line, details row, editor, and the label.
 - **Depends on:** T3.
 - **Acceptance:**
-  - `bun test`: `visibleText` maps ESC, BEL, DEL, and a C1 code to visible symbols. `taskLine` covers a multi-line text, exactly 80 graphemes (no ellipsis), 81 (ellipsis), and an emoji counting as one. `taskAge` covers 0, 59, 60, and 125 minutes.
+  - `bun test`: `visibleText` maps ESC, BEL, DEL, a C1 code, and U+202E to visible symbols. `taskLine` covers a multi-line text, exactly 80 graphemes (no ellipsis), 81 (ellipsis), and an emoji counting as one. `taskAge` covers 0, 59, 60, and 125 minutes.
   - Playwright with axe on the mock core:
-    - A pushed `agent.changed` shows "Task given 0 min ago: ..." in the row and in its accessible name.
+    - A pushed `agent.task` shows "Task given 0 min ago: ..." in the row and in its accessible name.
+    - A row that shows a last line and status `working` keeps both when the task event arrives.
     - A text with `\u001b[31m` and a newline shows as one line with ␛ visible and no color applied (SC-003).
     - Set, edit, and clear by keyboard in the details, and the record shows "task text".
     - 8,193 characters show the refusal message.
@@ -172,7 +181,7 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 | Commit | Task | Stages | Proposed message |
 |---|---|---|---|
 | 1 | T1 | `specs/changes/0011-task-line/{data-model.md,contracts/}` | `docs(spec-0011): add the task text data model and protocol` |
-| 2 | T2 | `M/agent/`, `M/audit/domain/`, `H/action_recorder.rs` | `feat(agent): keep a task text per agent` |
+| 2 | T2 | `M/agent/`, `M/audit/domain/`, `H/bridges/action_recorder.rs` | `feat(agent): keep a task text per agent` |
 | 3 | T3 | `M/hierarchy/application/`, `H/`, `M/agent/presentation/`, `src/apps/office-harnessd/tests/` | `feat(server): set the task text from directives and the user` |
 | 4 | T4 | `D/`, `src/apps/desktop/e2e/` | `feat(desktop): show the task line and edit the task text` |
 | 5 | T5 | `README.md`, `specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md`, `specs/changes/0011-task-line/qa-report.md` | `docs(spec-0011): document the task line and record QA` |
