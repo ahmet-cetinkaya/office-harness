@@ -14,7 +14,7 @@ With 12 to 30 agents, the owner must find the agents that wait for him. Today 00
 ## Context
 
 - Source of truth: `docs/PRD.md`. This change serves R9 (find the agent that needs the user) and the PRD question "which agent waits for me?".
-- This change depends on 0001 (agents, statuses, quiet period, terminals) and 0003 (the panel, the notification events of 0003/FR-006, and the read rule of 0003/FR-009). References such as `0003/FR-006` point to requirements in change 0003.
+- This change depends on 0001 (agents, statuses, quiet period, terminals) and 0003 (the panel, the notification events of 0003/FR-006, and the read rule of 0003/FR-009) and 0007 (the automatic hold, which 0007 added to 0003/FR-006). References such as `0003/FR-006` point to requirements in change 0003.
 - The queue is a view over the events that 0003 already detects. It adds no new detector: it does not read the CLI's prompts and it writes nothing to the CLI's configuration (0001/FR-021).
 - 0001 A1 and 0003 A3 hold: the office does not tell "finished" apart from "asks a question". An item therefore names the event the office saw (quiet for the quiet period, bell, exit code), never a guess about the agent's intent.
 - Stack decision, made by the owner on 2026-11-15, as in 0003. It is a recorded decision, not a requirement of this spec.
@@ -26,7 +26,7 @@ With 12 to 30 agents, the owner must find the agents that wait for him. Today 00
 |---|---|
 | Agent, project, status, quiet period, desktop app | As defined in 0001. |
 | Panel, agent list, notification | As defined in 0003. |
-| Attention event | One of the events of 0003/FR-006: an agent changes from `working` to `waiting for input`, exits, fails, or rings the terminal bell. |
+| Attention event | One of the events of 0003/FR-006 as modified by 0007: an agent changes from `working` to `waiting for input`, exits, fails, rings the terminal bell, or is put on hold automatically (0007/FR-008). |
 | Needs you | The list in the panel that this change adds. It holds at most one item per agent. |
 | Item | The entry of one agent in Needs you. |
 | Wait time | The time since the oldest attention event of the item that the user has not handled. |
@@ -85,15 +85,16 @@ The user sees how many agents wait for him in the window title, and can remove a
 
 ### ADDED
 
-- **FR-001** (US1): WHEN an attention event occurs that 0003/FR-006 does not show as read on arrival, THE SYSTEM SHALL add an item for that agent to Needs you, or, if the agent already has an item, SHALL keep that one item and its wait time and record the new event as its latest event.
-- **FR-002** (US1): THE SYSTEM SHALL show each item with the agent's name, project, latest event as the office saw it (quiet for the quiet period, bell, or exit with its exit code), and wait time, as text.
-- **FR-003** (US1): THE SYSTEM SHALL order the items in groups by their latest event, `failed` first, then `waiting for input` and bell, then `exited`, and inside each group by wait time, longest first, and items with the same wait time by agent name.
+- **FR-001** (US1): WHEN an attention event occurs that 0003/FR-006 does not show as read on arrival, THE SYSTEM SHALL add an item for that agent to Needs you, or, if the agent already has an item, SHALL keep that one item and its wait time and record the new event as its latest event. A bell that 0003/FR-006 (a) coalesces still counts as an attention event for Needs you.
+- **FR-002** (US1): THE SYSTEM SHALL show each item with the agent's name, project, latest event as the office saw it (quiet for the quiet period, bell, exit with its exit code, or put on hold by the office with the limit it hit), and wait time, as text.
+- **FR-003** (US1): THE SYSTEM SHALL order the items in groups by their latest event, `failed` first, then `waiting for input`, bell and automatic hold, then `exited`, and inside each group by wait time, longest first, and items with the same wait time by agent name.
 - **FR-004** (US1, US3): WHEN the user opens an agent's terminal by any route, or dismisses the agent's item, THE SYSTEM SHALL remove that agent's item from Needs you.
-- **FR-005** (US1): WHEN an agent with an item changes to `starting`, `working`, or `stopped`, or is deleted, THE SYSTEM SHALL remove that agent's item from Needs you.
+- **FR-005** (US1): WHEN an agent with an item changes to `starting`, `working`, or `stopped`, is deleted, or, for an item whose latest event is an automatic hold, has its hold released, THE SYSTEM SHALL remove that agent's item from Needs you.
 - **FR-006** (US1): IF an attention event occurs while the desktop app is closed, THEN THE SYSTEM SHALL show its item in Needs you, with the wait time counted from the event, when the app opens.
 - **FR-007** (US2): WHEN the user presses the jump shortcut and Needs you has items, THE SYSTEM SHALL open the terminal of the agent at the top of Needs you with keyboard focus.
 - **FR-008** (US2): IF the user presses the jump shortcut while Needs you is empty, THEN THE SYSTEM SHALL keep the current view and say that no agent needs the user.
-- **FR-009** (US3): WHILE Needs you has one or more items, THE SYSTEM SHALL show the number of items as text next to Needs you and in the desktop app's window title.
+- **FR-009** (US3): WHILE Needs you has one or more items, THE SYSTEM SHALL show the number of items as text next to Needs you in the panel and in the desktop app's window title in either view.
+- **FR-010** (US2): WHILE the office scene (0005) is open, WHEN the user presses the jump shortcut and Needs you has items, THE SYSTEM SHALL open the top agent's desk in the scene with keyboard focus, as 0005/FR-005 does, and SHALL leave the panel's project choice and selected agent unchanged (0005/FR-006).
 
 ### MODIFIED
 
@@ -126,6 +127,7 @@ The user sees how many agents wait for him in the window title, and can remove a
 | Items | One row per agent: name, project, latest event, wait time; the count in the title. | FR-002, FR-003, FR-009 |
 | Agent deleted | The item is gone. | FR-005 |
 | Jump with empty list | The current view stays; "No agent needs you". | FR-008 |
+| Scene open | No Needs you list; the count in the title; the jump shortcut opens the top desk | FR-009, FR-010 |
 
 **Design:** no fixed design exists. The plan must not add visuals beyond this flow without a design that the owner approves.
 
@@ -133,7 +135,7 @@ The user sees how many agents wait for him in the window title, and can remove a
 
 - Needs you, each item, dismiss, and the jump shortcut work from the keyboard (PB-4). Keyboard focus is always visible.
 - Each item has an accessible name with the agent's name, project, latest event, and wait time.
-- A new item and a change of the count are announced to assistive technology without moving focus.
+- A change of the count is announced to assistive technology without moving focus; a new item is not announced separately from its 0003 notification.
 - The wait time is text, never color alone.
 - Text meets WCAG 2.2 AA contrast (4.5:1 for normal text, 3:1 for large text).
 
@@ -149,7 +151,7 @@ The user sees how many agents wait for him in the window title, and can remove a
 - **SC-002:** With 5 items, 5 presses of the jump shortcut open the 5 agents' terminals in the order of FR-003, and Needs you is empty afterwards.
 - **SC-003:** An item shows in Needs you, and the count in the window title changes, within 2 seconds after the attention event (for `waiting for input`, after the quiet period ends).
 - **SC-004:** After the desktop app was closed while 3 attention events occurred, 100% of their items show in Needs you within 3 seconds after the app opens.
-- **SC-005:** An agent that produces output at least once per quiet period never gets an item.
+- **SC-005:** An agent that produces output at least once per quiet period, rings no bell, and does not exit never gets an item.
 
 ## Edge cases
 
@@ -167,10 +169,13 @@ The user sees how many agents wait for him in the window title, and can remove a
 | The project switcher hides the item's project. | Boundary | Needs you still lists the item; it covers every project (A2). |
 | The desktop app cannot reach the background server or its token is rejected. | Unauthorized | The 0001 states show (0003 PB-5). |
 | The user dismisses an item, and the agent later has a new attention event. | Boundary | A new item starts with the new event's time. |
+| The scene is open when the user presses the jump shortcut. | Boundary | The top agent's desk opens in the scene (FR-010). |
+| The user changes the focus shortcut to the jump shortcut. | Invalid | The system refuses it and names the conflict (as 0003). |
+| The focus shortcut stored before this change equals the jump shortcut. | Invalid | The focus shortcut keeps its stored key; the jump shortcut has no key until the user changes the focus shortcut, and the app says so once where shortcuts are shown. |
 
 ## Assumptions
 
-- **A1:** The default jump shortcut is `Ctrl+Shift+F11`, in the same family as the 0003 shortcuts (F1 to F10) and the focus shortcut (F12). The 0003 per-OS fallback table and its macOS Fn note apply; the plan checks the key per OS and the webview and may change it. Fixed in the MVP, like the 0003 agent shortcuts.
+- **A1:** The default jump shortcut is `Ctrl+Shift+F11`, in the same family as the 0003 shortcuts (F1 to F10) and the focus shortcut (F12). The 0003 per-OS fallback table and its macOS Fn note apply; the plan checks the key per OS and the webview and may change it. Fixed in the MVP, like the 0003 agent shortcuts. The plan checks that no stored focus shortcut is lost by the new reservation.
 - **A2:** Needs you covers every project, independent of the project switcher. The jump shortcut opens the agent the way the 0003 agent switcher does (0003 A1).
 - **A3:** An item's group follows its latest event, so a waiting agent that then fails moves to the `failed` group and keeps its wait time. The jump shortcut always opens the top item, which is the longest-waiting `failed` agent when one exists.
 - **A4:** Dismiss removes the item only. It does not mark notifications read and changes no status. Dismiss is not recorded in the action record, because it changes nothing in the office.
@@ -182,6 +187,10 @@ The user sees how many agents wait for him in the window title, and can remove a
 ### Session 2026-11-19 (owner-decided)
 
 - Q: Is Needs you ordered by wait time only, or grouped by event kind? → A: Grouped: `failed` first, then `waiting for input` and bell, then `exited`, longest wait first inside each group (FR-003, A3). The jump shortcut still opens the top item.
+- Q: Is the automatic hold of 0007/FR-008 an attention event, and where does it sort? → A: Yes. It sorts with `waiting for input` and bell, and its item leaves when the hold is released (FR-002, FR-003, FR-005).
+- Q: What does the jump shortcut do while the office scene is open? → A: It opens the top agent's desk in the scene and leaves the panel's project choice and selection unchanged. The count shows in the window title in either view (FR-009, FR-010).
+- Q: What if a stored focus shortcut equals the jump shortcut? → A: The focus shortcut keeps its key, the jump shortcut has no key until the user changes the focus shortcut, and the app says so once (Edge cases, A1).
+- Q: Does a bell that 0003 coalesces count, and is a new item announced twice? → A: A coalesced bell counts (FR-001). Only the count change is announced; the 0003 notification announces the event (Accessibility).
 
 ## Out of scope
 
