@@ -100,6 +100,8 @@ Paths below are relative to the repository root. `H` is `src/apps/office-harness
 
 Rows marked agent-run were run by an agent on Linux/KDE Wayland with fake CLIs on 2026-11-19, against the built app and server of `main` at f6dc663. The other rows stay BLOCKED until a person runs them.
 
+Raw evidence (screenshots, traces, logs, timing files) is kept outside the repository, in the QA agent's folder of the office hive (`hive/agents/celal-mwhvybh8/qa/evidence/`); repository readers cannot open it. Each row therefore states its own method, setup, and measured values. Run setup: debug builds of the desktop app and `office-harnessd`, WebDriver through `tauri-driver`, an isolated data and config folder per run with login start off, fake CLIs (shell scripts) in place of agent CLIs, and no change to system settings.
+
 | Check | Verdict | Note |
 |---|---|---|
 | Screen reader pass: the hold state, the release actions, and the live region announcement | PARTIAL (agent-run, Linux/KDE Wayland, 2026-11-19) | AT-SPI tree: the header landmark "Office hold" holds the button "Hold office", which becomes "Release office" while held; an agent row reads "ceo, waiting for input, on hold, CEO, ..."; the details offer "Hold agent" and "Release agent"; the Office record is a dialog with list items such as "Put on hold by user. Succeeded". The DOM live regions (polite) carried "Office on hold", "Office released from hold", "ceo on hold", and "ceo released from hold". No announcement event reached the AT-SPI event stream, so the announcement itself is unproven, and so is the spoken output. Evidence: `hive/agents/celal-mwhvybh8/qa/evidence/a11y/`, `hive/agents/celal-mwhvybh8/qa/evidence/0007-hold-by-hand/`. |
