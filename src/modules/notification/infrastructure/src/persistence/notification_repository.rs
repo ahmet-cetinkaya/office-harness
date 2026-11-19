@@ -13,7 +13,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 /// every module (each module keeps its own tables).
 pub type SharedHandle = Arc<Mutex<Connection>>;
 
-const SELECT_NOTIFICATION: &str = "SELECT id, agent_id, agent_name, event, created_at, read_at \
+const SELECT_NOTIFICATION: &str = "SELECT id, agent_id, agent_name, event, created_at, read_at, detail \
                                    FROM notification_notifications";
 
 /// The order of every listing (D4): unread first, then newest first. The
@@ -37,6 +37,7 @@ struct NotificationRow {
     event: String,
     created_at: i64,
     read_at: Option<i64>,
+    detail: Option<String>,
 }
 
 impl NotificationRow {
@@ -48,6 +49,7 @@ impl NotificationRow {
             event: row.get(3)?,
             created_at: row.get(4)?,
             read_at: row.get(5)?,
+            detail: row.get(6)?,
         })
     }
 
@@ -70,6 +72,7 @@ impl NotificationRow {
                 .map_err(|error| corrupt("notification event", &error.to_string()))?,
             created_at: Timestamp::from_unix_millis(self.created_at),
             read_at: self.read_at.map(Timestamp::from_unix_millis),
+            detail: self.detail,
         })
     }
 }
@@ -121,8 +124,8 @@ impl NotificationRepository {
         self.connection()
             .execute(
                 "INSERT INTO notification_notifications \
-                 (id, agent_id, agent_name, event, created_at, read_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                 (id, agent_id, agent_name, event, created_at, read_at, detail) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     notification.id.as_uuid_text(),
                     notification.agent_id.to_string(),
@@ -130,6 +133,7 @@ impl NotificationRepository {
                     notification.event.as_str(),
                     notification.created_at.as_unix_millis(),
                     notification.read_at.map(kernel::Timestamp::as_unix_millis),
+                    notification.detail,
                 ],
             )
             .map_err(|error| storage_failure(&error))?;

@@ -16,6 +16,7 @@ pub fn notification_json(notification: &Notification) -> Value {
         "read_at": notification
             .read_at
             .map(|at| json!(at.as_unix_millis())),
+        "detail": notification.detail,
     })
 }
 

@@ -16,16 +16,19 @@ use tokio::task::spawn_blocking;
 use wire::{ErrorCode, Request, Response};
 
 use super::event_hub::EventHub;
+use super::hold_requests::HoldGateway;
 use crate::bootstrap::StorageAlerts;
 use crate::bridges::{StatusOrder, StoppingFlag, TerminalEvents, take_recorded_events};
 
 /// The requests that change an agent's status or its terminal. They run one
 /// at a time, and apart from the status bridge, so that a delete never
 /// overtakes a slow start, and a stop never races an exit.
+const DELETE_REQUEST: &str = "agent.delete";
+
 const ORDERED_REQUESTS: [&str; 5] = [
     "agent.start",
     "agent.stop",
-    "agent.delete",
+    DELETE_REQUEST,
     "agent.new_task",
     "session.continue",
 ];
@@ -53,6 +56,7 @@ pub struct AgentGateway {
     terminals: TerminalEvents,
     runtime: Arc<dyn TerminalRuntime>,
     hierarchy: Arc<TreeQuery>,
+    holds: HoldGateway,
 }
 
 impl AgentGateway {
@@ -71,6 +75,7 @@ impl AgentGateway {
         terminals: TerminalEvents,
         runtime: Arc<dyn TerminalRuntime>,
         hierarchy: Arc<TreeQuery>,
+        holds: HoldGateway,
     ) -> Self {
         Self {
             agents,
@@ -82,6 +87,7 @@ impl AgentGateway {
             terminals,
             runtime,
             hierarchy,
+            holds,
         }
     }
 
@@ -136,6 +142,11 @@ impl AgentGateway {
             disk_failure,
         } = self.agents.handle(request);
         self.raise(disk_failure.as_deref());
+        if request.kind == DELETE_REQUEST && matches!(response, Response::Success { .. }) {
+            // A deleted agent leaves no hold behind (0007 D10); a subtree
+            // delete takes the same path.
+            self.holds.forget_deleted_agents();
+        }
         self.add_last_lines(&mut response);
         if request.kind.starts_with(AGENT_PREFIX) {
             self.add_places(&mut response);

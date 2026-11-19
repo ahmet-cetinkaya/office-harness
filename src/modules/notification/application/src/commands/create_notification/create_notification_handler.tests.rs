@@ -29,6 +29,7 @@ fn bell(agent_id: AgentId, at: Timestamp) -> CreateNotification {
         agent_name: "Ana".to_owned(),
         event: NotificationEvent::Bell,
         at,
+        detail: None,
     }
 }
 
@@ -93,6 +94,7 @@ fn every_non_bell_event_creates_its_own_row() {
                 agent_name: "Ana".to_owned(),
                 event,
                 at: NOW,
+                detail: None,
             })
             .expect("exit row");
     }

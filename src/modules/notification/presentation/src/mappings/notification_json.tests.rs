@@ -15,6 +15,7 @@ fn stored(event: NotificationEvent, read_at: Option<Timestamp>) -> Notification 
         event,
         created_at: Timestamp::from_unix_millis(1_000),
         read_at,
+        detail: None,
     }
 }
 
@@ -28,6 +29,17 @@ fn a_notification_is_listed_with_every_contract_field() {
     assert_eq!(body["event"], "exited");
     assert_eq!(body["created_at"], 1_000);
     assert_eq!(body["read_at"], Value::Null);
+    assert_eq!(body["detail"], Value::Null);
+}
+
+#[test]
+fn an_auto_hold_carries_its_detail() {
+    let row = stored(NotificationEvent::AutoHold, None).with_detail("a limit".to_owned());
+
+    let body = notification_json(&row);
+
+    assert_eq!(body["event"], "auto_hold");
+    assert_eq!(body["detail"], "a limit");
 }
 
 #[test]

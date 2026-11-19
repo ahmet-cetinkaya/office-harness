@@ -3,6 +3,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use agent_application::common::interfaces::Clock;
+use hierarchy_application::common::ports::HoldClock;
 use kernel::Timestamp;
 use notification_application::common::interfaces::NotificationClock;
 
@@ -16,6 +17,12 @@ impl Clock for SystemClock {
 }
 
 impl NotificationClock for SystemClock {
+    fn now(&self) -> Timestamp {
+        wall_now()
+    }
+}
+
+impl HoldClock for SystemClock {
     fn now(&self) -> Timestamp {
         wall_now()
     }
