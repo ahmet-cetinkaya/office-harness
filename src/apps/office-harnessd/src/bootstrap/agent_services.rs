@@ -37,6 +37,7 @@ use agent_presentation::{AgentHandlers, AgentUseCases};
 use audit_application::commands::record_action::RecordActionHandler;
 use audit_application::common::interfaces::ActionLog;
 use audit_application::queries::list_actions::ListActionsHandler;
+use audit_application::queries::list_office_actions::ListOfficeActionsHandler;
 use audit_infrastructure::persistence::ActionRepository;
 use audit_presentation::AuditHandlers;
 
@@ -67,6 +68,10 @@ pub struct AgentServices {
     /// directive journal shares it, so a directive is kept like any other
     /// action (FR-011).
     pub journal: ActionJournal,
+    /// Writes the hold, release, and automatic-hold entries (0007 FR-010).
+    pub record_action: RecordActionHandler,
+    /// The office-level entries, for `office.actions`.
+    pub office_actions: ListOfficeActionsHandler,
 }
 
 /// The stores and services that the use cases share.
@@ -97,8 +102,9 @@ pub fn build_agent_services(
 ) -> AgentServices {
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let action_log: Arc<dyn ActionLog> = Arc::new(ActionRepository::new(connection.handle()));
+    let record_action = RecordActionHandler::new(Arc::clone(&action_log));
     let recorder = Arc::new(ActionRecorderBridge::new(
-        RecordActionHandler::new(Arc::clone(&action_log)),
+        record_action.clone(),
         alerts.clone(),
     ));
     let wiring = Wiring {
@@ -121,7 +127,9 @@ pub fn build_agent_services(
     };
     AgentServices {
         handlers: Arc::new(AgentHandlers::new(use_cases(&wiring, machine_id))),
-        audit: AuditHandlers::new(ListActionsHandler::new(action_log)),
+        audit: AuditHandlers::new(ListActionsHandler::new(Arc::clone(&action_log))),
+        office_actions: ListOfficeActionsHandler::new(action_log),
+        record_action,
         change_status: ChangeAgentStatusHandler::new(Arc::clone(&wiring.agents)),
         end_session: EndSessionHandler::new(
             Arc::clone(&wiring.sessions),

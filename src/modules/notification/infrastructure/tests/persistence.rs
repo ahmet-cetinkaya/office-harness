@@ -52,6 +52,21 @@ fn a_stored_row_reads_back_with_its_copied_name_and_read_time() {
 }
 
 #[test]
+fn the_detail_of_an_auto_hold_reads_back_and_an_old_row_has_none() {
+    let repository = memory_office();
+    let agent = AgentId::generate();
+    let held = row(agent, "Ana", NotificationEvent::AutoHold, 20)
+        .with_detail("the limit \"x\"".to_owned());
+    let plain = row(agent, "Ana", NotificationEvent::Exited, 10);
+    repository.insert(&held).expect("insert");
+    repository.insert(&plain).expect("insert");
+
+    let listed = repository.list().expect("list");
+
+    assert_eq!(listed, vec![held, plain]);
+}
+
+#[test]
 fn the_listing_is_unread_first_then_newest_first() {
     let repository = memory_office();
     let agent = AgentId::generate();

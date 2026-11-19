@@ -6,7 +6,9 @@ use access_application::commands::authenticate_agent_call::AgentGrant;
 use agent_application::common::actor_scope::ActorScope;
 use axum::extract::ws::{Message, WebSocket};
 use hierarchy_application::common::errors::HierarchyApplicationError;
-use hierarchy_domain::{HierarchyError, Role, TeamId, TreeRow, check_descendant, is_descendant_of};
+use hierarchy_domain::{
+    AgentAction, HierarchyError, Role, TeamId, TreeRow, check_descendant, is_descendant_of,
+};
 use kernel::{Actor, AgentId};
 use serde_json::{Value, json};
 use tokio::sync::watch;
@@ -270,14 +272,15 @@ async fn answer_office_request(
         tree_query.store_snapshot().map(|rows| {
             let target_ok = target == caller || check_descendant(&rows, caller, target).is_ok();
             let fields = allowed_fields_of(&kind, &fields_in, caller, &rows);
-            (target_ok, fields)
+            (target_ok, fields, rows)
         })
     })
     .await;
-    let (descendant_ok, fields) = match inside {
-        Ok(Ok((target_ok, fields))) => (
+    let (descendant_ok, fields, rows) = match inside {
+        Ok(Ok((target_ok, fields, rows))) => (
             target_ok,
             fields.map_err(|(code, message)| (code, truncated(&message, MAX_REFUSAL_TEXT_CHARS))),
+            rows,
         ),
         Ok(Err(error)) => {
             let message = truncated(&error.to_string(), MAX_REFUSAL_TEXT_CHARS);
@@ -291,16 +294,7 @@ async fn answer_office_request(
         }
     };
     if !descendant_ok {
-        let reason = format!(
-            "the agent is not a descendant of {}",
-            truncated(&caller.to_string(), MAX_REFUSAL_TEXT_CHARS)
-        );
-        state.log.refusal(&format!(
-            "agent {caller} asked for {:?} outside its subtree",
-            truncated(&request.kind, MAX_REFUSAL_TEXT_CHARS)
-        ));
-        state.directive_journal.refused(caller, &reason);
-        return Response::failure(request.id, ErrorCode::Refused, reason);
+        return refuse_outside_subtree(state, caller, request);
     }
     let fields = match fields {
         Ok(fields) => fields,
@@ -309,6 +303,11 @@ async fn answer_office_request(
             return Response::failure(request.id, code, message);
         }
     };
+    // The hold and the rate limits come last, after every 0002 rule, on the
+    // same snapshot the rules read (spec A10).
+    if let Err(response) = guard_office_request(state, caller, request, target, rows).await {
+        return response;
+    }
     let forwarded = Request {
         id: request.id,
         kind: request.kind.clone(),
@@ -345,6 +344,64 @@ async fn answer_office_request(
             Response::failure(request.id, ErrorCode::Internal, message)
         }
     }
+}
+
+/// Answers, logs, and journals a request whose target lies outside the
+/// caller's subtree (FR-008).
+fn refuse_outside_subtree(state: &ServerState, caller: AgentId, request: &Request) -> Response {
+    let reason = format!(
+        "the agent is not a descendant of {}",
+        truncated(&caller.to_string(), MAX_REFUSAL_TEXT_CHARS)
+    );
+    state.log.refusal(&format!(
+        "agent {caller} asked for {:?} outside its subtree",
+        truncated(&request.kind, MAX_REFUSAL_TEXT_CHARS)
+    ));
+    state.directive_journal.refused(caller, &reason);
+    Response::failure(request.id, ErrorCode::Refused, reason)
+}
+
+/// Asks the hold service whether an office request may run: a create counts
+/// toward the create limit with its parent as the hold target, the other
+/// kinds toward the lifecycle limit with the named agent as the target. The
+/// refusal is journaled with the caller as actor, the kind, and the target
+/// (FR-010); the answer carries the reason alone.
+async fn guard_office_request(
+    state: &ServerState,
+    caller: AgentId,
+    request: &Request,
+    target: AgentId,
+    rows: Vec<TreeRow>,
+) -> Result<(), Response> {
+    let action = if request.kind == "agent.create" {
+        AgentAction::Create
+    } else {
+        AgentAction::Lifecycle
+    };
+    let holds = Arc::clone(&state.hold_service);
+    let guarded = spawn_blocking(move || holds.guard(caller, action, Some(target), &rows)).await;
+    let refusal = match guarded {
+        Ok(Ok(())) => return Ok(()),
+        Ok(Err(refusal)) => refusal,
+        Err(error) => {
+            let message = format!("the request task failed: {error}");
+            state.directive_journal.refused(caller, &message);
+            return Err(Response::failure(request.id, ErrorCode::Internal, message));
+        }
+    };
+    state.directive_journal.refused(
+        caller,
+        &format!(
+            "{} on {target}: {}",
+            truncated(&request.kind, MAX_REFUSAL_TEXT_CHARS),
+            refusal.reason
+        ),
+    );
+    Err(Response::failure(
+        request.id,
+        ErrorCode::Refused,
+        refusal.reason,
+    ))
 }
 
 /// The agent the request acts on: the named `agent_id`, or, for a create,
