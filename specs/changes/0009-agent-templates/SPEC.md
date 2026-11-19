@@ -1,9 +1,11 @@
 ---
-status: draft
+status: approved
 capability: office
 plan:
 supersedes:
 ---
+
+<!-- Approved by the owner on 2026-11-19, through Efe's review gate. -->
 
 # 0009: Agent and team templates
 
