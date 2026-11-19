@@ -416,3 +416,75 @@ async fn a_team_create_with_a_lead_object_creates_the_lead_and_the_team() {
     assert_eq!(error_text(&both).0, "invalid", "{both}");
     office.serving.stop().await;
 }
+
+/// Reads events until one of the type `kind` arrives. Returns it.
+async fn next_event_of(client: &mut WireClient, kind: &str) -> Value {
+    loop {
+        let message = client.receive_json().await;
+        if message["type"] == kind {
+            return message;
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_team_create_with_a_lead_object_tells_every_client_of_the_new_lead() {
+    let office = Office::open().await;
+    office.clis.add("fake-cli", "echo up; sleep 30");
+    let mut client = office.client().await;
+    let mut watcher = office.client().await;
+    let lead = json!({
+        "name": "Lea",
+        "command": "fake-cli",
+        "working_folder": office.work_path(),
+    });
+
+    let team = call(
+        &mut client,
+        1,
+        "team.create",
+        json!({"name": "Api", "lead": lead}),
+    )
+    .await;
+    assert_eq!(team["ok"], true, "{team}");
+    let lead_id = team["result"]["lead_agent_id"].as_str().expect("lead id");
+
+    let changed = next_event_of(&mut watcher, "agent.changed").await;
+    assert_eq!(changed["agent"]["id"], lead_id, "{changed}");
+    assert_eq!(changed["agent"]["name"], "Lea", "{changed}");
+    let tree = next_event_of(&mut watcher, "hierarchy.changed").await;
+    assert_eq!(tree["cause"], "team.created", "{tree}");
+    let recorded = next_event_of(&mut watcher, "action.recorded").await;
+    assert_eq!(recorded["entry"]["agent_id"], lead_id, "{recorded}");
+    assert_eq!(recorded["entry"]["action"], "create", "{recorded}");
+
+    // Refused team creates make no agent, so the next agent.changed the
+    // watcher sees is the one of the agent created after them.
+    let taken_team = call(
+        &mut client,
+        2,
+        "team.create",
+        json!({"name": "api", "lead": {"name": "Leo", "command": "fake-cli", "working_folder": office.work_path()}}),
+    )
+    .await;
+    assert_eq!(error_text(&taken_team).0, "conflict", "{taken_team}");
+    let taken_lead = call(
+        &mut client,
+        3,
+        "team.create",
+        json!({"name": "Web", "lead": lead}),
+    )
+    .await;
+    assert_eq!(error_text(&taken_lead).0, "conflict", "{taken_lead}");
+    let marker = call(
+        &mut client,
+        4,
+        "agent.create",
+        json!({"name": "Marker", "command": "fake-cli", "working_folder": office.work_path()}),
+    )
+    .await;
+    assert_eq!(marker["ok"], true, "{marker}");
+    let next_changed = next_event_of(&mut watcher, "agent.changed").await;
+    assert_eq!(next_changed["agent"]["name"], "Marker", "{next_changed}");
+    office.serving.stop().await;
+}

@@ -15,6 +15,8 @@ Date: 2026-11-16. Extends the 0001 wire protocol (`src/shared/wire/src/`): a req
 
 Result: `{team}` (see `team` below). Errors: `conflict` when the name (case-insensitive) exists, or when the lead already leads another team (refused, never moved, so no team keeps a stale seat); `invalid` when the lead fields fail validation; `refused` when a second CEO would be needed.
 
+Events on success: with `lead`, first `agent.changed` for the new lead, then `hierarchy.changed` (`team.created`), then the lead's `action.recorded`; with `lead_agent_id`, only `hierarchy.changed`. A failed `team.create` sends no `agent.changed`.
+
 ### `team.delete`
 
 | Field | Type | Rule |

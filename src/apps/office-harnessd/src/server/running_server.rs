@@ -99,8 +99,12 @@ impl Server {
             Arc::clone(&services.hierarchy.tree),
             holds.clone(),
         );
-        let hierarchy =
-            HierarchyGateway::new(Arc::clone(&services.hierarchy.handlers), events.clone());
+        let hierarchy = HierarchyGateway::new(
+            Arc::clone(&services.hierarchy.handlers),
+            services.agent.agent_reader.clone(),
+            events.clone(),
+            services.storage_alerts.clone(),
+        );
         let notification = NotificationGateway::new(
             Arc::new(services.notification.handlers.clone()),
             events.clone(),
