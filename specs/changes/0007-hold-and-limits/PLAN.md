@@ -1,10 +1,10 @@
 ---
-status: draft
+status: approved (god, 2026-11-19; Efe gate)
 spec: specs/changes/0007-hold-and-limits/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (ACF-144). Status: draft until god approves the plan; Efe gates each PR at its head sha. -->
+<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (ACF-144). Approved by god on 2026-11-19 (build p1 started); Efe gates each PR at its head sha. D9 stays open for T7's shortcut step. -->
 
 # Plan: hold switch and agent action limits (0007)
 
@@ -35,7 +35,7 @@ This change gives the owner a brake on agent-made actions. One action holds the 
 
 **Decisions made for you:** the gate order, the hold table shape, in-memory rolling windows, the four setting keys, `Actor::Office`, the optional record target, the `hold.*` protocol, `Ctrl+Shift+H` as the hold shortcut outside the terminal, and the limits dialog.
 
-**Blockers:** god approves this plan; D9 needs a yes or no before T7's shortcut step (every other task proceeds). The local build slot comes from god before each build or test run.
+**Blockers:** D9 needs a yes or no before T7's shortcut step (every other task proceeds). The local build slot comes from god before each build or test run.
 
 ## Goal
 
@@ -43,7 +43,7 @@ Deliver spec 0007: the owner holds and releases the office or one agent with one
 
 ## Context
 
-- **Repository:** `main` at 2df9f59 (0001, 0002, 0003 merged; #62 agent rows with role and team). The spec is on PR #63 (`docs/0007-hold-limits-spec`), approved by the owner on 2026-11-19.
+- **Repository:** `main` at 2df9f59 (0001, 0002, 0003 merged; #62 agent rows with role and team). The spec merged with PR #63 (main 325cca8), approved by the owner on 2026-11-19.
 - **Existing seams** (read at 2df9f59 on 2026-11-19):
   - Agent gateway: `src/apps/office-harnessd/src/server/agent_call.rs`. `ALLOWED_REQUESTS` holds the six agent types; `answer_directive` parses then runs `send_directive` under `ActorScope::enter(Actor::Agent)`; `answer_office_request` runs the field allowlist, the self refusal, and the subtree check on `hierarchy_tree.store_snapshot()`, then `state.agents.run`. Every refusal calls `state.directive_journal.refused(caller, reason)` and answers `ErrorCode::Refused`.
   - Tree: `hierarchy_domain::{TreeRow, check_descendant, is_descendant_of}`; store interface `M/hierarchy/application/src/common/interfaces/hierarchy_store.rs`; migrations `M/hierarchy/infrastructure/src/persistence/migrations/` (one file, `0001_teams.sql`, no cross-module foreign keys).
@@ -154,7 +154,7 @@ T1 → T2 → T4; T1 → T3 → T4; T4 → T5 → T6 → T7 → T8.
 
 - **Parallel:** T2 and T3 touch different crates and can run together.
 - **Exclusive:** `Cargo.lock`, the migration ledgers, `src/shared/wire`, and the e2e mock core belong to one running task at a time.
-- **Gate:** PR #63 merged and this plan approved by god before T1 code lands on the umbrella.
+- **Gate:** PR #63 merged (325cca8) and this plan approved by god (2026-11-19).
 
 ## Commit strategy
 
