@@ -71,10 +71,10 @@ pub fn assemble(rows: &[TreeRow], teams: &[Team]) -> Tree {
         match row.role {
             Some(Role::Ceo) => tree.ceo = Some(TreeAgent::of(row)),
             Some(Role::Lead) => {
-                if let Some(team) = teams
-                    .iter()
-                    .find(|team| team.lead_agent_id() == row.agent_id)
-                {
+                // The row names the team it leads; matching the team by
+                // its lead column instead would tie the tree to the seat's
+                // stored state (a stale first lead_agent_id hides the team).
+                if let Some(team) = teams.iter().find(|team| Some(team.id()) == row.team_id) {
                     tree.teams.push(TreeTeam {
                         team: team.clone(),
                         lead: TreeAgent::of(row),

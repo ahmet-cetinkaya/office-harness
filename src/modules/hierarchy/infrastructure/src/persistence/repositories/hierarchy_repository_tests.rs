@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Repository tests against an in-memory database. The fixture recreates
-//! the migration result by hand (the crate cannot run the agent module's
-//! migration scripts), keeping only the columns `place_agent` writes.
+//! Repository tests against an in-memory database. The fixture runs the
+//! real migration SQL (this crate's own plus the agent module's, included
+//! verbatim), so the schema the tests see is the schema the server runs.
 
 use std::sync::{Arc, Mutex};
 
+use hierarchy_application::common::errors::HierarchyApplicationError;
 use hierarchy_application::common::interfaces::HierarchyStore;
 use hierarchy_domain::entities::TeamId;
 use hierarchy_domain::value_objects::Role;
@@ -16,17 +17,31 @@ use super::hierarchy_repository::HierarchyRepository;
 use crate::persistence::migrations::SCRIPTS;
 use crate::services::agent_places::AgentPlaces;
 
-/// The team table the migration owns, plus the place columns the agent
-/// module's 0005 migration adds to `agent_agents`.
+/// The team table the migration owns, plus the agent module's own
+/// `agent_agents` migrations run verbatim, so the fixture cannot drift
+/// from the real schema: the SQL is included from the agent crate's files
+/// at compile time, not copied by hand.
 fn schema() -> String {
     let mut script = SCRIPTS.concat();
-    script.push_str(
-        "CREATE TABLE agent_agents (\
-         id TEXT PRIMARY KEY, name TEXT NOT NULL, name_key TEXT NOT NULL UNIQUE, \
-         command TEXT NOT NULL, working_folder TEXT, project_id TEXT, \
-         machine_id TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, \
-         role TEXT, parent_agent_id TEXT, team_id TEXT);",
-    );
+    for migration in [
+        include_str!(
+            "../../../../../agent/infrastructure/src/persistence/migrations/0001_machines_projects_agents.sql"
+        ),
+        include_str!(
+            "../../../../../agent/infrastructure/src/persistence/migrations/0002_settings.sql"
+        ),
+        include_str!(
+            "../../../../../agent/infrastructure/src/persistence/migrations/0003_additions_and_sessions.sql"
+        ),
+        include_str!(
+            "../../../../../agent/infrastructure/src/persistence/migrations/0004_name_key_nocase.sql"
+        ),
+        include_str!(
+            "../../../../../agent/infrastructure/src/persistence/migrations/0005_hierarchy_columns.sql"
+        ),
+    ] {
+        script.push_str(migration);
+    }
     script
 }
 
@@ -39,6 +54,12 @@ fn database() -> Arc<Mutex<Connection>> {
 }
 
 fn agent(connection: &Connection, id: &AgentId, name: &str) {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO agent_machines (id, name) VALUES ('machine', 'The Machine')",
+            [],
+        )
+        .expect("machine row");
     connection
         .execute(
             "INSERT INTO agent_agents (id, name, name_key, command, machine_id, status, created_at) \
@@ -87,7 +108,13 @@ fn a_failed_lead_placement_writes_nothing() {
     }
 
     let placed = repository(&shared).place_agent(lead, Some(Role::Lead), None, Some(team_id));
-    assert!(placed.is_err(), "the seat UPDATE must fail");
+    // The failure is the seat UPDATE's own refusal, not an earlier write:
+    // the test proves a mid-transaction rollback, not just any error.
+    let error = placed.expect_err("the seat UPDATE fails");
+    let HierarchyApplicationError::Storage(message) = &error else {
+        panic!("the seat refusal reaches the store as Storage: {error}");
+    };
+    assert!(message.contains("seat write refused"), "{message}");
 
     let connection = shared.lock().expect("database");
     // The place-column UPDATE and the membership INSERT ran before the
