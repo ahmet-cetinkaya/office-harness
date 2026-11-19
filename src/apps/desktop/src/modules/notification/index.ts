@@ -14,7 +14,7 @@ export {
   type NotificationRow,
 } from "./models/notification";
 export { readLastView } from "./services/last-view-service";
-export { resolveLastView } from "./models/last-view";
+export { resolveLastView, type LastView } from "./models/last-view";
 export {
   createOsNotificationService,
   type OsNotificationService,
