@@ -917,6 +917,54 @@ test.describe("T4: return and restore", () => {
       .toMatchObject({ view: "panel" });
   });
 
+  for (const { view, isRead } of [
+    { view: "scene", isRead: false },
+    { view: "panel", isRead: true },
+  ]) {
+    test(`a ${view} restore ${isRead ? "reads" : "does not read"} the stored agent's notifications (FR-009)`, async ({
+      page,
+    }) => {
+      await installMockCore(page, {
+        initialState: { status: "connected" },
+        office: {
+          agents: OFFICE_AGENTS,
+          projects: PROJECTS,
+          notifications: [
+            {
+              id: "n1",
+              agent_id: "agent-ada",
+              agent_name: "Ada",
+              event: "bell",
+              created_at: 1_700_000_000_000,
+              read_at: null,
+            },
+          ],
+          lastView: JSON.stringify({
+            project: null,
+            agent: "agent-ada",
+            terminal_open: view === "panel",
+            view,
+          }),
+        },
+      });
+      await page.goto("/");
+
+      // The shell writes last_view only after the restore has settled.
+      await expect
+        .poll(() => page.evaluate(() => window.__mockCore.settings.length > 0))
+        .toBe(true);
+      const readAgentCalls = await page.evaluate(
+        () =>
+          window.__mockCore.calls.filter(
+            (call) =>
+              call.command === "send_request" &&
+              call.args.kind === "notification.read_agent",
+          ).length,
+      );
+      expect(readAgentCalls).toBe(isRead ? 1 : 0);
+    });
+  }
+
   test("a stored last_view without the view field (a 0003-era write) opens the panel", async ({
     page,
   }) => {
