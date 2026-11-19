@@ -78,9 +78,8 @@ impl HoldJournal for HoldJournalBridge {
 }
 
 /// Tells the user about an automatic hold: one `auto_hold` notification
-/// naming the limit, and `hold.changed`, so a hold set inside a directive
-/// reaches the clients too (the gateways publish it only for office
-/// requests).
+/// naming the limit, and `hold.changed`. This is the only publish of an
+/// automatic hold, whichever request caused it.
 pub struct HoldNotifierBridge {
     notifications: NotificationBridge,
     store: Arc<dyn HoldStore>,

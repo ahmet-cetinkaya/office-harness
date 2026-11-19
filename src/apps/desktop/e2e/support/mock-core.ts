@@ -10,6 +10,7 @@ import type {
 } from "../../src/modules/agent/models/agent";
 import type { ActionEntry } from "../../src/modules/audit/models/action-entry";
 import type { HierarchyTree } from "../../src/modules/hierarchy/models/hierarchy";
+import type { Hold, HoldState } from "../../src/modules/hold/models/hold";
 import type { NotificationRow } from "../../src/modules/notification/models/notification";
 
 /** One seeded agent with the fields the 0003 suites assert on. The mock
@@ -36,6 +37,10 @@ export interface OfficeSeed {
   focusShortcut?: string;
   /** The notifications the faked server keeps. None when left out. */
   notifications?: NotificationRow[];
+  /** The holds the faked server keeps. None when left out. */
+  holds?: Partial<HoldState>;
+  /** Limit settings that differ from the server's defaults, by key. */
+  limits?: Record<string, string>;
   /** The stored `last_view` JSON text, as `settings.get` answers with it. */
   lastView?: string;
   /** Milliseconds the `last_view` read waits before it answers, as a slow
@@ -84,7 +89,8 @@ export interface NotificationSeed {
   id: string;
   agent_id: string;
   agent_name: string;
-  event: "exited" | "failed" | "waiting_for_input" | "bell";
+  event: "exited" | "failed" | "waiting_for_input" | "bell" | "auto_hold";
+  detail?: string | null;
   created_at: number;
   read_at: number | null;
 }
@@ -102,7 +108,14 @@ declare global {
       /** Sends one `agent.line` frame, as the line bridge does (0003). */
       pushAgentLine(agentId: string, line: string): void;
       /** Creates one notification, as the bridge does, with its event. */
-      notify(agentName: string, agentId: string, event: string): void;
+      notify(
+        agentName: string,
+        agentId: string,
+        event: string,
+        detail?: string,
+      ): void;
+      /** The office puts an agent on hold by itself, as a limit does (0007). */
+      autoHold(agentId: string, limitName: string): void;
       calls: RecordedCall[];
       /** Every `settings.set` invoke, oldest first, beside `calls`. */
       settings: RecordedSetting[];
@@ -127,6 +140,15 @@ export async function installMockCore(
     const terminalChannels: number[] = [];
     const calls: RecordedCall[] = [];
     const settings: RecordedSetting[] = [];
+    // The four limits of the contract, with the server's defaults (0007).
+    const LIMIT_DEFAULTS: Record<string, string> = {
+      limit_directives_per_agent: "10",
+      limit_directives_per_target: "3",
+      limit_creates_per_agent: "5",
+      limit_lifecycle_per_agent: "10",
+    };
+    const LIMIT_INVALID =
+      "invalid: a limit is a whole number of at least 1 and at most 1000";
     let nextCallbackId = 1;
     let current = mock.initialState;
     let loginStartRegistered = mock.loginStart?.registered ?? false;
@@ -151,7 +173,13 @@ export async function installMockCore(
       hierarchy: structuredClone(mock.office?.hierarchy ?? null),
       actions: [] as ActionEntry[],
       notifications: structuredClone(mock.office?.notifications ?? []),
+      holds: {
+        office: mock.office?.holds?.office ?? null,
+        agents: structuredClone(mock.office?.holds?.agents ?? []),
+      } as HoldState,
       settings: {
+        ...LIMIT_DEFAULTS,
+        ...mock.office?.limits,
         focus_shortcut: mock.office?.focusShortcut ?? "Ctrl+Shift+F12",
         last_view: mock.office?.lastView ?? null,
       } as Record<string, string | null>,
@@ -202,12 +230,14 @@ export async function installMockCore(
     const createNotification = (
       agent: Agent,
       event: NotificationRow["event"],
+      detail: string | null = null,
     ): NotificationRow => {
       const row: NotificationRow = {
         id: `notification-${office.nextId++}`,
         agent_id: agent.id,
         agent_name: agent.name,
         event,
+        detail,
         created_at: Date.now(),
         read_at: null,
       };
@@ -228,10 +258,10 @@ export async function installMockCore(
     const findAgent = (agentId: unknown) =>
       office.agents.find((agent) => agent.id === agentId) ??
       refuse("not_found", "no such agent");
-    const record = (agentId: string, action: string) => {
+    const record = (agentId: string | null, action: string, actor = "user") => {
       const entry: ActionEntry = {
         id: office.actions.length + 1,
-        actor: "user",
+        actor,
         agent_id: agentId,
         action,
         result: "ok",
@@ -240,6 +270,12 @@ export async function installMockCore(
       office.actions.push(entry);
       pushEvent({ type: "action.recorded", entry });
     };
+    /** The full state after a hold change, as `hold.changed` carries it. */
+    const pushHoldChanged = () => {
+      pushEvent({ type: "hold.changed", ...structuredClone(office.holds) });
+    };
+    const heldAgent = (agentId: string) =>
+      office.holds.agents.find((hold) => hold.agent_id === agentId);
     const setStatus = (agent: Agent, status: string) => {
       agent.status = status;
       pushEvent({ type: "agent.status", agent_id: agent.id, status });
@@ -688,10 +724,68 @@ export async function installMockCore(
           if (key === "last_view" && value.length > 1024) {
             refuse("invalid", "invalid: last_view is longer than 1 KiB");
           }
+          const isLimit = key in LIMIT_DEFAULTS;
+          if (isLimit && !/^[0-9]+$/.test(value))
+            refuse("invalid", LIMIT_INVALID);
+          if (isLimit && (Number(value) < 1 || Number(value) > 1000)) {
+            refuse("invalid", LIMIT_INVALID);
+          }
           office.settings[key] = value;
           settings.push({ key, value: fields.value });
           return { key, value: fields.value };
         }
+        case "hold.list":
+          return structuredClone(office.holds);
+        case "hold.set": {
+          if (fields.agent_id === undefined) {
+            if (office.holds.office !== null) {
+              refuse("conflict", "the office is already on hold");
+            }
+            const hold: Hold = { set_by: "user", since: Date.now() };
+            office.holds.office = hold;
+            record(null, "hold");
+            pushHoldChanged();
+            return { hold };
+          }
+          const agent = findAgent(fields.agent_id);
+          if (heldAgent(agent.id) !== undefined) {
+            refuse("conflict", "the agent is already on hold");
+          }
+          const hold: Hold = {
+            agent_id: agent.id,
+            set_by: "user",
+            since: Date.now(),
+          };
+          office.holds.agents.push(hold);
+          record(agent.id, "hold");
+          pushHoldChanged();
+          return { hold };
+        }
+        case "hold.release": {
+          if (fields.agent_id === undefined) {
+            if (office.holds.office === null) {
+              refuse("conflict", "the office is not on hold");
+            }
+            office.holds.office = null;
+            record(null, "release");
+            pushHoldChanged();
+            return {};
+          }
+          const agent = findAgent(fields.agent_id);
+          if (heldAgent(agent.id) === undefined) {
+            refuse("conflict", "the agent is not on hold");
+          }
+          office.holds.agents = office.holds.agents.filter(
+            (hold) => hold.agent_id !== agent.id,
+          );
+          record(agent.id, "release");
+          pushHoldChanged();
+          return {};
+        }
+        case "office.actions":
+          return office.actions
+            .filter((entry) => entry.agent_id === null)
+            .reverse();
         case "agent.actions":
           return office.actions.filter(
             (entry) => entry.agent_id === fields.agent_id,
@@ -770,11 +864,29 @@ export async function installMockCore(
         setHierarchy: (tree: HierarchyTree) => {
           office.hierarchy = structuredClone(tree);
         },
-        notify: (agentName: string, agentId: string, event: string) => {
+        notify: (
+          agentName: string,
+          agentId: string,
+          event: string,
+          detail?: string,
+        ) => {
           createNotification(
             { id: agentId, name: agentName } as Agent,
             event as NotificationRow["event"],
+            detail ?? null,
           );
+        },
+        autoHold: (agentId: string, limitName: string) => {
+          const agent = findAgent(agentId);
+          office.holds.agents.push({
+            agent_id: agent.id,
+            set_by: "office",
+            reason: `the limit "${limitName}"`,
+            since: Date.now(),
+          });
+          record(agent.id, "hold", "office");
+          pushHoldChanged();
+          createNotification(agent, "auto_hold", limitName);
         },
         calls,
         settings,

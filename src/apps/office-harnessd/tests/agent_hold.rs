@@ -473,6 +473,24 @@ async fn deleting_a_held_agent_leaves_no_hold() {
 }
 
 #[tokio::test]
+async fn a_misspelt_agent_id_is_refused_and_never_releases_the_office_hold() {
+    let mut setup = setup().await;
+    let member = setup.member.clone();
+    setup.ask("hold.set", json!({})).await;
+
+    let typo = setup.ask("hold.release", json!({"agentid": member})).await;
+    assert_eq!(error_text(&typo).0, "invalid", "{typo}");
+    assert_eq!(
+        error_text(&typo).1,
+        "agentid is not a field of hold.release"
+    );
+    let listed = setup.ask("hold.list", json!({"extra": true})).await;
+    assert_eq!(error_text(&listed).0, "invalid", "{listed}");
+
+    assert_eq!(setup.holds().await["office"]["set_by"], "user");
+}
+
+#[tokio::test]
 async fn an_agent_connection_asking_for_a_hold_is_refused_as_not_allowed() {
     let setup = setup().await;
 

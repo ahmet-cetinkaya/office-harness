@@ -26,6 +26,8 @@ const HOLD_REQUESTS: [&str; 4] = [HOLD_SET, HOLD_RELEASE, HOLD_LIST, OFFICE_ACTI
 
 const HOLD_CHANGED_EVENT: &str = "hold.changed";
 
+const AGENT_ID_FIELD: &str = "agent_id";
+
 /// The wire form of one hold; the office hold has no `agent_id`, and a user
 /// hold has no `reason` (hold-protocol contract).
 #[must_use]
@@ -117,6 +119,9 @@ impl HoldGateway {
     }
 
     fn run(&self, request: &Request) -> Response {
+        if let Err((code, message)) = refuse_unknown_fields(request) {
+            return Response::failure(request.id, code, message);
+        }
         match request.kind.as_str() {
             HOLD_LIST => {
                 Response::success(request.id, Value::Object(holds_fields(&self.holds.list())))
@@ -214,7 +219,7 @@ impl HoldGateway {
 
 /// The office when no `agent_id` is named; else the named agent.
 fn scope_of(request: &Request) -> Result<HoldScope, (ErrorCode, String)> {
-    let agent_id = match request.fields.get("agent_id") {
+    let agent_id = match request.fields.get(AGENT_ID_FIELD) {
         None | Some(Value::Null) => return Ok(HoldScope::Office),
         Some(Value::String(text)) => AgentId::from_uuid_text(text)
             .ok_or_else(|| (ErrorCode::Invalid, "agent_id is not an agent id".to_owned()))?,
@@ -223,6 +228,26 @@ fn scope_of(request: &Request) -> Result<HoldScope, (ErrorCode, String)> {
         }
     };
     Ok(HoldScope::Agent(agent_id))
+}
+
+/// `invalid` for a field the request does not take, so a misspelt
+/// `agent_id` never falls back to the office scope.
+fn refuse_unknown_fields(request: &Request) -> Result<(), (ErrorCode, String)> {
+    let known: &[&str] = match request.kind.as_str() {
+        HOLD_SET | HOLD_RELEASE => &[AGENT_ID_FIELD],
+        _ => &[],
+    };
+    match request
+        .fields
+        .keys()
+        .find(|field| !known.contains(&field.as_str()))
+    {
+        Some(field) => Err((
+            ErrorCode::Invalid,
+            format!("{field} is not a field of {}", request.kind),
+        )),
+        None => Ok(()),
+    }
 }
 
 /// `{hold}` for `hold.set`, `{}` for `hold.release`.

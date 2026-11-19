@@ -15,6 +15,14 @@
   } from "../../agent";
   import { INITIAL_HIERARCHY, type HierarchyController } from "../../hierarchy";
   import {
+    automaticHoldText,
+    holdOfAgent,
+    INITIAL_HOLD,
+    OfficeHoldBar,
+    type FailureText,
+    type HoldSnapshot,
+  } from "../../hold";
+  import {
     INITIAL_NOTIFICATIONS,
     NotificationDialog,
     NotificationLiveRegion,
@@ -64,6 +72,35 @@
   $effect(() =>
     store.notifications.subscribe((next) => (notificationSnapshot = next)),
   );
+
+  // The hold snapshot is a plain value too, so it subscribes the same way.
+  let holdSnapshot = $state<HoldSnapshot>(INITIAL_HOLD);
+  $effect(() => store.hold.subscribe((next) => (holdSnapshot = next)));
+  const holds = $derived(holdSnapshot.state);
+  let officeHoldFailure = $state<FailureText>(null);
+  /** The last agent hold refusal and the agent it came from, so that it
+   * does not show on the details of another agent. */
+  let agentHoldFailure = $state<{ agentId: string; text: string } | null>(null);
+
+  // One live region speaks for both sources; the newest change replaces the
+  // text. Each source publishes a new snapshot for reasons that are not a new
+  // announcement (a read, a pending flag), and its old announcement stays in
+  // it, so a source speaks only when its own announcement changed.
+  let liveAnnouncement = $state<string | null>(null);
+  let lastHoldAnnouncement: string | null = null;
+  let lastNotificationAnnouncement: string | null = null;
+  $effect(() => {
+    const next = holdSnapshot.announcement;
+    if (next === lastHoldAnnouncement) return;
+    lastHoldAnnouncement = next;
+    if (next !== null) liveAnnouncement = next;
+  });
+  $effect(() => {
+    const next = notificationSnapshot.announcement;
+    if (next === lastNotificationAnnouncement) return;
+    lastNotificationAnnouncement = next;
+    if (next !== null) liveAnnouncement = `Notification: ${next}`;
+  });
 
   const choice = $derived(
     effectiveChoice(office.projects, store.projectChoice),
@@ -133,6 +170,31 @@
     }
   }
 
+  async function toggleOfficeHold(): Promise<void> {
+    const failure =
+      holds.office === null
+        ? await store.hold.holdOffice()
+        : await store.hold.releaseOffice();
+    // Undefined: the controller ignored the press, the request in flight
+    // still owns the failure text.
+    if (failure !== undefined) officeHoldFailure = failure;
+  }
+
+  async function showAgentHoldResult(
+    agentId: string,
+    request: Promise<FailureText>,
+  ): Promise<void> {
+    const text = await request;
+    agentHoldFailure = text === null ? null : { agentId, text };
+  }
+
+  /** True for a key pressed inside xterm, where the CLI owns the keys. */
+  function isFromTerminal(event: KeyboardEvent): boolean {
+    return (
+      event.target instanceof Element && event.target.closest(".xterm") !== null
+    );
+  }
+
   /**
    * The one app-level key handler (D8). The terminal's custom key handler
    * lets exactly the table's combinations out of xterm, and every focus in
@@ -146,10 +208,18 @@
     if (document.querySelector("dialog[open]") !== null) return;
     const pressed = pressedAppShortcut(event);
     if (pressed === null) return;
-    if (pressed.position === null) {
+    // A key that a terminal does not pass on is the CLI's while one has focus.
+    if (!pressed.isTerminalShortcut && isFromTerminal(event)) return;
+    if (pressed.kind === "office_hold") {
+      event.preventDefault();
+      void toggleOfficeHold();
+      return;
+    }
+    if (pressed.kind === "switcher") {
       isSwitchingAgent = true;
       return;
     }
+    if (pressed.position === null) return;
     const agent = shown[pressed.position - 1];
     if (agent !== undefined) openAgent(agent.id);
   }
@@ -237,6 +307,15 @@
         </Button>
         <Button onclick={() => offerAgentForm(null)}>New agent</Button>
       </div>
+      <div class="basis-full">
+        <OfficeHoldBar
+          controller={store.hold}
+          isOfficeHeld={holds.office !== null}
+          failure={officeHoldFailure}
+          isPending={holdSnapshot.isOfficeRequestPending}
+          ontoggle={() => void toggleOfficeHold()}
+        />
+      </div>
     {/if}
   </header>
 
@@ -244,7 +323,7 @@
     <FailureMessage lead={office.notice.lead} message={office.notice.message} />
   {/if}
 
-  <NotificationLiveRegion announcement={notifications.announcement} />
+  <NotificationLiveRegion announcement={liveAnnouncement} />
 
   {#if office.phase === "loading"}
     <p role="status" class="text-neutral-700">Loading the office.</p>
@@ -336,6 +415,7 @@
                 hierarchy={agentHierarchy(treeSnapshot.tree, agent.id)}
                 {isStopping}
                 isSelected={agent.id === office.selectedAgentId}
+                isOnHold={holdOfAgent(holds, agent.id) !== null}
                 onopen={openAgent}
               />
             {/each}
@@ -357,6 +437,21 @@
                   projectName={projectNameOf(selected, office.projects)}
                   isBusy={office.isBusy}
                   isStopping={office.stoppingAgentIds.has(agentId)}
+                  isOnHold={holdOfAgent(holds, agentId) !== null}
+                  holdNote={automaticHoldText(holdOfAgent(holds, agentId))}
+                  holdFailure={agentHoldFailure?.agentId === agentId
+                    ? agentHoldFailure.text
+                    : null}
+                  onhold={() =>
+                    void showAgentHoldResult(
+                      agentId,
+                      store.hold.holdAgent(agentId),
+                    )}
+                  onrelease={() =>
+                    void showAgentHoldResult(
+                      agentId,
+                      store.hold.releaseAgent(agentId),
+                    )}
                   onstart={() => void controller.startAgent(agentId)}
                   onstop={() => void controller.stopAgent(agentId)}
                   onnewtask={() => void controller.startNewTask(agentId)}

@@ -32,6 +32,25 @@ describe("notification rows", () => {
     expect(eventText("surprise_kind")).toBe("surprise kind");
   });
 
+  test("an automatic hold names the limit from the detail (0007 D7)", () => {
+    const hold = row({
+      event: "auto_hold",
+      detail: "directives sent by one agent",
+    });
+    expect(announcementText(hold)).toBe(
+      'Ada was put on hold after 3 refusals by the limit "directives sent by one agent"',
+    );
+    expect(rowText(hold, true)).toBe(
+      'Ada, was put on hold after 3 refusals by the limit "directives sent by one agent"',
+    );
+  });
+
+  test("an automatic hold without a detail still says it was put on hold", () => {
+    expect(announcementText(row({ event: "auto_hold" }))).toBe(
+      "Ada was put on hold after 3 refusals",
+    );
+  });
+
   test("a row reads as one sentence in its reading order (D11)", () => {
     expect(rowText(row(), true)).toBe("Ada, exited");
     expect(rowText(row({ event: "bell" }), true)).toBe("Ada, rang the bell");

@@ -7,6 +7,7 @@ import {
 } from "../../../core/api";
 import {
   announcementText,
+  EVENT_AUTO_HOLD,
   sortRows,
   type NotificationRow,
 } from "../models/notification";
@@ -26,7 +27,6 @@ export const INITIAL_NOTIFICATIONS: NotificationSnapshot = {
 };
 
 const EVENT_NOTIFICATION_CREATED = "notification.created";
-const EVENT_AUTO_HOLD = "auto_hold";
 
 /**
  * Owns the notification list and the OS-notification rule (FR-006, D5, D7).
@@ -87,6 +87,7 @@ export function createNotificationController(
       agent_id: fields.agent_id,
       agent_name: fields.agent_name,
       event: fields.event,
+      detail: typeof fields.detail === "string" ? fields.detail : null,
       created_at: fields.created_at,
       read_at: typeof fields.read_at === "number" ? fields.read_at : null,
     };

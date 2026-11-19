@@ -29,7 +29,7 @@ pub use rate_limit_source::SettingsRateLimits;
 pub use role_requests::{AgentCreatorBridge, RoleRequestsBridge};
 pub use saved_output::{SavedOutputError, SavedOutputs};
 pub use subtree_requests::SubtreeRequestsBridge;
-pub use system_clock::SystemClock;
+pub use system_clock::{SteadyClock, SystemClock};
 pub use terminal_events::{AgentTerminalEvent, HeldLine, TerminalEvents};
 pub use terminal_host::{AgentCalls, CallHelper, TerminalHostBridge};
 pub use terminal_launcher::{
