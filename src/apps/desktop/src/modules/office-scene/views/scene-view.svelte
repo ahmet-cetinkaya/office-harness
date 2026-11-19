@@ -1,10 +1,10 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!--
-  Scene build progress (0005): the T3 skeleton, the T5 keyboard,
-  announcements, and reduced motion, the last_view writer with its restore,
-  and the panel's name matcher have all landed. The remaining e2e waits on
-  test/mock-core-extensions: departments from a seeded tree and the
-  SC-004 100-agent measurement.
+  The scene view renders the floors, keyboard, announcements, and the name
+  matcher. It does not restore `last_view`: the restore reads the stored
+  view and applies it in the panel store, because the panel owns the project
+  choice and the selected agent that the restore sets. This view neither
+  reads nor writes `last_view`.
 -->
 <script lang="ts">
   import { tick } from "svelte";
