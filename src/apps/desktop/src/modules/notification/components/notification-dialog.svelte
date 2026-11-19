@@ -4,7 +4,6 @@
   type NotificationRow = {
     id: string;
     text: string;
-    isOpenable: boolean;
   };
 
   interface Props {
@@ -52,7 +51,6 @@
             <button
               type="button"
               class={OPTION_CLASS}
-              disabled={!row.isOpenable}
               onclick={() => onopen(row.id)}
               onkeydown={handleOptionKeys}
             >

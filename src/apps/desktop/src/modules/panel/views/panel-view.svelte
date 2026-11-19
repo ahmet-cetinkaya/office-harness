@@ -120,8 +120,8 @@
 
   /**
    * A notification click opens the agent's terminal and reads that one row
-   * (FR-009). A deleted agent's row stays read-only: the kept name tells the
-   * user what the row was about (edge case).
+   * (FR-009). A deleted agent's row opens nothing, but the click still reads
+   * it: the kept name tells the user what the row was about (edge case).
    */
   function openNotification(notificationId: string): void {
     const row = notifications.rows.find((known) => known.id === notificationId);
@@ -163,11 +163,12 @@
    * The last view's restore (FR-008, D6), once the office's first load has
    * brought its projects and agents. A view this app cannot apply falls back
    * piece by piece, and each fallback says what it fell back from (US3).
+   * The once-guard lives in the store, not here: the shell unmounts this
+   * view for the scene, and a per-mount flag would restore again on the
+   * way back and revert the user's choices since.
    */
-  let isRestored = $state(false);
   $effect(() => {
-    if (office.phase !== "ready" || isRestored) return;
-    isRestored = true;
+    if (office.phase !== "ready" || store.lastView.isRestored) return;
     void restoreLastView();
   });
 
@@ -382,7 +383,6 @@
         row,
         office.agents.some((agent) => agent.id === row.agent_id),
       ),
-      isOpenable: office.agents.some((agent) => agent.id === row.agent_id),
     }))}
     onopen={openNotification}
     onclose={() => (isShowingNotifications = false)}

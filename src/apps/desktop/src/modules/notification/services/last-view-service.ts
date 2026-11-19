@@ -21,14 +21,3 @@ export async function readLastView(
     return null;
   }
 }
-
-/** Stores the view. A failure is quiet: the next change stores again. */
-export async function writeLastView(
-  client: CoreClient,
-  view: LastView,
-): Promise<void> {
-  await client.sendRequest("settings.set", {
-    key: LAST_VIEW_KEY,
-    value: JSON.stringify(view),
-  });
-}
