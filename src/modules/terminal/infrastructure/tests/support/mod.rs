@@ -227,3 +227,26 @@ pub fn process_is_alive(process_id: u32) -> bool {
         .unwrap_or(false);
     answers_signal_zero && !is_zombie
 }
+
+/// A file the fixture child waits for. The test creates it at the point it
+/// chooses, so the child's silence ends on a handshake, not on a timer.
+pub struct Release {
+    path: std::path::PathBuf,
+}
+
+impl Release {
+    pub fn in_folder(folder: &Path, name: &str) -> Self {
+        Self {
+            path: folder.join(name),
+        }
+    }
+
+    /// The path as the fixture's argument.
+    pub fn argument(&self) -> &str {
+        self.path.to_str().expect("a UTF-8 temp path")
+    }
+
+    pub fn signal(&self) {
+        std::fs::write(&self.path, b"").expect("release the child");
+    }
+}
