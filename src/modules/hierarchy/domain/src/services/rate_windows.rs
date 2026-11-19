@@ -36,6 +36,11 @@ impl<Key: Eq + Hash + Copy> Default for SlidingWindows<Key> {
 
 impl<Key: Eq + Hash + Copy> SlidingWindows<Key> {
     fn is_full(&mut self, key: Key, allowed: u32, now_millis: i64) -> bool {
+        // A limit of 0 allows nothing, even for a key with no history. The
+        // settings refuse 0, so this only guards a caller that skips them.
+        if allowed == 0 {
+            return true;
+        }
         let Some(times) = self.entries.get_mut(&key) else {
             return false;
         };

@@ -485,18 +485,18 @@ mod hold_guard {
         }
     }
 
-    /// Counts what the guard reports; the handler must add nothing to it.
+    /// Counts what the guard reports; the guard journals no refusal itself.
     #[derive(Default)]
     struct Counting {
-        refusals: AtomicUsize,
+        storage_failures: AtomicUsize,
         notifications: AtomicUsize,
     }
 
     impl HoldJournal for Counting {
         fn held(&self, _hold: &Hold) {}
         fn released(&self, _scope: HoldScope) {}
-        fn refused(&self, _caller: AgentId, _reason: &str) {
-            self.refusals.fetch_add(1, Ordering::SeqCst);
+        fn storage_failed(&self, _message: &str) {
+            self.storage_failures.fetch_add(1, Ordering::SeqCst);
         }
     }
 
@@ -548,7 +548,16 @@ mod hold_guard {
             HierarchyApplicationError::Refused("the office is on hold".to_owned())
         );
         assert!(guarded.harness.writer.lines().is_empty());
-        assert_eq!(guarded.counting.refusals.load(Ordering::SeqCst), 1);
+        let attempts = guarded.harness.journal.attempts();
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].sender, family.lead);
+        assert_eq!(attempts[0].target, family.member);
+        assert_eq!(attempts[0].text, "please deploy");
+        assert_eq!(
+            attempts[0].failure.as_deref(),
+            Some("the office is on hold")
+        );
+        assert_eq!(guarded.counting.storage_failures.load(Ordering::SeqCst), 0);
     }
 
     #[test]
@@ -565,7 +574,8 @@ mod hold_guard {
             error,
             HierarchyApplicationError::Invalid(HierarchyError::NotADescendant { .. })
         ));
-        assert_eq!(guarded.counting.refusals.load(Ordering::SeqCst), 0);
+        // The tree refusal is the one journaled attempt; the guard added none.
+        assert_eq!(guarded.harness.journal.attempts().len(), 1);
     }
 
     #[test]
@@ -578,7 +588,12 @@ mod hold_guard {
                 .handler
                 .handle(family.lead, family.member, "please deploy");
         }
-        assert_eq!(guarded.counting.refusals.load(Ordering::SeqCst), 0);
+        assert!(guarded.harness.journal.attempts().iter().all(|attempt| {
+            attempt
+                .failure
+                .as_deref()
+                .is_some_and(|text| text.contains("not running"))
+        }));
         assert_eq!(guarded.counting.notifications.load(Ordering::SeqCst), 0);
         assert_eq!(guarded.service.list().agents.len(), 0);
     }
@@ -601,5 +616,18 @@ mod hold_guard {
         }
         assert_eq!(guarded.counting.notifications.load(Ordering::SeqCst), 1);
         assert_eq!(guarded.service.list().agents.len(), 1);
+        let refusals: Vec<_> = guarded
+            .harness
+            .journal
+            .attempts()
+            .into_iter()
+            .filter(|attempt| attempt.failure.is_some())
+            .collect();
+        assert_eq!(refusals.len(), AUTO_HOLD_REFUSAL_COUNT);
+        assert!(
+            refusals
+                .iter()
+                .all(|attempt| attempt.text == "please deploy")
+        );
     }
 }

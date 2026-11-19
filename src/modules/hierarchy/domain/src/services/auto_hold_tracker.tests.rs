@@ -14,11 +14,12 @@ fn at_seconds(seconds: i64) -> Timestamp {
 }
 
 #[test]
-fn the_third_refusal_within_a_minute_returns_true_once() {
+fn the_third_refusal_within_a_minute_fires_and_a_clear_restarts_the_count() {
     let mut tracker = AutoHoldTracker::default();
     assert!(!tracker.record_limit_refusal(id(AGENT), at_seconds(0)));
     assert!(!tracker.record_limit_refusal(id(AGENT), at_seconds(10)));
     assert!(tracker.record_limit_refusal(id(AGENT), at_seconds(20)));
+    tracker.clear(id(AGENT));
     // The history is cleared: the 4th and 5th do not fire again.
     assert!(!tracker.record_limit_refusal(id(AGENT), at_seconds(21)));
     assert!(!tracker.record_limit_refusal(id(AGENT), at_seconds(22)));
@@ -41,4 +42,14 @@ fn each_agent_has_its_own_history() {
     assert!(!tracker.record_limit_refusal(id(AGENT), at_seconds(2)));
     assert!(!tracker.record_limit_refusal(id(OTHER_AGENT), at_seconds(3)));
     assert!(tracker.record_limit_refusal(id(AGENT), at_seconds(4)));
+}
+
+#[test]
+fn without_a_clear_the_next_refusal_fires_again() {
+    let mut tracker = AutoHoldTracker::default();
+    for seconds in [0, 1] {
+        assert!(!tracker.record_limit_refusal(id(AGENT), at_seconds(seconds)));
+    }
+    assert!(tracker.record_limit_refusal(id(AGENT), at_seconds(2)));
+    assert!(tracker.record_limit_refusal(id(AGENT), at_seconds(3)));
 }

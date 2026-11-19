@@ -219,3 +219,19 @@ fn defaults_and_refusal_text_follow_the_table() {
         "the limit \"directives sent to one target agent\" allows 3 per 60 seconds"
     );
 }
+
+#[test]
+fn a_limit_of_zero_refuses_even_the_first_action() {
+    let limits = RateLimits {
+        lifecycle: 0,
+        ..wide_limits()
+    };
+    let mut windows = RateWindows::default();
+    assert_eq!(
+        windows.try_take(id(SENDER), AgentAction::Lifecycle, &limits, at_seconds(0)),
+        Err(LimitRefusal {
+            kind: LimitKind::Lifecycle,
+            allowed: 0
+        })
+    );
+}

@@ -92,15 +92,22 @@ impl SendDirectiveHandler {
         }
         if let Some(hold_guard) = &self.hold_guard {
             // After every rule above, so a directive the rules refuse or a
-            // stopped target never counts toward a limit (spec A10).
-            hold_guard
-                .guard(
+            // stopped target never counts toward a limit (spec A10). The
+            // guard journals no refusal, so the record keeps the target and
+            // the text as sent, like every other refusal here (FR-010).
+            if let Err(refusal) = hold_guard.guard(
+                sender,
+                AgentAction::Directive { target },
+                Some(target),
+                &snapshot.rows,
+            ) {
+                return Err(self.journaled(
                     sender,
-                    AgentAction::Directive { target },
-                    Some(target),
-                    &snapshot.rows,
-                )
-                .map_err(|refusal| HierarchyApplicationError::Refused(refusal.reason))?;
+                    target,
+                    text,
+                    HierarchyApplicationError::Refused(refusal.reason),
+                ));
+            }
         }
         if let Err(message) = self.writer.write(target, text) {
             return Err(self.journaled(
