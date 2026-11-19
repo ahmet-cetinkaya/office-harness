@@ -6,6 +6,8 @@ Date: 2026-11-19. Extends the 0001 wire protocol and the 0002 and 0003 contracts
 
 The agent connection never answers these; they are outside its allowlist and are refused as not allowed (0002 contract).
 
+A field a request does not name below is refused with `invalid` and the message `<field> is not a field of <request>`, so a misspelt `agent_id` never acts on the office.
+
 ### `hold.set`
 
 | Field | Type | Rule |

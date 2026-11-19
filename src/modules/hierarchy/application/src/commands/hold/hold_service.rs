@@ -49,9 +49,6 @@ impl HoldsView {
 pub struct GuardRefusal {
     /// The text the caller answers with.
     pub reason: String,
-    /// Whether this refusal made the office hold the caller, so the host
-    /// publishes `hold.changed`.
-    pub holds_changed: bool,
 }
 
 struct HoldState {
@@ -198,14 +195,12 @@ impl HoldService {
         if let Some(message) = &refused.storage_failure {
             self.journal.storage_failed(message);
         }
-        let holds_changed = refused.auto_hold.is_some();
         if let Some((hold, limit)) = &refused.auto_hold {
             self.journal.held(hold);
             self.notifier.auto_held(caller, limit);
         }
         Err(GuardRefusal {
             reason: refused.reason,
-            holds_changed,
         })
     }
 

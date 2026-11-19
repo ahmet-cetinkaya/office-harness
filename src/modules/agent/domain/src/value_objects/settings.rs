@@ -228,8 +228,8 @@ fn parse_positive(key: SettingKey, text: &str) -> Result<u64, AgentError> {
     Ok(number)
 }
 
-/// A whole number from `LIMIT_MIN` to `LIMIT_MAX`; a sign, a fraction, or
-/// text is not one.
+/// A whole number from `LIMIT_MIN` to `LIMIT_MAX`; a minus sign, a
+/// fraction, or text is not one. A leading `+` is accepted, as Rust parses it.
 fn parse_limit(key: SettingKey, text: &str) -> Result<u32, AgentError> {
     text.parse::<u32>()
         .ok()

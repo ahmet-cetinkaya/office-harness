@@ -29,7 +29,7 @@ use super::{
 use crate::bridges::{
     AgentCreatorBridge, DirectiveJournalBridge, DirectiveTargetBridge, DirectiveWriterBridge,
     HoldJournalBridge, HoldNotifierBridge, NotificationBridge, RoleRequestsBridge,
-    SettingsRateLimits, SubtreeRequestsBridge, SystemClock,
+    SettingsRateLimits, SteadyClock, SubtreeRequestsBridge,
 };
 use crate::server::EventHub;
 
@@ -172,7 +172,7 @@ fn build_hold_service(
         limits,
         journal,
         notifier,
-        Arc::new(SystemClock) as Arc<dyn HoldClock>,
+        Arc::new(SteadyClock::default()) as Arc<dyn HoldClock>,
     )
     .map_err(|error| StartupError::Holds(error.to_string()))?;
     Ok(Arc::new(service))
