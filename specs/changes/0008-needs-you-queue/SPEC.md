@@ -2,7 +2,7 @@
 status: approved
 capability: office
 plan:
-supersedes:
+supersedes: 0001/FR-017 (as modified by 0003)
 ---
 
 <!-- Approved by the owner on 2026-11-19, through Efe's review gate. -->
