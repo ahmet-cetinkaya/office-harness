@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { shownStatusText, type Agent } from "../../agent";
+  import { AGENT_ON_HOLD_TEXT } from "../../hold";
   import { hierarchyText, type AgentHierarchy } from "../models/panel";
 
   interface Props {
@@ -10,11 +11,20 @@
     /** True while the stop request of this agent is open. */
     isStopping: boolean;
     isSelected: boolean;
+    /** True while the agent is on hold; the row says so as text. */
+    isOnHold: boolean;
     onopen: (agentId: string) => void;
   }
 
-  let { agent, projectName, hierarchy, isStopping, isSelected, onopen }: Props =
-    $props();
+  let {
+    agent,
+    projectName,
+    hierarchy,
+    isStopping,
+    isSelected,
+    isOnHold,
+    onopen,
+  }: Props = $props();
 
   const hierarchyLine = $derived(hierarchyText(hierarchy));
 
@@ -26,6 +36,7 @@
       agent.name,
       ...(projectName !== null ? [`project ${projectName}`] : []),
       shownStatusText(agent, isStopping),
+      ...(isOnHold ? [AGENT_ON_HOLD_TEXT] : []),
       ...(hierarchyLine === "" ? [] : [hierarchyLine]),
       ...(agent.last_line !== null ? [agent.last_line] : []),
     ].join(", "),
@@ -49,6 +60,9 @@
         <span class="text-neutral-700">project {projectName}</span>
       {/if}
       <span class="text-neutral-700">{shownStatusText(agent, isStopping)}</span>
+      {#if isOnHold}
+        <span class="font-medium text-neutral-900">{AGENT_ON_HOLD_TEXT}</span>
+      {/if}
       {#if hierarchyLine !== ""}
         <span class="text-neutral-700">{hierarchyLine}</span>
       {/if}

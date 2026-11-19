@@ -87,6 +87,7 @@ export function createNotificationController(
       agent_id: fields.agent_id,
       agent_name: fields.agent_name,
       event: fields.event,
+      detail: typeof fields.detail === "string" ? fields.detail : null,
       created_at: fields.created_at,
       read_at: typeof fields.read_at === "number" ? fields.read_at : null,
     };

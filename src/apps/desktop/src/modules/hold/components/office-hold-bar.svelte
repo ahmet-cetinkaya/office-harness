@@ -1,0 +1,51 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<script lang="ts">
+  import Button from "$shared/ui/button.svelte";
+  import FailureMessage from "$shared/ui/failure-message.svelte";
+  import { OFFICE_ON_HOLD_TEXT } from "../models/hold";
+  import type { FailureText, HoldController } from "../state/hold-controller";
+  import LimitsDialog from "./limits-dialog.svelte";
+  import OfficeRecordDialog from "./office-record-dialog.svelte";
+
+  interface Props {
+    controller: HoldController;
+    isOfficeHeld: boolean;
+    /** The server's refusal of the last hold or release, or null. */
+    failure: FailureText;
+    ontoggle: () => void;
+  }
+
+  let { controller, isOfficeHeld, failure, ontoggle }: Props = $props();
+
+  let isShowingRecord = $state(false);
+  let isEditingLimits = $state(false);
+</script>
+
+<section aria-label="Office hold" class="flex flex-col gap-2">
+  <div class="flex flex-wrap items-center gap-3">
+    {#if isOfficeHeld}
+      <p class="text-sm font-semibold text-neutral-900">
+        {OFFICE_ON_HOLD_TEXT}
+      </p>
+    {/if}
+    <Button variant="secondary" onclick={ontoggle}>
+      {isOfficeHeld ? "Release office" : "Hold office"}
+    </Button>
+    <Button variant="secondary" onclick={() => (isShowingRecord = true)}>
+      Office record
+    </Button>
+    <Button variant="secondary" onclick={() => (isEditingLimits = true)}>
+      Limits
+    </Button>
+  </div>
+  {#if failure !== null}
+    <FailureMessage lead="The hold did not change." message={failure} />
+  {/if}
+</section>
+
+{#if isShowingRecord}
+  <OfficeRecordDialog {controller} onclose={() => (isShowingRecord = false)} />
+{/if}
+{#if isEditingLimits}
+  <LimitsDialog {controller} onclose={() => (isEditingLimits = false)} />
+{/if}

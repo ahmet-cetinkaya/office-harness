@@ -7,6 +7,7 @@ import {
   isAppShortcut,
   parseShortcut,
   pressedAppShortcut,
+  pressedTerminalShortcut,
   type ShortcutEvent,
 } from "./index";
 
@@ -34,8 +35,8 @@ function pressed(text: string): ShortcutEvent {
 }
 
 describe("app shortcut table", () => {
-  test("holds ten entries: agents 1 to 9 and the switcher", () => {
-    expect(APP_SHORTCUT_TABLE).toHaveLength(10);
+  test("holds eleven entries: agents 1 to 9, the switcher, the office hold", () => {
+    expect(APP_SHORTCUT_TABLE).toHaveLength(11);
     expect(APP_SHORTCUT_TABLE.map((entry) => entry.position)).toEqual([
       1,
       2,
@@ -47,15 +48,17 @@ describe("app shortcut table", () => {
       8,
       9,
       null,
+      null,
     ]);
     expect(APP_SHORTCUT_TABLE[9].label).toBe("Ctrl+Shift+F10");
+    expect(APP_SHORTCUT_TABLE[10].label).toBe("Ctrl+Shift+H");
   });
 
-  test("holds ten distinct combinations", () => {
+  test("holds eleven distinct combinations", () => {
     const keys = APP_SHORTCUT_TABLE.map((entry) =>
       JSON.stringify(entry.shortcut),
     );
-    expect(new Set(keys).size).toBe(10);
+    expect(new Set(keys).size).toBe(11);
   });
 
   test("no entry equals the focus shortcut", () => {
@@ -89,6 +92,16 @@ describe("app shortcut table", () => {
     expect(positions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
+  test("the office hold is a panel key that a focused terminal keeps (0007 A9)", () => {
+    const hold = pressed("Ctrl+Shift+H");
+    expect(pressedAppShortcut(hold)?.kind).toBe("office_hold");
+    expect(pressedTerminalShortcut(hold)).toBeNull();
+    expect(pressedTerminalShortcut(pressed("Ctrl+Shift+F1"))?.position).toBe(1);
+    expect(pressedTerminalShortcut(pressed("Ctrl+Shift+F10"))?.kind).toBe(
+      "switcher",
+    );
+  });
+
   test("a key with the wrong modifiers matches nothing", () => {
     expect(pressedAppShortcut(keyEvent({ key: "F1" }))).toBeNull();
     expect(
@@ -101,7 +114,7 @@ describe("app shortcut table", () => {
   });
 
   // SERVER_RESERVED mirrors settings.rs RESERVED_SHORTCUTS by hand ("agent 1"
-  // to "agent 9" and "the agent switcher"); nothing checks the server side
+  // to "agent 9", "the agent switcher", and "the office hold"); nothing checks the server side
   // automatically. This test pins the desktop table to that copy: a
   // desktop-side drift fails here, and a server-side change to
   // RESERVED_SHORTCUTS must be mirrored here in the same change, reviewed as
@@ -118,6 +131,7 @@ describe("app shortcut table", () => {
       "Ctrl+Shift+F8",
       "Ctrl+Shift+F9",
       "Ctrl+Shift+F10",
+      "Ctrl+Shift+H",
     ];
     for (const label of SERVER_RESERVED)
       expect(isAppShortcut(label)).toBe(true);

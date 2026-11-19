@@ -11,8 +11,16 @@ import {
 export interface AppShortcut {
   /** The combination as shown to the user, such as "Ctrl+Shift+F1". */
   label: string;
-  /** The agent position of a direct shortcut, or null for the switcher. */
+  /** What the key does in the panel. */
+  kind: "agent" | "switcher" | "office_hold";
+  /** The agent position of a direct shortcut, or null for any other kind. */
   position: number | null;
+  /**
+   * True when the key leaves a focused terminal for the app (0003 D8). The
+   * office hold stays false: from a terminal the user presses the focus
+   * shortcut first (0007 A9, D9); making it true is the whole switch.
+   */
+  isTerminalShortcut: boolean;
   shortcut: Shortcut;
 }
 
@@ -21,18 +29,29 @@ const MODIFIERS = "Ctrl+Shift";
 /** The key that opens the agent at `index + 1` of the list (A1: the first nine). */
 const AGENT_KEYS = ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9"];
 
-function bound(label: string, position: number | null): AppShortcut {
+function bound(
+  label: string,
+  kind: AppShortcut["kind"],
+  position: number | null,
+  isTerminalShortcut: boolean,
+): AppShortcut {
   const shortcut = parseShortcut(label);
   if (shortcut === null) {
     throw new Error(`The shortcut default must parse: ${label}`);
   }
-  return { label, position, shortcut };
+  return { label, kind, position, isTerminalShortcut, shortcut };
 }
 
-/** The table: the first nine agents and the switcher, ten combinations (D8). */
+/**
+ * The table: the first nine agents, the switcher, and the office hold,
+ * eleven combinations (0003 D8, 0007 D9).
+ */
 export const APP_SHORTCUT_TABLE: AppShortcut[] = [
-  ...AGENT_KEYS.map((key, index) => bound(`${MODIFIERS}+${key}`, index + 1)),
-  bound(`${MODIFIERS}+F10`, null),
+  ...AGENT_KEYS.map((key, index) =>
+    bound(`${MODIFIERS}+${key}`, "agent", index + 1, true),
+  ),
+  bound(`${MODIFIERS}+F10`, "switcher", null, true),
+  bound(`${MODIFIERS}+H`, "office_hold", null, false),
 ];
 
 /** The table entry the key event presses, or null for any other key (D8). */
@@ -42,6 +61,14 @@ export function pressedAppShortcut(event: ShortcutEvent): AppShortcut | null {
       matchesShortcut(entry.shortcut, event),
     ) ?? null
   );
+}
+
+/** The table entry that a focused terminal lets out of xterm, or null (D8). */
+export function pressedTerminalShortcut(
+  event: ShortcutEvent,
+): AppShortcut | null {
+  const pressed = pressedAppShortcut(event);
+  return pressed?.isTerminalShortcut ? pressed : null;
 }
 
 /**
