@@ -1,6 +1,6 @@
 # Requirements checklist: 0007-hold-and-limits
 
-Spec: `specs/changes/0007-hold-and-limits/SPEC.md` · Status: draft · Date: 2026-11-19 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker; the owner answered both on 2026-11-19 (see the spec's Clarifications). Every `0001/` and `0002/` reference was checked against the approved specs on `main` at 19f2148.
+Spec: `specs/changes/0007-hold-and-limits/SPEC.md` · Status: approved by the owner on 2026-11-19 · Date: 2026-11-19 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker; the owner answered both on 2026-11-19 (see the spec's Clarifications). Every `0001/` and `0002/` reference was checked against the approved specs on `main` at 19f2148.
 
 ## Content quality
 
