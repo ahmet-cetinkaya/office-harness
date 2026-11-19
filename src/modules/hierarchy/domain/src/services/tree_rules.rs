@@ -33,7 +33,8 @@ pub struct TreeRow {
 ///
 /// # Errors
 /// `SecondCeo` when a CEO exists; `SecondLead` when the placement's team
-/// already holds a lead; `ParentNotFound` when the parent is not in the
+/// already holds a lead; `LeadsAnotherTeam` when the agent already leads a
+/// different team; `ParentNotFound` when the parent is not in the
 /// tree; `RoleNotAllowed` naming the allowed roles; `Cycle` and `TooDeep`
 /// for a chain that cannot exist.
 pub fn check_placement(tree: &[TreeRow], placement: Placement) -> Result<(), HierarchyError> {
@@ -71,6 +72,18 @@ fn check_lead(tree: &[TreeRow], placement: Placement) -> Result<(), HierarchyErr
         && parent.agent_id == placement.agent_id
     {
         return Err(role_not_allowed(Role::Lead, Role::Ceo));
+    }
+    // One team per lead: a lead placed on another team is refused, not
+    // moved, so its old team never keeps a stale seat and its members never
+    // keep the old team (refuse, never trim).
+    if let Some(team_id) = placement.team_id
+        && tree.iter().any(|row| {
+            row.agent_id == placement.agent_id
+                && row.role == Some(Role::Lead)
+                && row.team_id.is_some_and(|held| held != team_id)
+        })
+    {
+        return Err(HierarchyError::LeadsAnotherTeam);
     }
     // One lead per team: a team already holding one refuses the second,
     // naming the lead at the seat (the CEO refusal's own shape). The team

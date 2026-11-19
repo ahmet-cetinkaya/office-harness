@@ -1297,3 +1297,101 @@ async fn a_lead_gives_its_member_a_new_task_over_agent_call() {
 
     office.serving.stop().await;
 }
+
+/// The agent rows carry the role and the team's display name, read at
+/// answer time: a team renamed in storage shows its new name in the next
+/// `agent.list`, so the rows never drift from the tree (hierarchy-protocol:
+/// `team` is display text, never a key). An agent outside the hierarchy
+/// carries null for both. No `team.rename` request exists yet, so the test
+/// renames the stored row the way a future rename would write it.
+#[tokio::test]
+async fn agent_rows_carry_role_and_the_current_team_name() {
+    let office = Office::open().await;
+    let mut client = office.client().await;
+    let lead = client.create_agent(&office, "Bo", "lead-cli", None).await;
+    let loner = client.create_agent(&office, "Al", "lone-cli", None).await;
+    place(&office, &lead, hierarchy_domain::Role::Lead, None);
+    let team = client
+        .ask(
+            "team.create",
+            json!({"name": "Backend", "lead_agent_id": lead}),
+        )
+        .await;
+    assert_eq!(team["ok"], true, "{team}");
+    let team_id = team["result"]["id"].as_str().expect("team id").to_owned();
+
+    let rows = list_rows(&mut client).await;
+    assert_eq!(rows[&lead]["role"], "lead", "{rows:?}");
+    assert_eq!(rows[&lead]["team"], "Backend", "{rows:?}");
+    assert_eq!(rows[&loner]["role"], Value::Null, "{rows:?}");
+    assert_eq!(rows[&loner]["team"], Value::Null, "{rows:?}");
+
+    let connection =
+        rusqlite::Connection::open(office.serving.office.config.database_path()).expect("database");
+    connection
+        .execute(
+            "UPDATE hierarchy_teams SET name = 'Platform', name_key = 'platform' WHERE id = ?1",
+            [&team_id],
+        )
+        .expect("rename");
+
+    let rows = list_rows(&mut client).await;
+    assert_eq!(rows[&lead]["team"], "Platform", "{rows:?}");
+    assert_eq!(rows[&lead]["role"], "lead", "{rows:?}");
+
+    office.serving.stop().await;
+}
+
+/// The `agent.list` rows keyed by agent id.
+async fn list_rows(client: &mut Client) -> std::collections::HashMap<String, Value> {
+    let listed = client.ask("agent.list", json!({})).await;
+    assert_eq!(listed["ok"], true, "{listed}");
+    listed["result"]
+        .as_array()
+        .expect("agent rows")
+        .iter()
+        .map(|row| (row["id"].as_str().expect("id").to_owned(), row.clone()))
+        .collect()
+}
+
+/// `team.create` refuses a lead that already leads another team as
+/// `conflict` instead of moving it, so the first team never keeps a stale
+/// seat and the tree still shows that team with its lead.
+#[tokio::test]
+async fn a_lead_of_one_team_cannot_create_a_second_team() {
+    let office = Office::open().await;
+    let mut client = office.client().await;
+    let lead = client.create_agent(&office, "Bo", "lead-cli", None).await;
+    place(&office, &lead, hierarchy_domain::Role::Lead, None);
+    let first = client
+        .ask(
+            "team.create",
+            json!({"name": "Backend", "lead_agent_id": lead}),
+        )
+        .await;
+    assert_eq!(first["ok"], true, "{first}");
+
+    let second = client
+        .ask(
+            "team.create",
+            json!({"name": "Frontend", "lead_agent_id": lead}),
+        )
+        .await;
+    assert_eq!(second["ok"], false, "{second}");
+    assert_eq!(second["error"]["code"], "conflict", "{second}");
+    assert!(
+        second["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("the agent already leads another team"),
+        "{second}"
+    );
+
+    let tree = client.ask("hierarchy.tree", json!({})).await;
+    let teams = tree["result"]["teams"].as_array().expect("teams");
+    assert_eq!(teams.len(), 1, "{tree}");
+    assert_eq!(teams[0]["name"], "Backend", "{tree}");
+    assert_eq!(teams[0]["lead"]["id"], json!(lead), "{tree}");
+
+    office.serving.stop().await;
+}
