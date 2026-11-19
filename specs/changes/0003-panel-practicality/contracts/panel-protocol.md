@@ -72,6 +72,13 @@ Sent after a notification row is created (D4, D5).
 
 No other `notification.*` event exists: a read changes no visible state for other clients, so no `notification.read` event is sent (D5 keeps the client that read it as the only actor).
 
+## Additive change by 0007
+
+- `event` may also be `"auto_hold"`: the office put an agent on hold after 3 limit refusals in 60 seconds.
+- A `notification` entry and the `notification.created` event carry an optional `detail` string. For `auto_hold` it is the name of the limit. For every other event it is absent or null.
+
+See `specs/changes/0007-hold-and-limits/contracts/hold-protocol.md`.
+
 ## Changed validation: `settings.set` with key `focus_shortcut`
 
 A value that equals one of the fixed agent or switcher shortcuts (`Ctrl+Shift+F1` to `Ctrl+Shift+F9`, `Ctrl+Shift+F10`) is refused with `conflict`, and the message names the conflicting combination (D8, spec edge case). The agent and switcher shortcuts are fixed by this spec, so the server holds the same table the desktop app shows; the desktop client checks before it sends, and the server is the authority that a stale client cannot talk out of.

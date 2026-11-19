@@ -54,6 +54,37 @@ Deleting a team removes the team only. Its lead and members keep their agents an
 
 A client reaches the hierarchy over the protocol: the `team.create`, `team.delete`, `hierarchy.tree`, and `hierarchy.descendants` requests, and `agent.stop` and `agent.delete` extended with an `include_descendants` field; deleting an agent that has agents under it also carries `descendant_count`, the number that a confirmation showed. The shapes are in [the hierarchy protocol](specs/changes/0002-agent-hierarchy/contracts/hierarchy-protocol.md).
 
+## Holding the office and limiting agents
+
+An agent can create agents, start and stop them, start new tasks, and send directives without you. If one agent loops, it can flood a terminal or churn agents faster than you can read. A hold stops these agent-made actions. The limits slow an agent that acts too fast.
+
+**Hold the office.** Choose "Hold office" in the panel header. The header then says "Office on hold" as text and offers "Release office". The shortcut is `Ctrl+Shift+H` while the keyboard focus is in the panel. It does not work inside a terminal, because a terminal gets every key. From a terminal, press the focus shortcut first, then `Ctrl+Shift+H`.
+
+**Hold one agent.** Open the agent details and choose the hold action. The agent and every agent under it are held. The agent's row says "on hold" as text. Choose the release action in the details to end it. Releasing the office does not release agent holds.
+
+**What a hold refuses.** While the office is on hold, the office refuses every agent-made `directive.send`, `agent.create`, `agent.start`, `agent.stop`, and `agent.new_task`. While one agent is on hold, the office refuses these actions when the held agent or an agent under it asks for them, and when the held agent or an agent under it is the target. The parent and the CEO of a held agent are refused too when they act on it. Each refusal reaches the asking agent as the answer to its request, and the action record keeps it.
+
+**What a hold never refuses.** Your own actions in the app (create, start, stop, delete, new task) work as without a hold. Your typing reaches the terminals. The terminals and the CLIs keep running. To stop a CLI, use the stop action.
+
+**Holds survive restarts.** A hold stays until you release it, also after a server or machine restart. It never ends on a timer.
+
+**Limits.** An agent that acts too fast is refused. The office counts each limit over a rolling 60 seconds:
+
+| Limit | Default |
+| ----- | ------- |
+| Directives sent by one agent | 10 |
+| Directives sent to one target agent | 3 |
+| Agents created by one agent | 5 |
+| Starts, stops, and new tasks by one agent | 10 |
+
+A limit is a whole number from 1 to 1000. Choose "Limits" in the panel header to see each limit with its default and to change it. A client can also change a limit with `settings.set` and the keys `limit_directives_per_agent`, `limit_directives_per_target`, `limit_creates_per_agent`, and `limit_lifecycle_per_agent`. A new value applies to the next agent-made action. The office does not queue or retry a refused action. Rate counts start again at 0 after a server restart.
+
+**Automatic hold.** When an agent is refused by a limit 3 times within 60 seconds, the office puts that agent on hold and sends you one notification. The notification names the agent and the limit. Refusals that come from a hold do not count. You release an automatic hold the same way as any other hold.
+
+**Office record.** The "Office record" list in the panel header, beside the office hold control, shows the entries that have no agent: each office hold and release. A hold or release of one agent shows in that agent's details. The user is the actor of a hold or release that you take. The office is the actor of an automatic hold.
+
+The holds and the limits are a brake against mistakes and loops. They are not a security boundary: an agent CLI runs as your OS user and can act outside the office. The shapes of the requests are in [the hold protocol](specs/changes/0007-hold-and-limits/contracts/hold-protocol.md).
+
 ## Start at login
 
 The server runs only while you are logged in. Agents end when you log out or shut the machine down. After the next login the server starts again, and the agents that were running show `interrupted`. No agent starts without your action.
@@ -173,6 +204,16 @@ The command works the same in every supported CLI, because it is an ordinary pro
 
 Every other request type is refused. The refusal of a type outside the agent list names the rule: an agent may only create, start, stop, and give new tasks to its own descendants, and send them directives. A type inside that list is refused for now with the reason that it is not available to agents yet. Later in this change, an agent will be able to create, start, and stop agents below it, start new tasks on them, and send them directives; the protocol contract lists the request shapes.
 
+A hold or a limit can refuse these requests as well. The answer is `refused`, and its message is one of these, checked after the rules above in this order:
+
+| Message | Meaning |
+| ------- | ------- |
+| `the office is on hold` | You hold the office. |
+| `the agent <id> is on hold` | The asking agent, the target, or one of their ancestors is on hold. |
+| `the limit "<name>" allows <n> per 60 seconds` | The agent is over a limit. `<name>` is `directives sent by one agent`, `directives sent to one target agent`, `agents created by one agent`, or `starts, stops, and new tasks by one agent`. |
+
+The agent decides whether to try again. See [Holding the office and limiting agents](#holding-the-office-and-limiting-agents).
+
 An agent acts only within its own descendants: the agents under it in the tree. When the actions of that list arrive, a request about an agent that is not the asking agent's descendant will be refused and recorded.
 
 ## Known limits
@@ -183,6 +224,7 @@ An agent acts only within its own descendants: the agents under it in the tree. 
 - Windows stops an agent with `taskkill /T /F`. It can miss a child process whose parent already ended.
 - The quiet period and the output limit apply after a server restart.
 - The app has no update check, because office-harness opens no connection to an outside service.
+- The database upgrade is forward-only. An older program refuses a database that a newer one upgraded. To go back, use the previous program together with a copy of `office.db` that you made before the upgrade (see [Data folder](#data-folder)). The program does not make that copy for you, so copy the file before you install a new version. Restore the copy and the previous program as one step.
 
 ## Development
 

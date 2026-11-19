@@ -211,3 +211,11 @@ An agent that sends directives or creates agents faster than a set limit gets it
 - Queueing refused actions (A4).
 - A size cap on how many agents an agent may create; the owner declined it on 2026-11-19 (Clarifications).
 - Changing the tree rules of 0002 (PB-5).
+
+## Deviations
+
+Implementation notes. The requirements above did not change.
+
+- **One service.** The plan (D1) names four application items: `SetHold`, `ReleaseHold`, `ListHolds`, and `GuardAgentAction`. In the code they are methods of one `HoldService` (`set_hold`, `release_hold`, `list`, `guard`). It lives in `src/modules/hierarchy/application/src/commands/hold/hold_service.rs`.
+- **Steady clock.** The rate windows and the automatic-hold tracker read wall time once at start and then a monotonic clock. A change of the system clock does not free or add a slot.
+- **Unknown fields.** A hold request refuses a field it does not name. The answer is `invalid` with the message `<field> is not a field of <request>`. A misspelt `agent_id` therefore never acts on the office.
