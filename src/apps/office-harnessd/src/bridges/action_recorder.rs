@@ -45,7 +45,7 @@ impl ActionRecorder for ActionRecorderBridge {
     fn record(&self, entry: &AgentActionEntry) -> Result<(), PortError> {
         let stored = self.record.handle(&ActionRecord {
             actor: entry.actor,
-            target_agent_id: entry.agent_id,
+            target_agent_id: Some(entry.agent_id),
             action: action_kind(entry.action),
             result: entry
                 .failure

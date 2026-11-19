@@ -14,7 +14,7 @@ pub fn action_entry_json(entry: &ActionEntry) -> Value {
     json!({
         "id": entry.id,
         "actor": actor_text(record.actor),
-        "agent_id": record.target_agent_id.to_string(),
+        "agent_id": record.target_agent_id.map(|agent_id| agent_id.to_string()),
         "action": record.action.as_str(),
         "result": record.result.as_text(),
         "at": record.at.as_unix_millis(),
@@ -31,6 +31,7 @@ pub fn action_recorded_event(entry: &ActionEntry) -> Event {
 fn actor_text(actor: Actor) -> String {
     match actor {
         Actor::User => "user".to_owned(),
+        Actor::Office => "office".to_owned(),
         Actor::Agent(agent_id) => format!("agent:{agent_id}"),
     }
 }
