@@ -110,6 +110,8 @@ declare global {
       setHierarchy(tree: HierarchyTree): void;
       /** Sends one `agent.line` frame, as the line bridge does (0003). */
       pushAgentLine(agentId: string, line: string): void;
+      /** Taps an OS notification of the agent, as the notification plugin reports it. */
+      pushNotificationTap(agentId: string): void;
       /** Creates one notification, as the bridge does, with its event. */
       notify(
         agentName: string,
@@ -140,6 +142,7 @@ export async function installMockCore(
     const nextIndex = new Map<number, number>();
     const stateChannels: number[] = [];
     const eventChannels: number[] = [];
+    const notificationActionChannels: number[] = [];
     const terminalChannels: number[] = [];
     const calls: RecordedCall[] = [];
     const settings: RecordedSetting[] = [];
@@ -826,6 +829,13 @@ export async function installMockCore(
             eventChannels.push(id);
             return undefined;
           }
+          case "plugin:notification|register_listener": {
+            if (args.event === "actionPerformed") {
+              const { id } = args.handler as { id: number };
+              notificationActionChannels.push(id);
+            }
+            return undefined;
+          }
           case "watch_terminal_frames": {
             const { id } = args.onFrame as { id: number };
             terminalChannels.push(id);
@@ -869,6 +879,14 @@ export async function installMockCore(
         pushTerminalFrame,
         pushAgentLine,
         pushNotificationCreated,
+        pushNotificationTap: (agentId: string) => {
+          notificationActionChannels.forEach((id) =>
+            send(id, {
+              actionId: "tap",
+              notification: { extra: { agent_id: agentId } },
+            }),
+          );
+        },
         setHierarchy: (tree: HierarchyTree) => {
           office.hierarchy = structuredClone(tree);
         },

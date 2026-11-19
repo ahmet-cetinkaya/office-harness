@@ -69,6 +69,33 @@ async function openScene(page: Page, office: OfficeSeed = {}): Promise<void> {
   await page.getByRole("button", { name: "To the scene" }).click();
 }
 
+/** The agent id of every `notification.read_agent` request, in order. */
+function readAgentIds(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    window.__mockCore.calls
+      .filter(
+        (call) =>
+          call.command === "send_request" &&
+          call.args.kind === "notification.read_agent",
+      )
+      .map((call) =>
+        String((call.args.fields as { agent_id?: string }).agent_id),
+      ),
+  );
+}
+
+/** One unread bell row of the agent, as the seeded office keeps it. */
+function unreadBell(agentId: string, agentName: string) {
+  return {
+    id: `n-${agentId}`,
+    agent_id: agentId,
+    agent_name: agentName,
+    event: "bell" as const,
+    created_at: 1_700_000_000_000,
+    read_at: null,
+  };
+}
+
 async function expectNoSeriousViolations(page: Page): Promise<void> {
   const report = await new AxeBuilder({ page }).analyze();
   const serious = report.violations.filter((violation) =>
@@ -998,21 +1025,161 @@ test.describe("T4: return and restore", () => {
     await expect
       .poll(() => page.evaluate(() => window.__mockCore.settings.length > 0))
       .toBe(true);
-    const readAgentCalls = () =>
-      page.evaluate(
-        () =>
-          window.__mockCore.calls.filter(
-            (call) =>
-              call.command === "send_request" &&
-              call.args.kind === "notification.read_agent",
-          ).length,
-      );
-    expect(await readAgentCalls()).toBe(0);
+    const readAgentCalls = () => readAgentIds(page);
+    expect(await readAgentCalls()).toEqual([]);
 
     await page.getByRole("button", { name: "To the panel" }).click();
     await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
 
-    await expect.poll(readAgentCalls).toBe(1);
+    await expect.poll(readAgentCalls).toEqual(["agent-ada"]);
+
+    // The pending read is spent: a second round trip adds no read.
+    await page.getByRole("button", { name: "To the scene" }).click();
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    await page.evaluate(() => new Promise((done) => setTimeout(done, 200)));
+    expect(await readAgentCalls()).toEqual(["agent-ada"]);
+  });
+
+  test("a deleted restored agent's rows stay unread on the switch to the panel (FR-009, LOW-1)", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        notifications: [unreadBell("agent-ada", "Ada")],
+        lastView: JSON.stringify({
+          project: null,
+          agent: "agent-ada",
+          terminal_open: false,
+          view: "scene",
+        }),
+      },
+    });
+    await page.goto("/");
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => window.__mockCore.settings.length > 0))
+      .toBe(true);
+
+    await page.evaluate(() =>
+      window.__mockCore.pushEvent({
+        type: "agent.deleted",
+        agent_id: "agent-ada",
+      }),
+    );
+    await expect(desks(page).filter({ hasText: "Ada" })).toHaveCount(0);
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    await page.evaluate(() => new Promise((done) => setTimeout(done, 200)));
+
+    expect(await readAgentIds(page)).toEqual([]);
+    await expect(
+      page.getByRole("button", { name: "Notifications, 1 unread" }),
+    ).toBeVisible();
+  });
+
+  test("a tap in the scene selects the agent and clears the pending restored read (FR-009)", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        notifications: [
+          unreadBell("agent-ada", "Ada"),
+          unreadBell("agent-cy", "Cy"),
+        ],
+        lastView: JSON.stringify({
+          project: null,
+          agent: "agent-ada",
+          terminal_open: false,
+          view: "scene",
+        }),
+      },
+    });
+    await page.goto("/");
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => window.__mockCore.settings.length > 0))
+      .toBe(true);
+
+    await page.evaluate(() =>
+      window.__mockCore.pushNotificationTap("agent-cy"),
+    );
+    await expect.poll(() => readAgentIds(page)).toEqual(["agent-cy"]);
+
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    await page.evaluate(() => new Promise((done) => setTimeout(done, 200)));
+
+    // No stale read for Ada, whose rows were pending before the tap.
+    expect(await readAgentIds(page)).toEqual(["agent-cy"]);
+  });
+
+  test("opening a desk in the scene reads that agent's rows (FR-009, LOW-2)", async ({
+    page,
+  }) => {
+    await openScene(page, {
+      notifications: [unreadBell("agent-bo", "Bo")],
+    });
+
+    await desks(page).filter({ hasText: "Bo" }).click();
+    await expect(
+      page.getByRole("group", { name: "Live terminal of Bo" }),
+    ).toBeVisible();
+
+    await expect.poll(() => readAgentIds(page)).toEqual(["agent-bo"]);
+  });
+
+  test("an event of the open desk's agent creates no unread row (FR-006 b, LOW-2)", async ({
+    page,
+  }) => {
+    await openScene(page);
+    await desks(page).filter({ hasText: "Bo" }).click();
+    await expect(
+      page.getByRole("group", { name: "Live terminal of Bo" }),
+    ).toBeVisible();
+    await expect.poll(() => readAgentIds(page)).toEqual(["agent-bo"]);
+
+    await page.evaluate(() =>
+      window.__mockCore.pushEvent({
+        type: "notification.created",
+        notification: {
+          id: "n-new",
+          agent_id: "agent-bo",
+          agent_name: "Bo",
+          event: "bell",
+          created_at: 1_700_000_000_000,
+          read_at: null,
+        },
+      }),
+    );
+
+    // The row is marked read at once, by its id, not by an agent read.
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          window.__mockCore.calls.some(
+            (call) =>
+              call.command === "send_request" &&
+              call.args.kind === "notification.read" &&
+              (call.args.fields as { notification_id?: string })
+                ?.notification_id === "n-new",
+          ),
+        ),
+      )
+      .toBe(true);
   });
 
   test("a new event of the panel-selected agent stays unread while the scene is open (FR-006 b)", async ({

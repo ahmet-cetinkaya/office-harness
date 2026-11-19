@@ -49,6 +49,9 @@
   // view that owns it.
   let openAgentId = $state<string | null>(null);
   $effect(() => {
+    panel.setSceneOpenAgent(openView === "scene" ? openAgentId : null);
+  });
+  $effect(() => {
     if (!isConnected || !panel.lastView.isRestored) return;
     const terminalOpen =
       openView === "scene"

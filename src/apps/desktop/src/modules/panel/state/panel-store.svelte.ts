@@ -26,7 +26,8 @@ export function createPanelStore(client: CoreClient) {
   const notifications = createNotificationController(
     client,
     createOsNotificationService(),
-    () => (openView === "panel" ? office.snapshot.selectedAgentId : null),
+    () =>
+      openView === "panel" ? office.snapshot.selectedAgentId : sceneOpenAgentId,
     () => document.hasFocus(),
   );
   const hold = createHoldController(
@@ -56,6 +57,9 @@ export function createPanelStore(client: CoreClient) {
   // The restored agent whose read the scene's restore skipped. The panel's
   // next show reads it once; a user selection reads it already.
   let unreadRestoredAgentId: string | null = null;
+  // The agent whose terminal the scene embeds, or null. The scene's desk
+  // terminal is on screen like the panel's selected one (FR-006, FR-009).
+  let sceneOpenAgentId: string | null = null;
   let projectChoice = $state<string | null>(null);
 
   // Opening an agent's terminal reads its notifications (FR-009). The select
@@ -82,9 +86,13 @@ export function createPanelStore(client: CoreClient) {
   }
 
   function readRestoredAgentOnPanel(): void {
-    if (unreadRestoredAgentId === null) return;
-    void notifications.readAgent(unreadRestoredAgentId);
+    const pendingAgentId = unreadRestoredAgentId;
     unreadRestoredAgentId = null;
+    // A selection that changed under the pending read (the agent was
+    // deleted) shows no terminal of that agent, so its rows stay unread.
+    if (pendingAgentId === null) return;
+    if (pendingAgentId !== office.snapshot.selectedAgentId) return;
+    void notifications.readAgent(pendingAgentId);
   }
 
   /**
@@ -133,6 +141,14 @@ export function createPanelStore(client: CoreClient) {
       hasUserSwitched = true;
       openView = view;
       if (view === "panel") readRestoredAgentOnPanel();
+    },
+    /**
+     * The shell reports the scene's open desk, or null when the desk closes
+     * or the scene is left. Opening a desk reads that agent's rows.
+     */
+    setSceneOpenAgent(agentId: string | null): void {
+      sceneOpenAgentId = agentId;
+      if (agentId !== null) void notifications.readAgent(agentId);
     },
     restoreLastView,
     office: {
