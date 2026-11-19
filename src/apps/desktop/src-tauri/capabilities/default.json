@@ -11,6 +11,7 @@
     "allow-retry-connection",
     "allow-start-server",
     "allow-register-login-start",
-    "allow-login-start-status"
+    "allow-login-start-status",
+    "notification:default"
   ]
 }

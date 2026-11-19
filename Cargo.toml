@@ -46,6 +46,8 @@ base64 = "0.22"
 nix = { version = "0.28", default-features = false }
 tauri = { version = "=2.12.5", features = [] }
 tauri-build = "=2.7.4"
+# OS notifications for the 0003 panel (research R7, plan D7).
+tauri-plugin-notification = "=2.8.1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

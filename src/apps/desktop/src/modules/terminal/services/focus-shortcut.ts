@@ -3,6 +3,7 @@
 import type { CoreClient } from "../../../core/api";
 import {
   DEFAULT_FOCUS_SHORTCUT,
+  isAppShortcut,
   parseShortcut,
   type Shortcut,
 } from "../../../core/shortcuts";
@@ -38,6 +39,10 @@ export async function loadFocusShortcut(
       key: FOCUS_SHORTCUT_SETTING,
     })) as { value?: unknown } | null | undefined;
     const text = typeof setting?.value === "string" ? setting.value : "";
+    // A stored value the server's validator would refuse (an app-table
+    // combination) must not eat the table's keys; the terminal keeps its
+    // default way out.
+    if (isAppShortcut(text)) return defaultShortcut();
     return fromText(text) ?? defaultShortcut();
   } catch {
     return defaultShortcut();

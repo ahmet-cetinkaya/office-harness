@@ -4,6 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import type { Agent } from "../src/modules/agent/models/agent";
 import type { HierarchyTree } from "../src/modules/hierarchy/models/hierarchy";
+import type { NotificationRow } from "../src/modules/notification/models/notification";
 import { installMockCore, type OfficeSeed } from "./support/mock-core";
 
 const SERIOUS_IMPACTS = ["serious", "critical"];
@@ -579,4 +580,328 @@ test("a shortcut reaches a live terminal with output within one second (SC-002)"
   // The clock runs while the expectations above hold it, so the whole
   // shortcut-to-output wait is the time at the last met expectation.
   expect(Date.now() - started).toBeLessThan(1_000);
+});
+
+/** One seeded notification row, as `notification.list` answers with it. */
+function notification(
+  overrides: Partial<NotificationRow> = {},
+): NotificationRow {
+  return {
+    id: "notification-1",
+    agent_id: "agent-bo",
+    agent_name: "Bo",
+    event: "exited",
+    created_at: 1_700_000_000_000,
+    read_at: null,
+    ...overrides,
+  };
+}
+
+async function requestKinds(page: Page): Promise<string[]> {
+  const calls = await page.evaluate(() => window.__mockCore.calls);
+  return calls
+    .filter((call) => call.command === "send_request")
+    .map((call) => String(call.args.kind));
+}
+
+test.describe("notifications", () => {
+  test("the unread count shows as text, and the dialog lists the rows (FR-007)", async ({
+    page,
+  }) => {
+    await openPanel(page, {
+      notifications: [
+        notification({ id: "n1", event: "exited" }),
+        notification({
+          id: "n2",
+          agent_id: "agent-cy",
+          agent_name: "Cy",
+          event: "waiting_for_input",
+          created_at: 1_700_000_100_000,
+        }),
+        notification({
+          id: "n3",
+          event: "bell",
+          read_at: 1_700_000_200_000,
+        }),
+      ],
+    });
+
+    await expect(
+      page.getByRole("button", { name: "Notifications, 2 unread" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Notifications, 2 unread" }).click();
+    const dialog = page.getByRole("dialog", { name: "Notifications" });
+    await expect(dialog).toBeVisible();
+    // Unread first, then newest first (D4); the read row is there too.
+    await expect(
+      dialog.getByRole("button", { name: "Cy, waits for your input" }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Bo, exited" }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Bo, rang the bell" }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Bo, exited, agent deleted" }),
+    ).toHaveCount(0);
+    await expectNoSeriousViolationsAtBothWidths(page);
+  });
+
+  test("a live region announces each new notification once (FR-006)", async ({
+    page,
+  }) => {
+    await openPanel(page);
+
+    await page.evaluate(() => {
+      window.__mockCore.notify("Bo", "agent-bo", "bell");
+    });
+    await expect(
+      page.getByRole("button", { name: "Notifications, 1 unread" }),
+    ).toBeVisible();
+    // The office's own live region, not the login panel's (both are polite).
+    const region = page.locator("p.sr-only[aria-live='polite']");
+    await expect(region).toContainText("Bo rang the bell");
+
+    await page.evaluate(() => {
+      window.__mockCore.notify("Cy", "agent-cy", "waiting_for_input");
+    });
+    await expect(region).toContainText("Cy waits for your input");
+  });
+
+  test("a click opens the agent's terminal and clears its unread row (FR-009)", async ({
+    page,
+  }) => {
+    await openPanel(page, {
+      notifications: [notification({ id: "n1", event: "bell" })],
+    });
+
+    await page.getByRole("button", { name: "Notifications, 1 unread" }).click();
+    const dialog = page.getByRole("dialog", { name: "Notifications" });
+    await dialog.getByRole("button", { name: "Bo, rang the bell" }).click();
+
+    await expect(dialog).toHaveCount(0);
+    // Bo is stopped, so the terminal shows his last session's output.
+    await expect(
+      page.getByRole("group", { name: "Live terminal of Bo" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Notifications, 0 unread" }),
+    ).toBeVisible();
+    expect(await requestKinds(page)).toContain("notification.read");
+  });
+
+  test("a row of a deleted agent says so, reads, and opens nothing (edge case)", async ({
+    page,
+  }) => {
+    await openPanel(page, {
+      notifications: [
+        notification({
+          id: "n1",
+          agent_id: "agent-gone",
+          agent_name: "Hal",
+          event: "failed",
+        }),
+      ],
+    });
+
+    await page.getByRole("button", { name: "Notifications, 1 unread" }).click();
+    const dialog = page.getByRole("dialog", { name: "Notifications" });
+    const row = dialog.getByRole("button", {
+      name: "Hal, failed, agent deleted",
+    });
+    await expect(row).toBeVisible();
+    await expect(row).toBeEnabled();
+    await row.click();
+
+    await expect(
+      page.getByRole("group", { name: "Live terminal" }),
+    ).toHaveCount(0);
+    // The click reads the row and closes the dialog, as every row does; the
+    // deleted agent's terminal alone stays shut.
+    await expect(dialog).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Notifications, 0 unread" }),
+    ).toBeVisible();
+    expect(await requestKinds(page)).toContain("notification.read");
+  });
+
+  test("opening a terminal by any route reads that agent's rows (FR-009)", async ({
+    page,
+  }) => {
+    await openPanel(page, {
+      notifications: [
+        notification({ id: "n1", event: "exited" }),
+        notification({
+          id: "n2",
+          agent_id: "agent-cy",
+          agent_name: "Cy",
+          event: "bell",
+        }),
+      ],
+    });
+
+    await page
+      .getByRole("button", { name: "Bo, project Api, stopped" })
+      .click();
+    await expect(
+      page.getByRole("group", { name: "Live terminal of Bo" }),
+    ).toBeVisible();
+
+    await expect
+      .poll(async () => {
+        const calls = await page.evaluate(() => window.__mockCore.calls);
+        return calls.some(
+          (call) =>
+            call.command === "send_request" &&
+            call.args.kind === "notification.read_agent" &&
+            (call.args.fields as { agent_id?: string })?.agent_id ===
+              "agent-bo",
+        );
+      })
+      .toBe(true);
+    await expect(
+      page.getByRole("button", { name: "Notifications, 1 unread" }),
+    ).toBeVisible();
+  });
+
+  test("the last view restores the project, the agent, and its terminal (FR-008)", async ({
+    page,
+  }) => {
+    await openPanel(page, {
+      lastView: JSON.stringify({
+        project: "project-api",
+        agent: "agent-bo",
+        terminal_open: true,
+      }),
+    });
+
+    await expect(
+      page.getByRole("group", { name: "Live terminal of Bo" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Bo, project Api, stopped" }),
+    ).toHaveAttribute("aria-current", "true");
+    const project = page.getByLabel("Project", { exact: true });
+    await expect(project).toHaveValue("project-api");
+  });
+
+  test("a last view whose agent is gone says so and opens nothing (US3)", async ({
+    page,
+  }) => {
+    await openPanel(page, {
+      lastView: JSON.stringify({
+        project: "project-site",
+        agent: "agent-gone",
+        terminal_open: true,
+      }),
+    });
+
+    await expect(
+      page
+        .getByRole("alert")
+        .getByText("The last view's agent no longer exists."),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("group", { name: "Live terminal" }),
+    ).toHaveCount(0);
+    // The project choice survives (edge case): Site's own agent still shows.
+    await expect(
+      page.getByRole("button", { name: "Ada, project Site, working" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Bo, project Api, stopped" }),
+    ).toHaveCount(0);
+  });
+
+  test("returning from the scene does not re-run the restore (FR-008, D6)", async ({
+    page,
+  }) => {
+    await openPanel(page, {
+      lastView: JSON.stringify({
+        project: null,
+        agent: "agent-bo",
+        terminal_open: true,
+      }),
+    });
+    await expect(
+      page.getByRole("group", { name: "Live terminal of Bo" }),
+    ).toBeVisible();
+
+    // The scene swap unmounts the panel, so the restore-once guard must
+    // live in the store: a per-mount guard would read the stored view
+    // again on the way back and revert what the user chose since.
+    await page.getByRole("button", { name: "To the scene" }).click();
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await page.getByRole("button", { name: "Cy, waiting for input" }).click();
+    await expect(
+      page.getByRole("group", { name: "Live terminal of Cy" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Cy, waiting for input" }),
+    ).toHaveAttribute("aria-current", "true");
+
+    // The selection could survive a late re-run by luck, so the exact
+    // observable is the read count: the stored view is read once per app
+    // start, not once per panel mount.
+    await expect
+      .poll(async () => {
+        const calls = await page.evaluate(() => window.__mockCore.calls);
+        return calls.filter(
+          (call) =>
+            call.command === "send_request" &&
+            call.args.kind === "settings.get" &&
+            (call.args.fields as { key?: string })?.key === "last_view",
+        ).length;
+      })
+      .toBe(1);
+  });
+
+  test("the app writes the last view back as the user moves (D6)", async ({
+    page,
+  }) => {
+    await openPanel(page);
+
+    await page.getByRole("button", { name: "Cy, waiting for input" }).click();
+    await expect(terminalInput(page, "Cy")).toBeFocused();
+
+    // The debounce is one second (D6).
+    await page.waitForTimeout(1_200);
+    await expect
+      .poll(async () => {
+        const calls = await page.evaluate(() => window.__mockCore.calls);
+        const write = [...calls]
+          .reverse()
+          .find(
+            (call) =>
+              call.command === "send_request" &&
+              call.args.kind === "settings.set" &&
+              (call.args.fields as { key?: string })?.key === "last_view",
+          );
+        return (write?.args.fields as { value?: string })?.value ?? "";
+      })
+      .toBe(
+        JSON.stringify({
+          project: null,
+          agent: "agent-cy",
+          terminal_open: true,
+          view: "panel",
+        }),
+      );
+  });
+
+  test("the notification dialog is axe clean at both widths", async ({
+    page,
+  }) => {
+    await openPanel(page, {
+      notifications: [notification({ id: "n1" })],
+    });
+
+    await page.getByRole("button", { name: "Notifications, 1 unread" }).click();
+    await expect(
+      page.getByRole("dialog", { name: "Notifications" }),
+    ).toBeVisible();
+    await expectNoSeriousViolationsAtBothWidths(page);
+  });
 });

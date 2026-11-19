@@ -11,3 +11,7 @@ export { default as ProjectFormDialog } from "./components/project-form-dialog.s
 export { default as ProjectList } from "./components/project-list.svelte";
 export type { Agent, NewAgent, Project } from "./models/agent";
 export { isActive, shownStatusText } from "./models/agent";
+export {
+  LAST_AGENT_GONE_LEAD,
+  LAST_AGENT_GONE_MESSAGE,
+} from "./state/office-controller";
