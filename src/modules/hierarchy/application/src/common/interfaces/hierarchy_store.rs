@@ -80,10 +80,12 @@ pub trait HierarchyStore: Send + Sync {
     /// `Storage` when the write fails.
     fn delete_team_and_unplace(&self, team_id: TeamId) -> Result<(), HierarchyApplicationError>;
 
-    /// Writes one agent's place columns (role, parent, team). The caller
-    /// holds the tree exclusion across its check and this write; a second
-    /// take inside would wait on itself (the create-role handler's hold
-    /// pattern, FR-006, FR-007).
+    /// Writes one agent's place columns (role, parent, team), and, for a
+    /// lead with a team, names that agent the team's lead in the same
+    /// write. The caller holds the tree exclusion across its check and this
+    /// write; a second take inside would wait on itself (the create-role
+    /// handler's hold pattern, FR-006, FR-007), so two racing lead
+    /// placements cannot both win the seat.
     ///
     /// # Errors
     /// `Storage` when the write fails.

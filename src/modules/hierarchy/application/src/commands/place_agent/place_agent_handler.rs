@@ -32,7 +32,8 @@ impl PlaceAgentHandler {
 
     /// # Errors
     /// `Invalid` naming the broken rule: a second CEO, a parent that is not
-    /// in the tree, or a role that cannot sit under that parent.
+    /// in the tree, or a role that cannot sit under that parent. `Conflict`
+    /// when the team asked for already holds its lead.
     pub fn handle(&self, request: PlaceAgentRequest) -> Result<(), HierarchyApplicationError> {
         // The exclusion covers the check and the write, so a placement that
         // races a subtree count never joins the tree unseen (FR-006).
@@ -50,7 +51,8 @@ impl PlaceAgentHandler {
             parent_agent_id: request.parent_agent_id,
             team_id,
         };
-        check_placement(&snapshot.rows, placement).map_err(HierarchyApplicationError::Invalid)?;
+        check_placement(&snapshot.rows, placement)
+            .map_err(HierarchyApplicationError::from_place)?;
         self.store.place_agent(
             request.agent_id,
             Some(request.role),

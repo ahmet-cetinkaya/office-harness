@@ -103,6 +103,34 @@ fn a_second_ceo_is_refused_and_names_the_first() {
 }
 
 #[test]
+fn a_second_lead_for_a_held_team_is_refused_and_names_the_seated_lead() {
+    let ids = fixed_ids();
+    let fresh = AgentId::from_u128(9);
+    assert_eq!(
+        check_placement(
+            &tree(),
+            placement(fresh, Role::Lead, None, Some(TeamId::from_u128(10))),
+        ),
+        Err(HierarchyError::SecondLead {
+            name: name_of(ids.lead_a)
+        })
+    );
+    // The seated lead itself keeps its own seat on a re-check.
+    assert_eq!(
+        check_placement(
+            &tree(),
+            placement(
+                ids.lead_a,
+                Role::Lead,
+                Some(ids.ceo),
+                Some(TeamId::from_u128(10))
+            ),
+        ),
+        Ok(())
+    );
+}
+
+#[test]
 fn a_second_ceo_refusal_names_the_stored_ceo_not_its_id() {
     // The row carries the office's name for the CEO; the refusal shows that
     // name, not the id text (Efe, PR 36 r2 LOW). An empty name falls back

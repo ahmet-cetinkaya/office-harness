@@ -325,7 +325,20 @@ async fn answer_office_request(
     })
     .await;
     match answered {
-        Ok(response) => response,
+        Ok(response) => {
+            // A refused create is a refusal like a refused directive, so it
+            // reaches the record with the caller as the actor (FR-009). The
+            // other office types record their own failures (a Stop or
+            // NewTask entry carries the failure text); the create use case
+            // keeps the record for its successes only, so the gateway
+            // writes the refused ones.
+            if request.kind == "agent.create"
+                && let Response::Failure { message, .. } = &response
+            {
+                journaled.refused(caller, message);
+            }
+            response
+        }
         Err(error) => {
             let message = format!("the request task failed: {error}");
             journaled.refused(caller, &message);
