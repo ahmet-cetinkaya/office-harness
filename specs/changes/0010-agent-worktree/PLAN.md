@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 spec: specs/changes/0010-agent-worktree/SPEC.md
 commits: per-task
 ---
@@ -90,6 +90,7 @@ Deliver spec 0010. In a git repository the owner can give a new agent its own br
   - The branch name is `office-harness/<slug>`, where the slug is the agent name lower-cased, with every character outside `[a-z0-9-]` replaced by `-`, runs of `-` collapsed, leading and trailing `-` trimmed, and the length capped at 40. An empty slug becomes `agent`. This rules out `..`, `@{`, `/.`, `.lock`, `//`, a `/` in the name, non-ASCII names, and names that differ only by case.
   - When `office-harness/<slug>` exists, the lowest free `office-harness/<slug>-<n>` (n from 2) is used.
   - The full name is then checked with `git check-ref-format --branch`; a refused name is `invalid`.
+  - **Deviation from spec A3** (recorded 2026-11-19, Efe's plan review r2): A3 says the branch is `<agent name>-<short id>`. This plan uses `office-harness/<slug>` or `office-harness/<slug>-<n>` with no short id, because the form must show the branch name before the agent exists, and the agent id (and so its short id) is made only at create (Efe r1 MEDIUM-2). The name still says which agent owns the branch and stays unique. The QA report records this as a planned deviation, not a fail.
 - **D4 Info request:** `agent.worktree_info {folder?, project_id?, name}`, where the folder or the project's folder is resolved on the server.
   - It returns `{in_repository: false}`, or `{in_repository: true, base, base_is_branch, branches: [local branch names], branch_name}`. `branch_name` is the D3 name that will be created; it does not depend on the agent id, so the form can show it before the agent exists.
   - With no git program, or git older than 2.22, it answers `in_repository: false`.
