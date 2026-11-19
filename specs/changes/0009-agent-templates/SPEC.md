@@ -78,6 +78,7 @@ The user exports his templates to one plain-text file, keeps it in his own repos
 3. Given the import preview shows, When the user confirms, Then the office saves the templates and creates no agent.
 4. Given the import preview shows, When the user cancels, Then the office saves nothing.
 5. Given a file with an unknown format version, When the user imports it, Then the office refuses the whole file, names the reason, and saves nothing.
+6. Given an imported template holds variable `API_KEY` without a value, When the user creates an agent from it and starts it, Then the CLI runs with the login environment's `API_KEY`, and the agent's details show `API_KEY` as 'no value'.
 
 ## Requirements
 
@@ -91,8 +92,9 @@ The user exports his templates to one plain-text file, keeps it in his own repos
 - **FR-006** (US1, US2): WHEN the user edits or deletes a template, THE SYSTEM SHALL keep every agent and team created from it unchanged.
 - **FR-007** (US3): WHEN the user exports templates, THE SYSTEM SHALL write them to one plain-text file with a format version, with every environment variable as its name and an empty value, and SHALL say before writing that flags and startup prompts are written as they are.
 - **FR-008** (US3): WHEN the user imports a template file, THE SYSTEM SHALL show, as plain text, every template in it with its CLI commands, working folders, flags, environment variable names, startup prompts, and the name it will be saved under, and SHALL save the templates only after the user confirms.
-- **FR-009** (US3): IF an imported file has an unknown format version, cannot be read as a template file, is larger than 256 KiB, or holds a team template with more than 50 agents, THEN THE SYSTEM SHALL refuse the whole file with the reason and save no template from it.
+- **FR-009** (US3): IF an imported file has an unknown format version, cannot be read as a template file, is larger than 256 KiB, or holds a team template with more than 50 agents, or holds a template that FR-001 or FR-003 would not let the user save (for example an empty CLI command or a member count below 1), THEN THE SYSTEM SHALL refuse the whole file, name the template and the reason, and save no template from it.
 - **FR-010** (US2): IF a team template the user saves would create more than 50 agents, THEN THE SYSTEM SHALL refuse to save it and name the limit.
+- **FR-011** (US3): WHEN a template holds an environment variable without a value, THE SYSTEM SHALL show that variable as 'no value' in the template and in creation from it, and SHALL not pass a variable without a value to the CLI, so the login environment's value stays in effect (0001/FR-020).
 
 ### PRESERVED
 
@@ -165,6 +167,7 @@ The user exports his templates to one plain-text file, keeps it in his own repos
 | Two creations from one template at the same moment. | Concurrent | Each gets a different unique name; neither fails because of the other. |
 | The file cannot be written on export (no permission, disk full). | Failure | The office says the file was not written; no template changes. |
 | A flag or startup prompt holds a secret. | Failure | Export writes it as is; the export notice says so before writing (FR-007). |
+| An agent template whose name pattern holds `{team}` is used outside a team creation. | Invalid | `{team}` is replaced by the team of the place picked, or, without one, the creation is refused and names the pattern. |
 
 ## Assumptions
 
@@ -173,14 +176,20 @@ The user exports his templates to one plain-text file, keeps it in his own repos
 - **A3:** An imported template whose name exists is saved under that name with ` (2)`, ` (3)`, and so on, the lowest free one. Import never replaces a template.
 - **A4:** In a team template, the position sets the role: the lead entry creates a team lead, each member entry creates members. An agent template's own role applies only when an agent is created from it directly.
 - **A5:** A team template holds copies of its entries, not links to agent templates. Editing or deleting an agent template does not change a team template.
-- **A6:** 0001 has no "secret" mark on environment variables, so export treats every environment value as possibly secret and leaves all of them empty. Inside the office, templates keep the values, as agents already do (0001/FR-022).
+- **A6:** 0001 has no "secret" mark on environment variables, so export treats every environment value as possibly secret and leaves all of them empty. Inside the office, templates keep the values, as agents already do (0001/FR-022). An imported variable has no value until the user gives one (FR-011).
 - **A7:** The 50-agent limit per team template guards one confirmation against creating an unexpected number of agents; it is not an office size cap (0002/FR-005 holds). The 256 KiB file limit is far above any real template file.
 - **A8:** Templates are kept by the background server in the office, so they survive restarts like the rest of the office (0001/FR-003).
 - **A9:** Only the user uses templates in this change. Agents that create agents under 0002 do not use templates.
+- **A10:** Saving, editing, deleting, exporting and importing templates are not recorded in the action record; only the agents created from templates are (PB-2).
 
 ## Clarifications
 
-None yet.
+### Session 2026-11-19 (review edits)
+
+- Q: What does an environment variable without a value do after import? → A: It shows as 'no value' and is not passed to the CLI, so the login environment's value stays in effect (FR-011, A6).
+- Q: What happens to an imported template that breaks FR-001 or FR-003? → A: The whole file is refused and the template and the reason are named (FR-009).
+- Q: What does `{team}` become when an agent template is used outside a team creation? → A: The team of the place picked; without one, the creation is refused and names the pattern (Edge cases).
+- Q: Are template changes recorded in the action record? → A: No; only the agents created from templates are (A10).
 
 ## Out of scope
 
