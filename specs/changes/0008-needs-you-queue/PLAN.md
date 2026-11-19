@@ -28,7 +28,7 @@ This change gives the owner one standing list, "Needs you", with one item per ag
 **Shape of the work:** 7 tasks in 2 phase PRs into one umbrella branch `feat/0008-needs-you-queue`, one local commit per task. **Effort:** M.
 
 **Main risks:**
-- **Read-on-arrival is decided by the client.** The server never learns which agent is on screen (`notification-store.ts:96-118`). An item for an on-screen agent is therefore created and then removed when the client marks the notification read (D2). That is a few milliseconds of a visible item. An e2e test pins the end state.
+- **Read-on-arrival is decided by the client.** The server never learns which agent is on screen (`D/modules/notification/state/notification-store.ts:96-118`). D3, D4, and D8 make the desktop drop an item whose origin notification it has just marked read on arrival, so the item never shows, counts, changes the title, or is announced. The server removes it on the read (D2).
 - **A stored focus shortcut equal to `Ctrl+Shift+F11`.** Today a stored focus shortcut that hits the reserved table falls back to the default, on both the server (`settings_repository.rs:35-41`) and the desktop (`focus-shortcut.ts:45`). The spec wants the stored key kept and the jump unbound. D6 changes both load paths for this one case.
 - **The window title needs a new Tauri permission** (`capabilities/default.json` has no window permission). D7 adds one app command instead of a broad permission.
 
@@ -51,7 +51,7 @@ Deliver spec 0008. Needs you lists exactly the agents that wait for the user, in
   - Status frames: `agent_status_event` (`M/agent/presentation/src/mappings/events.rs:14`) carries `status` and an optional `detail` (the exit code text for `exited` and `failed`). Delete cleanup precedent: `H/server/agent_requests.rs:145-158` (`holds.forget_deleted_agents()`).
   - Hold release: `HoldService::release_hold` (`M/hierarchy/application/src/commands/hold/hold_service.rs:156`) calls `HoldJournal::released`, bridged at `H/bridges/hold_bridges.rs:69`.
   - Settings: `quiet_period_ms` (`M/agent/domain/src/value_objects/settings.rs:90`); `RESERVED_SHORTCUTS` has 11 entries (`:28`); `normalized_shortcut` (`:61`).
-  - Desktop: `D/core/shortcuts/app-shortcuts.ts` (table at 48, kinds at 15); terminal passthrough `D/modules/terminal/views/terminal-view.svelte:143`; the only app key handler `D/modules/panel/views/panel-view.svelte:195`; the live region `:270`; the left column `:339`. The scene (`D/modules/scene/views/scene-view.svelte`) has no app key handler and is mounted instead of the panel (`D/app.svelte:158-179`); `openDesk` is at `:275`. The window title is fixed (`src-tauri/tauri.conf.json:15`); `src-tauri/capabilities/default.json` has no window permission. The e2e mock core is `src/apps/desktop/e2e/support/mock-core.ts` (`send_request` switch, invokes at 821-865).
+  - Desktop: `D/core/shortcuts/app-shortcuts.ts` (table at 48, kinds at 15); terminal passthrough `D/modules/terminal/views/terminal-view.svelte:143`; the only app key handler `D/modules/panel/views/panel-view.svelte:195`; the live region `:270`; the left column `:339`. The scene (`D/modules/office-scene/views/scene-view.svelte`) has no app key handler and is mounted instead of the panel (`D/app.svelte:158-179`); `openDesk` is at `:275`. The window title is fixed (`src-tauri/tauri.conf.json:15`); `src-tauri/capabilities/default.json` has no window permission. The e2e mock core is `src/apps/desktop/e2e/support/mock-core.ts` (`send_request` switch, invokes at 821-865).
   - Tests that use `Ctrl+Shift+F11` as a free key: `e2e/panel.spec.ts:412-430`, `core/shortcuts/app-shortcuts.spec.ts:53,84,133,148`, `modules/terminal/services/focus-shortcut.spec.ts:26`.
 - **Floor rules:** one build or test at a time on the floor (ask god; `CARGO_BUILD_JOBS=4`, `--test-threads=4`, the pinned 1.100.0 toolchain first in `PATH`, per-crate local Rust runs). Efe reviews each PR at its exact head sha; god merges. Nothing is pushed to `main`.
 
@@ -74,9 +74,9 @@ Deliver spec 0008. Needs you lists exactly the agents that wait for the user, in
   - `auto_hold`: the limit name.
   - `bell`: none.
 
-  `origin` is the notification id that `record` created, or none for a coalesced bell.
+  The bridge creates the 0003 notification first, then records the item with `origin` (the new notification id, or none for a coalesced bell), then publishes `notification.created` before `needs_you.changed`. The bell check reads the unread state, not the item, so FR-001 still holds.
 - **D4 Protocol** (user clients only; the agent connection never answers `needs_you.*`):
-  - `needs_you.list` returns `{items: [{agent_id, kind, detail, first_event_at, latest_at}]}` in the D1 order.
+  - `needs_you.list` returns `{items: [{agent_id, kind, detail, first_event_at, latest_at, origin_notification_id}]}` in the D1 order. `origin_notification_id` is text or null.
   - `needs_you.dismiss {agent_id}` returns the list. An agent without an item answers `not_found`.
   - Event `needs_you.changed {items}` carries the full ordered list after every change, as `hold.changed` does.
   - The desktop computes the wait time from `first_event_at`. T1 writes the contract.
@@ -84,10 +84,14 @@ Deliver spec 0008. Needs you lists exactly the agents that wait for the user, in
   - Panel: `handleAppKeys` handles `jump` by opening the top item's agent through the same `openAgent` path as the 0003 switcher (A2).
   - Scene: a window keydown listener in `scene-view.svelte` handles only `jump`, by calling `openDesk(topAgentId)` (FR-010). Other app shortcuts in the scene stay as today.
   - Empty list: the view stays, and the live region says "No agent needs you" (FR-008).
+  - Fast presses (US2: "Pressing it again goes to the next one"): after a jump the desktop removes the opened agent's item from its local list at once, so a second press before `needs_you.changed` comes back opens the next item.
+  - The jump's per-OS fallback is not shipped yet, as `README.md:41` says for F1 to F10. A later release can move it into the 0003 fallback family with the agent shortcuts (A1).
 - **D6 Collision with a stored focus shortcut** (edge cases, A1):
   - `RESERVED_SHORTCUTS` gains `Ctrl+Shift+F11`. A new focus shortcut equal to it is refused, as 0003 does.
-  - On load, a stored focus shortcut equal to `Ctrl+Shift+F11` is kept, on the server (`settings_repository.rs` keeps it instead of falling back) and on the desktop (`focus-shortcut.ts`). The desktop then leaves the jump entry unbound.
-  - The Needs you section shows one line, "The jump shortcut is off because the focus shortcut uses Ctrl+Shift+F11", until the focus shortcut changes.
+  - On load, a stored focus shortcut equal to `Ctrl+Shift+F11` is kept, on the server (`settings_repository.rs` keeps it instead of falling back) and on the desktop (`focus-shortcut.ts`).
+  - Server: the stored value is compared in the normalized form (`normalized_shortcut`), so `Shift+Ctrl+F11` is kept too. Only the jump key is exempt: a stored F1 to F10 or `Ctrl+Shift+H` still falls back to the default.
+  - Desktop: the desktop loads the focus shortcut once into one shared state. The terminal, the panel handler, the scene listener, and the Needs you section read that state. While the focus shortcut equals the jump key, `pressedAppShortcut` does not match the jump entry. The focus-shortcut load does not count the jump entry as a table key, so a stored `Ctrl+Shift+F11` is kept.
+  - The app has no screen for the focus shortcut; it is the `focus_shortcut` setting, changed through `settings.set` (`README.md:39`), and no settings event exists. The Needs you section therefore shows one line: "The jump shortcut is off because the focus shortcut uses Ctrl+Shift+F11. Change the focus_shortcut setting (see the README) and reopen the app to turn the jump on." The jump is bound again at the next app start after the setting changes, when the shared state loads.
   - Any other stored focus shortcut behaves as today. A test proves that no stored focus shortcut is lost by the new reservation (A1).
 - **D7 Window title:** a new app command `set_window_title(count: u32)` in `src-tauri/src/commands.rs`, with its `allow-set-window-title` permission in `capabilities/default.json`. It sets `office-harness (N)`, or `office-harness` for 0.
   - The shell (`app.svelte`) calls it from an effect on the item count, so it runs in both views (FR-009).
@@ -95,7 +99,8 @@ Deliver spec 0008. Needs you lists exactly the agents that wait for the user, in
 - **D8 Desktop list:** a `D/modules/needs-you/` module holds the state (list, `watchEvents` for `needs_you.changed`, a 1 s tick for the wait time), the service, and a `needs-you-section.svelte` component above the `Agents` heading.
   - Each row shows name, project, event text, and wait time as text. Its accessible name holds all four. Dismiss is a button.
   - An empty list shows "No agent needs you". The count is text next to the heading.
-  - A count change is announced in the panel's live region and in the scene's live region. A new item is not announced separately (LOW-3).
+  - A count change is announced in the panel's live region and in the scene's live region. A new item is not announced separately (spec Accessibility).
+  - The desktop does not show, count, title, or announce an item whose origin notification it has just marked read on arrival. The server removes that item on the read (D2).
   - No new visuals beyond these controls (spec Design rule).
 - **Constitution check:**
   - Module boundaries hold: `notification` gains no dependency, bridges live in `H/bridges/`, and `scripts/check-boundaries.sh` passes.
@@ -183,13 +188,13 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
   - The free-key e2e test moves from `Ctrl+Shift+F11` to `Ctrl+Shift+F12`. That key is free while the focus shortcut is the test default; the test checks this.
 - **Depends on:** T4 (lands in p2).
 - **Acceptance:**
-  - Settings tests: setting the focus shortcut to `Ctrl+Shift+F11` is refused with the conflict named, and a stored `Ctrl+Shift+F11` loads unchanged. Every other stored value loads as before: a table of stored values, each kept or falling back exactly as at 037b10f (A1).
+  - Settings tests: setting the focus shortcut to `Ctrl+Shift+F11` is refused with the conflict named, and a stored `Ctrl+Shift+F11` and a stored `Shift+Ctrl+F11` load unchanged. Every other stored value loads as before: a table of stored values, each kept or falling back exactly as at 037b10f (A1).
   - `bun test`: the table has 12 entries; the jump key passes out of a focused terminal; the jump entry is unbound when the focus shortcut is `Ctrl+Shift+F11`.
   - fmt, clippy, tests, `svelte-check`, `eslint`, `prettier --check`.
 
 ### T6: Desktop section, jump, title (FR-002, FR-003, FR-004, FR-007 to FR-010, PB-4, SC-001 to SC-003)
 
-- **Files:** `D/modules/needs-you/` (new: state, service, `needs-you-section.svelte`, specs), `D/modules/panel/views/panel-view.svelte`, `D/modules/scene/views/scene-view.svelte`, `D/app.svelte`, `src-tauri/src/{commands.rs,main.rs}`, `src-tauri/capabilities/default.json` and its permission file, `src/apps/desktop/e2e/support/mock-core.ts`, `src/apps/desktop/e2e/needs-you.spec.ts`.
+- **Files:** `D/modules/needs-you/` (new: state, service, `needs-you-section.svelte`, specs), `D/modules/panel/views/panel-view.svelte`, `D/modules/office-scene/views/scene-view.svelte`, `D/modules/notification/state/notification-store.ts`, `D/core/shortcuts/` (shared focus-shortcut state), `D/app.svelte`, `src-tauri/src/{commands.rs,main.rs}`, `src-tauri/build.rs` (`WEBVIEW_COMMANDS`, which generates `allow-set-window-title`), `src-tauri/capabilities/default.json`, `src/apps/desktop/e2e/support/mock-core.ts`, `src/apps/desktop/e2e/needs-you.spec.ts`.
 - **Work:** the D8 section, the D5 handlers in the panel and the scene, the D7 title command and effect, and the mock core `needs_you.*` cases with the title invoke recorded.
 - **Depends on:** T5.
 - **Acceptance:**
@@ -202,13 +207,18 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
     - Dismiss by keyboard removes the item and leaves the agent's status.
     - The title invoke gets 3, then 2, then 0, in the panel and in the scene.
     - A count change is announced once, and a new item is not announced twice.
-    - An event for the on-screen agent leaves no item.
-    - The collision line shows when the stored focus shortcut is `Ctrl+Shift+F11`.
+    - An event for the on-screen agent in the focused window leaves no item, causes no title invoke, and announces no count change.
+    - The collision line shows when the stored focus shortcut is `Ctrl+Shift+F11`. With that stored value, the key in a focused terminal moves focus out as the focus shortcut does and opens no agent, and the key in the panel opens no agent. With the default focus shortcut, `Ctrl+Shift+F11` in a focused terminal jumps.
+    - The top item belongs to a project that the switcher hides: the jump opens it the way the 0003 switcher does (US2 scenario 4).
+    - The top agent is deleted at the press: the jump opens the next item, or says "No agent needs you".
+    - More items than fit: the list scrolls, and the title shows the full count.
+    - The jump shows the top agent's terminal with focus within 1 s (SC-001).
+    - Two fast presses with a delayed mock answer open the first and then the second item.
   - `svelte-check`, `eslint`, `prettier --check`.
 
 ### T7: Docs and QA (all criteria)
 
-- **Files:** `README.md` (Needs you, the jump shortcut, the collision note), `specs/changes/0003-panel-practicality/contracts/panel-protocol.md` (a cross-reference to the new requests), `specs/changes/0008-needs-you-queue/qa-report.md`.
+- **Files:** `README.md` (Needs you, the jump shortcut, the collision note; correct line 61, which still says `Ctrl+Shift+H` does not work in a terminal (stale since #80); add the jump key to line 41's list and to its fallback note), `specs/changes/0003-panel-practicality/contracts/panel-protocol.md` (a cross-reference to the new requests), `specs/changes/0008-needs-you-queue/qa-report.md`.
 - **Work:** document the flow; record the QA rows for SC-001 to SC-005 and the edge cases with evidence. Hands-on rows (screen reader pass, 200 percent zoom, the window title on KDE, macOS, and Windows, the jump key on KDE and macOS with Fn) are recorded as BLOCKED until a person or an agent-run pass runs them, never PASS.
 - **Depends on:** T6.
 - **Acceptance:** every Traceability row has evidence or a recorded gap; `rg` finds no other project's name.
@@ -232,7 +242,7 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 | 3 | T3 | `H/bridges/`, `H/server/agent_requests.rs`, `H/bootstrap/`, `M/notification/application/` | `feat(server): feed and clear needs-you items from office events` |
 | 4 | T4 | `M/notification/presentation/`, `H/server/`, `src/apps/office-harnessd/tests/` | `feat(server): answer needs_you requests and publish changes` |
 | 5 | T5 | `M/agent/`, `D/core/shortcuts/`, `D/modules/terminal/`, `src/apps/desktop/e2e/panel.spec.ts` | `feat(desktop): reserve the jump shortcut and drop the terminal flag` |
-| 6 | T6 | `D/`, `src/apps/desktop/src-tauri/`, `src/apps/desktop/e2e/` | `feat(desktop): show Needs you and jump to the top agent` |
+| 6 | T6 | `D/`, `src/apps/desktop/src-tauri/` (including `build.rs`), `src/apps/desktop/e2e/` | `feat(desktop): show Needs you and jump to the top agent` |
 | 7 | T7 | `README.md`, `specs/changes/0003-panel-practicality/contracts/panel-protocol.md`, `specs/changes/0008-needs-you-queue/qa-report.md` | `docs(spec-0008): document Needs you and record QA` |
 
 ## QA and evidence
