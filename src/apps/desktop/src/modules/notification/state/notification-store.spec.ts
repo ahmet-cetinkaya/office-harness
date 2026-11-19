@@ -166,6 +166,29 @@ describe("notification controller", () => {
     expect(shown).toHaveLength(1);
   });
 
+  test("an automatic hold carries its limit name into the text (0007 D7)", async () => {
+    const { client, push } = fakeClient(() => []);
+    const { os, shown } = fakeOs();
+    const { controller, state } = observe(client, os);
+    await controller.load();
+
+    push({
+      type: "notification.created",
+      notification: row({
+        id: "n9",
+        event: "auto_hold",
+        detail: "agents created by one agent",
+      }),
+    });
+    await settle();
+
+    expect(state().rows[0].detail).toBe("agents created by one agent");
+    expect(state().announcement).toBe(
+      'Ada was put on hold after 3 refusals by the limit "agents created by one agent"',
+    );
+    expect(shown[0].body).toBe(state().announcement ?? "");
+  });
+
   test("an unfocused window still pings the OS for the selected agent (D5)", async () => {
     const { client, push } = fakeClient(() => []);
     const { os, shown } = fakeOs();

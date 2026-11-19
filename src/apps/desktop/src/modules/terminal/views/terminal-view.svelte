@@ -7,7 +7,10 @@
   import { onMount } from "svelte";
   import FailureMessage from "$shared/ui/failure-message.svelte";
   import { toCoreRequestError, type CoreClient } from "../../../core/api";
-  import { matchesShortcut, pressedAppShortcut } from "../../../core/shortcuts";
+  import {
+    matchesShortcut,
+    pressedTerminalShortcut,
+  } from "../../../core/shortcuts";
   import {
     loadFocusShortcut,
     type FocusShortcut,
@@ -137,7 +140,7 @@
         }
         return false;
       }
-      if (pressedAppShortcut(event) !== null) {
+      if (pressedTerminalShortcut(event) !== null) {
         if (event.type === "keydown") {
           // The webview would otherwise run its own action for an F-key,
           // and xterm.js would send the key's sequence to the CLI.

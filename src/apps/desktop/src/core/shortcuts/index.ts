@@ -4,6 +4,7 @@ export {
   APP_SHORTCUT_TABLE,
   isAppShortcut,
   pressedAppShortcut,
+  pressedTerminalShortcut,
   type AppShortcut,
 } from "./app-shortcuts";
 export {

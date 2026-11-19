@@ -81,6 +81,7 @@
     void connection.start();
     void panel.office.controller.watch();
     void panel.notifications.watch();
+    void panel.hold.watch();
     void hierarchy.watch();
     void osNotificationTap();
   });
@@ -91,6 +92,7 @@
     if (isConnected) {
       void panel.office.controller.load();
       void panel.notifications.load();
+      void panel.hold.load();
       void hierarchy.load();
     }
   });

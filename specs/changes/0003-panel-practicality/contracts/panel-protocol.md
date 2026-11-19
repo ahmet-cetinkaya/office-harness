@@ -41,8 +41,9 @@ Value shape: `{"project": <string or null>, "agent": <string or null>, "terminal
 Result: an array of at most 500 notifications, unread first, then newest first (D4). Each entry:
 
 ```
-notification := { id, agent_id, agent_name, event, created_at, read_at }
-event := "exited" | "failed" | "waiting_for_input" | "bell"
+notification := { id, agent_id, agent_name, event, detail?, created_at, read_at }
+event := "exited" | "failed" | "waiting_for_input" | "bell" | "auto_hold"   // auto_hold and detail added by 0007
+detail := the limit name for auto_hold; absent or null otherwise
 created_at, read_at := unix epoch milliseconds; read_at is null while unread
 ```
 
@@ -71,6 +72,13 @@ Sent after a notification row is created (D4, D5).
 | `notification` | object | one `notification` entry, as in `notification.list` |
 
 No other `notification.*` event exists: a read changes no visible state for other clients, so no `notification.read` event is sent (D5 keeps the client that read it as the only actor).
+
+## Additive change by 0007
+
+- `event` may also be `"auto_hold"`: the office put an agent on hold after 3 limit refusals in 60 seconds.
+- A `notification` entry and the `notification.created` event carry an optional `detail` string. For `auto_hold` it is the name of the limit. For every other event it is absent or null.
+
+See `specs/changes/0007-hold-and-limits/contracts/hold-protocol.md`.
 
 ## Changed validation: `settings.set` with key `focus_shortcut`
 

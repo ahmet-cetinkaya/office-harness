@@ -7,6 +7,8 @@ export interface NotificationRow {
   /** The agent's name at creation, kept for the rows of a deleted agent. */
   agent_name: string;
   event: string;
+  /** The limit's name for an `auto_hold`; null for every other event. */
+  detail?: string | null;
   created_at: number;
   /** Null while unread (FR-007). */
   read_at: number | null;
@@ -19,8 +21,19 @@ const EVENT_TEXT: Record<string, string> = {
   bell: "rang the bell",
 };
 
-/** An event as text; a kind this app does not know is shown as sent. */
-export function eventText(event: string): string {
+export const EVENT_AUTO_HOLD = "auto_hold";
+/** How many refusals by one limit put an agent on hold (0007 D7). */
+const AUTO_HOLD_REFUSALS = 3;
+
+/**
+ * An event as text; a kind this app does not know is shown as sent. An
+ * automatic hold names the limit that it came from, when the row has one.
+ */
+export function eventText(event: string, detail: string | null = null): string {
+  if (event === EVENT_AUTO_HOLD) {
+    const base = `was put on hold after ${AUTO_HOLD_REFUSALS} refusals`;
+    return detail === null ? base : `${base} by the limit "${detail}"`;
+  }
   return EVENT_TEXT[event] ?? event.replaceAll("_", " ");
 }
 
@@ -29,14 +42,14 @@ export const DELETED_TEXT = "agent deleted";
 
 /** The row's name as one sentence, in the row's reading order (D11). */
 export function rowText(row: NotificationRow, agentExists: boolean): string {
-  const parts = [row.agent_name, eventText(row.event)];
+  const parts = [row.agent_name, eventText(row.event, row.detail)];
   if (!agentExists) parts.push(DELETED_TEXT);
   return parts.join(", ");
 }
 
 /** What the live region announces for one new notification. */
 export function announcementText(row: NotificationRow): string {
-  return `${row.agent_name} ${eventText(row.event)}`;
+  return `${row.agent_name} ${eventText(row.event, row.detail)}`;
 }
 
 /** True while the user has not opened the notification (FR-007). */
