@@ -5,6 +5,8 @@ export {
   isAppShortcut,
   pressedAppShortcut,
   pressedTerminalShortcut,
+  isHeldForTerminal,
+  type KeyTarget,
   type AppShortcut,
 } from "./app-shortcuts";
 export {
