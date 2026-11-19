@@ -9,12 +9,17 @@
 
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import type { Agent } from "../src/modules/agent/models/agent";
+import type { Agent, Project } from "../src/modules/agent/models/agent";
 import { installMockCore, type OfficeSeed } from "./support/mock-core";
 
 const SERIOUS_IMPACTS = ["serious", "critical"];
 const DESKTOP = { width: 1280, height: 720 };
 const PHONE = { width: 360, height: 800 };
+// SC-004 (plan D11): the scene opens in under 2 seconds and a
+// find-and-open lands in under 15 seconds. The limits are the spec's own,
+// so a miss shows up here and can trigger the plan's fold fallback.
+const SC004_OPEN_LIMIT_MS = 2_000;
+const SC004_FIND_OPEN_LIMIT_MS = 15_000;
 
 function agent(overrides: Partial<Agent> = {}): Agent {
   return {
@@ -92,6 +97,23 @@ function desks(page: Page) {
   return scene(page).getByRole("button");
 }
 
+/** The SC-004 office: 100 agents across 10 projects, ten per project. */
+function scaleOffice(): { agents: Agent[]; projects: Project[] } {
+  const projects = Array.from({ length: 10 }, (_, floor) => ({
+    id: `project-scale-${floor}`,
+    name: `Floor ${floor}`,
+    folder: `/work/floor-${floor}`,
+  }));
+  const agents = Array.from({ length: 100 }, (_, desk) =>
+    agent({
+      id: `agent-scale-${desk}`,
+      name: `Agent ${String(desk).padStart(3, "0")}`,
+      project_id: projects[Math.floor(desk / 10)].id,
+    }),
+  );
+  return { agents, projects };
+}
+
 test("the floors show their desks with name, status, and last line", async ({
   page,
 }) => {
@@ -147,6 +169,96 @@ test("the switcher shows one project's floor and All projects brings the rest ba
   await expect(
     scene(page).getByRole("heading", { name: "No project (1)" }),
   ).toBeVisible();
+});
+
+test("the floors name their departments and the roles order the desks (FR-003)", async ({
+  page,
+}) => {
+  /** Ada is the CEO; Bo leads Backend and Cy sits in it; El leads Web with
+   * Fi in it; Dee has no team. Cy sits on Api, so its department spans two
+   * floors and shows there without its lead. */
+  const agents = [
+    agent({ project_id: "project-site" }),
+    agent({
+      id: "agent-bo",
+      name: "Bo",
+      project_id: "project-site",
+      status: "stopped",
+    }),
+    agent({
+      id: "agent-cy",
+      name: "Cy",
+      project_id: "project-api",
+      status: "waiting_for_input",
+    }),
+    agent({ id: "agent-el", name: "El", project_id: "project-api" }),
+    agent({ id: "agent-fi", name: "Fi", project_id: "project-api" }),
+    agent({ id: "agent-dee", name: "Dee", status: "exited" }),
+  ];
+  await installMockCore(page, {
+    initialState: { status: "connected" },
+    office: {
+      agents,
+      projects: PROJECTS,
+      hierarchy: {
+        ceo: { id: "agent-ada", role: "ceo" },
+        teams: [
+          {
+            id: "team-backend",
+            name: "Backend",
+            project_id: "project-site",
+            lead: { id: "agent-bo", role: "lead" },
+            members: [{ id: "agent-cy", role: "member" }],
+          },
+          {
+            id: "team-web",
+            name: "Web",
+            project_id: "project-api",
+            lead: { id: "agent-el", role: "lead" },
+            members: [{ id: "agent-fi", role: "member" }],
+          },
+        ],
+        unassigned: [],
+      },
+    },
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "To the scene" }).click();
+
+  const floor = (name: string) => scene(page).getByRole("region", { name });
+  // The desk's accessible name opens with the agent's name.
+  const deskNames = (area: ReturnType<typeof scene>) =>
+    area
+      .getByRole("button")
+      .evaluateAll((desks) =>
+        desks.map(
+          (desk) => desk.getAttribute("aria-label")?.split(",")[0] ?? "",
+        ),
+      );
+
+  // Departments sort by team name after the unnamed group; a department
+  // shows on every floor where one of its agents sits.
+  const api = floor("Api (3)");
+  await expect(api.getByRole("heading", { name: "Backend" })).toBeVisible();
+  await expect(api.getByRole("heading", { name: "Web" })).toBeVisible();
+  // Cy's department's lead sits on Site, so Cy is first on Api; El leads
+  // Web here, so El comes before Fi.
+  expect(await deskNames(api)).toEqual(["Cy", "El", "Fi"]);
+
+  // The unnamed group goes first on its floor with the CEO at its head,
+  // and the lead Bo heads his department alone (Cy is on Api). Dee has no
+  // team and no project, so it sits on the No project floor instead.
+  const site = floor("Site (2)");
+  await expect(site.getByRole("heading", { name: "Backend" })).toBeVisible();
+  expect(await deskNames(site)).toEqual(["Ada", "Bo"]);
+
+  // The switcher narrows to one floor with its departments intact.
+  await page.getByLabel("Project", { exact: true }).selectOption({
+    label: "Api",
+  });
+  await expect(api.getByRole("heading", { name: "Web" })).toBeVisible();
+  await expect(desks(page)).toHaveCount(3);
+  expect(await deskNames(scene(page))).toEqual(["Cy", "El", "Fi"]);
 });
 
 test("the search filters desks, focuses the match, and says when nothing matches", async ({
@@ -553,6 +665,68 @@ test("view switches write last_view with the view field, throttled", async ({
   expect(sceneWrites.length).toBeLessThanOrEqual(2);
 });
 
+test("100 agents in 10 projects: the scene opens and answers a find-and-open (SC-004)", async ({
+  page,
+}) => {
+  const { agents, projects } = scaleOffice();
+  await installMockCore(page, {
+    initialState: { status: "connected" },
+    office: { agents, projects },
+  });
+  // The plan (T5 d) measures at 360 width.
+  await page.setViewportSize(PHONE);
+  await page.goto("/");
+  await expect(
+    page.getByRole("button", { name: "To the scene" }),
+  ).toBeVisible();
+
+  // The clock runs in the browser from the scene click to the last desk in
+  // the DOM, so the Playwright round-trip does not count in.
+  const openMs = await page.evaluate(async (deskCount) => {
+    const toScene = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "To the scene",
+    );
+    if (toScene === undefined) return null;
+    const startedAt = performance.now();
+    toScene.click();
+    while (
+      document.querySelectorAll("[data-agent-id]").length < deskCount &&
+      performance.now() - startedAt < 10_000
+    ) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    return performance.now() - startedAt;
+  }, 100);
+  await expect(desks(page)).toHaveCount(100);
+  expect(openMs).not.toBeNull();
+  expect(openMs as number).toBeLessThan(SC004_OPEN_LIMIT_MS);
+
+  // The find-and-open half: the search locates one named desk and its
+  // click embeds the terminal, inside the 15-second bound.
+  const findStarted = Date.now();
+  await page.getByLabel("Search agents").fill("Agent 087");
+  const desk = desks(page).filter({ hasText: "Agent 087" });
+  await expect(desk).toHaveCount(1);
+  await desk.click();
+  await expect(
+    page.getByLabel("Terminal of Agent 087", { exact: true }),
+  ).toBeFocused();
+  const findOpenMs = Date.now() - findStarted;
+  expect(findOpenMs).toBeLessThan(SC004_FIND_OPEN_LIMIT_MS);
+
+  // The scale edge case holds too: every desk keeps its readable size and
+  // the page scrolls instead of shrinking anything.
+  const deskHeight = await desks(page)
+    .first()
+    .evaluate((element) => element.getBoundingClientRect().height);
+  expect(deskHeight).toBeGreaterThanOrEqual(44);
+  expect(
+    await page.evaluate(
+      () => (document.scrollingElement?.scrollHeight ?? 0) > window.innerHeight,
+    ),
+  ).toBe(true);
+});
+
 test.describe("desk opens the terminal in the scene (D5)", () => {
   test("a click embeds the terminal with focus, no second window", async ({
     page,
@@ -706,6 +880,41 @@ test.describe("T4: return and restore", () => {
       page.getByRole("region", { name: "Office scene" }),
     ).toBeVisible();
     await expect(page.getByRole("region", { name: "Agents" })).toHaveCount(0);
+  });
+
+  test("a switch after a scene restore writes the new view", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: null,
+          agent: null,
+          terminal_open: false,
+          view: "scene",
+        }),
+      },
+    });
+    await page.goto("/");
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const writes = window.__mockCore.settings;
+          return writes.length === 0
+            ? null
+            : JSON.parse(String(writes.at(-1)?.value));
+        }),
+      )
+      .toMatchObject({ view: "panel" });
   });
 
   test("a stored last_view without the view field (a 0003-era write) opens the panel", async ({

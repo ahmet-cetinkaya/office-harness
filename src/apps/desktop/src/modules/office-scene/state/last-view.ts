@@ -1,14 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { CoreClient } from "../../../core/api";
-
-/** The stored `last_view` value (0005 D6, extends the 0003 shape). */
-export interface LastView {
-  project: string | null;
-  agent: string | null;
-  terminal_open: boolean;
-  view: "panel" | "scene";
-}
+import type { LastView } from "../../notification";
 
 const WRITE_INTERVAL_MS = 1_000;
 const SETTING_KEY = "last_view";
