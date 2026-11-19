@@ -189,12 +189,10 @@ An agent that sends directives or creates agents faster than a set limit gets it
 
 ## Clarifications
 
-None yet.
+### Session 2026-11-19 (owner-decided)
 
-## Open questions
-
-- [NEEDS CLARIFICATION: Size cap. 0002 says the office adds no cap on how many agents an agent may create (0002/FR-005, 0002 Out of scope), and this spec adopts that, relying on the creation rate limit and the automatic hold. The owner's pick named "a cap on the tree's depth or size". Depth is already fixed at three levels by 0002. Should this change also add a size cap on agent-created agents (for example 50 per office, 12 per parent), which would modify 0002/FR-005? Recommended: no size cap.]
-- [NEEDS CLARIFICATION: Does an agent hold also refuse actions on the held agent by agents outside its subtree (its parent and the CEO)? This spec says yes (FR-004), so the user can leave one agent alone. The alternative holds only the actions the subtree takes. Recommended: yes, as written.]
+- Q: Should this change add a size cap on agent-created agents (for example 50 per office, 12 per parent), modifying 0002/FR-005? → A: No. 0002/FR-005 stays unchanged; the creation rate limit (A3) and the automatic hold (FR-008) cover runaway creation.
+- Q: Does an agent hold also refuse actions on the held agent by agents outside its subtree (its parent and the CEO)? → A: Yes, as FR-004 says. The user's own actions are never refused (PB-1).
 
 ## Out of scope
 
@@ -203,4 +201,5 @@ None yet.
 - Detecting loops by reading terminal output (A8).
 - Limits on the user's own actions (PB-1).
 - Queueing refused actions (A4).
+- A size cap on how many agents an agent may create; the owner declined it on 2026-11-19 (Clarifications).
 - Changing the tree rules of 0002 (PB-5).
