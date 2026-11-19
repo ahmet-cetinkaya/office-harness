@@ -6,7 +6,7 @@
 - **Build under test:** branch `feat/0001-office-server-and-terminal`.
 - **Overall status:** `blocked`. The run is complete only when every row is PASS or WAIVED (owner). The Linux hands-on rows are still BLOCKED, so the run is blocked.
 - **Owner decision, 2026-11-16:** separate hands-on runs on macOS and Windows are not needed; the CI evidence on Linux, macOS, and Windows is enough. The macOS and Windows hands-on rows are WAIVED (owner), not PASS.
-- **Status of this file:** a draft. No hands-on run has happened yet. Every measured value is empty until a person runs the check. No value in this file is an estimate.
+- **Status of this file:** a draft. On 2026-11-19 an agent ran SC-001, SC-003, and SC-007 on Linux/KDE Wayland against the built app and server of `main` at f6dc663, with fake CLIs; those rows say "agent-run". The other Linux hands-on rows still need a person, a real CLI account, a restart, or a participant. No value in this file is an estimate. Raw evidence (screenshots, traces, logs, timing files) is kept outside the repository, in the QA agent's folder of the office hive (`hive/agents/celal-mwhvybh8/qa/evidence/`); repository readers cannot open it. The agent-run rows therefore states its own method, setup, and measured values. Run setup: debug builds of the desktop app and `office-harnessd`, WebDriver through `tauri-driver`, an isolated data and config folder per run with login start off, fake CLIs (shell scripts) in place of agent CLIs, and no change to system settings.
 
 ### Verdict words
 
@@ -41,7 +41,7 @@
 
 | SC | OS | Method | Measured value | Verdict | Evidence |
 |---|---|---|---|---|---|
-| SC-001 | Linux | 1,000 keystrokes with an echo test CLI; p95 of keydown to xterm.js render | Not measured | BLOCKED | No automated latency test exists. Needs a person to run the measurement. Pass means p95 at most 100 ms. |
+| SC-001 | Linux | 1,000 keystrokes with an echo test CLI; p95 of keydown to xterm.js render | p95 58 ms, p50 52 ms, max 60 ms (DOM updated in the page); next animation frame p95 74 ms, max 76 ms | PASS (agent-run, Linux/KDE Wayland, 2026-11-19) | Real app and server, an echo fake CLI in raw mode. 1,000 keys sent through WebDriver at 50 ms spacing; a keydown listener timestamped each key (performance.now) and a MutationObserver on the terminal rows timestamped the echoed character; 1000 of 1000 matched. Also 100 keys at 300 ms spacing: p50 10 ms, max 20 ms. Pass is p95 at most 100 ms. Excluded: OS input latency (the keys enter the page through the driver, not the keyboard), and the build was a debug build with the DOM renderer. Evidence: `hive/agents/celal-mwhvybh8/qa/evidence/0001-SC-001/`. |
 | SC-001 | macOS | Same as Linux | Not measured | WAIVED (owner) | Waived by owner 2026-11-16, CI evidence on 3 OSes. |
 | SC-001 | Windows | Same as Linux | Not measured | WAIVED (owner) | Waived by owner 2026-11-16, CI evidence on 3 OSes. |
 
@@ -57,7 +57,7 @@
 
 | SC | OS | Method | Measured value | Verdict | Evidence |
 |---|---|---|---|---|---|
-| SC-003 | Linux | Close the app for 60 minutes, then reopen | Not measured | BLOCKED | Needs a 60-minute wait with real or test agents. The automated test `definitions_and_settings_survive_a_restart` in `src/apps/office-harnessd/tests/startup.rs` covers a server restart, not this criterion. |
+| SC-003 | Linux | Close the app for 60 minutes, then reopen | App closed 2 h 53 min; 5 of 5 agents still ran; 5 of 5 terminals showed output written while the app was closed | PASS (agent-run, Linux/KDE Wayland, 2026-11-19) | Real server and debug app of `main` at f6dc663, 5 fake agents that write a numbered line every 20 s. App closed at 19:48:43 (agents at line 2 or 3). At 22:42, `agent.list` showed all 5, and their side logs were at line 180. On reopen, each terminal showed its latest 20 visible lines (162 to 182), all from the closed period. Not covered: real agent CLIs. Evidence: `hive/agents/celal-mwhvybh8/qa/evidence/0001-SC-003/`. |
 | SC-003 | macOS | Same as Linux | Not measured | WAIVED (owner) | Waived by owner 2026-11-16, CI evidence on 3 OSes. |
 | SC-003 | Windows | Same as Linux | Not measured | WAIVED (owner) | Waived by owner 2026-11-16, CI evidence on 3 OSes. |
 
@@ -89,7 +89,7 @@
 
 | SC | OS | Method | Measured value | Verdict | Evidence |
 |---|---|---|---|---|---|
-| SC-007 | Linux | 1-hour network capture filtered to the office-harness processes | Not measured | BLOCKED | Needs a 1-hour capture and a person to read it. No automated test covers this. |
+| SC-007 | Linux | 1-hour network capture filtered to the office-harness processes | 0 outside connections in 2 h 56 min | PASS (agent-run, Linux/KDE Wayland, 2026-11-19) | `strace -f -e trace=network` on the WebDriver launcher and all its children (the desktop app, the `office-harnessd` server it started, and the fake CLIs) from 19:47 to 22:43, plus a second 6-minute app run. Every IPv4 connect or send address was 127.0.0.1; there was no IPv6 address; the other lines were netlink route reads, which open no connection. 363 `ss -tunap` samples over the same period show no socket of the server, the app, or WebKit to an outside address. Not covered: real agent CLIs (the spec does not count them). Evidence: `hive/agents/celal-mwhvybh8/qa/evidence/0001-SC-007/`. |
 | SC-007 | macOS | Same as Linux | Not measured | WAIVED (owner) | Waived by owner 2026-11-16, CI evidence on 3 OSes. |
 | SC-007 | Windows | Same as Linux | Not measured | WAIVED (owner) | Waived by owner 2026-11-16, CI evidence on 3 OSes. |
 
