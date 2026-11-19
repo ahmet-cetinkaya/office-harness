@@ -5,8 +5,6 @@ import {
   APP_SHORTCUT_TABLE,
   DEFAULT_FOCUS_SHORTCUT,
   isAppShortcut,
-  isHeldForTerminal,
-  type KeyTarget,
   parseShortcut,
   pressedAppShortcut,
   pressedTerminalShortcut,
@@ -94,10 +92,10 @@ describe("app shortcut table", () => {
     expect(positions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
-  test("the office hold is a panel key that a focused terminal keeps (0007 A9)", () => {
+  test("a focused terminal lets the office hold out (0007 D9 = b)", () => {
     const hold = pressed("Ctrl+Shift+H");
     expect(pressedAppShortcut(hold)?.kind).toBe("office_hold");
-    expect(pressedTerminalShortcut(hold)).toBeNull();
+    expect(pressedTerminalShortcut(hold)?.kind).toBe("office_hold");
     expect(pressedTerminalShortcut(pressed("Ctrl+Shift+F1"))?.position).toBe(1);
     expect(pressedTerminalShortcut(pressed("Ctrl+Shift+F10"))?.kind).toBe(
       "switcher",
@@ -151,36 +149,5 @@ describe("app shortcut table", () => {
     expect(isAppShortcut("Ctrl+F1")).toBe(false);
     expect(isAppShortcut("Ctrl+Shift")).toBe(false);
     expect(isAppShortcut("")).toBe(false);
-  });
-});
-
-describe("isHeldForTerminal", () => {
-  const officeHold = APP_SHORTCUT_TABLE.find(
-    (entry) => entry.kind === "office_hold",
-  );
-  const switcher = APP_SHORTCUT_TABLE.find(
-    (entry) => entry.kind === "switcher",
-  );
-
-  function targetInside(selectors: string[]): KeyTarget {
-    return {
-      closest: (selector: string) =>
-        selectors.includes(selector) ? { selector } : null,
-    };
-  }
-
-  test("the office hold key pressed in a terminal stays with the CLI", () => {
-    expect(officeHold).toBeDefined();
-    expect(isHeldForTerminal(officeHold!, targetInside([".xterm"]))).toBe(true);
-  });
-
-  test("the office hold key pressed in the panel reaches the panel", () => {
-    expect(isHeldForTerminal(officeHold!, targetInside([]))).toBe(false);
-    expect(isHeldForTerminal(officeHold!, null)).toBe(false);
-  });
-
-  test("a terminal shortcut leaves a terminal for the panel", () => {
-    expect(switcher).toBeDefined();
-    expect(isHeldForTerminal(switcher!, targetInside([".xterm"]))).toBe(false);
   });
 });

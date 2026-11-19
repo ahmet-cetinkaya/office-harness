@@ -29,10 +29,7 @@
     unreadCount,
     type NotificationSnapshot,
   } from "../../notification";
-  import {
-    isHeldForTerminal,
-    pressedAppShortcut,
-  } from "../../../core/shortcuts";
+  import { pressedAppShortcut } from "../../../core/shortcuts";
   import type { PanelStore } from "../state/panel-store.svelte";
   import AgentRow from "../components/agent-row.svelte";
   import AgentSwitcherDialog from "../components/agent-switcher-dialog.svelte";
@@ -201,9 +198,6 @@
     if (document.querySelector("dialog[open]") !== null) return;
     const pressed = pressedAppShortcut(event);
     if (pressed === null) return;
-    // A key that a terminal does not pass on is the CLI's while one has focus.
-    const target = event.target instanceof Element ? event.target : null;
-    if (isHeldForTerminal(pressed, target)) return;
     if (pressed.kind === "office_hold") {
       event.preventDefault();
       void toggleOfficeHold();
