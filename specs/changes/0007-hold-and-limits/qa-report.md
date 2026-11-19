@@ -67,7 +67,7 @@ Paths below are relative to the repository root. `H` is `src/apps/office-harness
 | SC-002 | PASS (automated) | `H/tests/agent_hold.rs`, `an_office_hold_refuses_every_agent_kind_while_the_user_acts_and_types`. |
 | SC-003 | PASS (automated) | `H/tests/agent_hold.rs`, `a_hold_set_before_a_restart_still_refuses_every_agent_action_after_it`. |
 | SC-004 | PASS (automated) | `H/tests/agent_hold.rs`, `a_looping_agent_is_limited_then_held_and_the_owner_is_told_exactly_once`. |
-| SC-005 | PASS (automated) | `D/e2e/hold.spec.ts`, `one key press, Ctrl+Shift+H, holds the office from the panel (SC-005)`. Per D9, the key does not work from a focused terminal (A9). |
+| SC-005 | PASS (automated) | `D/e2e/hold.spec.ts`, `one key press, Ctrl+Shift+H, holds the office from the panel (SC-005)`. The key also holds from a focused terminal (D9 = b, see the spec's Deviations): `Ctrl+Shift+H holds the office while focus is in a terminal (D9 = b)`. |
 | US1, US2, US3 | PASS (automated) | The integration tests of SC-001 to SC-004 and `FR-003`/`FR-004` above, and the three `describe` groups in `D/e2e/hold.spec.ts` (`office hold`, `agent hold`, `limits`). |
 
 ## Edge cases
@@ -90,12 +90,11 @@ Paths below are relative to the repository root. `H` is `src/apps/office-harness
 
 1. **`hold.changed` events can arrive out of order under concurrent changes.** Clients replace their state on each event, so a late event can show an older state until the next change or a resync. `D/src/modules/hold/state/hold-controller.spec.ts`, `an older list answer never overwrites a newer event`, covers the list answer only.
 2. **No test deletes a subtree that has holds.** Only the delete of one held agent and the startup prune have tests.
-3. **`Ctrl+Shift+H` inside a terminal is open with the owner (D9).** The implemented default leaves the key to the CLI. The e2e suite does not check that the app ignores the key inside xterm.
-4. **No test asserts that a CLI process survives a hold.** Typing into the terminal is tested (PB-2).
-5. **No test shows the OS notification of an automatic hold while that agent's terminal is focused.**
-6. **No test races a hold against a directive,** and no test restarts the server to check that rate counts start at 0.
-7. **LOW-6, accepted: an audit rebuild resets the `AUTOINCREMENT` mark.** The effect is harmless, because no code deletes action rows.
-8. **PB-3 has no 0007 test** (see the row above).
+3. **No test asserts that a CLI process survives a hold.** Typing into the terminal is tested (PB-2).
+4. **No test shows the OS notification of an automatic hold while that agent's terminal is focused.**
+5. **No test races a hold against a directive,** and no test restarts the server to check that rate counts start at 0.
+6. **LOW-6, accepted: an audit rebuild resets the `AUTOINCREMENT` mark.** The effect is harmless, because no code deletes action rows.
+7. **PB-3 has no 0007 test** (see the row above).
 
 ## Manual QA
 
