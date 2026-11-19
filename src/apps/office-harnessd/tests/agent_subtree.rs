@@ -343,3 +343,76 @@ async fn an_agent_create_with_a_role_places_the_agent_in_one_step() {
     assert!(!names.contains(&"Sid"), "{names:?}");
     office.serving.stop().await;
 }
+
+/// The contract's `lead` object over the real server, as the desktop's team
+/// form sends it (0002 hierarchy-protocol, `team.create`): the lead is
+/// created and leads the new team in one request. A taken team name creates
+/// no lead, and a lead object with a field it does not take is invalid.
+#[tokio::test]
+async fn a_team_create_with_a_lead_object_creates_the_lead_and_the_team() {
+    let office = Office::open().await;
+    office.clis.add("fake-cli", "echo up; sleep 30");
+    let mut client = office.client().await;
+    let lead = json!({
+        "name": "Lea",
+        "command": "fake-cli",
+        "working_folder": office.work_path(),
+    });
+
+    let team = call(
+        &mut client,
+        1,
+        "team.create",
+        json!({"name": "Api", "lead": lead}),
+    )
+    .await;
+    assert_eq!(team["ok"], true, "{team}");
+    let team_id = team["result"]["id"].as_str().expect("team id").to_owned();
+    let tree = call(&mut client, 2, "hierarchy.tree", json!({})).await;
+    let teams = tree["result"]["teams"].as_array().expect("teams");
+    assert_eq!(teams.len(), 1, "{tree}");
+    assert_eq!(teams[0]["id"], team_id.as_str(), "{tree}");
+    assert_eq!(teams[0]["lead"]["role"], "lead", "{tree}");
+    assert_eq!(teams[0]["lead"]["team_id"], team_id.as_str(), "{tree}");
+
+    let taken = call(
+        &mut client,
+        3,
+        "team.create",
+        json!({"name": "api", "lead": {"name": "Leo", "command": "fake-cli", "working_folder": office.work_path()}}),
+    )
+    .await;
+    assert_eq!(error_text(&taken).0, "conflict", "{taken}");
+    let agents = call(&mut client, 4, "agent.list", json!({})).await;
+    let names: Vec<&str> = agents["result"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .filter_map(|agent| agent["name"].as_str())
+        .collect();
+    assert_eq!(
+        names,
+        vec!["Lea"],
+        "a refused team leaves no lead: {agents}"
+    );
+    let lea = agents["result"][0]["id"].as_str().expect("lead id");
+    assert_eq!(teams[0]["lead"]["id"], lea, "{tree}");
+
+    let extra = call(
+        &mut client,
+        5,
+        "team.create",
+        json!({"name": "Web", "lead": {"name": "Lu", "command": "fake-cli", "role": "ceo"}}),
+    )
+    .await;
+    assert_eq!(error_text(&extra).0, "invalid", "{extra}");
+    let both = call(
+        &mut client,
+        6,
+        "team.create",
+        json!({"name": "Web", "lead": lead, "lead_agent_id": team_id}),
+    )
+    .await;
+    assert_eq!(error_text(&both).0, "invalid", "{both}");
+    office.serving.stop().await;
+}

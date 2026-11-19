@@ -100,20 +100,18 @@ pub fn build_hierarchy_services(
     // FR-003). The creator port calls the agent module's own create and
     // delete use cases, so a seeded create answers exactly like
     // `agent.create` and a refused place leaves no agent behind.
+    let creator: Arc<dyn AgentCreator> = Arc::new(AgentCreatorBridge::new(
+        agent.handlers.use_cases().create_agent.clone(),
+        agent.handlers.use_cases().delete_agent.clone(),
+    ));
     agent.handlers.with_roles(Arc::new(RoleRequestsBridge::new(
-        CreateRoleAgentHandler::new(
-            Arc::clone(&store),
-            Arc::new(AgentCreatorBridge::new(
-                agent.handlers.use_cases().create_agent.clone(),
-                agent.handlers.use_cases().delete_agent.clone(),
-            )) as Arc<dyn AgentCreator>,
-        ),
+        CreateRoleAgentHandler::new(Arc::clone(&store), Arc::clone(&creator)),
         Arc::clone(&store),
     )));
     let tree = Arc::new(TreeQuery::new(Arc::clone(&store)));
     let handlers = Arc::new(HierarchyHandlers::new(HierarchyUseCases {
         tree: Arc::clone(&tree),
-        create_team: CreateTeamHandler::new(Arc::clone(&store)),
+        create_team: CreateTeamHandler::new(Arc::clone(&store)).with_creator(creator),
         delete_team: DeleteTeamHandler::new(Arc::clone(&store)),
         place_agent: PlaceAgentHandler::new(Arc::clone(&store)),
         subtree: subtree(),

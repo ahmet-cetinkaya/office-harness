@@ -2,8 +2,10 @@
 
 use std::sync::Arc;
 
+use hierarchy_application::commands::create_team::{CreateTeamRequest, CreateTeamWithLeadRequest};
 use hierarchy_application::commands::subtree::SubtreeRequest;
 use hierarchy_application::common::errors::HierarchyApplicationError;
+use hierarchy_application::common::ports::AgentSeed;
 use hierarchy_application::queries::tree::TreeAgent;
 use hierarchy_application::{
     CreateTeamHandler, DeleteTeamHandler, PlaceAgentHandler, SubtreeHandler, TreeQuery,
@@ -82,22 +84,39 @@ impl HierarchyHandlers {
         Ok(Success::result(tree_json(&tree)))
     }
 
+    /// The contract's `lead` object creates the lead; `lead_agent_id` picks
+    /// an agent that exists. Exactly one of the two is given.
     fn create_team(&self, request: &Request) -> Result<Success, HandlerError> {
         let name = read_string(&request.fields, "name").ok_or_else(missing("name"))?;
         let project_id = read_id(&request.fields, "project_id");
-        let lead_agent_id =
-            read_agent_id(&request.fields, "lead_agent_id").ok_or_else(missing("lead_agent_id"))?;
-        let team = self
-            .use_cases
-            .create_team
-            .handle(
-                &hierarchy_application::commands::create_team::CreateTeamRequest {
+        let create_team = &self.use_cases.create_team;
+        let team = match (
+            request.fields.get("lead"),
+            request.fields.get("lead_agent_id"),
+        ) {
+            (Some(lead), None) => create_team.handle_with_new_lead(CreateTeamWithLeadRequest {
+                name,
+                project_id,
+                lead: lead_seed(lead, project_id)?,
+            }),
+            (None, Some(_)) => {
+                let lead_agent_id =
+                    read_agent_id(&request.fields, "lead_agent_id").ok_or_else(|| {
+                        HandlerError::invalid("lead_agent_id is not a valid identifier".to_owned())
+                    })?;
+                create_team.handle(&CreateTeamRequest {
                     name,
                     project_id,
                     lead_agent_id,
-                },
-            )
-            .map_err(|error| handler_error(&error))?;
+                })
+            }
+            _ => {
+                return Err(HandlerError::invalid(
+                    "give either lead or lead_agent_id".to_owned(),
+                ));
+            }
+        }
+        .map_err(|error| handler_error(&error))?;
         Ok(Success::result(team_json(&team)).with_event(tree_event("team.created")))
     }
 
@@ -212,6 +231,37 @@ fn team_json(team: &hierarchy_domain::Team) -> Value {
         "name": team.name().display(),
         "project_id": team.project_id().map(|id| id.as_uuid_text()),
         "lead_agent_id": team.lead_agent_id().as_uuid_text(),
+    })
+}
+
+/// The fields a `lead` object may carry: the `agent.create` fields the team
+/// form sends. The team's project is the lead's, so a lead without a folder
+/// starts in the project folder.
+const LEAD_FIELDS: [&str; 3] = ["name", "command", "working_folder"];
+
+fn lead_seed(
+    lead: &Value,
+    project_id: Option<kernel::ProjectId>,
+) -> Result<AgentSeed, HandlerError> {
+    let fields = lead
+        .as_object()
+        .ok_or_else(|| HandlerError::invalid("lead is not an object".to_owned()))?;
+    if let Some(unknown) = fields
+        .keys()
+        .find(|key| !LEAD_FIELDS.contains(&key.as_str()))
+    {
+        return Err(HandlerError::invalid(format!(
+            "{unknown} is not a field of lead"
+        )));
+    }
+    Ok(AgentSeed {
+        name: read_string(fields, "name").ok_or_else(missing("lead.name"))?,
+        command: read_string(fields, "command").ok_or_else(missing("lead.command"))?,
+        working_folder: read_string(fields, "working_folder")
+            .filter(|folder| !folder.is_empty())
+            .map(std::path::PathBuf::from),
+        project_id,
+        additions: None,
     })
 }
 
