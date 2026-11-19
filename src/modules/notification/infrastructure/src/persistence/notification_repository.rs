@@ -21,8 +21,8 @@ const SELECT_NOTIFICATION: &str = "SELECT id, agent_id, agent_name, event, creat
 /// insert first, so the order never depends on the random ids.
 ///
 /// The unread-first term is an expression over the read state, and no index
-/// matches an expression, so no index serves this `ORDER BY` and SQLite
-/// scans the table once and sorts. The [`LIST_LIMIT`] cap bounds the
+/// on this table covers that expression, so no index serves this `ORDER BY`
+/// and SQLite scans the table once and sorts. The [`LIST_LIMIT`] cap bounds the
 /// sort: it keeps only the top rows, so the memory of the listing grows with
 /// the cap, not with the table.
 const LIST_ORDER: &str = "ORDER BY read_at IS NOT NULL, created_at DESC, rowid DESC";
