@@ -8,10 +8,13 @@ export interface LastView {
   agent: string | null;
   /** Whether that agent's terminal was open. */
   terminal_open: boolean;
+  /** The view that was open (0005 D6). */
+  view: "panel" | "scene";
 }
 
 /** Parses the stored text. Anything that is not the documented shape is
- * ignored, so the app falls back to its default view (D6). */
+ * ignored, so the app falls back to its default view (D6). A missing or
+ * unknown `view` (a 0003-era write) means the panel. */
 export function parseLastView(text: unknown): LastView | null {
   if (typeof text !== "string" || text === "") return null;
   let view: unknown;
@@ -31,7 +34,12 @@ export function parseLastView(text: unknown): LastView | null {
   ) {
     return null;
   }
-  return { project, agent, terminal_open: fields.terminal_open };
+  return {
+    project,
+    agent,
+    terminal_open: fields.terminal_open,
+    view: fields.view === "scene" ? "scene" : "panel",
+  };
 }
 
 /** How the restore treats the stored agent (US3 scenario 2, edge cases). */

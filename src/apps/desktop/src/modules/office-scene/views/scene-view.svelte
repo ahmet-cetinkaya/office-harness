@@ -1,12 +1,10 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!--
-  Scene build progress (0005): T3 skeleton, T5 keyboard/announce/reduced
-  motion, and the last_view writer have landed. A later commit adds: the
-  panel's name matcher swapped into `searchMatches` (D7, research R2), the
-  restore-on-start read of the `view` field (T4c), plus the e2e for
-  departments from a seeded tree, in-place updates (SC-002, SC-003), the
-  PB-4 recorded-call assertion, and the role, team, and settings seeds that
-  test/mock-core-extensions adds to mock-core.
+  Scene build progress (0005): the T3 skeleton, the T5 keyboard,
+  announcements, and reduced motion, the last_view writer with its restore,
+  and the panel's name matcher have all landed. The remaining e2e waits on
+  test/mock-core-extensions: departments from a seeded tree and the
+  SC-004 100-agent measurement.
 -->
 <script lang="ts">
   import { tick } from "svelte";
@@ -32,9 +30,17 @@
     projectChoice: string | null;
     /** Applies the switcher's next choice, so both views share one choice (D7). */
     onProjectChoice: (choice: string | null) => void;
+    /** The desk whose terminal is embedded, or none (the shell records it). */
+    openAgentId?: string | null;
   }
 
-  let { store, hierarchy, projectChoice, onProjectChoice }: Props = $props();
+  let {
+    store,
+    hierarchy,
+    projectChoice,
+    onProjectChoice,
+    openAgentId = $bindable(null),
+  }: Props = $props();
 
   const office = $derived(store.snapshot);
   const controller = $derived(store.controller);
@@ -96,6 +102,13 @@
       .filter((floor) => floor.groups.length > 0);
   }
 
+  /** The ids of the desks on screen, in reading order (D9's focus walks). */
+  function shownOrder(): string[] {
+    return shown
+      .flatMap((floor) => floor.groups.flatMap((group) => group.agents))
+      .map((agent) => agent.id);
+  }
+
   // The desk of the first match takes focus on each search change (D7).
   // Only the text is read inside the effect: the agents and the desk order
   // are read in the async tail, so a pushed status change never steals
@@ -147,7 +160,9 @@
     const desk = event.target as HTMLElement;
     const agentId = desk.getAttribute("data-agent-id");
     if (agentId === null) return;
-    const floor = floors.find((candidate) =>
+    // The neighbours come from the shown floors, so focus never aims at a
+    // desk an active search has hidden.
+    const floor = shown.find((candidate) =>
       deskIdsOfFloor(candidate).includes(agentId),
     );
     if (floor === undefined) return;
@@ -168,6 +183,15 @@
   function announce(text: string): void {
     announcement = text;
   }
+
+  // The zero-match search is visible text and a live-region message, so a
+  // screen reader hears the empty result (D9); spaces-only is no search
+  // and says nothing.
+  $effect(() => {
+    if (searchText.trim() !== "" && shown.length === 0) {
+      announce("No desk matches the search.");
+    }
+  });
 
   // The snapshot comparison walks the previous agents by id, so a desk
   // status change is found however it arrives (event, resync, reload).
@@ -204,7 +228,10 @@
     const agentId = desk.getAttribute("data-agent-id");
     if (agentId === null) return;
     focusedAgentId = agentId;
-    focusedSeat = deskOrder.findIndex((agent) => agent.id === agentId);
+    // The seat is kept in the shown order, so a deletion under an active
+    // search moves focus to the next rendered desk, never a hidden one.
+    const shownIds = shownOrder();
+    focusedSeat = shownIds.indexOf(agentId);
   }
 
   function ondesksfocusout(event: FocusEvent): void {
@@ -220,11 +247,15 @@
       ) {
         return;
       }
-      const survivors = deskOrder.map((agent) => agent.id);
+      const survivors = shownOrder();
       const next = survivors[seat] ?? survivors[seat - 1];
       const heading = document.getElementById(EMPTY_HEADING_ID);
+      // The announcement follows the focus, never leads it: a desk the
+      // search has hidden takes no focus and makes no claim (D9).
       if (next !== undefined) {
-        deskElement(next)?.focus();
+        const target = deskElement(next);
+        if (target === null) return;
+        target.focus();
         const agent = office.agents.find((candidate) => candidate.id === next);
         announce(`Focus moved to ${agent?.name ?? next}.`);
       } else if (heading !== null) {
@@ -238,8 +269,6 @@
   // no second window; the office selection is never touched (FR-006). A
   // freshly mounted terminal focuses itself once the attach answers; an
   // already open one takes focus here, as the panel does.
-  let openAgentId = $state<string | null>(null);
-
   function openDesk(agentId: string): void {
     const wasOpen = openAgentId === agentId;
     openAgentId = agentId;
@@ -275,7 +304,7 @@
   {/if}
 
   {#if office.phase === "loading"}
-    <p role="status" class="text-neutral-700">Loading the office.</p>
+    <p class="text-neutral-700">Loading the office.</p>
   {:else if office.phase === "failed"}
     <FailureMessage
       lead="The office did not load."
@@ -325,8 +354,10 @@
     </div>
 
     {#if shown.length === 0}
-      <p role="status" class="text-neutral-700">No desk matches the search.</p>
+      <p class="text-neutral-700">No desk matches the search.</p>
     {:else}
+      <!-- The zero-match case routes through the one live region below,
+        so a screen reader hears it too (D9). -->
       <div
         class="flex flex-col gap-4"
         onfocusin={ondesksfocusin}
