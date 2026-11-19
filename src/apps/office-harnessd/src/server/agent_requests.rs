@@ -142,9 +142,11 @@ impl AgentGateway {
             disk_failure,
         } = self.agents.handle(request);
         self.raise(disk_failure.as_deref());
-        if request.kind == DELETE_REQUEST && matches!(response, Response::Success { .. }) {
+        if request.kind == DELETE_REQUEST {
             // A deleted agent leaves no hold behind (0007 D10); a subtree
-            // delete takes the same path.
+            // delete takes the same path. It runs on failure too, because a
+            // subtree delete that fails part way keeps the agents it already
+            // deleted, and pruning a missing agent's hold is idempotent.
             self.holds.forget_deleted_agents();
         }
         self.add_last_lines(&mut response);
