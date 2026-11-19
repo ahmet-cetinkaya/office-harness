@@ -18,10 +18,12 @@ pub enum ActionKind {
     TeamDelete,
     Directive,
     Refused,
+    Hold,
+    Release,
 }
 
 impl ActionKind {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 12] = [
         Self::Create,
         Self::Start,
         Self::Stop,
@@ -32,6 +34,8 @@ impl ActionKind {
         Self::TeamDelete,
         Self::Directive,
         Self::Refused,
+        Self::Hold,
+        Self::Release,
     ];
 
     /// The stored and wire name.
@@ -48,6 +52,8 @@ impl ActionKind {
             Self::TeamDelete => "team_delete",
             Self::Directive => "directive",
             Self::Refused => "refused",
+            Self::Hold => "hold",
+            Self::Release => "release",
         }
     }
 }

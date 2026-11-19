@@ -113,7 +113,7 @@ impl NotificationBridge {
         let Some((agent_id, event)) = notification_of_frame(frame) else {
             return;
         };
-        self.record(agent_id, event);
+        self.record(agent_id, event, None);
     }
 
     /// Records a bell of the terminal's current run; an earlier run's bell is
@@ -125,10 +125,20 @@ impl NotificationBridge {
         if self.runtime.current_run(item.agent_id) != Some(item.run) {
             return;
         }
-        self.record(item.agent_id, NotificationEvent::Bell);
+        self.record(item.agent_id, NotificationEvent::Bell, None);
     }
 
-    fn record(&self, agent_id: AgentId, event: NotificationEvent) {
+    /// Records that the office held the agent after its limit refusals; the
+    /// limit's name travels as the row's detail (0007 D7).
+    pub fn record_auto_hold(&self, agent_id: AgentId, limit_name: &str) {
+        self.record(
+            agent_id,
+            NotificationEvent::AutoHold,
+            Some(limit_name.to_owned()),
+        );
+    }
+
+    fn record(&self, agent_id: AgentId, event: NotificationEvent, detail: Option<String>) {
         let name = match self.name_of(agent_id) {
             Ok(name) => name,
             Err(error) => return self.report_lookup_failure(&error, agent_id, event),
@@ -138,6 +148,7 @@ impl NotificationBridge {
             agent_name: name,
             event,
             at: self.clock.now(),
+            detail,
         });
         match created {
             // A coalesced bell adds no row and no event.

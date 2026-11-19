@@ -26,7 +26,17 @@ impl ActionLog for MemoryLog {
         let entries = self.0.lock().expect("lock");
         Ok(entries
             .iter()
-            .filter(|entry| entry.record.target_agent_id == agent_id)
+            .filter(|entry| entry.record.target_agent_id == Some(agent_id))
+            .cloned()
+            .collect())
+    }
+
+    fn list_office_level(&self) -> Result<Vec<ActionEntry>, AuditError> {
+        let entries = self.0.lock().expect("lock");
+        Ok(entries
+            .iter()
+            .filter(|entry| entry.record.target_agent_id.is_none())
+            .rev()
             .cloned()
             .collect())
     }
@@ -35,7 +45,7 @@ impl ActionLog for MemoryLog {
 fn record(agent_id: AgentId, action: ActionKind, at: i64) -> ActionRecord {
     ActionRecord {
         actor: Actor::User,
-        target_agent_id: agent_id,
+        target_agent_id: Some(agent_id),
         action,
         result: ActionResult::Ok,
         at: Timestamp::from_unix_millis(at),

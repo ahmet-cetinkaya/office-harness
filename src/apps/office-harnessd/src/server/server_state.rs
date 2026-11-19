@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use access_application::commands::authenticate_agent_call::AgentAuthenticationHandler;
 use access_application::commands::authenticate_connection::AuthenticationHandler;
+use hierarchy_application::commands::hold::HoldService;
 use hierarchy_application::commands::send_directive::SendDirectiveHandler;
 use hierarchy_application::queries::tree::TreeQuery;
 use tokio::sync::{Semaphore, watch};
@@ -14,6 +15,7 @@ use super::agent_requests::AgentGateway;
 use super::dispatcher::Dispatcher;
 use super::event_hub::EventHub;
 use super::hierarchy_requests::HierarchyGateway;
+use super::hold_requests::HoldGateway;
 use super::notification_requests::NotificationGateway;
 use super::restart_signal::RestartSignal;
 use super::server_options::ServerOptions;
@@ -31,6 +33,11 @@ pub struct ServerState {
     pub terminals: Arc<TerminalGateway>,
     pub agents: AgentGateway,
     pub hierarchy: HierarchyGateway,
+    /// The user's `hold.*` and `office.actions` requests. Only the user
+    /// connection routes to it; the agent connection never does (0007).
+    pub holds: HoldGateway,
+    /// The gate the agent-call gateway asks before an office request runs.
+    pub hold_service: Arc<HoldService>,
     /// Sends one directive from this agent to its member (FR-009), answered
     /// on the agent connections.
     pub send_directive: Arc<SendDirectiveHandler>,

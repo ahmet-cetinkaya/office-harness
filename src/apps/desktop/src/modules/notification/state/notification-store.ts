@@ -26,6 +26,7 @@ export const INITIAL_NOTIFICATIONS: NotificationSnapshot = {
 };
 
 const EVENT_NOTIFICATION_CREATED = "notification.created";
+const EVENT_AUTO_HOLD = "auto_hold";
 
 /**
  * Owns the notification list and the OS-notification rule (FR-006, D5, D7).
@@ -94,7 +95,12 @@ export function createNotificationController(
   async function handleCreated(event: ServerEvent): Promise<void> {
     const row = rowOf(event);
     if (row === null) return;
-    const isOnScreen = row.agent_id === selectedAgentId() && isWindowFocused();
+    // An automatic hold is never on screen: the owner must see it even while
+    // watching that agent's terminal (0007, MODIFIED 0003/FR-006).
+    const isOnScreen =
+      row.event !== EVENT_AUTO_HOLD &&
+      row.agent_id === selectedAgentId() &&
+      isWindowFocused();
     if (isOnScreen) {
       // The user watches this agent's terminal, so an OS notification adds
       // nothing (FR-006 exception b, A7): the row shows as read at once.
