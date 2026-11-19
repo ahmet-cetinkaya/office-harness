@@ -27,6 +27,7 @@ The PRD asks "what is each agent doing now?". The agent list of 0003 shows each 
 | Directive | As defined in 0002. |
 | Agent list | As defined in 0003. |
 | Task text | The last task the office gave an agent: the text of the last directive it received, or the text the user set. |
+| Receives (a directive) | The office has entered the directive into the agent's terminal (0002/FR-010). A directive that the office refuses is not received. |
 | Task line | The task text as shown in the agent list: its first line, shortened, with its age. |
 
 ## User stories
@@ -42,10 +43,10 @@ The user sees, in the agent list, the last task each agent was given and how lon
 **Scenarios:**
 
 1. Given lead L sends member M a directive, When the user looks at the agent list, Then M's row shows the directive's first line, up to 80 characters, and the time since it was given, labelled as the task given.
-2. Given the directive's text has more than 80 characters in its first line or more than one line, When the user looks at M's row, Then the row shows the first 80 characters of the first line with an ellipsis, and M's details show the full text.
+2. Given the task text has more than 80 characters in its first line or more than one line, When the user looks at the row, Then the row shows the first 80 characters of the first line with an ellipsis, and M's details show the full text.
 3. Given M has a task text, When M's CLI prints output or changes its window title, Then the task line does not change.
 4. Given M has a task text, When a new task starts on M, Then M's task line is empty.
-5. Given a directive holds control characters or terminal escape codes, When the user looks at the row and the details, Then they show the text without applying those codes.
+5. Given a task text holds control characters or terminal escape codes (for example text the user pasted), When the user looks at the row and the details, Then they show the text without applying those codes.
 
 ### US2 — Set or correct the task text myself (Priority: P2)
 
@@ -67,7 +68,7 @@ The user sets or edits an agent's task text in its details, for agents that get 
 
 - **FR-001** (US1): THE SYSTEM SHALL show, for each agent with a task text, a task line with the first line of the task text, up to 80 characters followed by an ellipsis when shortened, and the time since the task text was set, labelled as the task given.
 - **FR-002** (US1): WHEN an agent receives a directive, THE SYSTEM SHALL set the agent's task text to the directive's text and its time to the time of the directive.
-- **FR-003** (US2): WHEN the user sets, edits, or clears an agent's task text in the agent's details, THE SYSTEM SHALL apply that text and record the change in the action record with the user as actor.
+- **FR-003** (US2): WHEN the user sets, edits, or clears an agent's task text in the agent's details, THE SYSTEM SHALL apply that text and record the change in the action record with the user as actor. IF the text has more than 8,192 characters, THEN THE SYSTEM SHALL refuse it and name the limit.
 - **FR-004** (US1): WHEN a new task starts on an agent, THE SYSTEM SHALL clear the agent's task text.
 - **FR-005** (US1): THE SYSTEM SHALL show the full task text in the agent's details.
 - **FR-006** (US1): THE SYSTEM SHALL show the task line and the task text without applying any control character or terminal escape code in them.
@@ -122,7 +123,7 @@ The user sets or edits an agent's task text in its details, for agents that get 
 
 - **SC-001:** Within 2 seconds after a directive, the target's row shows the directive's first line, up to 80 characters, and its age.
 - **SC-002:** While an agent prints output and changes its window title for 5 minutes, its task line changes 0 times except for its age.
-- **SC-003:** A directive with newlines and terminal escape codes shows as one line in the row with 0 applied codes.
+- **SC-003:** A task text with newlines and terminal escape codes shows as one line in the row with 0 applied codes.
 - **SC-004:** After a new task starts, 100% of affected agents show no task line until the next directive or user edit.
 - **SC-005:** After a restart of the background server, 100% of task texts and their ages are the same as before.
 
@@ -131,11 +132,12 @@ The user sets or edits an agent's task text in its details, for agents that get 
 | Case | Kind | Required behavior |
 |---|---|---|
 | An agent never got a directive and the user set nothing. | Empty | No task line (FR-001). |
-| A directive is empty or only spaces. | Empty | The task text is cleared; no line shows. |
+| The user sets a task text that is empty or only spaces. | Empty | The task text is cleared; no line shows. |
+| A user task text of exactly 8,192 characters is accepted; 8,193 is refused. | Boundary | The refusal names the limit (FR-003). |
 | The first line is exactly 80 characters. | Boundary | Shown whole, without an ellipsis (FR-001). |
-| A directive holds escape codes or control characters. | Invalid | Shown as text without applying them (FR-006). |
+| A task text holds escape codes or control characters (for example text the user pasted). | Invalid | Shown as text without applying them (FR-006). |
 | Two directives arrive at the same moment. | Concurrent | The task text is the one the office entered into the terminal last. |
-| A directive is refused (for example under 0007 or 0002/FR-009). | Invalid | The task text does not change; only directives the agent received set it. |
+| A directive that the office refuses (for example under 0007 or 0002/FR-009, or blank text or text with control characters, 0002 as built). | Invalid | The task text does not change; only directives the agent received set it. |
 | The user edits the task text while a directive arrives. | Concurrent | The later of the two is kept; both are in the action record. |
 | The agent is deleted. | Boundary | Its task text goes with it. |
 | The task text holds sensitive text and the screen is shared. | Failure | The office shows it like any other row text; hiding it is out of scope. |
@@ -150,7 +152,12 @@ The user sets or edits an agent's task text in its details, for agents that get 
 
 ## Clarifications
 
-None yet.
+### Session 2026-11-19 (review edits)
+
+- Q: Can a directive be multi-line, blank, or hold escape codes? → A: No; 0002 as built refuses those directives, so the multi-line and escape-code cases come from the user's own task text (US1 scenarios 2 and 5, SC-003, Edge cases).
+- Q: Is the user's task text limited in length? → A: Yes, to 8,192 characters, the same bound as a directive (FR-003).
+- Q: Does the office scene show the task line? → A: No; the desks keep name, status, and last output line (Out of scope).
+- Q: When does an agent receive a directive? → A: When the office has entered it into the agent's terminal; a refused directive is not received (Terms).
 
 ## Out of scope
 
@@ -159,3 +166,4 @@ None yet.
 - A task history per agent beyond the action record.
 - Hiding or blurring task text on a shared screen.
 - Giving the new-task action a text that the office types into the CLI.
+- Showing the task line on the office scene's desks (0005); the desks keep name, status, and last output line.
