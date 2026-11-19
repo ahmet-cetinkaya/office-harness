@@ -882,6 +882,41 @@ test.describe("T4: return and restore", () => {
     await expect(page.getByRole("region", { name: "Agents" })).toHaveCount(0);
   });
 
+  test("a switch after a scene restore writes the new view", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: null,
+          agent: null,
+          terminal_open: false,
+          view: "scene",
+        }),
+      },
+    });
+    await page.goto("/");
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const writes = window.__mockCore.settings;
+          return writes.length === 0
+            ? null
+            : JSON.parse(String(writes.at(-1)?.value));
+        }),
+      )
+      .toMatchObject({ view: "panel" });
+  });
+
   test("a stored last_view without the view field (a 0003-era write) opens the panel", async ({
     page,
   }) => {
