@@ -334,7 +334,6 @@ fn an_office_hold_refusal_beats_the_limit_and_journals_nothing_itself() {
     fixture.service.set_hold(HoldScope::Office).expect("set");
     let refusal = fixture.lifecycle(MEMBER).unwrap_err();
     assert_eq!(refusal.reason, "the office is on hold");
-    assert!(!refusal.holds_changed);
     // The caller of `guard` journals a refusal, with its action and text;
     // only the user's own hold is in the journal.
     assert_eq!(
@@ -380,7 +379,7 @@ fn the_exact_limit_passes_and_the_next_action_is_refused() {
     fixture.exhaust_lifecycle(MEMBER);
     let refusal = fixture.lifecycle(MEMBER).unwrap_err();
     assert!(refusal.reason.contains("allows 10 per 60 seconds"));
-    assert!(!refusal.holds_changed);
+    assert_eq!(fixture.recorder.count(is_held), 0);
 }
 
 #[test]
@@ -388,10 +387,10 @@ fn the_third_limit_refusal_holds_the_caller_once_and_notifies_once() {
     let fixture = fixture();
     fixture.exhaust_lifecycle(MEMBER);
     for _ in 1..AUTO_HOLD_REFUSAL_COUNT {
-        assert!(!fixture.lifecycle(MEMBER).unwrap_err().holds_changed);
+        fixture.lifecycle(MEMBER).unwrap_err();
     }
     let third = fixture.lifecycle(MEMBER).unwrap_err();
-    assert!(third.holds_changed);
+    assert_eq!(fixture.recorder.count(is_held), 1);
     assert!(third.reason.contains("allows 10 per 60 seconds"));
     let held = fixture.service.list().agents;
     assert_eq!(held.len(), 1);
@@ -410,7 +409,6 @@ fn the_third_limit_refusal_holds_the_caller_once_and_notifies_once() {
     for _ in 0..2 {
         let later = fixture.lifecycle(MEMBER).unwrap_err();
         assert!(later.reason.contains("on hold"));
-        assert!(!later.holds_changed);
     }
     assert_eq!(fixture.recorder.count(is_notification), 1);
     assert_eq!(fixture.recorder.count(is_held), 1);
@@ -427,7 +425,6 @@ fn a_failed_automatic_hold_write_is_reported_and_retried_on_the_next_refusal() {
         last = Some(fixture.lifecycle(MEMBER).unwrap_err());
     }
     let last = last.expect("refusals");
-    assert!(!last.holds_changed);
     assert!(last.reason.contains("allows"));
     assert_eq!(fixture.service.list().agents.len(), 0);
     assert_eq!(fixture.recorder.count(is_notification), 0);
@@ -437,8 +434,7 @@ fn a_failed_automatic_hold_write_is_reported_and_retried_on_the_next_refusal() {
     // The tracker kept its history, so the very next limit refusal tries
     // the hold again, and it succeeds once the disk works.
     fixture.allow_writes();
-    let retried = fixture.lifecycle(MEMBER).unwrap_err();
-    assert!(retried.holds_changed);
+    fixture.lifecycle(MEMBER).unwrap_err();
     assert_eq!(fixture.service.list().agents.len(), 1);
     assert_eq!(fixture.recorder.count(is_notification), 1);
     assert_eq!(fixture.recorder.count(is_held), 1);
@@ -467,7 +463,7 @@ fn limit_refusals_spread_past_the_window_do_not_hold_the_caller() {
         // Fresh allowance each round: the old takes age out with the clock.
         fixture.advance(RATE_WINDOW_STEP_MILLIS);
         fixture.exhaust_lifecycle(MEMBER);
-        assert!(!fixture.lifecycle(MEMBER).unwrap_err().holds_changed);
+        fixture.lifecycle(MEMBER).unwrap_err();
     }
     assert_eq!(fixture.service.list().agents.len(), 0);
 }

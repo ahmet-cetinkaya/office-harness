@@ -42,8 +42,8 @@ impl SendDirectiveHandler {
     }
 
     /// Puts the hold and rate-limit gate in front of the terminal write.
-    /// The gate journals its own refusals, so the directive journal adds
-    /// nothing for them (0007).
+    /// The gate journals no refusal; this handler journals each one with the
+    /// target and the text (0007).
     #[must_use]
     pub fn with_hold_guard(mut self, hold_guard: Arc<HoldService>) -> Self {
         self.hold_guard = Some(hold_guard);
