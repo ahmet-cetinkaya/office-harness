@@ -14,7 +14,7 @@ The owner runs several agents on one git repository. Today they share one workin
 ## Context
 
 - Source of truth: `docs/PRD.md`. Section 4.1 says an agent starts as the user's shell would and office-harness writes nothing to the CLI's configuration; this change keeps both because it is opt-in and touches only the repository's git data and a folder that office-harness owns.
-- This change depends on 0001 (agents, working folder, the action record, durability) and 0002 (deleting an agent with descendants). References such as `0001/FR-012` point to requirements in those changes.
+- This change depends on 0001 (agents, working folder, the action record, durability), 0002 (deleting an agent with descendants), and 0009 (agent and team templates). References such as `0001/FR-012` point to requirements in those changes.
 - A worktree separates files, not the repository's history: every worktree of a repository shares its branches and commits. The office promises separate folders and branches, not a separate history.
 - Stack decision, made by the owner on 2026-11-15, as in 0001. It is a recorded decision, not a requirement of this spec.
 - The requirements below describe behavior only. The plan decides how to build them.
@@ -78,6 +78,12 @@ When the user deletes an agent that has an own worktree, he chooses whether to k
 - **FR-006** (US2): IF the user chooses remove and a worktree has uncommitted changes, THEN THE SYSTEM SHALL name the number of changed files and remove that worktree only after a second confirmation.
 - **FR-007** (US2): WHEN the office removes a worktree, THE SYSTEM SHALL remove its folder and the repository's record of it, SHALL delete the agent's branch only when the branch has no commits that its base lacks, and otherwise SHALL keep the branch and name it.
 - **FR-008** (US1): IF an agent's worktree folder is missing when the agent starts, THEN THE SYSTEM SHALL NOT start the CLI, and SHALL say that the worktree folder is missing.
+- **FR-009** (US1): WHEN the user creates an agent or a team from a template whose entry has own worktree on, THE SYSTEM SHALL create each such agent with its own branch and worktree as FR-002 does, from the base of the chosen folder; IF the folder is not inside a git repository, THEN THE SYSTEM SHALL create nothing (0009/FR-005) and say that own worktree needs a git repository.
+
+### MODIFIED
+
+- **0009/FR-001** (US1): THE SYSTEM SHALL let the user save an agent template with a template name, an agent name pattern, a CLI command, an optional working folder, office additions, an optional role, and the own worktree choice (0010), either as a new template or as a copy of an existing agent's definition.
+- **0009/FR-003** (US2): THE SYSTEM SHALL let the user save a team template with a template name, one lead entry, and one or more member entries, where each entry is an agent template, with its own worktree choice, and each member entry has a count.
 
 ### PRESERVED
 
@@ -149,27 +155,30 @@ When the user deletes an agent that has an own worktree, he chooses whether to k
 | The agent is running when the user deletes it. | Concurrent | The 0001 delete stops it first; the worktree question follows. |
 | Deleting a lead and members with own worktrees, some with uncommitted changes. | Boundary | One question for all; the second confirmation names each worktree with changes (FR-005, FR-006). |
 | The agent's branch is checked out somewhere else when the office removes the worktree. | Concurrent | The office keeps the branch and names it (FR-007). |
+| The base branch no longer exists when the worktree is removed. | Boundary | The office keeps the agent's branch and names it (FR-007). |
 | The user wants own worktree on an existing agent. | Invalid | Not offered; the choice exists only at creation (A5). |
 | The desktop app cannot reach the background server or its token is rejected. | Unauthorized | The 0001 states show (0001/FR-026, 0001/FR-027). |
 
 ## Assumptions
 
 - **A1:** The office-owned folder for worktrees is outside every repository, so the user's repository needs no ignore entry and the CLI's configuration is untouched.
-- **A2:** The base is the branch checked out in the chosen folder, or its commit when no branch is checked out. The user can pick another local branch in the create form.
-- **A3:** The branch name is `office-harness/<agent name>-<short id>`; when that name exists, the office uses the next free short id.
+- **A2:** The base is the branch checked out in the chosen folder, or its commit when no branch is checked out. The user can pick another local branch in the create form. The base is never stored in a template; it is read from the chosen folder at creation (FR-009). The 0009 template file carries the own worktree choice as one more template value, so 0009 SC-002 covers its export and import.
+- **A3:** The branch name is `office-harness/<agent name>-<short id>`; when that name exists, the office uses the next free short id. Characters that git does not allow in a branch name are replaced by `-`; the form shows the resulting name before create (FR-001).
 - **A4:** A new task and a continued session (0001/FR-024, 0001/FR-025) keep the same worktree and branch. The office does not commit, merge, push, or rebase anything.
 - **A5:** The choice exists only when an agent is created. Turning it on or off for an existing agent is out of scope.
 - **A6:** A kept worktree is no longer managed by the office after the delete: the office shows its folder and branch once, and the user owns them from then on.
 - **A7:** Only the user's own create offers the choice in this change. Agents that create agents under 0002 create them without own worktree.
 - **A8:** Untracked files of the user's folder, such as local environment files, are not copied into a worktree; the create form says so.
+- **A9:** Files that git ignores are not counted as uncommitted changes and are removed with the worktree; the delete question says so (FR-005).
 
 ## Clarifications
 
-None yet.
+### Session 2026-11-19 (review edits)
 
-## Open questions
-
-- [NEEDS CLARIFICATION: Templates. The owner's main case is a team of members on one repository, and 0009 (draft) creates such teams from templates. Should an agent template and a team template entry also carry the "own worktree" choice, so a team created from a template gets one worktree per member? Recommended: yes, as a small amendment to 0009 once both changes are approved; this change keeps it out of scope.]
+- Q: Do agent templates and team template entries carry the own worktree choice? → A: Yes (owner, through the review gate, 2026-11-19). A team created from such a template gets one worktree per member that has the choice (FR-009).
+- Q: What happens to characters in an agent name that git does not allow in a branch name? → A: They are replaced by `-`, and the form shows the resulting name (A3).
+- Q: Are files that git ignores counted as uncommitted changes? → A: No; they are removed with the worktree and the delete question says so (A9).
+- Q: What if the base branch is gone when the worktree is removed? → A: The office keeps the agent's branch and names it (Edge cases).
 
 ## Out of scope
 
