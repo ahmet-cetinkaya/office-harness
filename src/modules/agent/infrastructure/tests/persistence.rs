@@ -123,6 +123,28 @@ fn settings_default_until_saved() {
 }
 
 #[test]
+fn a_stored_focus_shortcut_that_became_reserved_falls_back_to_the_default() {
+    let folder = tempfile::tempdir().expect("folder");
+    let database = database_in(&folder);
+    drop(open_office(&database));
+    // Valid before 0007 reserved Ctrl+Shift+H for the office hold.
+    Connection::open(&database)
+        .expect("open database")
+        .execute(
+            "INSERT INTO agent_settings (key, value) VALUES ('focus_shortcut', 'Ctrl+Shift+H')",
+            [],
+        )
+        .expect("store the old shortcut");
+
+    let loaded = open_office(&database)
+        .settings
+        .load()
+        .expect("settings load");
+
+    assert_eq!(loaded.focus_shortcut, Settings::default().focus_shortcut);
+}
+
+#[test]
 fn only_running_agents_become_interrupted_and_none_starts() {
     let folder = tempfile::tempdir().expect("folder");
     let office = open_office(&database_in(&folder));

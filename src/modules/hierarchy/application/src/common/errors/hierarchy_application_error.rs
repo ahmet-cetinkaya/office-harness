@@ -29,6 +29,10 @@ pub enum HierarchyApplicationError {
     NotFound(String),
     #[error("conflict: {0}")]
     Conflict(String),
+    /// A hold or a rate limit refused the action; the text is the reason
+    /// alone, and the wire code is `refused` (0007).
+    #[error("{0}")]
+    Refused(String),
     #[error("storage failed: {0}")]
     Storage(String),
 }

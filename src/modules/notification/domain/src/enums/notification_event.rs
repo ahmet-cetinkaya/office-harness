@@ -15,14 +15,16 @@ pub enum NotificationEvent {
     Failed,
     WaitingForInput,
     Bell,
+    AutoHold,
 }
 
 impl NotificationEvent {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Exited,
         Self::Failed,
         Self::WaitingForInput,
         Self::Bell,
+        Self::AutoHold,
     ];
 
     /// The stored and wire name.
@@ -33,6 +35,7 @@ impl NotificationEvent {
             Self::Failed => "failed",
             Self::WaitingForInput => "waiting_for_input",
             Self::Bell => "bell",
+            Self::AutoHold => "auto_hold",
         }
     }
 }
@@ -51,7 +54,7 @@ impl FromStr for NotificationEvent {
             .into_iter()
             .find(|event| event.as_str() == text)
             .ok_or_else(|| NotificationError(format!(
-                "notification event is not one of exited, failed, waiting_for_input, bell: {text}"
+                "notification event is not one of exited, failed, waiting_for_input, bell, auto_hold: {text}"
             )))
     }
 }

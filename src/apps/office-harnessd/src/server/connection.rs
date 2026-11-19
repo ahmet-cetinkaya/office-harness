@@ -12,6 +12,7 @@ use super::agent_call::serve_agent_connection;
 use super::agent_requests::AgentGateway;
 use super::handshake::{Authenticated, HandshakeFailure, authenticate};
 use super::hierarchy_requests::HierarchyGateway;
+use super::hold_requests::HoldGateway;
 use super::notification_requests::NotificationGateway;
 use super::restart_signal::RESTART_REQUEST;
 use super::server_state::ServerState;
@@ -221,6 +222,16 @@ async fn answer_request(
             let responses = responses.clone();
             tokio::spawn(async move {
                 let answer = hierarchy.handle(request).await.encode();
+                // The connection may be gone by now; the request still ran.
+                let _ = responses.send(answer).await;
+            });
+            return Ok(());
+        }
+        Some(request) if HoldGateway::accepts(&request.kind) => {
+            let holds = state.holds.clone();
+            let responses = responses.clone();
+            tokio::spawn(async move {
+                let answer = holds.handle(request).await.encode();
                 // The connection may be gone by now; the request still ran.
                 let _ = responses.send(answer).await;
             });
