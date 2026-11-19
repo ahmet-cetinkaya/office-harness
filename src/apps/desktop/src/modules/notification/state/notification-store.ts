@@ -5,7 +5,11 @@ import {
   type CoreClient,
   type ServerEvent,
 } from "../../../core/api";
-import { announcementText, type NotificationRow } from "../models/notification";
+import {
+  announcementText,
+  sortRows,
+  type NotificationRow,
+} from "../models/notification";
 import { createNotificationService } from "../services/notification-service";
 import type { OsNotificationService } from "../services/os-notification";
 
@@ -196,15 +200,6 @@ export function createNotificationController(
       }
     },
   };
-}
-
-/** The list order: unread first, then newest first (D4). */
-function sortRows(rows: NotificationRow[]): NotificationRow[] {
-  const byAge = (first: NotificationRow, second: NotificationRow): number =>
-    second.created_at - first.created_at;
-  const unread = rows.filter((row) => row.read_at === null).sort(byAge);
-  const read = rows.filter((row) => row.read_at !== null).sort(byAge);
-  return [...unread, ...read];
 }
 
 export type NotificationController = ReturnType<

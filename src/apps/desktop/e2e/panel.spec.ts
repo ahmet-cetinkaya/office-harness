@@ -692,7 +692,7 @@ test.describe("notifications", () => {
     expect(await requestKinds(page)).toContain("notification.read");
   });
 
-  test("a row of a deleted agent says so and opens nothing (edge case)", async ({
+  test("a row of a deleted agent says so, reads, and opens nothing (edge case)", async ({
     page,
   }) => {
     await openPanel(page, {
@@ -712,17 +712,19 @@ test.describe("notifications", () => {
       name: "Hal, failed, agent deleted",
     });
     await expect(row).toBeVisible();
-    await expect(row).toBeDisabled();
-    await row.click({ force: true });
+    await expect(row).toBeEnabled();
+    await row.click();
 
     await expect(
       page.getByRole("group", { name: "Live terminal" }),
     ).toHaveCount(0);
-    await expect(dialog).toBeVisible();
-    // The count still says 1: a disabled row is not read by a click.
+    // The click reads the row and closes the dialog, as every row does; the
+    // deleted agent's terminal alone stays shut.
+    await expect(dialog).toHaveCount(0);
     await expect(
-      page.getByRole("button", { name: "Notifications, 1 unread" }),
+      page.getByRole("button", { name: "Notifications, 0 unread" }),
     ).toBeVisible();
+    expect(await requestKinds(page)).toContain("notification.read");
   });
 
   test("opening a terminal by any route reads that agent's rows (FR-009)", async ({
@@ -811,6 +813,49 @@ test.describe("notifications", () => {
     await expect(
       page.getByRole("button", { name: "Bo, project Api, stopped" }),
     ).toHaveCount(0);
+  });
+
+  test("returning from the scene does not re-run the restore (FR-008, D6)", async ({
+    page,
+  }) => {
+    await openPanel(page, {
+      lastView: JSON.stringify({
+        project: null,
+        agent: "agent-bo",
+        terminal_open: true,
+      }),
+    });
+    await expect(
+      page.getByRole("group", { name: "Live terminal of Bo" }),
+    ).toBeVisible();
+
+    // The scene swap unmounts the panel, so the restore-once guard must
+    // live in the store: a per-mount guard would read the stored view
+    // again on the way back and revert what the user chose since.
+    await page.getByRole("button", { name: "To the scene" }).click();
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await page.getByRole("button", { name: "Cy, waiting for input" }).click();
+    await expect(
+      page.getByRole("group", { name: "Live terminal of Cy" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Cy, waiting for input" }),
+    ).toHaveAttribute("aria-current", "true");
+
+    // The selection could survive a late re-run by luck, so the exact
+    // observable is the read count: the stored view is read once per app
+    // start, not once per panel mount.
+    await expect
+      .poll(async () => {
+        const calls = await page.evaluate(() => window.__mockCore.calls);
+        return calls.filter(
+          (call) =>
+            call.command === "send_request" &&
+            call.args.kind === "settings.get" &&
+            (call.args.fields as { key?: string })?.key === "last_view",
+        ).length;
+      })
+      .toBe(1);
   });
 
   test("the app writes the last view back as the user moves (D6)", async ({
