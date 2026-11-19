@@ -189,9 +189,16 @@ impl HierarchyStore for HierarchyRepository {
         // this write (the create-role handler's contract), and a second
         // take of the same mutex would never return.
         self.locked(|connection| {
-            places.write_place(connection, agent_id, role, parent_agent_id, team_id)?;
+            // One transaction, not three autocommit writes: a storage
+            // failure between them would leave a placed row with no team
+            // seat, or a seated lead with no placed row (project_repository
+            // holds its delete the same way).
+            let transaction = connection
+                .transaction()
+                .map_err(|error| error.to_string())?;
+            places.write_place(&transaction, agent_id, role, parent_agent_id, team_id)?;
             if let Some(team) = team_id {
-                connection
+                transaction
                     .execute(
                         "INSERT OR REPLACE INTO hierarchy_team_members \
                          (agent_id, team_id, joined_at) VALUES (?1, ?2, ?3)",
@@ -205,7 +212,7 @@ impl HierarchyStore for HierarchyRepository {
                 // under the caller's exclusion, so two racing lead
                 // placements cannot both win.
                 if role == Some(Role::Lead) {
-                    connection
+                    transaction
                         .execute(
                             "UPDATE hierarchy_teams SET lead_agent_id = ?1 WHERE id = ?2",
                             params![agent_id.as_uuid_text(), team.as_uuid_text()],
@@ -214,7 +221,7 @@ impl HierarchyStore for HierarchyRepository {
                         .map_err(|error| error.to_string())?;
                 }
             }
-            Ok(())
+            transaction.commit().map_err(|error| error.to_string())
         })
     }
 
