@@ -5,6 +5,8 @@ import {
   APP_SHORTCUT_TABLE,
   DEFAULT_FOCUS_SHORTCUT,
   isAppShortcut,
+  isHeldForTerminal,
+  type KeyTarget,
   parseShortcut,
   pressedAppShortcut,
   pressedTerminalShortcut,
@@ -149,5 +151,36 @@ describe("app shortcut table", () => {
     expect(isAppShortcut("Ctrl+F1")).toBe(false);
     expect(isAppShortcut("Ctrl+Shift")).toBe(false);
     expect(isAppShortcut("")).toBe(false);
+  });
+});
+
+describe("isHeldForTerminal", () => {
+  const officeHold = APP_SHORTCUT_TABLE.find(
+    (entry) => entry.kind === "office_hold",
+  );
+  const switcher = APP_SHORTCUT_TABLE.find(
+    (entry) => entry.kind === "switcher",
+  );
+
+  function targetInside(selectors: string[]): KeyTarget {
+    return {
+      closest: (selector: string) =>
+        selectors.includes(selector) ? { selector } : null,
+    };
+  }
+
+  test("the office hold key pressed in a terminal stays with the CLI", () => {
+    expect(officeHold).toBeDefined();
+    expect(isHeldForTerminal(officeHold!, targetInside([".xterm"]))).toBe(true);
+  });
+
+  test("the office hold key pressed in the panel reaches the panel", () => {
+    expect(isHeldForTerminal(officeHold!, targetInside([]))).toBe(false);
+    expect(isHeldForTerminal(officeHold!, null)).toBe(false);
+  });
+
+  test("a terminal shortcut leaves a terminal for the panel", () => {
+    expect(switcher).toBeDefined();
+    expect(isHeldForTerminal(switcher!, targetInside([".xterm"]))).toBe(false);
   });
 });

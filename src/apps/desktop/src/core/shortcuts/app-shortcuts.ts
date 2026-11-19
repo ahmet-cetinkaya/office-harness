@@ -63,6 +63,26 @@ export function pressedAppShortcut(event: ShortcutEvent): AppShortcut | null {
   );
 }
 
+/** The class xterm puts on the element that holds a terminal. */
+const TERMINAL_SELECTOR = ".xterm";
+
+/** The part of a key event's target that tells where the key was pressed. */
+export interface KeyTarget {
+  closest(selector: string): unknown;
+}
+
+/**
+ * True when the panel must leave the key to the CLI: the key is no terminal
+ * shortcut and it was pressed inside a terminal (0007 A9, D9).
+ */
+export function isHeldForTerminal(
+  pressed: AppShortcut,
+  target: KeyTarget | null,
+): boolean {
+  if (pressed.isTerminalShortcut || target === null) return false;
+  return target.closest(TERMINAL_SELECTOR) !== null;
+}
+
 /** The table entry that a focused terminal lets out of xterm, or null (D8). */
 export function pressedTerminalShortcut(
   event: ShortcutEvent,
