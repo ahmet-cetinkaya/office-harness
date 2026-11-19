@@ -1,6 +1,6 @@
 # Requirements checklist: 0007-hold-and-limits
 
-Spec: `specs/changes/0007-hold-and-limits/SPEC.md` · Status: draft · Date: 2026-11-19 · Result: 15 of 16 items pass. Two `[NEEDS CLARIFICATION]` markers remain for the owner (size cap; hold scope on actions from outside the subtree). Every `0001/` and `0002/` reference was checked against the approved specs on `main` at 19f2148.
+Spec: `specs/changes/0007-hold-and-limits/SPEC.md` · Status: draft · Date: 2026-11-19 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker; the owner answered both on 2026-11-19 (see the spec's Clarifications). Every `0001/` and `0002/` reference was checked against the approved specs on `main` at 19f2148.
 
 ## Content quality
 
@@ -22,7 +22,7 @@ Spec: `specs/changes/0007-hold-and-limits/SPEC.md` · Status: draft · Date: 202
 
 ## Readiness
 
-- [ ] At most three `[NEEDS CLARIFICATION]` markers; none inside an approved spec. (Two markers remain; the count passes, but the spec cannot be approved until the owner answers them.)
+- [x] At most three `[NEEDS CLARIFICATION]` markers; none inside an approved spec. (Both markers answered by the owner on 2026-11-19.)
 - [x] No vague words ("works," "fast," "secure," "robust," "intuitive") and no placeholders without an observable.
 - [x] Terminology is consistent across stories, requirements, entities, and criteria.
 - [x] The spec meets the spec contract's Size rule, or Out of scope records the declined split.
@@ -31,4 +31,4 @@ Spec: `specs/changes/0007-hold-and-limits/SPEC.md` · Status: draft · Date: 202
 
 - FR-007 refers to the limit table in A3, so the values and the requirement cannot drift apart.
 - SC-005 says "from any panel view": while a terminal has focus, keys go to the CLI except the documented app shortcuts (0003, MODIFIED 0001/FR-017). Adding the hold shortcut to that list is a plan decision that would need a 0003 amendment; the spec does not promise it.
-- The 0002 out-of-scope line "Limits on how many agents an agent may create" stays true: this change limits the creation rate, not the count. The size-cap marker asks the owner whether to change that.
+- The 0002 out-of-scope line "Limits on how many agents an agent may create" stays true: this change limits the creation rate, not the count. The owner declined a size cap on 2026-11-19, so that line stays true.
