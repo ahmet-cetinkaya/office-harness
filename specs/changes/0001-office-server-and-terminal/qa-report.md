@@ -6,7 +6,7 @@
 - **Build under test:** branch `feat/0001-office-server-and-terminal`.
 - **Overall status:** `blocked`. The run is complete only when every row is PASS or WAIVED (owner). The Linux hands-on rows are still BLOCKED, so the run is blocked.
 - **Owner decision, 2026-11-16:** separate hands-on runs on macOS and Windows are not needed; the CI evidence on Linux, macOS, and Windows is enough. The macOS and Windows hands-on rows are WAIVED (owner), not PASS.
-- **Status of this file:** a draft. On 2026-11-19 an agent ran SC-001, SC-003, and SC-007 on Linux/KDE Wayland against the built app and server of `main` at f6dc663, with fake CLIs; those rows say "agent-run". The other Linux hands-on rows still need a person, a real CLI account, a restart, or a participant. No value in this file is an estimate.
+- **Status of this file:** a draft. On 2026-11-19 an agent ran SC-001, SC-003, and SC-007 on Linux/KDE Wayland against the built app and server of `main` at f6dc663, with fake CLIs; those rows say "agent-run". The other Linux hands-on rows still need a person, a real CLI account, a restart, or a participant. No value in this file is an estimate. Raw evidence (screenshots, traces, logs, timing files) is kept outside the repository, in the QA agent's folder of the office hive (`hive/agents/celal-mwhvybh8/qa/evidence/`); repository readers cannot open it. The agent-run rows therefore states its own method, setup, and measured values. Run setup: debug builds of the desktop app and `office-harnessd`, WebDriver through `tauri-driver`, an isolated data and config folder per run with login start off, fake CLIs (shell scripts) in place of agent CLIs, and no change to system settings.
 
 ### Verdict words
 
