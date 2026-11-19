@@ -38,6 +38,8 @@ The exact wording of these OS notices depends on the OS version. The macOS and W
 
 The app has no screen to change the focus shortcut. The server stores it as the setting `focus_shortcut`. The default value is `Ctrl+Shift+F12`. A value is modifiers joined with `+`, then one key, for example `Ctrl+Alt+F11`. A client can change it with the `settings.set` request (see [the client protocol](specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md)). The app reads the setting when you open a terminal.
 
+The agent and switcher shortcuts are fixed: `Ctrl+Shift+F1` to `Ctrl+Shift+F9` open the first nine agents of the list, and `Ctrl+Shift+F10` opens the agent switcher. On most macOS keyboards the F-keys send media commands by default, so the shortcuts work there only while you hold `Fn` (or after you turn on "Use F1, F2, etc. keys as standard function keys"). If you cannot change that setting, a macOS build of a later release can move the shortcuts to the fallback family `Cmd+Alt+1` to `Cmd+Alt+9` (agents) and `Cmd+Alt+0` (switcher), which no webview or macOS default takes; that fallback is not shipped yet. On KDE Plasma the default family is not verified until a hands-on QA pass; if a distribution binds it globally, the same `Cmd`/`Ctrl+Alt` fallback applies. The full fallback table is in [the panel-practicality spec](specs/changes/0003-panel-practicality/SPEC.md).
+
 ## The agent hierarchy
 
 office-harness can organize the agents of an office as a company. The office has one CEO at the top. Under the CEO are teams, and each team has one team lead with its members under the lead. An agent without a role stays outside the hierarchy and keeps the behavior described so far.

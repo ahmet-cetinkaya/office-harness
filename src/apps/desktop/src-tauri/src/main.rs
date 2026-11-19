@@ -22,6 +22,8 @@ fn refresh_login_start_quietly() {
 
 fn main() {
     let result = tauri::Builder::default()
+        // OS notifications for the agent events (0003, D7).
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let connection = Connection::new(DataFolder::locate()?);
             app.manage(connection.clone());

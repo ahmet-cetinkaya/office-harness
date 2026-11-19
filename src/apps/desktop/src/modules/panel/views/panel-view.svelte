@@ -9,9 +9,21 @@
     ConfirmDialog,
     ProjectFormDialog,
     ProjectList,
+    LAST_AGENT_GONE_LEAD,
+    LAST_AGENT_GONE_MESSAGE,
     type Project,
   } from "../../agent";
   import { INITIAL_HIERARCHY, type HierarchyController } from "../../hierarchy";
+  import {
+    INITIAL_NOTIFICATIONS,
+    NotificationDialog,
+    NotificationLiveRegion,
+    resolveLastView,
+    rowText,
+    UnreadButton,
+    unreadCount,
+    type NotificationSnapshot,
+  } from "../../notification";
   import { pressedAppShortcut } from "../../../core/shortcuts";
   import type { PanelStore } from "../state/panel-store.svelte";
   import AgentRow from "../components/agent-row.svelte";
@@ -44,12 +56,22 @@
   // current snapshot at once, so `treeSnapshot` starts at the controller's.
   let treeSnapshot = $state(INITIAL_HIERARCHY);
   $effect(() => treeController.subscribe((next) => (treeSnapshot = next)));
+  // The notification snapshot is a plain value too, so it subscribes the
+  // same way (see the tree comment above).
+  let notificationSnapshot = $state<NotificationSnapshot>(
+    INITIAL_NOTIFICATIONS,
+  );
+  $effect(() =>
+    store.notifications.subscribe((next) => (notificationSnapshot = next)),
+  );
 
   const choice = $derived(
     effectiveChoice(office.projects, store.projectChoice),
   );
   const shown = $derived(visibleAgents(office.agents, choice));
   const emptyProject = $derived(isEmptyProject(office.projects, shown, choice));
+  const notifications = $derived(notificationSnapshot);
+  const unread = $derived(unreadCount(notifications.rows));
 
   const AGENTS_HEADING_ID = "panel-agents-heading";
   const EMPTY_HEADING_ID = "panel-empty-heading";
@@ -59,6 +81,7 @@
   let createAgentInProject = $state<string | null>(null);
   let isCreatingProject = $state(false);
   let isSwitchingAgent = $state(false);
+  let isShowingNotifications = $state(false);
   let projectToDelete = $state<Project | null>(null);
   let detailArea = $state<HTMLElement | null>(null);
 
@@ -83,7 +106,7 @@
    * A row click or a shortcut opens the agent's terminal in the detail area
    * (FR-004). A freshly mounted terminal focuses itself once the attach
    * answers; an already open one takes focus here, because nothing remounts
-   * for it.
+   * for it. The store's select reads the agent's notifications (FR-009).
    */
   function openAgent(agentId: string): void {
     const wasSelected = office.selectedAgentId === agentId;
@@ -92,6 +115,21 @@
       void tick().then(() => {
         detailArea?.querySelector("textarea")?.focus();
       });
+    }
+  }
+
+  /**
+   * A notification click opens the agent's terminal and reads that one row
+   * (FR-009). A deleted agent's row opens nothing, but the click still reads
+   * it: the kept name tells the user what the row was about (edge case).
+   */
+  function openNotification(notificationId: string): void {
+    const row = notifications.rows.find((known) => known.id === notificationId);
+    isShowingNotifications = false;
+    if (row === undefined) return;
+    void store.notifications.read(notificationId);
+    if (office.agents.some((agent) => agent.id === row.agent_id)) {
+      openAgent(row.agent_id);
     }
   }
 
@@ -121,6 +159,40 @@
     return () => window.removeEventListener("keydown", handleAppKeys);
   });
 
+  /**
+   * The last view's restore (FR-008, D6), once the office's first load has
+   * brought its projects and agents. A view this app cannot apply falls back
+   * piece by piece, and each fallback says what it fell back from (US3).
+   * The once-guard lives in the store, not here: the shell unmounts this
+   * view for the scene, and a per-mount flag would restore again on the
+   * way back and revert the user's choices since.
+   */
+  $effect(() => {
+    if (office.phase !== "ready" || store.lastView.isRestored) return;
+    void restoreLastView();
+  });
+
+  async function restoreLastView(): Promise<void> {
+    const stored = await store.lastView.read(store.client);
+    if (stored !== null) {
+      const plan = resolveLastView(
+        stored,
+        office.projects.map((project) => project.id),
+        office.agents.map((agent) => agent.id),
+      );
+      store.setProjectChoice(plan.choice);
+      if (plan.agent.kind === "missing") {
+        controller.showNotice(LAST_AGENT_GONE_LEAD, LAST_AGENT_GONE_MESSAGE);
+      } else if (plan.agent.kind === "present") {
+        controller.select(plan.agent.agentId);
+        if (stored.terminal_open) openAgent(plan.agent.agentId);
+      }
+    }
+    // The shell writes the last view only from here on, so its eager write
+    // cannot land between this read and its use.
+    store.lastView.markRestored();
+  }
+
   function chooseFromSwitcher(agentId: string): void {
     isSwitchingAgent = false;
     openAgent(agentId);
@@ -146,6 +218,10 @@
     <h1 class="text-2xl font-semibold text-neutral-900">office-harness</h1>
     {#if office.phase === "ready"}
       <div class="flex flex-wrap gap-3">
+        <UnreadButton
+          count={unread}
+          onopen={() => (isShowingNotifications = true)}
+        />
         <Button variant="secondary" onclick={() => (isCreatingProject = true)}>
           New project
         </Button>
@@ -157,6 +233,8 @@
   {#if office.notice !== null}
     <FailureMessage lead={office.notice.lead} message={office.notice.message} />
   {/if}
+
+  <NotificationLiveRegion announcement={notifications.announcement} />
 
   {#if office.phase === "loading"}
     <p role="status" class="text-neutral-700">Loading the office.</p>
@@ -297,6 +375,19 @@
   {/if}
 </div>
 
+{#if isShowingNotifications}
+  <NotificationDialog
+    rows={notifications.rows.map((row) => ({
+      id: row.id,
+      text: rowText(
+        row,
+        office.agents.some((agent) => agent.id === row.agent_id),
+      ),
+    }))}
+    onopen={openNotification}
+    onclose={() => (isShowingNotifications = false)}
+  />
+{/if}
 {#if isCreatingAgent}
   <AgentFormDialog
     projects={office.projects}

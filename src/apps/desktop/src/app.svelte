@@ -28,17 +28,18 @@
   const snapshot = $derived(connection.snapshot);
   const isConnected = $derived(snapshot.state.status === "connected");
 
-  // The shell owns the open view (0005 D6) and writes it into `last_view`
-  // (the `view` field, MODIFIED 0003/FR-008) at most once per second and on
-  // close. The scene-owned writer stands in for 0003 T7's panel writer
-  // (research R1); restore-on-start is T4's remaining piece.
+  // The shell owns the open view (0005 D6) and is the one writer of
+  // `last_view` (the `view` field, MODIFIED 0003/FR-008), at most once per
+  // second and on close. The panel restores the stored view once after its
+  // first load, and only then does recording begin, so the restore's read
+  // cannot be clobbered by an eager write.
   let openView: "panel" | "scene" = $state("panel");
   const lastView = createLastViewWriter(client);
-  // The write rides the connection, not the mount: a pre-connection shell
-  // (not reachable, unauthorized, version mismatch) sends no request at
-  // all, as the office and hierarchy loads hold to below.
+  // The write rides the connection and the panel's restore, not the mount: a
+  // pre-connection shell (not reachable, unauthorized, version mismatch)
+  // sends no request at all, as the office and hierarchy loads hold to below.
   $effect(() => {
-    if (!isConnected) return;
+    if (!isConnected || !panel.lastView.isRestored) return;
     lastView.write({
       project: panel.projectChoice,
       agent: panel.office.snapshot.selectedAgentId,
@@ -60,7 +61,9 @@
   onMount(() => {
     void connection.start();
     void panel.office.controller.watch();
+    void panel.notifications.watch();
     void hierarchy.watch();
+    void osNotificationTap();
   });
 
   // The office is loaded again on each new connection, because events that
@@ -68,9 +71,19 @@
   $effect(() => {
     if (isConnected) {
       void panel.office.controller.load();
+      void panel.notifications.load();
       void hierarchy.load();
     }
   });
+
+  /** Opens the tapped notification's agent, when it still exists (D7). */
+  async function osNotificationTap(): Promise<void> {
+    await panel.notifications.onTap((agentId) => {
+      if (panel.office.snapshot.agents.some((agent) => agent.id === agentId)) {
+        panel.office.controller.select(agentId);
+      }
+    });
+  }
 </script>
 
 <main>

@@ -9,7 +9,10 @@ import {
 } from "./office-controller";
 
 /** The office controller's snapshot as reactive state for the views. */
-export function createOfficeStore(client: CoreClient) {
+export function createOfficeStore(
+  client: CoreClient,
+  onNotificationsLost: () => void = () => {},
+) {
   let snapshot = $state<OfficeSnapshot>(INITIAL_OFFICE);
   const controller = createOfficeController(
     client,
@@ -17,6 +20,7 @@ export function createOfficeStore(client: CoreClient) {
       snapshot = next;
     },
     createActionRecordSource(client),
+    onNotificationsLost,
   );
 
   return {
