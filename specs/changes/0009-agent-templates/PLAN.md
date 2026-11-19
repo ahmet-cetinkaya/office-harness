@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 spec: specs/changes/0009-agent-templates/SPEC.md
 commits: per-task
 ---
@@ -289,6 +289,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
     - the write failure text.
   - A Rust test reads `capabilities/default.json` and asserts that its permissions equal the `allow-*` entries of `WEBVIEW_COMMANDS` plus `notification:default`, with no `dialog:` or `fs:` entry.
   - `tauri-plugin-dialog` is `=2.8.4` in the root `[workspace.dependencies]`, and `cargo tree -i tauri` shows one tauri version.
+  - The crate facts in Context are proven with the tools, not taken from this plan: `cargo metadata --format-version 1` gives the version `2.8.4` and the license `Apache-2.0 OR MIT` of `tauri-plugin-dialog`, and its `tauri` requirement (`^2.12`); `cargo tree -p tauri-plugin-dialog` lists what it adds. The output is saved in the QA report. A fact that differs stops T6 and goes to god.
   - The license list of every crate the change adds to `Cargo.lock` is in the QA report, each compatible with AGPL-3.0-or-later.
   - fmt, clippy, `cargo test -p office-harness-desktop` (CI covers it; locally only if `libdbus` builds).
 
