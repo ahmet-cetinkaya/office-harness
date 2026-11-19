@@ -181,7 +181,7 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 | Commit | Task | Stages | Proposed message |
 |---|---|---|---|
 | 1 | T1 | `specs/changes/0011-task-line/{data-model.md,contracts/}` | `docs(spec-0011): add the task text data model and protocol` |
-| 2 | T2 | `M/agent/`, `M/audit/domain/`, `H/bridges/action_recorder.rs` | `feat(agent): keep a task text per agent` |
+| 2 | T2 | `M/agent/`, `M/audit/domain/`, `H/bridges/action_recorder.rs`, `H/bridges/{notification_bridge,directive_bridges,agent_status_bridge}.tests.rs` | `feat(agent): keep a task text per agent` |
 | 3 | T3 | `M/hierarchy/application/`, `H/`, `M/agent/presentation/`, `src/apps/office-harnessd/tests/` | `feat(server): set the task text from directives and the user` |
 | 4 | T4 | `D/`, `src/apps/desktop/e2e/` | `feat(desktop): show the task line and edit the task text` |
 | 5 | T5 | `README.md`, `specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md`, `specs/changes/0011-task-line/qa-report.md` | `docs(spec-0011): document the task line and record QA` |
