@@ -134,10 +134,17 @@ impl HoldGateway {
         request: &Request,
         apply: impl FnOnce(HoldScope) -> Result<HoldsView, HierarchyApplicationError>,
     ) -> Response {
-        let scope = match self.scope_of(request) {
+        let scope = match scope_of(request) {
             Ok(scope) => scope,
             Err((code, message)) => return Response::failure(request.id, code, message),
         };
+        // Only a new hold needs a living agent: a hold left by a delete that
+        // failed part way must still be releasable.
+        if request.kind == HOLD_SET
+            && let Err((code, message)) = self.ensure_agent_exists(scope)
+        {
+            return Response::failure(request.id, code, message);
+        }
         match apply(scope) {
             Ok(view) => {
                 self.events.publish(&hold_changed_event(&view));
@@ -173,19 +180,13 @@ impl HoldGateway {
         self.alerts.report_disk_failure(message);
     }
 
-    /// The office when no `agent_id` is named; else the agent, which must
-    /// exist.
-    fn scope_of(&self, request: &Request) -> Result<HoldScope, (ErrorCode, String)> {
-        let agent_id = match request.fields.get("agent_id") {
-            None | Some(Value::Null) => return Ok(HoldScope::Office),
-            Some(Value::String(text)) => AgentId::from_uuid_text(text)
-                .ok_or_else(|| (ErrorCode::Invalid, "agent_id is not an agent id".to_owned()))?,
-            Some(_) => {
-                return Err((ErrorCode::Invalid, "agent_id must be text".to_owned()));
-            }
+    /// `not_found` for an agent scope whose agent does not exist.
+    fn ensure_agent_exists(&self, scope: HoldScope) -> Result<(), (ErrorCode, String)> {
+        let HoldScope::Agent(agent_id) = scope else {
+            return Ok(());
         };
         match self.agents.find(agent_id) {
-            Ok(Some(_)) => Ok(HoldScope::Agent(agent_id)),
+            Ok(Some(_)) => Ok(()),
             Ok(None) => Err((ErrorCode::NotFound, "no agent has this id".to_owned())),
             Err(error) => Err((ErrorCode::Internal, error.to_string())),
         }
@@ -209,6 +210,19 @@ impl HoldGateway {
             }
         }
     }
+}
+
+/// The office when no `agent_id` is named; else the named agent.
+fn scope_of(request: &Request) -> Result<HoldScope, (ErrorCode, String)> {
+    let agent_id = match request.fields.get("agent_id") {
+        None | Some(Value::Null) => return Ok(HoldScope::Office),
+        Some(Value::String(text)) => AgentId::from_uuid_text(text)
+            .ok_or_else(|| (ErrorCode::Invalid, "agent_id is not an agent id".to_owned()))?,
+        Some(_) => {
+            return Err((ErrorCode::Invalid, "agent_id must be text".to_owned()));
+        }
+    };
+    Ok(HoldScope::Agent(agent_id))
 }
 
 /// `{hold}` for `hold.set`, `{}` for `hold.release`.

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use agent_domain::errors::AgentError;
 use agent_domain::value_objects::{SettingKey, Settings};
 use rusqlite::params;
 
@@ -29,7 +30,16 @@ impl SettingsRepository {
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             let mut settings = Settings::default();
             for (name, value) in rows {
-                settings.set_from_text(SettingKey::parse(&name)?, &value)?;
+                let key = SettingKey::parse(&name)?;
+                match settings.set_from_text(key, &value) {
+                    // A focus shortcut stored before a later change reserved
+                    // its keys (0007 took Ctrl+Shift+H for the office hold)
+                    // falls back to the default instead of stopping the
+                    // server from starting.
+                    Err(AgentError::ReservedShortcut { .. })
+                        if key == SettingKey::FocusShortcut => {}
+                    stored => stored?,
+                }
             }
             Ok(settings)
         })
