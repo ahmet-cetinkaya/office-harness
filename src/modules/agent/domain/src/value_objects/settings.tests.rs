@@ -269,3 +269,76 @@ fn rejects_an_unknown_setting_name() {
         Err(AgentError::UnknownSetting("volume".to_owned()))
     );
 }
+
+const LIMIT_KEYS: [SettingKey; 4] = [
+    SettingKey::LimitDirectivesPerAgent,
+    SettingKey::LimitDirectivesPerTarget,
+    SettingKey::LimitCreatesPerAgent,
+    SettingKey::LimitLifecyclePerAgent,
+];
+
+#[test]
+fn the_limit_defaults_follow_the_plan() {
+    let settings = Settings::default();
+    assert_eq!(settings.limit_directives_per_agent, 10);
+    assert_eq!(settings.limit_directives_per_target, 3);
+    assert_eq!(settings.limit_creates_per_agent, 5);
+    assert_eq!(settings.limit_lifecycle_per_agent, 10);
+}
+
+#[test]
+fn a_limit_takes_every_whole_number_from_one_to_a_thousand() {
+    for key in LIMIT_KEYS {
+        for value in ["1", "1000"] {
+            let mut settings = Settings::default();
+            settings.set_from_text(key, value).expect("valid");
+            assert_eq!(settings.value_of(key), value);
+        }
+    }
+}
+
+#[test]
+fn a_limit_outside_that_range_or_not_a_whole_number_is_refused() {
+    for key in LIMIT_KEYS {
+        for value in ["0", "-1", "1001", "abc", "2.5", "", " 3"] {
+            let mut settings = Settings::default();
+            let error = settings.set_from_text(key, value).expect_err(value);
+            assert_eq!(
+                error,
+                AgentError::InvalidLimit {
+                    field: key.as_str()
+                }
+            );
+            assert!(
+                error
+                    .to_string()
+                    .contains("a limit is a whole number of at least 1 and at most 1000"),
+                "{value}"
+            );
+            assert_eq!(settings, Settings::default());
+        }
+    }
+}
+
+#[test]
+fn settings_stored_before_the_limits_existed_read_the_default_limits() {
+    let stored = r#"{"quiet_period_ms": 7, "output_line_limit": 8, "focus_shortcut": "Ctrl+Alt+K", "stop_grace_ms": 9, "last_view": null}"#;
+
+    let settings: Settings = serde_json::from_str(stored).expect("old form loads");
+
+    assert_eq!(settings.quiet_period_ms, 7);
+    assert_eq!(settings.limit_directives_per_target, 3);
+}
+
+#[test]
+fn the_focus_shortcut_cannot_take_the_office_hold() {
+    let mut settings = Settings::default();
+    assert_eq!(
+        settings.set_from_text(SettingKey::FocusShortcut, "ctrl+shift+h"),
+        Err(AgentError::ReservedShortcut {
+            field: "focus_shortcut",
+            shortcut: "Ctrl+Shift+H",
+            reserved_for: "the office hold",
+        })
+    );
+}

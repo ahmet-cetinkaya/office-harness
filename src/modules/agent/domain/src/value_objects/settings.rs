@@ -10,13 +10,22 @@ const DEFAULT_QUIET_PERIOD_MS: u64 = 5_000;
 const DEFAULT_OUTPUT_LINE_LIMIT: u64 = 10_000;
 const DEFAULT_STOP_GRACE_MS: u64 = 10_000;
 const DEFAULT_FOCUS_SHORTCUT: &str = "Ctrl+Shift+F12";
+const DEFAULT_LIMIT_DIRECTIVES_PER_AGENT: u32 = 10;
+const DEFAULT_LIMIT_DIRECTIVES_PER_TARGET: u32 = 3;
+const DEFAULT_LIMIT_CREATES_PER_AGENT: u32 = 5;
+const DEFAULT_LIMIT_LIFECYCLE_PER_AGENT: u32 = 10;
+
+/// The range of a rate limit (0007 D4). The upper bound keeps a typo from
+/// turning the limit off.
+const LIMIT_MIN: u32 = 1;
+const LIMIT_MAX: u32 = 1_000;
 
 /// The longest stored text of one setting, in bytes (0003 data model).
 const LAST_VIEW_MAX_BYTES: usize = 1_024;
 
 /// The shortcuts of 0003 A1 that the focus shortcut must not take (D8). The
 /// desktop app shows the same table, so the two stay in step.
-const RESERVED_SHORTCUTS: [(&str, &str); 10] = [
+const RESERVED_SHORTCUTS: [(&str, &str); 11] = [
     ("Ctrl+Shift+F1", "agent 1"),
     ("Ctrl+Shift+F2", "agent 2"),
     ("Ctrl+Shift+F3", "agent 3"),
@@ -27,6 +36,7 @@ const RESERVED_SHORTCUTS: [(&str, &str); 10] = [
     ("Ctrl+Shift+F8", "agent 8"),
     ("Ctrl+Shift+F9", "agent 9"),
     ("Ctrl+Shift+F10", "the agent switcher"),
+    ("Ctrl+Shift+H", "the office hold"),
 ];
 
 /// The reserved table in the form a value is compared in, built once.
@@ -72,14 +82,20 @@ fn normalized_shortcut(text: &str) -> Option<String> {
     Some(normalized.join(&KEY_SEPARATOR.to_string()))
 }
 
-/// The office settings, stored as key and value rows.
+/// The office settings, stored as key and value rows. A stored form without
+/// the limit fields (written before 0007) reads their defaults.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Settings {
     pub quiet_period_ms: u64,
     pub output_line_limit: u64,
     pub focus_shortcut: String,
     pub stop_grace_ms: u64,
     pub last_view: Option<String>,
+    pub limit_directives_per_agent: u32,
+    pub limit_directives_per_target: u32,
+    pub limit_creates_per_agent: u32,
+    pub limit_lifecycle_per_agent: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,15 +105,23 @@ pub enum SettingKey {
     FocusShortcut,
     StopGraceMs,
     LastView,
+    LimitDirectivesPerAgent,
+    LimitDirectivesPerTarget,
+    LimitCreatesPerAgent,
+    LimitLifecyclePerAgent,
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 9] = [
         Self::QuietPeriodMs,
         Self::OutputLineLimit,
         Self::FocusShortcut,
         Self::StopGraceMs,
         Self::LastView,
+        Self::LimitDirectivesPerAgent,
+        Self::LimitDirectivesPerTarget,
+        Self::LimitCreatesPerAgent,
+        Self::LimitLifecyclePerAgent,
     ];
 
     #[must_use]
@@ -108,6 +132,10 @@ impl SettingKey {
             Self::FocusShortcut => "focus_shortcut",
             Self::StopGraceMs => "stop_grace_ms",
             Self::LastView => "last_view",
+            Self::LimitDirectivesPerAgent => "limit_directives_per_agent",
+            Self::LimitDirectivesPerTarget => "limit_directives_per_target",
+            Self::LimitCreatesPerAgent => "limit_creates_per_agent",
+            Self::LimitLifecyclePerAgent => "limit_lifecycle_per_agent",
         }
     }
 
@@ -129,6 +157,10 @@ impl Default for Settings {
             focus_shortcut: DEFAULT_FOCUS_SHORTCUT.to_owned(),
             stop_grace_ms: DEFAULT_STOP_GRACE_MS,
             last_view: None,
+            limit_directives_per_agent: DEFAULT_LIMIT_DIRECTIVES_PER_AGENT,
+            limit_directives_per_target: DEFAULT_LIMIT_DIRECTIVES_PER_TARGET,
+            limit_creates_per_agent: DEFAULT_LIMIT_CREATES_PER_AGENT,
+            limit_lifecycle_per_agent: DEFAULT_LIMIT_LIFECYCLE_PER_AGENT,
         }
     }
 }
@@ -144,13 +176,17 @@ impl Settings {
             SettingKey::StopGraceMs => self.stop_grace_ms.to_string(),
             // No stored view is the empty text, which reads back as no view.
             SettingKey::LastView => self.last_view.clone().unwrap_or_default(),
+            SettingKey::LimitDirectivesPerAgent => self.limit_directives_per_agent.to_string(),
+            SettingKey::LimitDirectivesPerTarget => self.limit_directives_per_target.to_string(),
+            SettingKey::LimitCreatesPerAgent => self.limit_creates_per_agent.to_string(),
+            SettingKey::LimitLifecyclePerAgent => self.limit_lifecycle_per_agent.to_string(),
         }
     }
 
     /// Sets one setting from its stored text.
     ///
     /// # Errors
-    /// `InvalidNumber`, `NotPositive`, or `Empty`, naming the setting;
+    /// `InvalidNumber`, `NotPositive`, `InvalidLimit`, or `Empty`, naming the setting;
     /// `InvalidLastView`, `TooLarge`, or `ReservedShortcut` for the 0003 keys.
     pub fn set_from_text(&mut self, key: SettingKey, text: &str) -> Result<(), AgentError> {
         match key {
@@ -162,6 +198,18 @@ impl Settings {
             }
             SettingKey::LastView => {
                 self.last_view = parse_last_view(key, text)?;
+            }
+            SettingKey::LimitDirectivesPerAgent => {
+                self.limit_directives_per_agent = parse_limit(key, text)?;
+            }
+            SettingKey::LimitDirectivesPerTarget => {
+                self.limit_directives_per_target = parse_limit(key, text)?;
+            }
+            SettingKey::LimitCreatesPerAgent => {
+                self.limit_creates_per_agent = parse_limit(key, text)?;
+            }
+            SettingKey::LimitLifecyclePerAgent => {
+                self.limit_lifecycle_per_agent = parse_limit(key, text)?;
             }
         }
         Ok(())
@@ -178,6 +226,17 @@ fn parse_positive(key: SettingKey, text: &str) -> Result<u64, AgentError> {
         return Err(AgentError::NotPositive { field });
     }
     Ok(number)
+}
+
+/// A whole number from `LIMIT_MIN` to `LIMIT_MAX`; a sign, a fraction, or
+/// text is not one.
+fn parse_limit(key: SettingKey, text: &str) -> Result<u32, AgentError> {
+    text.parse::<u32>()
+        .ok()
+        .filter(|number| (LIMIT_MIN..=LIMIT_MAX).contains(number))
+        .ok_or(AgentError::InvalidLimit {
+            field: key.as_str(),
+        })
 }
 
 fn parse_shortcut(key: SettingKey, text: &str) -> Result<String, AgentError> {
