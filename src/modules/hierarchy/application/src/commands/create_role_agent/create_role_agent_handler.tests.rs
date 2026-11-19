@@ -239,6 +239,32 @@ fn a_lead_with_a_team_is_created_and_then_placed() {
 }
 
 #[test]
+fn a_second_lead_for_a_held_team_is_refused_and_creates_nothing() {
+    let family = lead_with_team();
+    let tree_writes = Mutex::new(());
+    let tree = TreeExclusion::new(&tree_writes);
+    let (handler, store, creator) = handler_with(family.rows, false, RecordingCreator::default());
+
+    let error = handler
+        .handle(
+            request(seed("Sid"), Role::Lead, None, Some(family.team)),
+            &tree,
+        )
+        .expect_err("the team's seat is taken");
+
+    assert_eq!(
+        error,
+        HierarchyApplicationError::Conflict(format!(
+            "the team already has a lead: {}",
+            family.lead
+        ))
+    );
+    assert_eq!(creator.made(), Vec::<AgentId>::new());
+    assert_eq!(creator.removed(), Vec::<AgentId>::new());
+    assert_eq!(store.placed(), Vec::<(AgentId, Option<TeamId>)>::new());
+}
+
+#[test]
 fn a_member_takes_its_leads_team() {
     let family = lead_with_team();
     let tree_writes = Mutex::new(());

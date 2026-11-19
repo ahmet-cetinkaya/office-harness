@@ -32,8 +32,9 @@ pub struct TreeRow {
 /// holds now; the caller has already written nothing.
 ///
 /// # Errors
-/// `SecondCeo` when a CEO exists; `ParentNotFound` when the parent is not in
-/// the tree; `RoleNotAllowed` naming the allowed roles; `Cycle` and `TooDeep`
+/// `SecondCeo` when a CEO exists; `SecondLead` when the placement's team
+/// already holds a lead; `ParentNotFound` when the parent is not in the
+/// tree; `RoleNotAllowed` naming the allowed roles; `Cycle` and `TooDeep`
 /// for a chain that cannot exist.
 pub fn check_placement(tree: &[TreeRow], placement: Placement) -> Result<(), HierarchyError> {
     match placement.role {
@@ -70,6 +71,20 @@ fn check_lead(tree: &[TreeRow], placement: Placement) -> Result<(), HierarchyErr
         && parent.agent_id == placement.agent_id
     {
         return Err(role_not_allowed(Role::Lead, Role::Ceo));
+    }
+    // One lead per team: a team already holding one refuses the second,
+    // naming the lead at the seat (the CEO refusal's own shape). The team
+    // row alone cannot tell this — its lead column can name an agent whose
+    // row has left the tree — so the live rows are the seat's truth.
+    if let Some(team_id) = placement.team_id
+        && let Some(lead) = tree
+            .iter()
+            .find(|row| row.role == Some(Role::Lead) && row.team_id == Some(team_id))
+        && lead.agent_id != placement.agent_id
+    {
+        return Err(HierarchyError::SecondLead {
+            name: non_empty_name_of(lead),
+        });
     }
     Ok(())
 }
