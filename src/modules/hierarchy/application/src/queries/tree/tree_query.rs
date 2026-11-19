@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use hierarchy_domain::entities::TeamId;
@@ -60,6 +61,48 @@ impl TreeQuery {
     pub fn store_snapshot(&self) -> Result<Vec<TreeRow>, HierarchyApplicationError> {
         Ok(self.store.snapshot()?.rows)
     }
+
+    /// Every placed agent's role and team name as the rows hold them now,
+    /// for the agent rows the server answers with. An agent outside the map
+    /// is outside the hierarchy.
+    ///
+    /// # Errors
+    /// `Storage` when the read fails.
+    pub fn row_places(&self) -> Result<HashMap<AgentId, RowPlace>, HierarchyApplicationError> {
+        let snapshot = self.store.snapshot()?;
+        Ok(row_places(&snapshot.rows, &snapshot.teams))
+    }
+}
+
+/// One agent's place for its row: the role, and the team's name. The name
+/// is display text read at the time of the answer, never a key (joins go
+/// through the tree), so a renamed team shows in the next answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowPlace {
+    pub role: Option<Role>,
+    pub team_name: Option<String>,
+}
+
+/// Maps each tree row to its place, naming its team from the team rows.
+#[must_use]
+pub fn row_places(rows: &[TreeRow], teams: &[Team]) -> HashMap<AgentId, RowPlace> {
+    rows.iter()
+        .map(|row| {
+            let team_name = row.team_id.and_then(|team_id| {
+                teams
+                    .iter()
+                    .find(|team| team.id() == team_id)
+                    .map(|team| team.name().display().to_owned())
+            });
+            (
+                row.agent_id,
+                RowPlace {
+                    role: row.role,
+                    team_name,
+                },
+            )
+        })
+        .collect()
 }
 
 /// Assembles the tree: the CEO, every team with its lead and members, and
@@ -105,3 +148,7 @@ impl TreeAgent {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tree_query.tests.rs"]
+mod tests;

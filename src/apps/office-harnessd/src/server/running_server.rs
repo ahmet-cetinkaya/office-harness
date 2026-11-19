@@ -97,6 +97,7 @@ impl Server {
             Arc::clone(&services.agent.stopping),
             services.terminal.events.clone(),
             Arc::clone(&services.terminal.runtime),
+            Arc::clone(&services.hierarchy.tree),
         );
         let hierarchy =
             HierarchyGateway::new(Arc::clone(&services.hierarchy.handlers), events.clone());
