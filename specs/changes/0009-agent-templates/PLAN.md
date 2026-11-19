@@ -35,12 +35,12 @@ The owner saves an agent's definition as a template and creates agents from it. 
 
 **Main risks:**
 - **All-or-nothing over many agents.** The shipped code has no multi-agent rollback. D5 validates everything first and undoes created agents and the team row in reverse order. A fault-injection test fails the batch at each agent position.
-- **A new dependency.** `tauri-plugin-dialog`, the official Tauri plugin, is used only from Rust. No dialog permission is given to the webview. This needs god's yes (decision D6).
+- **A new dependency.** `tauri-plugin-dialog`, the official Tauri plugin, is used only from Rust, with a pinned version. No dialog permission is given to the webview. God approved it on 2026-11-19 (decision D6).
 - **The shipped `team.create` bug.** The desktop sends a `lead` object that the server does not read (reported to god on 2026-11-19). This plan does not depend on that fix: the template bridge builds its own team create.
 
 **Decisions made for you:** the module, the storage, the body shape, "no value", the name pattern rules, the create bridge, the file commands, the protocol, and the desktop placement.
 
-**Blockers:** D6, the new dependency, needs god's yes before T6. The local build slot comes from god before each build or test run.
+**Blockers:** none. The local build slot comes from god before each build or test run.
 
 ## Goal
 
@@ -104,12 +104,13 @@ Deliver spec 0009:
   - **Undo:** on a failure during apply, remove the created agents in reverse order with `AgentCreator::remove` (the same undo as role create) and delete the team row with `delete_team_and_unplace`. Then return the reason.
   - **Record:** each created agent is recorded by the existing create journal with the user as actor (PB-2).
   - Template changes are not recorded (A10).
-- **D6 File commands** (FR-007, FR-008, PB-4), **needs god's yes:**
+- **D6 File commands** (FR-007, FR-008, PB-4), **approved by god on 2026-11-19:**
   - Add `tauri-plugin-dialog` (the official plugin, used from Rust only).
   - Two new app commands:
     - `export_templates_file(contents: String)` opens a save dialog and writes `contents` to the picked path. It answers `saved`, `cancelled`, or a failure ("the file was not written: ...").
     - `import_templates_file()` opens an open dialog and reads the picked file. It refuses more than 256 KiB before reading the rest, and returns the text.
   - The webview gets only `allow-export-templates-file` and `allow-import-templates-file`, with no dialog or fs permission.
+  - The plugin version is pinned exactly in `Cargo.toml`. A capability test proves the webview cannot call any `dialog:` or `fs:` command and can call only the two app commands.
   - Rejected: the plugin's JavaScript API plus a write-by-path command, which would let the webview write any path.
 - **D7 Protocol** (user clients only; not in the agent allowlist; the allowlist comment is updated):
   - `template.list` and `template.get {id}`.
@@ -221,10 +222,10 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 
 - **Files:** `src/apps/desktop/src-tauri/{Cargo.toml,src/commands.rs,src/main.rs,build.rs,capabilities/default.json}` and the permission files, `src/apps/desktop/e2e/support/mock-core.ts` (the two invokes).
 - **Work:** D6.
-- **Depends on:** T5 and god's yes on D6.
+- **Depends on:** T5.
 - **Acceptance:**
   - Rust unit tests for the read cap (256 KiB read; 256 KiB + 1 refused before reading the rest) and for the write failure text, using a path injected behind the dialog seam.
-  - The capability file grants only the two commands.
+  - The capability file grants only the two commands. A capability test shows that a `dialog:` or `fs:` call from the webview is refused.
   - fmt, clippy, `cargo test -p office-harness-desktop` (CI covers it; locally only if `libdbus` builds).
 
 ### T7: Desktop templates UI (FR-001 to FR-011, PB-5, SC-001)
@@ -257,7 +258,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 
 ## Dependencies
 
-T1 → T3; T2 → T3 → T4 → T5 → T6 → T7 → T8. T1 and T2 can run together. `Cargo.lock`, the migration ledgers, and the e2e mock core belong to one running task at a time. Gate: this plan approved (Efe plan review PASS), and D6 answered before T6.
+T1 → T3; T2 → T3 → T4 → T5 → T6 → T7 → T8. T1 and T2 can run together. `Cargo.lock`, the migration ledgers, and the e2e mock core belong to one running task at a time. Gate: this plan approved (Efe plan review PASS).
 
 ## Commit strategy
 
