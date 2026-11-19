@@ -17,8 +17,7 @@ export interface AppShortcut {
   position: number | null;
   /**
    * True when the key leaves a focused terminal for the app (0003 D8). The
-   * office hold stays false: from a terminal the user presses the focus
-   * shortcut first (0007 A9, D9); making it true is the whole switch.
+   * office hold is one too, so it holds from a terminal (0007 D9 = b).
    */
   isTerminalShortcut: boolean;
   shortcut: Shortcut;
@@ -51,7 +50,7 @@ export const APP_SHORTCUT_TABLE: AppShortcut[] = [
     bound(`${MODIFIERS}+${key}`, "agent", index + 1, true),
   ),
   bound(`${MODIFIERS}+F10`, "switcher", null, true),
-  bound(`${MODIFIERS}+H`, "office_hold", null, false),
+  bound(`${MODIFIERS}+H`, "office_hold", null, true),
 ];
 
 /** The table entry the key event presses, or null for any other key (D8). */
@@ -61,26 +60,6 @@ export function pressedAppShortcut(event: ShortcutEvent): AppShortcut | null {
       matchesShortcut(entry.shortcut, event),
     ) ?? null
   );
-}
-
-/** The class xterm puts on the element that holds a terminal. */
-const TERMINAL_SELECTOR = ".xterm";
-
-/** The part of a key event's target that tells where the key was pressed. */
-export interface KeyTarget {
-  closest(selector: string): unknown;
-}
-
-/**
- * True when the panel must leave the key to the CLI: the key is no terminal
- * shortcut and it was pressed inside a terminal (0007 A9, D9).
- */
-export function isHeldForTerminal(
-  pressed: AppShortcut,
-  target: KeyTarget | null,
-): boolean {
-  if (pressed.isTerminalShortcut || target === null) return false;
-  return target.closest(TERMINAL_SELECTOR) !== null;
 }
 
 /** The table entry that a focused terminal lets out of xterm, or null (D8). */
