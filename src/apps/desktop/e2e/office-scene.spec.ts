@@ -965,6 +965,56 @@ test.describe("T4: return and restore", () => {
     });
   }
 
+  test("a scene restore's skipped read happens once when the panel shows the terminal (FR-009 scenario 6)", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        notifications: [
+          {
+            id: "n1",
+            agent_id: "agent-ada",
+            agent_name: "Ada",
+            event: "bell",
+            created_at: 1_700_000_000_000,
+            read_at: null,
+          },
+        ],
+        lastView: JSON.stringify({
+          project: null,
+          agent: "agent-ada",
+          terminal_open: false,
+          view: "scene",
+        }),
+      },
+    });
+    await page.goto("/");
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => window.__mockCore.settings.length > 0))
+      .toBe(true);
+    const readAgentCalls = () =>
+      page.evaluate(
+        () =>
+          window.__mockCore.calls.filter(
+            (call) =>
+              call.command === "send_request" &&
+              call.args.kind === "notification.read_agent",
+          ).length,
+      );
+    expect(await readAgentCalls()).toBe(0);
+
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+
+    await expect.poll(readAgentCalls).toBe(1);
+  });
+
   test("a stored last_view without the view field (a 0003-era write) opens the panel", async ({
     page,
   }) => {

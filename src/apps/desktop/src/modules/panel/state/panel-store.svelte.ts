@@ -45,6 +45,9 @@ export function createPanelStore(client: CoreClient) {
   // instruction.
   let openView = $state<OpenView>("panel");
   let hasUserSwitched = false;
+  // The restored agent whose read the scene's restore skipped. The panel's
+  // next show reads it once; a user selection reads it already.
+  let unreadRestoredAgentId: string | null = null;
   let projectChoice = $state<string | null>(null);
 
   // Opening an agent's terminal reads its notifications (FR-009). The select
@@ -52,6 +55,7 @@ export function createPanelStore(client: CoreClient) {
   const controller = {
     ...office.controller,
     select(agentId: string): void {
+      unreadRestoredAgentId = null;
       office.controller.select(agentId);
       void notifications.readAgent(agentId);
     },
@@ -59,10 +63,20 @@ export function createPanelStore(client: CoreClient) {
 
   // The restore selects without reading: FR-009 marks notifications read when
   // the agent's terminal opens, and only the panel shows it. The scene's
-  // restore leaves them unread.
+  // restore leaves them unread until the panel shows the terminal.
   function selectRestoredAgent(agentId: string): void {
     office.controller.select(agentId);
-    if (openView === "panel") void notifications.readAgent(agentId);
+    if (openView === "panel") {
+      void notifications.readAgent(agentId);
+    } else {
+      unreadRestoredAgentId = agentId;
+    }
+  }
+
+  function readRestoredAgentOnPanel(): void {
+    if (unreadRestoredAgentId === null) return;
+    void notifications.readAgent(unreadRestoredAgentId);
+    unreadRestoredAgentId = null;
   }
 
   /**
@@ -110,6 +124,7 @@ export function createPanelStore(client: CoreClient) {
     switchView(view: OpenView): void {
       hasUserSwitched = true;
       openView = view;
+      if (view === "panel") readRestoredAgentOnPanel();
     },
     restoreLastView,
     office: {
