@@ -98,7 +98,7 @@ The user sees how many agents wait for him in the window title, and can remove a
 
 ### MODIFIED
 
-- **0001/FR-017** (as modified by 0003) (US2): WHILE an agent's terminal has keyboard focus, THE SYSTEM SHALL send every key to the agent's CLI except the documented app shortcuts: the shortcut that moves focus back to the panel, the agent shortcuts, the switcher shortcut (0003 A1), and the jump shortcut.
+- **0001/FR-017** (as modified by 0003) (US2): WHILE an agent's terminal has keyboard focus, THE SYSTEM SHALL send every key to the agent's CLI except the documented app shortcuts that approved changes let out of a terminal (the focus, agent, and switcher shortcuts of 0003 A1, and any that another approved change adds, such as the 0007 office hold shortcut) and the jump shortcut.
 
 ### PRESERVED
 
