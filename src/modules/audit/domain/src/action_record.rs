@@ -9,7 +9,8 @@ use crate::{ActionKind, ActionResult};
 pub struct ActionRecord {
     pub actor: Actor,
     /// Kept after the agent is deleted, so the history stays readable.
-    pub target_agent_id: AgentId,
+    /// `None` is an office-level entry, such as an office hold.
+    pub target_agent_id: Option<AgentId>,
     pub action: ActionKind,
     pub result: ActionResult,
     pub at: Timestamp,

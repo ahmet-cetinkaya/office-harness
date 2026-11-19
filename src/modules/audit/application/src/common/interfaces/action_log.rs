@@ -18,4 +18,10 @@ pub trait ActionLog: Send + Sync {
     /// # Errors
     /// `Storage` or `Corrupt`.
     fn list_for_agent(&self, agent_id: AgentId) -> Result<Vec<ActionEntry>, AuditError>;
+
+    /// The entries without a target agent, newest first, at most 500.
+    ///
+    /// # Errors
+    /// `Storage` or `Corrupt`.
+    fn list_office_level(&self) -> Result<Vec<ActionEntry>, AuditError>;
 }

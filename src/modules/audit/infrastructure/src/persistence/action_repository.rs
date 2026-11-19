@@ -10,7 +10,10 @@ use rusqlite::ffi::ErrorCode;
 use rusqlite::{Connection, Row, params};
 
 const USER_ACTOR: &str = "user";
+const OFFICE_ACTOR: &str = "office";
 const AGENT_ACTOR_PREFIX: &str = "agent:";
+/// The newest office-level entries one query returns.
+const OFFICE_LEVEL_LIMIT: i64 = 500;
 
 /// The action record in the `audit_actions` table. The connection is the one
 /// the host app opened on the office database.
@@ -22,7 +25,7 @@ pub struct ActionRepository {
 struct ActionRow {
     id: i64,
     actor: String,
-    target_agent_id: String,
+    target_agent_id: Option<String>,
     action: String,
     result: String,
     at: i64,
@@ -47,8 +50,9 @@ impl ActionRow {
                 actor: parse_actor(&self.actor)?,
                 target_agent_id: self
                     .target_agent_id
-                    .parse()
-                    .map_err(|_| corrupt("target agent id", &self.target_agent_id))?,
+                    .as_deref()
+                    .map(|text| text.parse().map_err(|_| corrupt("target agent id", text)))
+                    .transpose()?,
                 action: self.action.parse::<ActionKind>()?,
                 result: ActionResult::from_text(&self.result),
                 at: Timestamp::from_unix_millis(self.at),
@@ -67,13 +71,16 @@ fn corrupt(field: &'static str, text: &str) -> AuditError {
 fn actor_text(actor: Actor) -> String {
     match actor {
         Actor::User => USER_ACTOR.to_owned(),
+        Actor::Office => OFFICE_ACTOR.to_owned(),
         Actor::Agent(agent_id) => format!("{AGENT_ACTOR_PREFIX}{agent_id}"),
     }
 }
 
 fn parse_actor(text: &str) -> Result<Actor, AuditError> {
-    if text == USER_ACTOR {
-        return Ok(Actor::User);
+    match text {
+        USER_ACTOR => return Ok(Actor::User),
+        OFFICE_ACTOR => return Ok(Actor::Office),
+        _ => {}
     }
     text.strip_prefix(AGENT_ACTOR_PREFIX)
         .and_then(|id| id.parse().ok())
@@ -121,7 +128,7 @@ impl ActionLog for ActionRepository {
                  VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![
                     actor_text(record.actor),
-                    record.target_agent_id.to_string(),
+                    record.target_agent_id.map(|agent_id| agent_id.to_string()),
                     record.action.as_str(),
                     record.result.as_text(),
                     record.at.as_unix_millis(),
@@ -144,6 +151,22 @@ impl ActionLog for ActionRepository {
             .map_err(|error| storage_failure(&error))?;
         let rows = statement
             .query_map([agent_id.to_string()], ActionRow::read)
+            .map_err(|error| storage_failure(&error))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|error| storage_failure(&error))?;
+        rows.into_iter().map(ActionRow::into_entry).collect()
+    }
+
+    fn list_office_level(&self) -> Result<Vec<ActionEntry>, AuditError> {
+        let connection = self.connection();
+        let mut statement = connection
+            .prepare(
+                "SELECT id, actor, target_agent_id, action, result, at FROM audit_actions \
+                 WHERE target_agent_id IS NULL ORDER BY id DESC LIMIT ?1",
+            )
+            .map_err(|error| storage_failure(&error))?;
+        let rows = statement
+            .query_map([OFFICE_LEVEL_LIMIT], ActionRow::read)
             .map_err(|error| storage_failure(&error))?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|error| storage_failure(&error))?;
