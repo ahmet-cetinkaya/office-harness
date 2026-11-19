@@ -143,6 +143,8 @@ fn wire_code(error: &HierarchyApplicationError) -> ErrorCode {
         HierarchyApplicationError::ConflictInput(_) | HierarchyApplicationError::Conflict(_) => {
             ErrorCode::Conflict
         }
+        // A hold or a rate limit refused the action (0007).
+        HierarchyApplicationError::Refused(_) => ErrorCode::Refused,
         HierarchyApplicationError::Storage(_) => ErrorCode::Internal,
     }
 }
