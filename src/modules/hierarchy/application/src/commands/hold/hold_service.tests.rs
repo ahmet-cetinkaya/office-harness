@@ -101,7 +101,7 @@ impl HoldClock for SettableClock {
 enum Event {
     Held(HoldScope, HoldSetter),
     Released(HoldScope),
-    Refused(AgentId, String),
+    StorageFailed,
     Notified(AgentId),
 }
 
@@ -131,8 +131,8 @@ impl HoldJournal for Recorder {
         self.push(Event::Released(scope));
     }
 
-    fn refused(&self, caller: AgentId, reason: &str) {
-        self.push(Event::Refused(caller, reason.to_owned()));
+    fn storage_failed(&self, _message: &str) {
+        self.push(Event::StorageFailed);
     }
 }
 
@@ -184,6 +184,10 @@ impl Fixture {
         self.store.fail_writes.store(true, Ordering::SeqCst);
     }
 
+    fn allow_writes(&self) {
+        self.store.fail_writes.store(false, Ordering::SeqCst);
+    }
+
     fn set_directive_limit(&self, allowed: u32) {
         locked(&self.limits.0).directive = allowed;
     }
@@ -222,8 +226,8 @@ fn is_held(event: &Event) -> bool {
     matches!(event, Event::Held(..))
 }
 
-fn is_refusal(event: &Event) -> bool {
-    matches!(event, Event::Refused(..))
+fn is_storage_failure(event: &Event) -> bool {
+    matches!(event, Event::StorageFailed)
 }
 
 fn conflict_text(error: HierarchyApplicationError) -> String {
@@ -325,15 +329,17 @@ fn releasing_the_office_keeps_an_automatic_agent_hold() {
 }
 
 #[test]
-fn an_office_hold_refusal_beats_the_limit_and_is_journaled() {
+fn an_office_hold_refusal_beats_the_limit_and_journals_nothing_itself() {
     let fixture = fixture();
     fixture.service.set_hold(HoldScope::Office).expect("set");
     let refusal = fixture.lifecycle(MEMBER).unwrap_err();
     assert_eq!(refusal.reason, "the office is on hold");
     assert!(!refusal.holds_changed);
+    // The caller of `guard` journals a refusal, with its action and text;
+    // only the user's own hold is in the journal.
     assert_eq!(
-        fixture.recorder.events().last(),
-        Some(&Event::Refused(id(MEMBER), refusal.reason))
+        fixture.recorder.events(),
+        [Event::Held(HoldScope::Office, HoldSetter::User)]
     );
 }
 
@@ -412,7 +418,7 @@ fn the_third_limit_refusal_holds_the_caller_once_and_notifies_once() {
 }
 
 #[test]
-fn a_failed_automatic_hold_write_keeps_the_refusal_and_holds_nothing() {
+fn a_failed_automatic_hold_write_is_reported_and_retried_on_the_next_refusal() {
     let fixture = fixture();
     fixture.exhaust_lifecycle(MEMBER);
     fixture.fail_writes();
@@ -426,7 +432,16 @@ fn a_failed_automatic_hold_write_keeps_the_refusal_and_holds_nothing() {
     assert_eq!(fixture.service.list().agents.len(), 0);
     assert_eq!(fixture.recorder.count(is_notification), 0);
     assert_eq!(fixture.recorder.count(is_held), 0);
-    assert_eq!(fixture.recorder.count(is_refusal), AUTO_HOLD_REFUSAL_COUNT);
+    assert_eq!(fixture.recorder.count(is_storage_failure), 1);
+
+    // The tracker kept its history, so the very next limit refusal tries
+    // the hold again, and it succeeds once the disk works.
+    fixture.allow_writes();
+    let retried = fixture.lifecycle(MEMBER).unwrap_err();
+    assert!(retried.holds_changed);
+    assert_eq!(fixture.service.list().agents.len(), 1);
+    assert_eq!(fixture.recorder.count(is_notification), 1);
+    assert_eq!(fixture.recorder.count(is_held), 1);
 }
 
 #[test]

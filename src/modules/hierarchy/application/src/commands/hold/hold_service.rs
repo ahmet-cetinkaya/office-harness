@@ -26,6 +26,24 @@ pub struct HoldsView {
     pub agents: Vec<Hold>,
 }
 
+impl HoldsView {
+    /// Splits a stored list into the office hold and the agent holds.
+    #[must_use]
+    pub fn from_holds(holds: &[Hold]) -> Self {
+        Self {
+            office: holds
+                .iter()
+                .find(|hold| hold.scope == HoldScope::Office)
+                .cloned(),
+            agents: holds
+                .iter()
+                .filter(|hold| hold.scope != HoldScope::Office)
+                .cloned()
+                .collect(),
+        }
+    }
+}
+
 /// Why `guard` refused an agent action.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuardRefusal {
@@ -47,6 +65,8 @@ struct HoldState {
 struct Refused {
     reason: String,
     auto_hold: Option<(Hold, LimitRefusal)>,
+    /// Why an automatic hold that was due could not be stored.
+    storage_failure: Option<String>,
 }
 
 /// Owns the holds, the rate windows, and the automatic-hold tracker behind
@@ -96,7 +116,7 @@ impl HoldService {
 
     #[must_use]
     pub fn list(&self) -> HoldsView {
-        view_of(&self.locked().holds)
+        HoldsView::from_holds(&self.locked().holds)
     }
 
     /// Puts a hold on the office or one agent, set by the user. Returns the
@@ -125,7 +145,7 @@ impl HoldService {
             }
             self.store.save_hold(&hold)?;
             state.holds.push(hold.clone());
-            view_of(&state.holds)
+            HoldsView::from_holds(&state.holds)
         };
         self.journal.held(&hold);
         Ok(view)
@@ -150,7 +170,7 @@ impl HoldService {
             }
             self.store.delete_hold(scope)?;
             state.holds.retain(|hold| hold.scope != scope);
-            view_of(&state.holds)
+            HoldsView::from_holds(&state.holds)
         };
         self.journal.released(scope);
         Ok(view)
@@ -163,7 +183,8 @@ impl HoldService {
     /// refusal inside one window holds the caller automatically.
     ///
     /// # Errors
-    /// A `GuardRefusal` with the reason text; every refusal is journaled.
+    /// A `GuardRefusal` with the reason text. The caller journals the
+    /// refusal; only the automatic hold is journaled here.
     pub fn guard(
         &self,
         caller: AgentId,
@@ -174,7 +195,9 @@ impl HoldService {
         let Err(refused) = self.decide(caller, action, target, rows) else {
             return Ok(());
         };
-        self.journal.refused(caller, &refused.reason);
+        if let Some(message) = &refused.storage_failure {
+            self.journal.storage_failed(message);
+        }
         let holds_changed = refused.auto_hold.is_some();
         if let Some((hold, limit)) = &refused.auto_hold {
             self.journal.held(hold);
@@ -198,6 +221,7 @@ impl HoldService {
             return Err(Refused {
                 reason: refusal.to_string(),
                 auto_hold: None,
+                storage_failure: None,
             });
         }
         let now = self.clock.now();
@@ -208,33 +232,40 @@ impl HoldService {
         };
         let should_hold = state.tracker.record_limit_refusal(caller, now)
             && !is_held(&state.holds, HoldScope::Agent(caller));
-        let auto_hold = should_hold
-            .then(|| self.store_automatic_hold(&mut state, caller, limit))
-            .flatten()
-            .map(|hold| (hold, limit));
-        Err(Refused {
+        let mut refused = Refused {
             reason: limit.to_string(),
-            auto_hold,
-        })
+            auto_hold: None,
+            storage_failure: None,
+        };
+        if should_hold {
+            match self.store_automatic_hold(&mut state, caller, limit) {
+                Ok(hold) => refused.auto_hold = Some((hold, limit)),
+                Err(message) => refused.storage_failure = Some(message),
+            }
+        }
+        Err(refused)
     }
 
     /// A store failure keeps the refusal and leaves the agent unheld; the
-    /// next refusals count again toward a new automatic hold.
+    /// tracker keeps its history, so the next limit refusal tries again.
     fn store_automatic_hold(
         &self,
         state: &mut HoldState,
         caller: AgentId,
         limit: LimitRefusal,
-    ) -> Option<Hold> {
+    ) -> Result<Hold, String> {
         let hold = Hold {
             scope: HoldScope::Agent(caller),
             set_by: HoldSetter::Office,
             since: self.clock.now(),
             reason: Some(limit.to_string()),
         };
-        self.store.save_hold(&hold).ok()?;
+        self.store
+            .save_hold(&hold)
+            .map_err(|error| error.to_string())?;
         state.holds.push(hold.clone());
-        Some(hold)
+        state.tracker.clear(caller);
+        Ok(hold)
     }
 
     /// Drops the holds of agents that were deleted.
@@ -279,20 +310,6 @@ fn held_agents(holds: &[Hold]) -> impl Iterator<Item = AgentId> + '_ {
         HoldScope::Agent(agent_id) => Some(agent_id),
         HoldScope::Office => None,
     })
-}
-
-fn view_of(holds: &[Hold]) -> HoldsView {
-    HoldsView {
-        office: holds
-            .iter()
-            .find(|hold| hold.scope == HoldScope::Office)
-            .cloned(),
-        agents: holds
-            .iter()
-            .filter(|hold| hold.scope != HoldScope::Office)
-            .cloned()
-            .collect(),
-    }
 }
 
 #[cfg(test)]

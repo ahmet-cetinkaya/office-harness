@@ -16,15 +16,19 @@ pub trait HoldClock: Send + Sync {
     fn now(&self) -> Timestamp;
 }
 
-/// Keeps hold changes and refusals in the action record. The service never
-/// names an actor; the host bridge maps each call to one: `held` of a user
-/// hold and `released` use the user actor, `held` of an automatic hold
-/// (`set_by` is `Office`) uses the office actor, and `refused` uses the
-/// refused caller. The bridge owns any record-write failure.
+/// Keeps hold changes in the action record. The service never names an
+/// actor; the host bridge maps each call to one: `held` of a user hold and
+/// `released` use the user actor, `held` of an automatic hold (`set_by` is
+/// `Office`) uses the office actor. The bridge owns any record-write
+/// failure. A refusal is not journaled here: the caller of `guard` records
+/// it, because only the caller knows the action, the target, and any text
+/// (spec FR-010, 0002/FR-011).
 pub trait HoldJournal: Send + Sync {
     fn held(&self, hold: &Hold);
     fn released(&self, scope: HoldScope);
-    fn refused(&self, caller: AgentId, reason: &str);
+    /// The service could not store an automatic hold; the host tells the
+    /// user the disk failed.
+    fn storage_failed(&self, message: &str);
 }
 
 /// Tells the user that the office held an agent by itself. The service

@@ -20,9 +20,9 @@ pub struct AutoHoldTracker {
 }
 
 impl AutoHoldTracker {
-    /// Records one limit refusal; true exactly when it is the third within
-    /// the window. The history of that agent is then cleared, so the next
-    /// true needs three new refusals.
+    /// Records one limit refusal; true when it is the third (or later)
+    /// within the window. The history stays until `clear`, so a hold that
+    /// could not be stored is tried again on the next refusal.
     pub fn record_limit_refusal(&mut self, agent: AgentId, now: Timestamp) -> bool {
         let now_millis = now.as_unix_millis();
         let times = self.refusals.entry(agent).or_default();
@@ -33,11 +33,13 @@ impl AutoHoldTracker {
             times.pop_front();
         }
         times.push_back(now_millis);
-        if times.len() < AUTO_HOLD_REFUSAL_COUNT {
-            return false;
-        }
+        times.len() >= AUTO_HOLD_REFUSAL_COUNT
+    }
+
+    /// Forgets the history of one agent, once its automatic hold is stored,
+    /// so the next hold needs three new refusals.
+    pub fn clear(&mut self, agent: AgentId) {
         self.refusals.remove(&agent);
-        true
     }
 }
 
