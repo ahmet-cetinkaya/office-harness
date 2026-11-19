@@ -1142,6 +1142,40 @@ test.describe("T4: return and restore", () => {
     await expect.poll(() => readAgentIds(page)).toEqual(["agent-bo"]);
   });
 
+  test("a click on the already open desk reads the rows that arrived while the window was unfocused", async ({
+    page,
+  }) => {
+    await openScene(page);
+    await desks(page).filter({ hasText: "Bo" }).click();
+    await expect(
+      page.getByRole("group", { name: "Live terminal of Bo" }),
+    ).toBeVisible();
+    await expect.poll(() => readAgentIds(page)).toEqual(["agent-bo"]);
+
+    await page.evaluate(() => {
+      document.hasFocus = () => false;
+      window.__mockCore.pushEvent({
+        type: "notification.created",
+        notification: {
+          id: "n-away",
+          agent_id: "agent-bo",
+          agent_name: "Bo",
+          event: "bell",
+          created_at: 1_700_000_000_000,
+          read_at: null,
+        },
+      });
+    });
+    await page.evaluate(() => new Promise((done) => setTimeout(done, 200)));
+    expect(await readAgentIds(page)).toEqual(["agent-bo"]);
+
+    await desks(page).filter({ hasText: "Bo" }).click();
+
+    await expect
+      .poll(() => readAgentIds(page))
+      .toEqual(["agent-bo", "agent-bo"]);
+  });
+
   test("an event of the open desk's agent creates no unread row (FR-006 b, LOW-2)", async ({
     page,
   }) => {
