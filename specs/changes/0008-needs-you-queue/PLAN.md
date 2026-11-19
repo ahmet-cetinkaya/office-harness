@@ -1,10 +1,10 @@
 ---
-status: draft
+status: approved (god, 2026-11-19; Efe plan review PASS r2 at 1e1af70)
 spec: specs/changes/0008-needs-you-queue/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (through Efe's review gate, PR #64, main dfd4611). Needs god's approval; Efe gates each PR at its head sha. -->
+<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (through Efe's review gate, PR #64, main dfd4611). Approved by god on 2026-11-19 after Efe's plan review PASS (r2 at 1e1af70); Efe gates each PR at its head sha. -->
 
 # Plan: Needs-you queue (0008)
 
@@ -218,7 +218,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 
 ### T7: Docs and QA (all criteria)
 
-- **Files:** `README.md` (Needs you, the jump shortcut, the collision note; correct line 61, which still says `Ctrl+Shift+H` does not work in a terminal (stale since #80); add the jump key to line 41's list and to its fallback note), `specs/changes/0003-panel-practicality/contracts/panel-protocol.md` (a cross-reference to the new requests), `specs/changes/0008-needs-you-queue/qa-report.md`.
+- **Files:** `README.md` (Needs you, the jump shortcut, the collision note; update line 39, which says the app reads the focus shortcut when a terminal opens (with the shared state of D6 a change applies at the next app start); correct line 61, which still says `Ctrl+Shift+H` does not work in a terminal (stale since #80); add the jump key to line 41's list and to its fallback note), `specs/changes/0003-panel-practicality/contracts/panel-protocol.md` (a cross-reference to the new requests), `specs/changes/0008-needs-you-queue/qa-report.md`.
 - **Work:** document the flow; record the QA rows for SC-001 to SC-005 and the edge cases with evidence. Hands-on rows (screen reader pass, 200 percent zoom, the window title on KDE, macOS, and Windows, the jump key on KDE and macOS with Fn) are recorded as BLOCKED until a person or an agent-run pass runs them, never PASS.
 - **Depends on:** T6.
 - **Acceptance:** every Traceability row has evidence or a recorded gap; `rg` finds no other project's name.
