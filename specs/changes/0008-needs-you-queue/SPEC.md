@@ -9,7 +9,7 @@ supersedes:
 
 ## Intent
 
-With 12 to 30 agents, the owner must find the agents that wait for him. Today 0003 gives him one notification per event, but a notification list is ordered by arrival, keeps items after the agent moved on, and has no key that takes him to the next agent that waits. This change adds one standing list in the panel, "Needs you", with one item per agent that waits for him, ordered by how long it has waited, and one key that opens the terminal of the agent at the top. Each item says what the office saw, not what the agent meant. This change amends the approved change 0003.
+With 12 to 30 agents, the owner must find the agents that wait for him. Today 0003 gives him one notification per event, but a notification list is ordered by arrival, keeps items after the agent moved on, and has no key that takes him to the next agent that waits. This change adds one standing list in the panel, "Needs you", with one item per agent that waits for him, grouped by what happened and ordered by how long it has waited, and one key that opens the terminal of the agent at the top. Each item says what the office saw, not what the agent meant. This change amends the approved change 0003.
 
 ## Context
 
@@ -34,13 +34,13 @@ With 12 to 30 agents, the owner must find the agents that wait for him. Today 00
 
 ## User stories
 
-### US1 — See which agents wait for me, longest first (Priority: P1)
+### US1 — See which agents wait for me, most urgent first (Priority: P1)
 
-The user sees one list of the agents that wait for him, with what the office saw and how long each has waited, longest first.
+The user sees one list of the agents that wait for him, with what the office saw and how long each has waited: failed agents first, then agents that wait for input or rang the bell, then exited agents, and the longest wait first inside each group.
 
 **Why this priority:** it answers "which agent waits for me, and which one waited longest" without reading every terminal. It is the smallest slice with value on its own: the user can open an item with the existing 0003 routes.
 
-**Independent test:** run 12 agents. Let 3 of them become `waiting for input` at different times and let 1 exit with a nonzero code. Needs you shows exactly those 4, longest wait first, each with the event and its wait time. Open the terminal of one of them: its item leaves the list.
+**Independent test:** run 12 agents. Let 3 of them become `waiting for input` at different times and let 1 exit with a nonzero code. Needs you shows exactly those 4, the failed one first and then the 3 waiting ones longest wait first, each with the event and its wait time. Open the terminal of one of them: its item leaves the list.
 
 **Scenarios:**
 
@@ -56,7 +56,7 @@ The user sees one list of the agents that wait for him, with what the office saw
 
 The user presses one key, from anywhere in the app, and the terminal of the agent at the top of Needs you opens with keyboard focus. Pressing it again goes to the next one.
 
-**Why this priority:** this is the owner's success measure: with 30 agents, the longest-waiting agent's terminal opens in one key. It is P1 because without it the list is one more place to read.
+**Why this priority:** this is the owner's success measure: with 30 agents, the terminal of the agent at the top of Needs you opens in one key. It is P1 because without it the list is one more place to read.
 
 **Independent test:** with 30 agents and 5 items in Needs you, press the jump shortcut 5 times while a terminal has focus. Each press opens the terminal of the item at the top with focus, that item leaves, and after the fifth press Needs you is empty.
 
@@ -87,7 +87,7 @@ The user sees how many agents wait for him in the window title, and can remove a
 
 - **FR-001** (US1): WHEN an attention event occurs that 0003/FR-006 does not show as read on arrival, THE SYSTEM SHALL add an item for that agent to Needs you, or, if the agent already has an item, SHALL keep that one item and its wait time and record the new event as its latest event.
 - **FR-002** (US1): THE SYSTEM SHALL show each item with the agent's name, project, latest event as the office saw it (quiet for the quiet period, bell, or exit with its exit code), and wait time, as text.
-- **FR-003** (US1): THE SYSTEM SHALL order the items by wait time, longest first, and items with the same wait time by agent name.
+- **FR-003** (US1): THE SYSTEM SHALL order the items in groups by their latest event, `failed` first, then `waiting for input` and bell, then `exited`, and inside each group by wait time, longest first, and items with the same wait time by agent name.
 - **FR-004** (US1, US3): WHEN the user opens an agent's terminal by any route, or dismisses the agent's item, THE SYSTEM SHALL remove that agent's item from Needs you.
 - **FR-005** (US1): WHEN an agent with an item changes to `starting`, `working`, or `stopped`, or is deleted, THE SYSTEM SHALL remove that agent's item from Needs you.
 - **FR-006** (US1): IF an attention event occurs while the desktop app is closed, THEN THE SYSTEM SHALL show its item in Needs you, with the wait time counted from the event, when the app opens.
@@ -112,7 +112,7 @@ The user sees how many agents wait for him in the window title, and can remove a
 **Flow:**
 
 1. The user works in one agent's terminal. Another agent goes quiet for the quiet period; 0003 notifies him, and the agent gets an item in Needs you.
-2. Needs you shows in the panel, longest wait first, with what the office saw and the wait time. The window title shows the count.
+2. Needs you shows in the panel, failed agents first, then waiting ones, then exited ones, longest wait first inside each group, with what the office saw and the wait time. The window title shows the count.
 3. He presses the jump shortcut. The top agent's terminal opens with focus, and its item leaves the list.
 4. He answers the agent, then presses the jump shortcut again for the next one.
 5. For an exited agent he will not restart, he dismisses its item.
@@ -145,8 +145,8 @@ The user sees how many agents wait for him in the window title, and can remove a
 
 ## Success criteria
 
-- **SC-001:** With 30 agents running and 5 of them with items, Needs you lists exactly those 5, longest wait first, and one press of the jump shortcut shows the top agent's live terminal with keyboard focus within 1 second.
-- **SC-002:** With 5 items, 5 presses of the jump shortcut open the 5 agents' terminals in wait-time order, and Needs you is empty afterwards.
+- **SC-001:** With 30 agents running and 5 of them with items, Needs you lists exactly those 5 in the order of FR-003, and one press of the jump shortcut shows the top agent's live terminal with keyboard focus within 1 second.
+- **SC-002:** With 5 items, 5 presses of the jump shortcut open the 5 agents' terminals in the order of FR-003, and Needs you is empty afterwards.
 - **SC-003:** An item shows in Needs you, and the count in the window title changes, within 2 seconds after the attention event (for `waiting for input`, after the quiet period ends).
 - **SC-004:** After the desktop app was closed while 3 attention events occurred, 100% of their items show in Needs you within 3 seconds after the app opens.
 - **SC-005:** An agent that produces output at least once per quiet period never gets an item.
@@ -172,18 +172,16 @@ The user sees how many agents wait for him in the window title, and can remove a
 
 - **A1:** The default jump shortcut is `Ctrl+Shift+F11`, in the same family as the 0003 shortcuts (F1 to F10) and the focus shortcut (F12). The 0003 per-OS fallback table and its macOS Fn note apply; the plan checks the key per OS and the webview and may change it. Fixed in the MVP, like the 0003 agent shortcuts.
 - **A2:** Needs you covers every project, independent of the project switcher. The jump shortcut opens the agent the way the 0003 agent switcher does (0003 A1).
-- **A3:** The order is wait time only, as in the owner's scope paragraph. The event kind does not change the order; a `failed` agent is not moved above a longer `waiting for input` one.
+- **A3:** An item's group follows its latest event, so a waiting agent that then fails moves to the `failed` group and keeps its wait time. The jump shortcut always opens the top item, which is the longest-waiting `failed` agent when one exists.
 - **A4:** Dismiss removes the item only. It does not mark notifications read and changes no status. Dismiss is not recorded in the action record, because it changes nothing in the office.
 - **A5:** No age badges, no reminders, and no repeated alerts: the wait time as text is the only age signal, so the user is not trained to ignore alerts.
 - **A6:** Items live in the background server, so a second desktop app on the same machine shows the same Needs you, and opening a terminal in either removes the item.
 
 ## Clarifications
 
-None yet.
+### Session 2026-11-19 (owner-decided)
 
-## Open questions
-
-- [NEEDS CLARIFICATION: Order. The owner's scope paragraph orders Needs you by wait time only, and this spec adopts that (A3, FR-003). The prior art proposes groups instead: `failed` first, then `waiting for input` and bell, then `exited`, longest first inside a group, so a crashed agent is never below a quiet one. Recommended: wait time only, as written, because the jump shortcut then always goes to the agent that waited longest.]
+- Q: Is Needs you ordered by wait time only, or grouped by event kind? → A: Grouped: `failed` first, then `waiting for input` and bell, then `exited`, longest wait first inside each group (FR-003, A3). The jump shortcut still opens the top item.
 
 ## Out of scope
 

@@ -1,6 +1,6 @@
 # Requirements checklist: 0008-needs-you-queue
 
-Spec: `specs/changes/0008-needs-you-queue/SPEC.md` · Status: draft · Date: 2026-11-19 · Result: 15 of 16 items pass. One `[NEEDS CLARIFICATION]` marker remains for the owner (order by wait time only, or grouped by event kind). Every `0001/` and `0003/` reference was checked against the approved specs on `main` at 19f2148.
+Spec: `specs/changes/0008-needs-you-queue/SPEC.md` · Status: draft · Date: 2026-11-19 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker; the owner answered the order question on 2026-11-19 (grouped by event kind, see the spec's Clarifications). Every `0001/` and `0003/` reference was checked against the approved specs on `main` at 19f2148.
 
 ## Content quality
 
@@ -22,7 +22,7 @@ Spec: `specs/changes/0008-needs-you-queue/SPEC.md` · Status: draft · Date: 202
 
 ## Readiness
 
-- [ ] At most three `[NEEDS CLARIFICATION]` markers; none inside an approved spec. (One marker remains; the count passes, but the spec cannot be approved until the owner answers it.)
+- [x] At most three `[NEEDS CLARIFICATION]` markers; none inside an approved spec. (The order marker was answered by the owner on 2026-11-19.)
 - [x] No vague words ("works," "fast," "secure," "robust," "intuitive") and no placeholders without an observable.
 - [x] Terminology is consistent across stories, requirements, entities, and criteria.
 - [x] The spec meets the spec contract's Size rule, or Out of scope records the declined split.
@@ -31,7 +31,7 @@ Spec: `specs/changes/0008-needs-you-queue/SPEC.md` · Status: draft · Date: 202
 
 | Round | Pass | Findings | Fix |
 |---|---|---|---|
-| 1 | Requirements checklist | None open except the order marker. | None. |
+| 1 | Requirements checklist | None open except the order marker (answered 2026-11-19: grouped by event kind). | FR-003, A3, and the order-dependent stories and criteria follow the answer. |
 | 2 | Hostile reader | The edge case for a hidden window title promised a count in the panel that no requirement stated. A dismissed item and a later event had no stated rule. | FR-009 now shows the count next to Needs you too. The dismissed-then-new-event case points to FR-001 (a new item). |
 | 3 | Hostile reader on the fixed text | No new gap. | None. |
 
