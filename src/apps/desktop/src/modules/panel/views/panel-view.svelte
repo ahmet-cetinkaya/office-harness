@@ -29,7 +29,10 @@
     unreadCount,
     type NotificationSnapshot,
   } from "../../notification";
-  import { pressedAppShortcut } from "../../../core/shortcuts";
+  import {
+    isHeldForTerminal,
+    pressedAppShortcut,
+  } from "../../../core/shortcuts";
   import type { PanelStore } from "../state/panel-store.svelte";
   import AgentRow from "../components/agent-row.svelte";
   import AgentSwitcherDialog from "../components/agent-switcher-dialog.svelte";
@@ -185,13 +188,6 @@
     agentHoldFailure = text === null ? null : { agentId, text };
   }
 
-  /** True for a key pressed inside xterm, where the CLI owns the keys. */
-  function isFromTerminal(event: KeyboardEvent): boolean {
-    return (
-      event.target instanceof Element && event.target.closest(".xterm") !== null
-    );
-  }
-
   /**
    * The one app-level key handler (D8). The terminal's custom key handler
    * lets exactly the table's combinations out of xterm, and every focus in
@@ -206,7 +202,8 @@
     const pressed = pressedAppShortcut(event);
     if (pressed === null) return;
     // A key that a terminal does not pass on is the CLI's while one has focus.
-    if (!pressed.isTerminalShortcut && isFromTerminal(event)) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (isHeldForTerminal(pressed, target)) return;
     if (pressed.kind === "office_hold") {
       event.preventDefault();
       void toggleOfficeHold();
