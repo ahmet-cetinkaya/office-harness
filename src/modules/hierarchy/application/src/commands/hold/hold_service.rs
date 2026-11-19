@@ -219,7 +219,7 @@ impl HoldService {
                 storage_failure: None,
             });
         }
-        let now = self.clock.now();
+        let now = self.clock.steady_now();
         // Read per call, so a changed limit applies to the next action.
         let limits = self.limits.limits();
         let Err(limit) = state.windows.try_take(caller, action, &limits, now) else {

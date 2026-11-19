@@ -10,10 +10,17 @@ pub trait RateLimitSource: Send + Sync {
     fn limits(&self) -> RateLimits;
 }
 
-/// The time the holds and the rate windows run on.
+/// The two times the hold service runs on.
 pub trait HoldClock: Send + Sync {
+    /// The wall time: a hold's `since` and its record entry, so they line up
+    /// with every other entry of the action record.
     #[must_use]
     fn now(&self) -> Timestamp;
+    /// A time that a step of the system clock or a suspend never moves
+    /// backward or forward: the rate windows and the automatic-hold tracker
+    /// count on it, so a limit always spans 60 real seconds.
+    #[must_use]
+    fn steady_now(&self) -> Timestamp;
 }
 
 /// Keeps hold changes in the action record. The service never names an
