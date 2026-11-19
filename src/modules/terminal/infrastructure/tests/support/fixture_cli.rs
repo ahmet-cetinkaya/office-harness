@@ -15,6 +15,7 @@ const WATCHDOG: Duration = Duration::from_secs(60);
 const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 const SPLIT_QUERY_GAP: Duration = Duration::from_millis(150);
 const RELEASE_POLL: Duration = Duration::from_millis(10);
+const CHUNK_GAP: Duration = Duration::from_millis(5);
 const SIZE_POLL: Duration = Duration::from_millis(50);
 const USAGE_EXIT_CODE: i32 = 64;
 const TIMEOUT_EXIT_CODE: i32 = 2;
@@ -29,8 +30,12 @@ fn main() {
     match argument(0) {
         "exit" => exit(number(argument(1))),
         "exit-on-file" => exit_on_file(argument(1), number(argument(2))),
-        "pause-resume" => pause_resume(number(argument(1))),
+        "pause-resume" => pause_resume(argument(1), argument(2)),
         "counter" => counter(number(argument(1)), number(argument(2))),
+        "counter-on-file" => {
+            wait_for_file(argument(1));
+            counter(number(argument(2)), number(argument(3)));
+        }
         "keys" => keys(),
         "lines" => lines(),
         "progress" => progress(),
@@ -80,23 +85,28 @@ fn enter_raw_mode() {
 /// the test needs, whatever the scheduling.
 fn exit_on_file(path: &str, code: i32) {
     announce("HELLO\n");
-    while !std::path::Path::new(path).exists() {
-        thread::sleep(RELEASE_POLL);
-    }
+    wait_for_file(path);
     exit(code);
 }
 
-/// Writes, goes quiet, writes three lines close together, goes quiet again,
-/// and exits with code 0.
-fn pause_resume(pause_milliseconds: u64) {
-    let pause = Duration::from_millis(pause_milliseconds);
+/// Returns once the test has created the file at `path`: the test, not a
+/// timer, decides when the child goes on.
+fn wait_for_file(path: &str) {
+    while !std::path::Path::new(path).exists() {
+        thread::sleep(RELEASE_POLL);
+    }
+}
+
+/// Writes, stays quiet until the first file exists, writes three lines close
+/// together, stays quiet until the second file exists, and exits with code 0.
+fn pause_resume(first_release: &str, second_release: &str) {
     announce("ONE\n");
-    thread::sleep(pause);
+    wait_for_file(first_release);
     for line in ["TWO\n", "THREE\n", "FOUR\n"] {
         announce(line);
-        thread::sleep(Duration::from_millis(5));
+        thread::sleep(CHUNK_GAP);
     }
-    thread::sleep(pause);
+    wait_for_file(second_release);
 }
 
 fn counter(count: u32, delay_milliseconds: u64) {
