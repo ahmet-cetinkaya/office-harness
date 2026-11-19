@@ -7,12 +7,14 @@ import {
   readLastView,
 } from "../../notification";
 import { createOfficeStore } from "../../agent";
+import { createHoldController } from "../../hold";
 
 export type OpenView = "panel" | "scene";
 
 /**
  * The panel's stores over one client: the office, the project choice, the
- * notification list with its OS notifications, and the last view (0003).
+ * notification list with its OS notifications, the holds (0007), and the
+ * last view (0003).
  */
 export function createPanelStore(client: CoreClient) {
   const office = createOfficeStore(client, () => void notifications.load());
@@ -21,6 +23,12 @@ export function createPanelStore(client: CoreClient) {
     createOsNotificationService(),
     () => office.snapshot.selectedAgentId,
     () => document.hasFocus(),
+  );
+  const hold = createHoldController(
+    client,
+    (agentId) =>
+      office.snapshot.agents.find((agent) => agent.id === agentId)?.name ??
+      agentId,
   );
   // The restore is the one reader of `last_view` and the only place the
   // stored view word is applied. The shell writes the last view only after
@@ -91,6 +99,7 @@ export function createPanelStore(client: CoreClient) {
       client,
     },
     notifications,
+    hold,
     lastView,
     client,
   };

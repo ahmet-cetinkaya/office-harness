@@ -15,6 +15,14 @@
   } from "../../agent";
   import { INITIAL_HIERARCHY, type HierarchyController } from "../../hierarchy";
   import {
+    automaticHoldText,
+    holdOfAgent,
+    INITIAL_HOLD,
+    OfficeHoldBar,
+    type FailureText,
+    type HoldSnapshot,
+  } from "../../hold";
+  import {
     INITIAL_NOTIFICATIONS,
     NotificationDialog,
     NotificationLiveRegion,
@@ -64,6 +72,29 @@
   $effect(() =>
     store.notifications.subscribe((next) => (notificationSnapshot = next)),
   );
+
+  // The hold snapshot is a plain value too, so it subscribes the same way.
+  let holdSnapshot = $state<HoldSnapshot>(INITIAL_HOLD);
+  $effect(() => store.hold.subscribe((next) => (holdSnapshot = next)));
+  const holds = $derived(holdSnapshot.state);
+  let officeHoldFailure = $state<FailureText>(null);
+  /** The last agent hold refusal and the agent it came from, so that it
+   * does not show on the details of another agent. */
+  let agentHoldFailure = $state<{ agentId: string; text: string } | null>(null);
+
+  // One live region speaks for both sources; the newest change replaces the
+  // text.
+  let liveAnnouncement = $state<string | null>(null);
+  $effect(() => {
+    if (holdSnapshot.announcement !== null) {
+      liveAnnouncement = holdSnapshot.announcement;
+    }
+  });
+  $effect(() => {
+    if (notificationSnapshot.announcement !== null) {
+      liveAnnouncement = `Notification: ${notificationSnapshot.announcement}`;
+    }
+  });
 
   const choice = $derived(
     effectiveChoice(office.projects, store.projectChoice),
@@ -133,6 +164,28 @@
     }
   }
 
+  async function toggleOfficeHold(): Promise<void> {
+    officeHoldFailure =
+      holds.office === null
+        ? await store.hold.holdOffice()
+        : await store.hold.releaseOffice();
+  }
+
+  async function toggleAgentHold(agentId: string): Promise<void> {
+    const text =
+      holdOfAgent(holds, agentId) === null
+        ? await store.hold.holdAgent(agentId)
+        : await store.hold.releaseAgent(agentId);
+    agentHoldFailure = text === null ? null : { agentId, text };
+  }
+
+  /** True for a key pressed inside xterm, where the CLI owns the keys. */
+  function isFromTerminal(event: KeyboardEvent): boolean {
+    return (
+      event.target instanceof Element && event.target.closest(".xterm") !== null
+    );
+  }
+
   /**
    * The one app-level key handler (D8). The terminal's custom key handler
    * lets exactly the table's combinations out of xterm, and every focus in
@@ -146,10 +199,18 @@
     if (document.querySelector("dialog[open]") !== null) return;
     const pressed = pressedAppShortcut(event);
     if (pressed === null) return;
-    if (pressed.position === null) {
+    // A key that a terminal does not pass on is the CLI's while one has focus.
+    if (!pressed.isTerminalShortcut && isFromTerminal(event)) return;
+    if (pressed.kind === "office_hold") {
+      event.preventDefault();
+      void toggleOfficeHold();
+      return;
+    }
+    if (pressed.kind === "switcher") {
       isSwitchingAgent = true;
       return;
     }
+    if (pressed.position === null) return;
     const agent = shown[pressed.position - 1];
     if (agent !== undefined) openAgent(agent.id);
   }
@@ -237,6 +298,14 @@
         </Button>
         <Button onclick={() => offerAgentForm(null)}>New agent</Button>
       </div>
+      <div class="basis-full">
+        <OfficeHoldBar
+          controller={store.hold}
+          isOfficeHeld={holds.office !== null}
+          failure={officeHoldFailure}
+          ontoggle={() => void toggleOfficeHold()}
+        />
+      </div>
     {/if}
   </header>
 
@@ -244,7 +313,7 @@
     <FailureMessage lead={office.notice.lead} message={office.notice.message} />
   {/if}
 
-  <NotificationLiveRegion announcement={notifications.announcement} />
+  <NotificationLiveRegion announcement={liveAnnouncement} />
 
   {#if office.phase === "loading"}
     <p role="status" class="text-neutral-700">Loading the office.</p>
@@ -336,6 +405,7 @@
                 hierarchy={agentHierarchy(treeSnapshot.tree, agent.id)}
                 {isStopping}
                 isSelected={agent.id === office.selectedAgentId}
+                isOnHold={holdOfAgent(holds, agent.id) !== null}
                 onopen={openAgent}
               />
             {/each}
@@ -357,6 +427,13 @@
                   projectName={projectNameOf(selected, office.projects)}
                   isBusy={office.isBusy}
                   isStopping={office.stoppingAgentIds.has(agentId)}
+                  isOnHold={holdOfAgent(holds, agentId) !== null}
+                  holdNote={automaticHoldText(holdOfAgent(holds, agentId))}
+                  holdFailure={agentHoldFailure?.agentId === agentId
+                    ? agentHoldFailure.text
+                    : null}
+                  onhold={() => void toggleAgentHold(agentId)}
+                  onrelease={() => void toggleAgentHold(agentId)}
                   onstart={() => void controller.startAgent(agentId)}
                   onstop={() => void controller.stopAgent(agentId)}
                   onnewtask={() => void controller.startNewTask(agentId)}
