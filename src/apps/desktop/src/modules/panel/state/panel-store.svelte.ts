@@ -24,7 +24,7 @@ export function createPanelStore(client: CoreClient) {
   const notifications = createNotificationController(
     client,
     createOsNotificationService(),
-    () => office.snapshot.selectedAgentId,
+    () => (openView === "panel" ? office.snapshot.selectedAgentId : null),
     () => document.hasFocus(),
   );
   // The restore is the one reader of `last_view` and the only place the

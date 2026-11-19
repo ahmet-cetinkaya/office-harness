@@ -1015,6 +1015,55 @@ test.describe("T4: return and restore", () => {
     await expect.poll(readAgentCalls).toBe(1);
   });
 
+  test("a new event of the panel-selected agent stays unread while the scene is open (FR-006 b)", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: null,
+          agent: "agent-ada",
+          terminal_open: false,
+          view: "scene",
+        }),
+      },
+    });
+    await page.goto("/");
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => window.__mockCore.settings.length > 0))
+      .toBe(true);
+
+    await page.evaluate(() =>
+      window.__mockCore.pushEvent({
+        type: "notification.created",
+        notification: {
+          id: "n-new",
+          agent_id: "agent-ada",
+          agent_name: "Ada",
+          event: "bell",
+          created_at: 1_700_000_000_000,
+          read_at: null,
+        },
+      }),
+    );
+    // Without the fix the store marks the row read within a few ticks.
+    await page.evaluate(() => new Promise((done) => setTimeout(done, 200)));
+
+    const readRequests = await page.evaluate(() =>
+      window.__mockCore.calls
+        .filter((call) => call.command === "send_request")
+        .map((call) => String(call.args.kind))
+        .filter((kind) => kind.startsWith("notification.read")),
+    );
+    expect(readRequests).toEqual([]);
+  });
+
   test("a stored last_view without the view field (a 0003-era write) opens the panel", async ({
     page,
   }) => {
