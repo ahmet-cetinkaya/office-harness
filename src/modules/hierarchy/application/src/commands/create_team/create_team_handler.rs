@@ -32,8 +32,9 @@ impl CreateTeamHandler {
     }
 
     /// # Errors
-    /// `Invalid` for a bad name; `Conflict` when the name is taken; `Invalid`
-    /// when the placement breaks a tree rule, naming the reason.
+    /// `Invalid` for a bad name; `Conflict` when the name is taken or the
+    /// lead already leads another team; `Invalid` when the placement breaks
+    /// another tree rule, naming the reason.
     pub fn handle(&self, request: &CreateTeamRequest) -> Result<Team, HierarchyApplicationError> {
         let name = TeamName::parse(&request.name)?;
         if self.store.team_name_taken(name.key())? {
@@ -52,7 +53,8 @@ impl CreateTeamHandler {
             parent_agent_id: None,
             team_id: Some(team.id()),
         };
-        check_placement(&snapshot.rows, placement).map_err(HierarchyApplicationError::Invalid)?;
+        check_placement(&snapshot.rows, placement)
+            .map_err(HierarchyApplicationError::from_place)?;
         let parent = resolved_parent(&snapshot.rows, placement);
         self.store.save_team_and_place_lead(&team, parent)?;
         Ok(team)

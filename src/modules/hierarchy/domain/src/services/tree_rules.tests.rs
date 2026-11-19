@@ -103,6 +103,20 @@ fn a_second_ceo_is_refused_and_names_the_first() {
 }
 
 #[test]
+fn a_lead_of_one_team_is_refused_for_another_team() {
+    // lead_a holds team 10 in the fixture; placing it on team 11 would
+    // leave team 10 with a stale seat, so the move is refused, not made.
+    let ids = fixed_ids();
+    assert_eq!(
+        check_placement(
+            &tree(),
+            placement(ids.lead_a, Role::Lead, None, Some(TeamId::from_u128(11))),
+        ),
+        Err(HierarchyError::LeadsAnotherTeam)
+    );
+}
+
+#[test]
 fn a_second_lead_for_a_held_team_is_refused_and_names_the_seated_lead() {
     let ids = fixed_ids();
     let fresh = AgentId::from_u128(9);
