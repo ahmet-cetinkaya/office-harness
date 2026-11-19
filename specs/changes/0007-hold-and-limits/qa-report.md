@@ -3,7 +3,7 @@
 ## Summary
 
 - **Date:** 2026-11-19.
-- **Build under test:** branch `feat/0007-p2-desktop`. The Rust gates ran at b304c33 (Phase 1 plus the review fixes). The desktop gates ran at b99814b. Phase 1 (PR #71) was reviewed PASS at 32ad2ff with CI green.
+- **Build under test:** branch `feat/0007-p2-desktop`. All local gates ran on the tree of 855b01b (Phase 1, the #71 and #73 review fixes, T7 and T8); the later commits change docs only. Phase 1 (PR #71) was reviewed PASS at 32ad2ff with CI green.
 - **Overall status:** the automated evidence stands. The hands-on checks have not run, so no row that needs a person is a PASS.
 - **Status of this file:** the local gate results below were run on this branch on 2026-11-19. The test names were read from the repository on 2026-11-19. This task ran no test, build, or browser: it is a docs task.
 
@@ -27,18 +27,17 @@
 
 | Gate | Scope | Result |
 |---|---|---|
-| `cargo fmt --check` | Rust, at b304c33 | PASS |
-| `cargo clippy -D warnings` | `agent-domain`, `hierarchy-application`, `office-harnessd`, at b304c33 | PASS |
-| `cargo test` | `office-harnessd`: 21 suites ok, including `agent_hold` (10 tests), at b304c33 | PASS |
-| `cargo test` | `hierarchy-application`: 46 tests, at b304c33 | PASS |
-| `scripts/check-boundaries.sh` | at b304c33 | PASS |
-| `bun test src` | desktop, at b99814b: 221 pass, 0 fail | PASS |
-| Playwright | desktop, full suite, at b99814b: 147 passed | PASS |
-| `svelte-check` | desktop, at b99814b: 0 errors | PASS |
-| `eslint`, `prettier --check` | desktop, at b99814b | PASS (clean) |
+| `cargo fmt --check` | Rust, at 855b01b | PASS |
+| `cargo clippy -D warnings` | `agent-domain`, `hierarchy-application`, `office-harnessd`, at 855b01b | PASS |
+| `cargo test` | `office-harnessd` and `hierarchy-application`: 23 suites ok, including `agent_hold` (10 tests) and the wall-clock-step test, at 855b01b | PASS |
+| `scripts/check-boundaries.sh` | at 855b01b | PASS |
+| `bun test src` | desktop, at 855b01b: 224 pass, 0 fail | PASS |
+| Playwright | desktop, full suite, at 855b01b: 148 passed | PASS |
+| `svelte-check` | desktop, at 855b01b: 0 errors | PASS |
+| `eslint`, `prettier --check` | desktop, at 855b01b | PASS (clean) |
 | CI | Phase 1, PR #71, at 32ad2ff | PASS (green; reviewed PASS) |
 
-Not run: the Phase 2 desktop PR has no CI result in this file. The Rust gates did not run again at b99814b, which changed desktop files only.
+Not run: the Phase 2 PR has no CI result in this file. Each commit was not built on its own; the gates cover the tree of 855b01b.
 
 ## Requirements
 
