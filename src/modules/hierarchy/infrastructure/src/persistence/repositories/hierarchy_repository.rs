@@ -199,6 +199,20 @@ impl HierarchyStore for HierarchyRepository {
                     )
                     .map(|_| ())
                     .map_err(|error| error.to_string())?;
+                // A lead placement owns the seat: the team's lead column
+                // moves to this agent in the same write, so the tree query
+                // shows the placement at once. The lead check above ran
+                // under the caller's exclusion, so two racing lead
+                // placements cannot both win.
+                if role == Some(Role::Lead) {
+                    connection
+                        .execute(
+                            "UPDATE hierarchy_teams SET lead_agent_id = ?1 WHERE id = ?2",
+                            params![agent_id.as_uuid_text(), team.as_uuid_text()],
+                        )
+                        .map(|_| ())
+                        .map_err(|error| error.to_string())?;
+                }
             }
             Ok(())
         })

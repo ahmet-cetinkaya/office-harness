@@ -37,8 +37,9 @@ impl CreateRoleAgentHandler {
     /// # Errors
     /// `Invalid` naming the broken place rule: a second CEO, a parent that
     /// is not in the tree, or a role that cannot sit under that parent.
-    /// `InvalidInput`, `NotFound`, `Conflict`, or `Storage` as the agent
-    /// module refused or failed the create, keeping its message.
+    /// `Conflict` when the team asked for already holds its lead. The
+    /// `InvalidInput`, `NotFoundInput`, `ConflictInput`, or `Storage` of the
+    /// agent module's own refusal or failure, keeping its message.
     ///
     /// The caller holds the tree exclusion across this call, so a concurrent
     /// placement cannot join the tree between the check and the create+place
@@ -68,7 +69,8 @@ impl CreateRoleAgentHandler {
             parent_agent_id: request.parent_agent_id,
             team_id,
         };
-        check_placement(&snapshot.rows, placement).map_err(HierarchyApplicationError::Invalid)?;
+        check_placement(&snapshot.rows, placement)
+            .map_err(HierarchyApplicationError::from_place)?;
         let agent_id = self
             .creator
             .create(request.seed)
