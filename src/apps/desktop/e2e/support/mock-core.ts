@@ -46,6 +46,9 @@ export interface OfficeSeed {
   /** Milliseconds the `last_view` read waits before it answers, as a slow
    * server. Answers at once when left out. */
   lastViewDelayMs?: number;
+  /** Milliseconds the `agent.list` read waits before it answers, as an
+   * office that is slow to load. Answers at once when left out. */
+  agentListDelayMs?: number;
   /** A refusal to answer with, by request type. The tree reads it too. */
   refusals?: Record<string, { code: string; message: string }>;
 }
@@ -498,6 +501,11 @@ export async function installMockCore(
           return null;
         }
         case "agent.list":
+          if (mock.office?.agentListDelayMs !== undefined) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, mock.office?.agentListDelayMs),
+            );
+          }
           return office.agents;
         case "hierarchy.tree": {
           if (mock.hierarchyTreeFailure && !hierarchyTreeFailedOnce) {

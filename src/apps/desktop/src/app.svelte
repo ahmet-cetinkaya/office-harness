@@ -30,11 +30,15 @@
 
   // The shell owns the open view (0005 D6) and is the one writer of
   // `last_view` (the `view` field, MODIFIED 0003/FR-008), at most once per
-  // second and on close. The panel restores the stored view once after its
-  // first load, and only then does recording begin, so the restore's read
-  // cannot be clobbered by an eager write.
+  // second and on close. The shell restores the stored view once at the
+  // office's first ready, whichever view is open, and only then does
+  // recording begin, so the restore's read cannot be clobbered by an eager
+  // write.
   const openView = $derived(panel.openView);
   const lastView = createLastViewWriter(client);
+  $effect(() => {
+    if (panel.office.snapshot.phase === "ready") void panel.restoreLastView();
+  });
   // The write rides the connection and the panel's restore, not the mount: a
   // pre-connection shell (not reachable, unauthorized, version mismatch)
   // sends no request at all, as the office and hierarchy loads hold to below.
