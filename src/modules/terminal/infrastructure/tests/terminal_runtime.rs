@@ -11,7 +11,9 @@ mod support;
 use std::time::Duration;
 
 use kernel::AgentId;
-use support::{Client, limits, runtime_in, size, spawn_fixture, wait_until};
+use support::{
+    Client, RecordingSink, Release, limits, runtime_in, size, spawn_fixture, wait_until,
+};
 #[cfg(unix)]
 use support::{process_is_alive, spawn_program};
 use tempfile::TempDir;
@@ -137,12 +139,25 @@ fn without_exit_output_on_windows(mut events: Vec<TerminalEvent>) -> Vec<Termina
     events
 }
 
+fn quiet_periods(sink: &RecordingSink) -> usize {
+    sink.events()
+        .iter()
+        .filter(|event| **event == TerminalEvent::QuietPeriod)
+        .count()
+}
+
 #[test]
 fn events_follow_the_child() {
     let folder = TempDir::new().expect("temp folder");
     let (runtime, sink) = runtime_in(folder.path(), limits(1000));
     let agent = AgentId::generate();
-    spawn_fixture(&runtime, agent, &["delayed-exit", "600", "7"]);
+    let signals = TempDir::new().expect("signal folder");
+    let exit = Release::in_folder(signals.path(), "exit");
+    spawn_fixture(&runtime, agent, &["exit-on-file", exit.argument(), "7"]);
+    // The child stays silent until released, so the quiet period is reported
+    // before the exit however slowly the monitor thread is scheduled.
+    wait_until("the quiet period", || quiet_periods(&sink) == 1);
+    exit.signal();
     wait_until("the exit", || sink.has_exited());
     assert_eq!(
         without_exit_output_on_windows(sink.events()),
@@ -159,7 +174,18 @@ fn output_after_a_quiet_period_is_reported_once_for_the_change_not_for_each_chun
     let folder = TempDir::new().expect("temp folder");
     let (runtime, sink) = runtime_in(folder.path(), limits(1000));
     let agent = AgentId::generate();
-    spawn_fixture(&runtime, agent, &["pause-resume", "700"]);
+    let signals = TempDir::new().expect("signal folder");
+    let resume = Release::in_folder(signals.path(), "resume");
+    let exit = Release::in_folder(signals.path(), "exit");
+    spawn_fixture(
+        &runtime,
+        agent,
+        &["pause-resume", resume.argument(), exit.argument()],
+    );
+    wait_until("the first quiet period", || quiet_periods(&sink) == 1);
+    resume.signal();
+    wait_until("the second quiet period", || quiet_periods(&sink) == 2);
+    exit.signal();
     wait_until("the exit", || sink.has_exited());
     assert_eq!(
         without_exit_output_on_windows(sink.events()),
@@ -207,8 +233,16 @@ fn output_above_the_limit_drops_the_oldest_output_and_reports_it() {
     let folder = TempDir::new().expect("temp folder");
     let (runtime, sink) = runtime_in(folder.path(), limits(50));
     let agent = AgentId::generate();
-    let key = spawn_fixture(&runtime, agent, &["counter", "300", "2"]);
+    let signals = TempDir::new().expect("signal folder");
+    let start = Release::in_folder(signals.path(), "start");
+    let key = spawn_fixture(
+        &runtime,
+        agent,
+        &["counter-on-file", start.argument(), "300", "2"],
+    );
+    // Attached before the first line, so the client sees every drop notice.
     let client = Client::attach(&runtime, agent, size(80, 24));
+    start.signal();
     wait_until("the exit", || sink.has_exited());
 
     assert!(client.dropped_notices() > 0);
