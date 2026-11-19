@@ -4,16 +4,21 @@ use std::sync::Arc;
 
 use agent_application::commands::delete_agent::DeleteAgentHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
+use agent_application::common::interfaces::AgentStore;
 use agent_infrastructure::persistence::{AgentRepository, SharedConnection};
 use hierarchy_application::commands::create_role_agent::CreateRoleAgentHandler;
+use hierarchy_application::commands::hold::HoldService;
 use hierarchy_application::commands::send_directive::SendDirectiveHandler;
 use hierarchy_application::commands::subtree::SubtreeHandler;
+use hierarchy_application::common::interfaces::HoldStore;
 use hierarchy_application::common::ports::{
-    AgentCreator, DirectiveJournal, SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover,
+    AgentCreator, DirectiveJournal, HoldClock, HoldJournal, HoldNotifier, RateLimitSource,
+    SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover,
 };
 use hierarchy_application::{CreateTeamHandler, DeleteTeamHandler, PlaceAgentHandler, TreeQuery};
 use hierarchy_infrastructure::persistence::migrations::{LEDGER_TABLE, SCRIPTS};
 use hierarchy_infrastructure::persistence::repositories::hierarchy_repository::HierarchyRepository;
+use hierarchy_infrastructure::persistence::repositories::hold_repository::HoldRepository;
 use hierarchy_infrastructure::services::agent_places::AgentPlaces;
 use hierarchy_presentation::{HierarchyHandlers, HierarchyUseCases};
 use kernel::AgentId;
@@ -23,8 +28,10 @@ use super::{
 };
 use crate::bridges::{
     AgentCreatorBridge, DirectiveJournalBridge, DirectiveTargetBridge, DirectiveWriterBridge,
-    RoleRequestsBridge, SubtreeRequestsBridge,
+    HoldJournalBridge, HoldNotifierBridge, NotificationBridge, RoleRequestsBridge,
+    SettingsRateLimits, SteadyClock, SubtreeRequestsBridge,
 };
+use crate::server::EventHub;
 
 /// The hierarchy services: the store, the use cases, and the handlers.
 pub struct HierarchyServices {
@@ -38,6 +45,9 @@ pub struct HierarchyServices {
     /// Journals the directive attempts and the gateway's own refusals into
     /// the shared action record (FR-011).
     pub directive_journal: Arc<DirectiveJournalBridge>,
+    /// The holds and the rate limits, one service for the agent-call gateway
+    /// and the user's `hold.*` requests (0007).
+    pub holds: Arc<HoldService>,
 }
 
 /// Runs the hierarchy migrations and builds its services. The subtree ports
@@ -46,14 +56,19 @@ pub struct HierarchyServices {
 /// directive use case writes through the terminal runtime and journals into
 /// the agent module's action record (FR-009, FR-011).
 ///
+/// The hold service reads the stored holds and drops those of agents that
+/// no longer exist (0007 D10).
+///
 /// # Errors
-/// A migration failure.
+/// A migration failure, or holds that cannot be read.
 pub fn build_hierarchy_services(
     connection: &SharedConnection,
     agent: &AgentServices,
     terminal: &TerminalServices,
     alerts: &StorageAlerts,
-    _log: &ServerLog,
+    log: &ServerLog,
+    events: &EventHub,
+    notifications: &NotificationBridge,
 ) -> Result<HierarchyServices, StartupError> {
     let handle = connection.handle();
     let mut guard = handle
@@ -107,20 +122,73 @@ pub fn build_hierarchy_services(
         agent.journal.clone(),
         alerts.clone(),
     ));
-    let send_directive = Arc::new(SendDirectiveHandler::new(
-        Arc::clone(&store),
-        Arc::new(DirectiveTargetBridge::new(Arc::new(AgentRepository::new(
-            connection.clone(),
-        )))),
-        Arc::new(DirectiveWriterBridge::new(Arc::clone(&terminal.runtime))),
-        Arc::clone(&directive_journal) as Arc<dyn DirectiveJournal>,
-    ));
+    let agents: Arc<dyn AgentStore> = Arc::new(AgentRepository::new(connection.clone()));
+    let holds = build_hold_service(connection, agent, alerts, log, events, notifications)?;
+    prune_holds(&holds, agents.as_ref(), log);
+    let send_directive = Arc::new(
+        SendDirectiveHandler::new(
+            Arc::clone(&store),
+            Arc::new(DirectiveTargetBridge::new(agents)),
+            Arc::new(DirectiveWriterBridge::new(Arc::clone(&terminal.runtime))),
+            Arc::clone(&directive_journal) as Arc<dyn DirectiveJournal>,
+        )
+        .with_hold_guard(Arc::clone(&holds)),
+    );
     Ok(HierarchyServices {
         handlers,
         tree,
         send_directive,
         directive_journal,
+        holds,
     })
+}
+
+fn build_hold_service(
+    connection: &SharedConnection,
+    agent: &AgentServices,
+    alerts: &StorageAlerts,
+    log: &ServerLog,
+    events: &EventHub,
+    notifications: &NotificationBridge,
+) -> Result<Arc<HoldService>, StartupError> {
+    let store: Arc<dyn HoldStore> = Arc::new(HoldRepository::new(connection.handle()));
+    let limits: Arc<dyn RateLimitSource> = Arc::new(SettingsRateLimits::new(
+        agent.handlers.use_cases().get_settings.clone(),
+        log.clone(),
+    ));
+    let journal: Arc<dyn HoldJournal> = Arc::new(HoldJournalBridge::new(
+        agent.record_action.clone(),
+        events.clone(),
+        alerts.clone(),
+    ));
+    let notifier: Arc<dyn HoldNotifier> = Arc::new(HoldNotifierBridge::new(
+        notifications.clone(),
+        Arc::clone(&store),
+        events.clone(),
+        alerts.clone(),
+    ));
+    let service = HoldService::new(
+        store,
+        limits,
+        journal,
+        notifier,
+        Arc::new(SteadyClock::default()) as Arc<dyn HoldClock>,
+    )
+    .map_err(|error| StartupError::Holds(error.to_string()))?;
+    Ok(Arc::new(service))
+}
+
+/// A hold of an agent that was deleted while the server was down would never
+/// show in the panel; it goes at start. A failed read or write leaves the
+/// holds as they are and is logged, because a stale hold only waits.
+fn prune_holds(holds: &HoldService, agents: &dyn AgentStore, log: &ServerLog) {
+    let existing = match agents.list() {
+        Ok(listed) => listed.iter().map(|agent| agent.id).collect(),
+        Err(error) => return log.error(&format!("the stale holds were not pruned: {error}")),
+    };
+    if let Err(error) = holds.prune(&existing) {
+        log.error(&format!("the stale holds were not pruned: {error}"));
+    }
 }
 
 /// Bridges one agent stop to the agent module's own handler.

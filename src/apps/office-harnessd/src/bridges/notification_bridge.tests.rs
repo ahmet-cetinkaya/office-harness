@@ -534,3 +534,22 @@ mod records {
         assert_eq!(published_events(&mut published).len(), 1);
     }
 }
+
+#[test]
+fn an_auto_hold_row_carries_the_limit_name_as_its_detail_and_reaches_the_clients() {
+    let agent = agent_named("Ana");
+    let (bridge, store, _agents, hub) = bridge_for(&agent, None);
+    let mut frames = hub.subscribe();
+
+    bridge.record_auto_hold(agent.id, "directives sent by one agent");
+
+    let rows = store.all();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].event, NotificationEvent::AutoHold);
+    assert_eq!(
+        rows[0].detail.as_deref(),
+        Some("directives sent by one agent")
+    );
+    assert!(rows[0].is_unread());
+    assert!(published_events(&mut frames)[0].contains("auto_hold"));
+}

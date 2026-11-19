@@ -14,6 +14,8 @@ pub struct CreateNotification {
     pub agent_name: String,
     pub event: NotificationEvent,
     pub at: Timestamp,
+    /// See `Notification::detail`.
+    pub detail: Option<String>,
 }
 
 /// Adds one notification row (FR-006). A bell while the agent still has an
@@ -42,13 +44,14 @@ impl CreateNotificationHandler {
         if request.event == NotificationEvent::Bell && self.has_unread_bell(request.agent_id)? {
             return Ok(None);
         }
-        let notification = Notification::new(
+        let mut notification = Notification::new(
             NotificationId::generate(),
             request.agent_id,
             request.agent_name,
             request.event,
             request.at,
         );
+        notification.detail = request.detail;
         Ok(Some(self.store.insert(&notification)?))
     }
 

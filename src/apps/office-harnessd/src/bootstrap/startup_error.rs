@@ -57,6 +57,10 @@ pub enum StartupError {
     Persistence(#[from] PersistenceError),
     #[error(transparent)]
     Access(#[from] AccessError),
+    /// Fail closed: a server that cannot read its holds would let held
+    /// agents act (0007, SC-003).
+    #[error("cannot read the holds: {0}")]
+    Holds(String),
     #[error("terminal setting: {0}")]
     Terminal(#[from] TerminalError),
     #[error(transparent)]

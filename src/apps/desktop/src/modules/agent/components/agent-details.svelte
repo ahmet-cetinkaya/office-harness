@@ -4,6 +4,7 @@
   import FailureMessage from "$shared/ui/failure-message.svelte";
   import type { CoreClient } from "../../../core/api";
   import { ActionRecord } from "../../audit";
+  import { AGENT_ON_HOLD_TEXT } from "../../hold";
   import { TerminalView } from "../../terminal";
   import {
     isActive,
@@ -31,6 +32,14 @@
     isBusy: boolean;
     /** True while the stop request of this agent is open. */
     isStopping: boolean;
+    /** True while the agent is on hold (0007). */
+    isOnHold: boolean;
+    /** Why the office held the agent by itself, or null for a hold by the user. */
+    holdNote: string | null;
+    /** The server's refusal of the last hold or release, or null. */
+    holdFailure: string | null;
+    onhold: () => void;
+    onrelease: () => void;
     onstart: () => void;
     onstop: () => void;
     onnewtask: () => void;
@@ -48,6 +57,11 @@
     projectName,
     isBusy,
     isStopping,
+    isOnHold,
+    holdNote,
+    holdFailure,
+    onhold,
+    onrelease,
     onstart,
     onstop,
     onnewtask,
@@ -93,6 +107,10 @@
         <!-- A live region, so a screen reader hears "Stopping" at once. -->
         <span role="status">{shownStatusText(agent, isStopping)}</span>
       </dd>
+      {#if isOnHold}
+        <dt class="font-medium">Hold</dt>
+        <dd>{AGENT_ON_HOLD_TEXT}{holdNote === null ? "" : `. ${holdNote}`}</dd>
+      {/if}
       <dt class="font-medium">Command</dt>
       <dd class="break-all">{agent.command}</dd>
       <dt class="font-medium">Working folder</dt>
@@ -128,6 +146,9 @@
       >
         Start new task
       </Button>
+      <Button variant="secondary" onclick={isOnHold ? onrelease : onhold}>
+        {isOnHold ? "Release agent" : "Hold agent"}
+      </Button>
       <Button
         variant="secondary"
         disabled={isBusy}
@@ -136,6 +157,9 @@
         Delete agent
       </Button>
     </div>
+    {#if holdFailure !== null}
+      <FailureMessage lead="The hold did not change." message={holdFailure} />
+    {/if}
   </header>
 
   {#key isRunning}

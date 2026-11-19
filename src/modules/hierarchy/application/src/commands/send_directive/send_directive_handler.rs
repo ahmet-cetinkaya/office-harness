@@ -2,9 +2,10 @@
 
 use std::sync::Arc;
 
-use hierarchy_domain::{HierarchyError, check_descendant, validate_directive_text};
+use hierarchy_domain::{AgentAction, HierarchyError, check_descendant, validate_directive_text};
 use kernel::AgentId;
 
+use crate::commands::hold::HoldService;
 use crate::common::errors::HierarchyApplicationError;
 use crate::common::interfaces::HierarchyStore;
 use crate::common::ports::{DirectiveJournal, DirectiveTarget, DirectiveWriter};
@@ -20,6 +21,7 @@ pub struct SendDirectiveHandler {
     targets: Arc<dyn DirectiveTarget>,
     writer: Arc<dyn DirectiveWriter>,
     journal: Arc<dyn DirectiveJournal>,
+    hold_guard: Option<Arc<HoldService>>,
 }
 
 impl SendDirectiveHandler {
@@ -35,13 +37,24 @@ impl SendDirectiveHandler {
             targets,
             writer,
             journal,
+            hold_guard: None,
         }
+    }
+
+    /// Puts the hold and rate-limit gate in front of the terminal write.
+    /// The gate journals no refusal; this handler journals each one with the
+    /// target and the text (0007).
+    #[must_use]
+    pub fn with_hold_guard(mut self, hold_guard: Arc<HoldService>) -> Self {
+        self.hold_guard = Some(hold_guard);
+        self
     }
 
     /// # Errors
     /// `Storage` when the tree cannot be read; `Invalid` naming the rule when
     /// the target is not a descendant, the text breaks the directive rules,
-    /// or the target is not running; `Conflict` carrying the writer's own
+    /// or the target is not running; `Refused` with the reason when a hold or
+    /// a rate limit stops it; `Conflict` carrying the writer's own
     /// message when the text cannot be written.
     pub fn handle(
         &self,
@@ -76,6 +89,25 @@ impl SendDirectiveHandler {
                 text,
                 HierarchyApplicationError::Invalid(HierarchyError::NotRunning { name }),
             ));
+        }
+        if let Some(hold_guard) = &self.hold_guard {
+            // After every rule above, so a directive the rules refuse or a
+            // stopped target never counts toward a limit (spec A10). The
+            // guard journals no refusal, so the record keeps the target and
+            // the text as sent, like every other refusal here (FR-010).
+            if let Err(refusal) = hold_guard.guard(
+                sender,
+                AgentAction::Directive { target },
+                Some(target),
+                &snapshot.rows,
+            ) {
+                return Err(self.journaled(
+                    sender,
+                    target,
+                    text,
+                    HierarchyApplicationError::Refused(refusal.reason),
+                ));
+            }
         }
         if let Err(message) = self.writer.write(target, text) {
             return Err(self.journaled(

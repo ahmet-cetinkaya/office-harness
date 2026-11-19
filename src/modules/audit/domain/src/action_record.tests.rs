@@ -25,3 +25,12 @@ fn a_result_round_trips_through_its_text() {
     let failed = ActionResult::Failed("no such folder".to_owned());
     assert_eq!(ActionResult::from_text(failed.as_text()), failed);
 }
+
+#[test]
+fn hold_and_release_have_their_wire_names() {
+    assert_eq!(ActionKind::Hold.as_str(), "hold");
+    assert_eq!(ActionKind::Release.as_str(), "release");
+    assert_eq!("hold".parse::<ActionKind>(), Ok(ActionKind::Hold));
+    assert_eq!("release".parse::<ActionKind>(), Ok(ActionKind::Release));
+    assert_eq!(ActionKind::ALL.len(), 12);
+}
