@@ -142,7 +142,16 @@ fn events_follow_the_child() {
     let folder = TempDir::new().expect("temp folder");
     let (runtime, sink) = runtime_in(folder.path(), limits(1000));
     let agent = AgentId::generate();
-    spawn_fixture(&runtime, agent, &["delayed-exit", "600", "7"]);
+    let signals = TempDir::new().expect("signal folder");
+    let release = signals.path().join("release");
+    let release_text = release.to_str().expect("a UTF-8 temp path");
+    spawn_fixture(&runtime, agent, &["exit-on-file", release_text, "7"]);
+    // The child stays silent until released, so the quiet period is reported
+    // before the exit however slowly the monitor thread is scheduled.
+    wait_until("the quiet period", || {
+        sink.events().contains(&TerminalEvent::QuietPeriod)
+    });
+    std::fs::write(&release, b"").expect("release the child");
     wait_until("the exit", || sink.has_exited());
     assert_eq!(
         without_exit_output_on_windows(sink.events()),
