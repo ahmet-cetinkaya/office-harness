@@ -5,8 +5,13 @@ import {
   createNotificationController,
   createOsNotificationService,
   readLastView,
+  resolveLastView,
 } from "../../notification";
-import { createOfficeStore } from "../../agent";
+import {
+  createOfficeStore,
+  LAST_AGENT_GONE_LEAD,
+  LAST_AGENT_GONE_MESSAGE,
+} from "../../agent";
 import { createHoldController } from "../../hold";
 
 export type OpenView = "panel" | "scene";
@@ -21,7 +26,7 @@ export function createPanelStore(client: CoreClient) {
   const notifications = createNotificationController(
     client,
     createOsNotificationService(),
-    () => office.snapshot.selectedAgentId,
+    () => (openView === "panel" ? office.snapshot.selectedAgentId : null),
     () => document.hasFocus(),
   );
   const hold = createHoldController(
@@ -33,22 +38,12 @@ export function createPanelStore(client: CoreClient) {
   // The restore is the one reader of `last_view` and the only place the
   // stored view word is applied. The shell writes the last view only after
   // the restore has settled, or an eager write would clobber the stored
-  // value. `isRestoring` is set before the read starts, so a second mount
-  // of the panel (a scene round trip) or a reconnect during the read cannot
-  // start a second restore.
+  // value. `isLastViewRestoring` is set before the read starts, so a
+  // reconnect or a second trigger during the read cannot start a second
+  // restore.
   let isLastViewRestoring = $state(false);
   let isLastViewRestored = $state(false);
   const lastView = {
-    read: readLastView,
-    markRestoring(): void {
-      isLastViewRestoring = true;
-    },
-    markRestored(): void {
-      isLastViewRestored = true;
-    },
-    get isRestoring(): boolean {
-      return isLastViewRestoring;
-    },
     get isRestored(): boolean {
       return isLastViewRestored;
     },
@@ -58,6 +53,9 @@ export function createPanelStore(client: CoreClient) {
   // instruction.
   let openView = $state<OpenView>("panel");
   let hasUserSwitched = false;
+  // The restored agent whose read the scene's restore skipped. The panel's
+  // next show reads it once; a user selection reads it already.
+  let unreadRestoredAgentId: string | null = null;
   let projectChoice = $state<string | null>(null);
 
   // Opening an agent's terminal reads its notifications (FR-009). The select
@@ -65,10 +63,58 @@ export function createPanelStore(client: CoreClient) {
   const controller = {
     ...office.controller,
     select(agentId: string): void {
+      unreadRestoredAgentId = null;
       office.controller.select(agentId);
       void notifications.readAgent(agentId);
     },
   };
+
+  // The restore selects without reading: FR-009 marks notifications read when
+  // the agent's terminal opens, and only the panel shows it. The scene's
+  // restore leaves them unread until the panel shows the terminal.
+  function selectRestoredAgent(agentId: string): void {
+    office.controller.select(agentId);
+    if (openView === "panel") {
+      void notifications.readAgent(agentId);
+    } else {
+      unreadRestoredAgentId = agentId;
+    }
+  }
+
+  function readRestoredAgentOnPanel(): void {
+    if (unreadRestoredAgentId === null) return;
+    void notifications.readAgent(unreadRestoredAgentId);
+    unreadRestoredAgentId = null;
+  }
+
+  /**
+   * The last view's restore (FR-008, D6), run once from the shell when the
+   * office's first load has brought its projects and agents, whichever view
+   * is open. A view this app cannot apply falls back piece by piece, and
+   * each fallback says what it fell back from (US3).
+   */
+  async function restoreLastView(): Promise<void> {
+    if (isLastViewRestoring || isLastViewRestored) return;
+    isLastViewRestoring = true;
+    const stored = await readLastView(client);
+    if (stored !== null) {
+      const plan = resolveLastView(
+        stored,
+        office.snapshot.projects.map((project) => project.id),
+        office.snapshot.agents.map((agent) => agent.id),
+      );
+      projectChoice = plan.choice;
+      if (!hasUserSwitched) openView = stored.view;
+      if (plan.agent.kind === "missing") {
+        controller.showNotice(LAST_AGENT_GONE_LEAD, LAST_AGENT_GONE_MESSAGE);
+      } else if (plan.agent.kind === "present") {
+        selectRestoredAgent(plan.agent.agentId);
+      }
+    }
+    // The shell writes the last view only from here on, so its eager write
+    // cannot land between this read and its use.
+    isLastViewRestored = true;
+  }
 
   return {
     /** The project id, or null for "All projects". */
@@ -86,11 +132,9 @@ export function createPanelStore(client: CoreClient) {
     switchView(view: OpenView): void {
       hasUserSwitched = true;
       openView = view;
+      if (view === "panel") readRestoredAgentOnPanel();
     },
-    /** The restore's view, applied only if the user has not switched. */
-    restoreView(view: OpenView): void {
-      if (!hasUserSwitched) openView = view;
-    },
+    restoreLastView,
     office: {
       get snapshot() {
         return office.snapshot;

@@ -917,6 +917,153 @@ test.describe("T4: return and restore", () => {
       .toMatchObject({ view: "panel" });
   });
 
+  for (const { view, isRead } of [
+    { view: "scene", isRead: false },
+    { view: "panel", isRead: true },
+  ]) {
+    test(`a ${view} restore ${isRead ? "reads" : "does not read"} the stored agent's notifications (FR-009)`, async ({
+      page,
+    }) => {
+      await installMockCore(page, {
+        initialState: { status: "connected" },
+        office: {
+          agents: OFFICE_AGENTS,
+          projects: PROJECTS,
+          notifications: [
+            {
+              id: "n1",
+              agent_id: "agent-ada",
+              agent_name: "Ada",
+              event: "bell",
+              created_at: 1_700_000_000_000,
+              read_at: null,
+            },
+          ],
+          lastView: JSON.stringify({
+            project: null,
+            agent: "agent-ada",
+            terminal_open: view === "panel",
+            view,
+          }),
+        },
+      });
+      await page.goto("/");
+
+      // The shell writes last_view only after the restore has settled.
+      await expect
+        .poll(() => page.evaluate(() => window.__mockCore.settings.length > 0))
+        .toBe(true);
+      const readAgentCalls = await page.evaluate(
+        () =>
+          window.__mockCore.calls.filter(
+            (call) =>
+              call.command === "send_request" &&
+              call.args.kind === "notification.read_agent",
+          ).length,
+      );
+      expect(readAgentCalls).toBe(isRead ? 1 : 0);
+    });
+  }
+
+  test("a scene restore's skipped read happens once when the panel shows the terminal (FR-009 scenario 6)", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        notifications: [
+          {
+            id: "n1",
+            agent_id: "agent-ada",
+            agent_name: "Ada",
+            event: "bell",
+            created_at: 1_700_000_000_000,
+            read_at: null,
+          },
+        ],
+        lastView: JSON.stringify({
+          project: null,
+          agent: "agent-ada",
+          terminal_open: false,
+          view: "scene",
+        }),
+      },
+    });
+    await page.goto("/");
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => window.__mockCore.settings.length > 0))
+      .toBe(true);
+    const readAgentCalls = () =>
+      page.evaluate(
+        () =>
+          window.__mockCore.calls.filter(
+            (call) =>
+              call.command === "send_request" &&
+              call.args.kind === "notification.read_agent",
+          ).length,
+      );
+    expect(await readAgentCalls()).toBe(0);
+
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await expect(page.getByRole("region", { name: "Agents" })).toBeVisible();
+
+    await expect.poll(readAgentCalls).toBe(1);
+  });
+
+  test("a new event of the panel-selected agent stays unread while the scene is open (FR-006 b)", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: null,
+          agent: "agent-ada",
+          terminal_open: false,
+          view: "scene",
+        }),
+      },
+    });
+    await page.goto("/");
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => window.__mockCore.settings.length > 0))
+      .toBe(true);
+
+    await page.evaluate(() =>
+      window.__mockCore.pushEvent({
+        type: "notification.created",
+        notification: {
+          id: "n-new",
+          agent_id: "agent-ada",
+          agent_name: "Ada",
+          event: "bell",
+          created_at: 1_700_000_000_000,
+          read_at: null,
+        },
+      }),
+    );
+    // Without the fix the store marks the row read within a few ticks.
+    await page.evaluate(() => new Promise((done) => setTimeout(done, 200)));
+
+    const readRequests = await page.evaluate(() =>
+      window.__mockCore.calls
+        .filter((call) => call.command === "send_request")
+        .map((call) => String(call.args.kind))
+        .filter((kind) => kind.startsWith("notification.read")),
+    );
+    expect(readRequests).toEqual([]);
+  });
+
   test("a stored last_view without the view field (a 0003-era write) opens the panel", async ({
     page,
   }) => {
@@ -1112,6 +1259,76 @@ test.describe("T4: return and restore", () => {
       );
     await page.waitForTimeout(500);
     expect(await reads()).toBe(1);
+  });
+
+  test("the restore runs once when the scene opens before the office loads", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: null,
+          agent: null,
+          terminal_open: false,
+          view: "panel",
+        }),
+        agentListDelayMs: 1_500,
+      },
+    });
+    await page.goto("/");
+
+    // The scene opens while the office still loads: the panel's first ready
+    // never happens on screen, so only the shell can run the restore.
+    await page.getByRole("button", { name: "To the scene" }).click();
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+
+    const calls = (kind: string) =>
+      page.evaluate(
+        (wanted) =>
+          window.__mockCore.calls.filter(
+            (call) =>
+              call.command === "send_request" && call.args.kind === wanted,
+          ).length,
+        kind,
+      );
+    const lastViewReads = () =>
+      page.evaluate(
+        () =>
+          window.__mockCore.calls.filter(
+            (call) =>
+              call.command === "send_request" &&
+              call.args.kind === "settings.get" &&
+              (call.args.fields as { key?: string })?.key === "last_view",
+          ).length,
+      );
+
+    // The restore ran once, without a panel mount, and the writes are open:
+    // the scene the user chose is recorded, and the stored panel is not.
+    await expect.poll(lastViewReads).toBe(1);
+    await expect.poll(() => calls("settings.set")).toBeGreaterThan(0);
+    const lastWrite = () =>
+      page.evaluate(() => {
+        const writes = window.__mockCore.calls.filter(
+          (call) =>
+            call.command === "send_request" &&
+            call.args.kind === "settings.set",
+        ) as Array<{ args: { fields?: { value?: string } } }>;
+        return JSON.parse(String(writes.at(-1)?.args.fields?.value));
+      });
+    expect(await lastWrite()).toMatchObject({ view: "scene" });
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+
+    // A later switch is recorded, and no second restore starts.
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await expect.poll(lastWrite).toMatchObject({ view: "panel" });
+    expect(await lastViewReads()).toBe(1);
   });
 
   test("departments group the floors from the seeded tree (D2, FR-003)", async ({
