@@ -6,6 +6,8 @@
     label: string;
     value: string;
     hint?: string;
+    /** The id of the message that refuses this field's value, when it does. */
+    errorId?: string;
     /** More than one line of text, for example a prompt. */
     isMultiline?: boolean;
   }
@@ -14,11 +16,17 @@
     label,
     value = $bindable(),
     hint = "",
+    errorId,
     isMultiline = false,
   }: Props = $props();
 
   const id = $props.id();
   const hintId = `${id}-hint`;
+  const describedBy = $derived(
+    [hint === "" ? null : hintId, errorId ?? null]
+      .filter((reference) => reference !== null)
+      .join(" ") || undefined,
+  );
 </script>
 
 <div class="flex flex-col gap-1">
@@ -28,7 +36,8 @@
       {id}
       bind:value
       rows="4"
-      aria-describedby={hint === "" ? undefined : hintId}
+      aria-describedby={describedBy}
+      aria-invalid={errorId === undefined ? undefined : "true"}
       class={FIELD_CLASS}></textarea>
   {:else}
     <input
@@ -37,7 +46,8 @@
       type="text"
       autocomplete="off"
       spellcheck="false"
-      aria-describedby={hint === "" ? undefined : hintId}
+      aria-describedby={describedBy}
+      aria-invalid={errorId === undefined ? undefined : "true"}
       class={FIELD_CLASS}
     />
   {/if}

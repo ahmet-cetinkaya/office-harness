@@ -4,6 +4,7 @@
   import FailureMessage from "$shared/ui/failure-message.svelte";
   import type { CoreClient } from "../../../core/api";
   import { ActionRecord } from "../../audit";
+  import { AGENT_ON_HOLD_TEXT } from "../../hold";
   import { TerminalView } from "../../terminal";
   import {
     isActive,
@@ -108,7 +109,7 @@
       </dd>
       {#if isOnHold}
         <dt class="font-medium">Hold</dt>
-        <dd>on hold{holdNote === null ? "" : `. ${holdNote}`}</dd>
+        <dd>{AGENT_ON_HOLD_TEXT}{holdNote === null ? "" : `. ${holdNote}`}</dd>
       {/if}
       <dt class="font-medium">Command</dt>
       <dd class="break-all">{agent.command}</dd>

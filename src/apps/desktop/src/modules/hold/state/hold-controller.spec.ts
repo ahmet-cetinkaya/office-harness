@@ -164,6 +164,50 @@ describe("hold controller", () => {
     });
   });
 
+  test("a value that is not a limit refuses the whole save before any is sent", async () => {
+    const { client, requests } = fakeClient();
+    const { controller } = observe(client);
+
+    const failure = await controller.saveLimits({
+      limit_directives_per_agent: "12",
+      limit_directives_per_target: "4",
+      limit_creates_per_agent: "0",
+      limit_lifecycle_per_agent: "9",
+    });
+
+    expect(failure).toBe(
+      "Agents created by one agent: a limit is a whole number of at least 1 and at most 1000",
+    );
+    expect(requests).toEqual([]);
+  });
+
+  test("a second office request is ignored while the first is in flight", async () => {
+    let answer: (value: unknown) => void = () => {};
+    const { client, requests } = fakeClient(
+      () => new Promise((resolve) => (answer = resolve)),
+    );
+    const { controller, state } = observe(client);
+
+    const first = controller.holdOffice();
+    const second = await controller.holdOffice();
+
+    expect(second).toBeUndefined();
+    expect(state().isOfficeRequestPending).toBe(true);
+    expect(requests.map((sent) => sent.kind)).toEqual(["hold.set"]);
+
+    answer(undefined);
+    expect(await first).toBeNull();
+    expect(state().isOfficeRequestPending).toBe(false);
+
+    const third = controller.releaseOffice();
+    answer(undefined);
+    expect(await third).toBeNull();
+    expect(requests.map((sent) => sent.kind)).toEqual([
+      "hold.set",
+      "hold.release",
+    ]);
+  });
+
   test("saving the limits writes each key, trimmed, and stops at the first refusal", async () => {
     const written: string[] = [];
     const { client } = fakeClient((kind, fields) => {
@@ -182,7 +226,7 @@ describe("hold controller", () => {
     const failure = await controller.saveLimits({
       limit_directives_per_agent: " 12 ",
       limit_directives_per_target: "4",
-      limit_creates_per_agent: "0",
+      limit_creates_per_agent: "6",
       limit_lifecycle_per_agent: "9",
     });
 

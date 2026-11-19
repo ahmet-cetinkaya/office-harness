@@ -273,6 +273,29 @@ test.describe("agent hold", () => {
   });
 });
 
+test.describe("live region", () => {
+  test("selecting an agent does not read an old notification over a newer hold", async ({
+    page,
+  }) => {
+    await openPanel(page);
+    const region = page.locator("p.sr-only[aria-live='polite']");
+
+    await page.evaluate(() =>
+      window.__mockCore.autoHold("agent-ada", "directives sent by one agent"),
+    );
+    await expect(region).toContainText("Notification: Ada was put on hold");
+
+    await pressByKeyboard(page, "Hold office");
+    await expect(region).toHaveText(OFFICE_ON_HOLD);
+
+    // Selecting an agent marks its notifications read, which publishes the
+    // notification snapshot again with its old announcement.
+    await page.getByRole("button", { name: /^Ada, working/ }).click();
+    await expect(page.getByRole("region", { name: "Ada" })).toBeVisible();
+    await expect(region).toHaveText(OFFICE_ON_HOLD);
+  });
+});
+
 test.describe("limits", () => {
   async function openLimits(page: Page) {
     await page.getByRole("button", { name: "Limits" }).click();
@@ -330,11 +353,17 @@ test.describe("limits", () => {
     const dialog = await openLimits(page);
 
     for (const text of ["0", "-3", "abc", "1001"]) {
-      await dialog.getByLabel("Agents created by one agent").fill(text);
+      const field = dialog.getByLabel("Agents created by one agent");
+      await field.fill(text);
       await dialog.getByRole("button", { name: "Save limits" }).click();
       await expect(dialog.getByRole("alert")).toContainText(
         INVALID_LIMIT_MESSAGE,
       );
+      await expect(field).toHaveAttribute("aria-invalid", "true");
+      await expect(field).toHaveAttribute("aria-describedby", /limits-error/);
+      await expect(
+        dialog.getByLabel("Directives sent by one agent"),
+      ).not.toHaveAttribute("aria-invalid");
     }
     await expect(dialog).toBeVisible();
     // The shell's own `last_view` writes are not limits.

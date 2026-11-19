@@ -83,17 +83,23 @@
   let agentHoldFailure = $state<{ agentId: string; text: string } | null>(null);
 
   // One live region speaks for both sources; the newest change replaces the
-  // text.
+  // text. Each source publishes a new snapshot for reasons that are not a new
+  // announcement (a read, a pending flag), and its old announcement stays in
+  // it, so a source speaks only when its own announcement changed.
   let liveAnnouncement = $state<string | null>(null);
+  let lastHoldAnnouncement: string | null = null;
+  let lastNotificationAnnouncement: string | null = null;
   $effect(() => {
-    if (holdSnapshot.announcement !== null) {
-      liveAnnouncement = holdSnapshot.announcement;
-    }
+    const next = holdSnapshot.announcement;
+    if (next === lastHoldAnnouncement) return;
+    lastHoldAnnouncement = next;
+    if (next !== null) liveAnnouncement = next;
   });
   $effect(() => {
-    if (notificationSnapshot.announcement !== null) {
-      liveAnnouncement = `Notification: ${notificationSnapshot.announcement}`;
-    }
+    const next = notificationSnapshot.announcement;
+    if (next === lastNotificationAnnouncement) return;
+    lastNotificationAnnouncement = next;
+    if (next !== null) liveAnnouncement = `Notification: ${next}`;
   });
 
   const choice = $derived(
@@ -165,17 +171,20 @@
   }
 
   async function toggleOfficeHold(): Promise<void> {
-    officeHoldFailure =
+    const failure =
       holds.office === null
         ? await store.hold.holdOffice()
         : await store.hold.releaseOffice();
+    // Undefined: the controller ignored the press, the request in flight
+    // still owns the failure text.
+    if (failure !== undefined) officeHoldFailure = failure;
   }
 
-  async function toggleAgentHold(agentId: string): Promise<void> {
-    const text =
-      holdOfAgent(holds, agentId) === null
-        ? await store.hold.holdAgent(agentId)
-        : await store.hold.releaseAgent(agentId);
+  async function showAgentHoldResult(
+    agentId: string,
+    request: Promise<FailureText>,
+  ): Promise<void> {
+    const text = await request;
     agentHoldFailure = text === null ? null : { agentId, text };
   }
 
@@ -303,6 +312,7 @@
           controller={store.hold}
           isOfficeHeld={holds.office !== null}
           failure={officeHoldFailure}
+          isPending={holdSnapshot.isOfficeRequestPending}
           ontoggle={() => void toggleOfficeHold()}
         />
       </div>
@@ -432,8 +442,16 @@
                   holdFailure={agentHoldFailure?.agentId === agentId
                     ? agentHoldFailure.text
                     : null}
-                  onhold={() => void toggleAgentHold(agentId)}
-                  onrelease={() => void toggleAgentHold(agentId)}
+                  onhold={() =>
+                    void showAgentHoldResult(
+                      agentId,
+                      store.hold.holdAgent(agentId),
+                    )}
+                  onrelease={() =>
+                    void showAgentHoldResult(
+                      agentId,
+                      store.hold.releaseAgent(agentId),
+                    )}
                   onstart={() => void controller.startAgent(agentId)}
                   onstop={() => void controller.stopAgent(agentId)}
                   onnewtask={() => void controller.startNewTask(agentId)}

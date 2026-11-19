@@ -57,12 +57,13 @@ function agentIdsOf(state: HoldState): Set<string> {
 
 /**
  * What the live region says about the change from one state to the next, or
- * null when no hold or release happened. `nameOf` gives an agent's name.
+ * null when no hold or release happened. `nameOf` gives an agent's name, or
+ * null for an agent the app does not know; that agent is not announced.
  */
 export function announcementOfChange(
   before: HoldState,
   after: HoldState,
-  nameOf: (agentId: string) => string,
+  nameOf: (agentId: string) => string | null,
 ): string | null {
   const sentences: string[] = [];
   if (before.office === null && after.office !== null) {
@@ -74,13 +75,16 @@ export function announcementOfChange(
   const heldBefore = agentIdsOf(before);
   const heldAfter = agentIdsOf(after);
   for (const agentId of heldAfter) {
-    if (!heldBefore.has(agentId)) {
-      sentences.push(`${nameOf(agentId)} ${AGENT_ON_HOLD_TEXT}`);
+    const name = nameOf(agentId);
+    if (name !== null && !heldBefore.has(agentId)) {
+      sentences.push(`${name} ${AGENT_ON_HOLD_TEXT}`);
     }
   }
+  // A hold that the office pruned with its deleted agent has no name to say.
   for (const agentId of heldBefore) {
-    if (!heldAfter.has(agentId)) {
-      sentences.push(`${nameOf(agentId)} released from hold`);
+    const name = nameOf(agentId);
+    if (name !== null && !heldAfter.has(agentId)) {
+      sentences.push(`${name} released from hold`);
     }
   }
   return sentences.length === 0 ? null : sentences.join(". ");

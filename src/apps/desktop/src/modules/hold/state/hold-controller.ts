@@ -12,18 +12,21 @@ import {
   readHoldState,
   type HoldState,
 } from "../models/hold";
-import { LIMIT_SETTINGS } from "../models/limits";
+import { firstLimitProblem, LIMIT_SETTINGS } from "../models/limits";
 import { createHoldService } from "../services/hold-service";
 
 export interface HoldSnapshot {
   state: HoldState;
   /** The newest hold change as text, announced once by the live region. */
   announcement: string | null;
+  /** True while a hold or release of the whole office waits for the server. */
+  isOfficeRequestPending: boolean;
 }
 
 export const INITIAL_HOLD: HoldSnapshot = {
   state: NO_HOLDS,
   announcement: null,
+  isOfficeRequestPending: false,
 };
 
 const EVENT_HOLD_CHANGED = "hold.changed";
@@ -39,8 +42,8 @@ export type FailureText = string | null;
  */
 export function createHoldController(
   client: CoreClient,
-  /** The agent's name for an announcement; the id when the agent is unknown. */
-  nameOfAgent: (agentId: string) => string,
+  /** The agent's name for an announcement; null when the agent is unknown. */
+  nameOfAgent: (agentId: string) => string | null,
 ) {
   const service = createHoldService(client);
   let snapshot: HoldSnapshot = INITIAL_HOLD;
@@ -64,6 +67,22 @@ export function createHoldController(
       return null;
     } catch (rejection) {
       return describe(rejection);
+    }
+  }
+
+  /**
+   * Runs one office request at a time, so a double key press sends one.
+   * Resolves to undefined for a request that was ignored.
+   */
+  async function submitOffice(
+    work: () => Promise<unknown>,
+  ): Promise<FailureText | undefined> {
+    if (snapshot.isOfficeRequestPending) return undefined;
+    publish({ isOfficeRequestPending: true });
+    try {
+      return await submit(work);
+    } finally {
+      publish({ isOfficeRequestPending: false });
     }
   }
 
@@ -120,8 +139,10 @@ export function createHoldController(
     /** Reads `hold.list`. Call it on each ready connection. */
     load,
 
-    holdOffice: (): Promise<FailureText> => submit(() => service.set()),
-    releaseOffice: (): Promise<FailureText> => submit(() => service.release()),
+    holdOffice: (): Promise<FailureText | undefined> =>
+      submitOffice(() => service.set()),
+    releaseOffice: (): Promise<FailureText | undefined> =>
+      submitOffice(() => service.release()),
     holdAgent: (agentId: string): Promise<FailureText> =>
       submit(() => service.set(agentId)),
     releaseAgent: (agentId: string): Promise<FailureText> =>
@@ -140,13 +161,23 @@ export function createHoldController(
       return values;
     },
 
-    /** Saves the limits in order; the first refusal stops the save. */
-    saveLimits: (values: Record<string, string>): Promise<FailureText> =>
-      submit(async () => {
+    /**
+     * Saves the limits in order. A value that is not a limit refuses the
+     * whole save before anything is sent. A refusal by the server in the
+     * middle can still leave the earlier values saved: no request writes
+     * several settings at once.
+     */
+    saveLimits: (values: Record<string, string>): Promise<FailureText> => {
+      const refused = firstLimitProblem(values);
+      if (refused !== null) {
+        return Promise.resolve(`${refused.limit.label}: ${refused.problem}`);
+      }
+      return submit(async () => {
         for (const limit of LIMIT_SETTINGS) {
           await service.writeSetting(limit.key, values[limit.key].trim());
         }
-      }),
+      });
+    },
 
     /** The refusal text of a rejected read, for a dialog to show. */
     describeFailure: describe,

@@ -47,3 +47,14 @@ export function limitProblem(text: string): string | null {
     ? null
     : LIMIT_INVALID_MESSAGE;
 }
+
+/** The first limit whose text is refused, with the reason, or null. */
+export function firstLimitProblem(
+  values: Record<string, string>,
+): { limit: LimitSetting; problem: string } | null {
+  for (const limit of LIMIT_SETTINGS) {
+    const problem = limitProblem(values[limit.key]);
+    if (problem !== null) return { limit, problem };
+  }
+  return null;
+}
