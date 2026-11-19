@@ -271,6 +271,7 @@ fn handler_error(error: &HierarchyApplicationError) -> HandlerError {
             | HierarchyApplicationError::NotFound(_) => wire::ErrorCode::NotFound,
             HierarchyApplicationError::ConflictInput(_)
             | HierarchyApplicationError::Conflict(_) => wire::ErrorCode::Conflict,
+            HierarchyApplicationError::Refused(_) => wire::ErrorCode::Refused,
             HierarchyApplicationError::Storage(_) => wire::ErrorCode::Internal,
         };
     HandlerError {

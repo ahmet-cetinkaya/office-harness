@@ -432,3 +432,174 @@ fn a_writer_failure_surfaces_the_host_message_and_is_journaled() {
         Some("conflict: the session pipe is closed")
     );
 }
+
+mod hold_guard {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use hierarchy_domain::{AUTO_HOLD_REFUSAL_COUNT, Hold, HoldScope, LimitRefusal, RateLimits};
+    use kernel::Timestamp;
+
+    use super::*;
+    use crate::common::interfaces::HoldStore;
+    use crate::common::ports::{HoldClock, HoldJournal, HoldNotifier, RateLimitSource};
+
+    const NOW_MILLIS: i64 = 1_700_000_000_000;
+
+    #[derive(Default)]
+    struct NoStore;
+
+    impl HoldStore for NoStore {
+        fn load_holds(&self) -> Result<Vec<Hold>, HierarchyApplicationError> {
+            Ok(Vec::new())
+        }
+
+        fn save_hold(&self, _hold: &Hold) -> Result<(), HierarchyApplicationError> {
+            Ok(())
+        }
+
+        fn delete_hold(&self, _scope: HoldScope) -> Result<(), HierarchyApplicationError> {
+            Ok(())
+        }
+
+        fn delete_agent_holds(
+            &self,
+            _agent_ids: &[AgentId],
+        ) -> Result<(), HierarchyApplicationError> {
+            Ok(())
+        }
+    }
+
+    struct DefaultLimits;
+
+    impl RateLimitSource for DefaultLimits {
+        fn limits(&self) -> RateLimits {
+            RateLimits::default()
+        }
+    }
+
+    struct FixedClock;
+
+    impl HoldClock for FixedClock {
+        fn now(&self) -> Timestamp {
+            Timestamp::from_unix_millis(NOW_MILLIS)
+        }
+    }
+
+    /// Counts what the guard reports; the handler must add nothing to it.
+    #[derive(Default)]
+    struct Counting {
+        refusals: AtomicUsize,
+        notifications: AtomicUsize,
+    }
+
+    impl HoldJournal for Counting {
+        fn held(&self, _hold: &Hold) {}
+        fn released(&self, _scope: HoldScope) {}
+        fn refused(&self, _caller: AgentId, _reason: &str) {
+            self.refusals.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    impl HoldNotifier for Counting {
+        fn auto_held(&self, _agent: AgentId, _limit: &LimitRefusal) {
+            self.notifications.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct Guarded {
+        harness: Harness,
+        service: Arc<HoldService>,
+        counting: Arc<Counting>,
+    }
+
+    fn guarded(family: &Family, targets: ToggledTargets) -> Guarded {
+        let counting = Arc::new(Counting::default());
+        let service = Arc::new(
+            HoldService::new(
+                Arc::new(NoStore),
+                Arc::new(DefaultLimits),
+                counting.clone(),
+                counting.clone(),
+                Arc::new(FixedClock),
+            )
+            .expect("service"),
+        );
+        let mut harness = harness_for(family, targets, RecordingWriter::new(None));
+        harness.handler = harness.handler.with_hold_guard(Arc::clone(&service));
+        Guarded {
+            harness,
+            service,
+            counting,
+        }
+    }
+
+    #[test]
+    fn a_held_office_refuses_a_directive_with_the_hold_reason() {
+        let family = family();
+        let guarded = guarded(&family, ToggledTargets::all_running());
+        guarded.service.set_hold(HoldScope::Office).expect("hold");
+        let error = guarded
+            .harness
+            .handler
+            .handle(family.lead, family.member, "please deploy")
+            .expect_err("the office is on hold");
+        assert_eq!(
+            error,
+            HierarchyApplicationError::Refused("the office is on hold".to_owned())
+        );
+        assert!(guarded.harness.writer.lines().is_empty());
+        assert_eq!(guarded.counting.refusals.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn a_non_descendant_target_gets_the_tree_refusal_not_the_hold_reason() {
+        let family = family();
+        let guarded = guarded(&family, ToggledTargets::all_running());
+        guarded.service.set_hold(HoldScope::Office).expect("hold");
+        let error = guarded
+            .harness
+            .handler
+            .handle(family.lead, family.other_lead, "please deploy")
+            .expect_err("sibling lead is not a descendant");
+        assert!(matches!(
+            error,
+            HierarchyApplicationError::Invalid(HierarchyError::NotADescendant { .. })
+        ));
+        assert_eq!(guarded.counting.refusals.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn directives_to_a_stopped_target_count_nothing_and_never_auto_hold() {
+        let family = family();
+        let guarded = guarded(&family, ToggledTargets::with_stopped(family.member));
+        for _ in 0..RateLimits::default().directive {
+            let _ = guarded
+                .harness
+                .handler
+                .handle(family.lead, family.member, "please deploy");
+        }
+        assert_eq!(guarded.counting.refusals.load(Ordering::SeqCst), 0);
+        assert_eq!(guarded.counting.notifications.load(Ordering::SeqCst), 0);
+        assert_eq!(guarded.service.list().agents.len(), 0);
+    }
+
+    #[test]
+    fn the_target_limit_refuses_the_fourth_directive_and_the_third_refusal_holds() {
+        let family = family();
+        let guarded = guarded(&family, ToggledTargets::all_running());
+        let send = || {
+            guarded
+                .harness
+                .handler
+                .handle(family.lead, family.member, "please deploy")
+        };
+        for _ in 0..RateLimits::default().directive_target {
+            send().expect("within the target limit");
+        }
+        for _ in 0..AUTO_HOLD_REFUSAL_COUNT {
+            assert!(matches!(send(), Err(HierarchyApplicationError::Refused(_))));
+        }
+        assert_eq!(guarded.counting.notifications.load(Ordering::SeqCst), 1);
+        assert_eq!(guarded.service.list().agents.len(), 1);
+    }
+}

@@ -11,6 +11,7 @@ pub use common::errors::HierarchyApplicationError;
 pub use commands::create_role_agent::{CreateRoleAgentHandler, CreateRoleAgentRequest};
 pub use commands::create_team::CreateTeamHandler;
 pub use commands::delete_team::DeleteTeamHandler;
+pub use commands::hold::{GuardRefusal, HoldService, HoldsView};
 pub use commands::place_agent::PlaceAgentHandler;
 pub use commands::send_directive::SendDirectiveHandler;
 pub use commands::subtree::SubtreeHandler;

@@ -635,9 +635,11 @@ const CREATE_FIELDS: [&str; 4] = ["name", "command", "working_folder", "project_
 /// conflict it carries.
 fn wire_code(error: &HierarchyApplicationError) -> ErrorCode {
     match error {
+        // A hold or a rate limit refused the action (0007).
         HierarchyApplicationError::Invalid(
             HierarchyError::NotADescendant { .. } | HierarchyError::NotRunning { .. },
-        ) => ErrorCode::Refused,
+        )
+        | HierarchyApplicationError::Refused(_) => ErrorCode::Refused,
         HierarchyApplicationError::Invalid(_) | HierarchyApplicationError::InvalidInput(_) => {
             ErrorCode::Invalid
         }
