@@ -2,7 +2,7 @@
 status: approved
 capability: office
 plan:
-supersedes:
+supersedes: 0002/FR-009, 0003/FR-006 (in part)
 ---
 
 <!-- Approved by the owner on 2026-11-19 (ACF-144). -->
@@ -69,7 +69,7 @@ An agent that sends directives or creates agents faster than a set limit gets it
 
 **Why this priority:** it stops the common loop without the user's attention, but the holds (US1, US2) already let the user stop any loop by hand.
 
-**Independent test:** a test agent sends 100 directives to its members in 10 seconds. At most 10 directives reach terminals. The other requests are refused with a limit reason that names the limit. After the third refusal within 60 seconds, the agent is on hold, and the user gets one notification that names the agent.
+**Independent test:** a test agent sends 100 directives to its members in 10 seconds. At most 10 directives reach terminals. The first refused requests name the limit. At the third limit refusal within 60 seconds the agent is put on hold, the user gets one notification that names the agent, and every later request is refused with the reason that the agent is on hold.
 
 **Scenarios:**
 
@@ -96,11 +96,12 @@ An agent that sends directives or creates agents faster than a set limit gets it
 
 ### MODIFIED
 
+- **0003/FR-006** (in part) (US3): WHEN an agent exits, fails, changes from `working` to `waiting for input`, rings the terminal bell, or is put on hold automatically (FR-008), THE SYSTEM SHALL notify the user with the agent's name and the event, EXCEPT that (a) while an unread bell notification of that agent exists, a further bell adds none, and (b) for the agent whose terminal is open in the focused desktop app window, an exit, failure, `waiting for input`, or bell event shows in the notification list as read and sends no OS notification. Exception (b) does not apply to the automatic hold, because the terminal does not show it.
 - **0002/FR-009** (US1, US2, US3): IF an agent asks for an action on an agent that is not its descendant, for a role or action that 0002/FR-008 does not allow, for an action while it, its target, or the office is on hold, or for an action beyond a rate limit, THEN THE SYSTEM SHALL refuse the action, tell the agent the reason in the answer to its request, and record the refusal.
 
 ### PRESERVED
 
-- **PB-1:** The user's own actions from the desktop app (create, start, stop, delete, new task, typing into a terminal) are never held or rate-limited (0002 A1, 0001/FR-017).
+- **PB-1:** The user's own actions from the desktop app (create, start, stop, delete, new task, typing into a terminal) are never held or rate-limited (0002 A1; 0001/FR-017 as modified by 0003).
 - **PB-2:** A hold refuses new agent-made actions only; it stops no running CLI and closes no terminal. Stopping a CLI stays the existing stop action (0001, 0002/FR-007).
 - **PB-3:** office-harness creates, changes, or deletes no file in an agent CLI's configuration (0001/FR-021).
 - **PB-4:** Every desktop app action is available from the keyboard, including the hold and release actions (0001/FR-028).
@@ -126,6 +127,7 @@ An agent that sends directives or creates agents faster than a set limit gets it
 | Agent on hold | "on hold" as text in the agent's row and details, with the release action. | FR-011, US2 |
 | Automatic hold | The agent shows "on hold"; one notification names the agent and the limit it hit. | FR-008, US3 scenario 3 |
 | Refused agent action | The action record shows the actor, the action, and the reason. | FR-010 |
+| Office record | The office hold and release entries, which have no target agent, in a list beside the office hold control. | FR-010, A11 |
 | Settings | Each limit with its current value and default; an invalid value shows why it is refused. | FR-009, Edge cases |
 
 **Design:** no fixed design exists. The plan must not add visuals beyond this flow without a design that the owner approves.
@@ -148,11 +150,11 @@ An agent that sends directives or creates agents faster than a set limit gets it
 
 ## Success criteria
 
-- **SC-001:** In a test where one agent asks to send 100 directives within 10 seconds, at most 10 directives reach terminals, and 100% of the refused requests show in the action record with the agent as actor and the limit as reason.
+- **SC-001:** In a test where one agent asks to send 100 directives within 10 seconds, at most 10 directives reach terminals, and 100% of the refused requests show in the action record with the agent as actor and a reason: the limit for the refusals before the automatic hold, and the hold for the refusals after it.
 - **SC-002:** After the user presses the office hold action, 100% of agent-made actions are refused, measured from the first request after the action, while 100% of the user's typed keys still reach the terminals.
 - **SC-003:** After a server restart with the office on hold, 0 agent-made actions succeed until the user releases the hold.
 - **SC-004:** A looping agent that hits a limit 3 times within 60 seconds causes exactly 1 notification to the user and is on hold after the third refusal.
-- **SC-005:** The user holds the office from the keyboard in 1 key press from any panel view.
+- **SC-005:** The user holds the office from the keyboard in 1 key press from any panel view whose keyboard focus is outside a terminal (A9).
 
 ## Edge cases
 
@@ -188,6 +190,10 @@ An agent that sends directives or creates agents faster than a set limit gets it
 - **A6:** The user releases an automatic hold the same way as a hold he set. A hold never ends on a timer.
 - **A7:** The notification of FR-008 uses the notification channel of 0003 and follows its settings.
 - **A8:** No loop detector is promised. The office promises the limits and the holds, not that it recognizes every loop.
+- **A9:** While a terminal has keyboard focus, every key goes to the CLI except the documented app shortcuts (0001/FR-017 as modified by 0003). The hold shortcut is not one of them in this change, so from a focused terminal the user presses the focus shortcut first. Adding the hold key to the terminal's app shortcuts needs an amendment of 0003.
+- **A10:** When more than one reason applies to one request, the office names the first in this order: the rules of 0002, the office hold, an agent hold, a rate limit. Only a refusal whose reason is a rate limit counts toward the automatic hold (A5).
+- **A11:** An office hold or release has no target agent. Its action record entry shows in an office record beside the office hold control, not in an agent's details.
+- **A12:** The holds and the limits are a brake against mistakes and loops, not a security boundary: an agent CLI runs as the user's OS user and can act outside the office (0002 A8, 0001 A7). A change of a limit is a settings change and is not recorded in the action record.
 
 ## Clarifications
 
