@@ -3,6 +3,7 @@
   import { formatTimestamp } from "$shared/utils";
   import {
     actionText,
+    actorText,
     resultText,
     type ActionEntry,
   } from "../models/action-entry";
@@ -27,7 +28,7 @@
           <time datetime={new Date(entry.at).toISOString()}>
             {formatTimestamp(entry.at)}
           </time>
-          {actionText(entry.action)} by {entry.actor}. {resultText(
+          {actionText(entry.action)} by {actorText(entry.actor)}. {resultText(
             entry.result,
           )}
         </li>

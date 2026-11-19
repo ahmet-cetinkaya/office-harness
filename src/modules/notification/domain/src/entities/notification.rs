@@ -16,6 +16,9 @@ pub struct Notification {
     pub created_at: Timestamp,
     /// `None` while unread (FR-007, FR-009).
     pub read_at: Option<Timestamp>,
+    /// What the event adds to its name: the limit that held the agent for
+    /// `auto_hold` (0007 D7); `None` for the four 0003 events.
+    pub detail: Option<String>,
 }
 
 impl Notification {
@@ -35,7 +38,14 @@ impl Notification {
             event,
             created_at,
             read_at: None,
+            detail: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_detail(mut self, detail: String) -> Self {
+        self.detail = Some(detail);
+        self
     }
 
     #[must_use]

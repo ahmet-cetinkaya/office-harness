@@ -14,6 +14,7 @@ use tokio::sync::{Semaphore, watch};
 use super::agent_requests::AgentGateway;
 use super::dispatcher::Dispatcher;
 use super::hierarchy_requests::HierarchyGateway;
+use super::hold_requests::HoldGateway;
 use super::notification_requests::NotificationGateway;
 use super::restart_signal::RestartSignal;
 use super::router::build_router;
@@ -23,7 +24,7 @@ use super::server_options::ServerOptions;
 use super::server_state::ServerState;
 use super::terminal_requests::TerminalGateway;
 use crate::bootstrap::{ServerLog, Services};
-use crate::bridges::{AgentLineBridge, AgentStatusBridge, NotificationBridge, SystemClock};
+use crate::bridges::{AgentLineBridge, AgentStatusBridge};
 use crate::config::Config;
 
 /// The loopback WebSocket server, bound and announced in `server.json` but
@@ -75,18 +76,16 @@ impl Server {
         .spawn(services.terminal.events.subscribe());
         AgentLineBridge::new(services.terminal.events.clone(), events.clone())
             .spawn(services.terminal.events.subscribe_lines());
-        NotificationBridge::new(
-            services.notification.create.clone(),
-            services.agent_bridge_store.clone(),
-            Arc::clone(&services.terminal.runtime),
-            Arc::new(SystemClock),
-            events.clone(),
-            services.storage_alerts.clone(),
-            log.clone(),
-        )
-        .spawn(
+        services.notification_bridge.clone().spawn(
             services.events.subscribe(),
             services.terminal.events.subscribe(),
+        );
+        let holds = HoldGateway::new(
+            Arc::clone(&services.hierarchy.holds),
+            Arc::clone(&services.agent_bridge_store),
+            services.agent.office_actions.clone(),
+            events.clone(),
+            services.storage_alerts.clone(),
         );
         let agents = AgentGateway::new(
             Arc::clone(&services.agent.handlers),
@@ -98,6 +97,7 @@ impl Server {
             services.terminal.events.clone(),
             Arc::clone(&services.terminal.runtime),
             Arc::clone(&services.hierarchy.tree),
+            holds.clone(),
         );
         let hierarchy =
             HierarchyGateway::new(Arc::clone(&services.hierarchy.handlers), events.clone());
@@ -118,6 +118,8 @@ impl Server {
             )),
             agents,
             hierarchy,
+            holds,
+            hold_service: Arc::clone(&services.hierarchy.holds),
             send_directive: Arc::clone(&services.hierarchy.send_directive),
             hierarchy_tree: Arc::clone(&services.hierarchy.tree),
             directive_journal: Arc::clone(&services.hierarchy.directive_journal),

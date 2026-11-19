@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  actorText,
   actionText,
   mergeEntry,
   resultText,
@@ -35,5 +36,9 @@ describe("action entries", () => {
     expect(resultText("ok")).toBe("Succeeded");
     expect(resultText("no such folder")).toBe("Failed: no such folder");
     expect(actionText("new_task")).toBe("Started a new task");
+    expect(actionText("hold")).toBe("Put on hold");
+    expect(actionText("release")).toBe("Released from hold");
+    expect(actorText("office")).toBe("the office");
+    expect(actorText("user")).toBe("user");
   });
 });

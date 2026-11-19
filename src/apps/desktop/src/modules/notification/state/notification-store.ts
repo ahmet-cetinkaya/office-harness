@@ -7,6 +7,7 @@ import {
 } from "../../../core/api";
 import {
   announcementText,
+  EVENT_AUTO_HOLD,
   sortRows,
   type NotificationRow,
 } from "../models/notification";
@@ -86,6 +87,7 @@ export function createNotificationController(
       agent_id: fields.agent_id,
       agent_name: fields.agent_name,
       event: fields.event,
+      detail: typeof fields.detail === "string" ? fields.detail : null,
       created_at: fields.created_at,
       read_at: typeof fields.read_at === "number" ? fields.read_at : null,
     };
@@ -94,7 +96,12 @@ export function createNotificationController(
   async function handleCreated(event: ServerEvent): Promise<void> {
     const row = rowOf(event);
     if (row === null) return;
-    const isOnScreen = row.agent_id === selectedAgentId() && isWindowFocused();
+    // An automatic hold is never on screen: the owner must see it even while
+    // watching that agent's terminal (0007, MODIFIED 0003/FR-006).
+    const isOnScreen =
+      row.event !== EVENT_AUTO_HOLD &&
+      row.agent_id === selectedAgentId() &&
+      isWindowFocused();
     if (isOnScreen) {
       // The user watches this agent's terminal, so an OS notification adds
       // nothing (FR-006 exception b, A7): the row shows as read at once.

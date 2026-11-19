@@ -10,9 +10,13 @@ pub mod value_objects;
 
 pub use entities::{Team, TeamId};
 pub use errors::HierarchyError;
+pub use services::auto_hold_tracker::{AUTO_HOLD_REFUSAL_COUNT, AutoHoldTracker};
 pub use services::call_rules::{
     DIRECTIVE_MAX_CHARS, check_descendant, creation_parent, validate_directive_text,
 };
+pub use services::hold::{Hold, HoldRefusal, HoldScope, HoldSetter, hold_refusal};
+pub use services::rate_limits::{LimitKind, LimitRefusal, RATE_WINDOW_SECONDS, RateLimits};
+pub use services::rate_windows::{AgentAction, RateWindows};
 pub use services::tree_rules::{
     Placement, TreeRow, check_placement, descendants_of, is_descendant_of, resolved_parent,
 };

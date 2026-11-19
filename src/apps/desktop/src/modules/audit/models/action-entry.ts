@@ -4,7 +4,8 @@
 export interface ActionEntry {
   id: number;
   actor: string;
-  agent_id: string;
+  /** Null for an office-level entry, such as an office hold. */
+  agent_id: string | null;
   action: string;
   result: string;
   at: number;
@@ -19,10 +20,18 @@ const ACTION_TEXT: Record<string, string> = {
   delete: "Deleted",
   new_task: "Started a new task",
   continue: "Continued a session",
+  hold: "Put on hold",
+  release: "Released from hold",
 };
+
+const OFFICE_ACTOR = "office";
 
 export function actionText(action: string): string {
   return ACTION_TEXT[action] ?? action.replaceAll("_", " ");
+}
+
+export function actorText(actor: string): string {
+  return actor === OFFICE_ACTOR ? "the office" : actor;
 }
 
 export function resultText(result: string): string {
