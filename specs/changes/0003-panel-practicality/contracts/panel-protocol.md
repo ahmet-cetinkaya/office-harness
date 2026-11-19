@@ -41,8 +41,9 @@ Value shape: `{"project": <string or null>, "agent": <string or null>, "terminal
 Result: an array of at most 500 notifications, unread first, then newest first (D4). Each entry:
 
 ```
-notification := { id, agent_id, agent_name, event, created_at, read_at }
-event := "exited" | "failed" | "waiting_for_input" | "bell"
+notification := { id, agent_id, agent_name, event, detail?, created_at, read_at }
+event := "exited" | "failed" | "waiting_for_input" | "bell" | "auto_hold"   // auto_hold and detail added by 0007
+detail := the limit name for auto_hold; absent or null otherwise
 created_at, read_at := unix epoch milliseconds; read_at is null while unread
 ```
 
