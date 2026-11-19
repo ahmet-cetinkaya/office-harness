@@ -1114,6 +1114,76 @@ test.describe("T4: return and restore", () => {
     expect(await reads()).toBe(1);
   });
 
+  test("the restore runs once when the scene opens before the office loads", async ({
+    page,
+  }) => {
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: {
+        agents: OFFICE_AGENTS,
+        projects: PROJECTS,
+        lastView: JSON.stringify({
+          project: null,
+          agent: null,
+          terminal_open: false,
+          view: "panel",
+        }),
+        agentListDelayMs: 1_500,
+      },
+    });
+    await page.goto("/");
+
+    // The scene opens while the office still loads: the panel's first ready
+    // never happens on screen, so only the shell can run the restore.
+    await page.getByRole("button", { name: "To the scene" }).click();
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+
+    const calls = (kind: string) =>
+      page.evaluate(
+        (wanted) =>
+          window.__mockCore.calls.filter(
+            (call) =>
+              call.command === "send_request" && call.args.kind === wanted,
+          ).length,
+        kind,
+      );
+    const lastViewReads = () =>
+      page.evaluate(
+        () =>
+          window.__mockCore.calls.filter(
+            (call) =>
+              call.command === "send_request" &&
+              call.args.kind === "settings.get" &&
+              (call.args.fields as { key?: string })?.key === "last_view",
+          ).length,
+      );
+
+    // The restore ran once, without a panel mount, and the writes are open:
+    // the scene the user chose is recorded, and the stored panel is not.
+    await expect.poll(lastViewReads).toBe(1);
+    await expect.poll(() => calls("settings.set")).toBeGreaterThan(0);
+    const lastWrite = () =>
+      page.evaluate(() => {
+        const writes = window.__mockCore.calls.filter(
+          (call) =>
+            call.command === "send_request" &&
+            call.args.kind === "settings.set",
+        ) as Array<{ args: { fields?: { value?: string } } }>;
+        return JSON.parse(String(writes.at(-1)?.args.fields?.value));
+      });
+    expect(await lastWrite()).toMatchObject({ view: "scene" });
+    await expect(
+      page.getByRole("region", { name: "Office scene" }),
+    ).toBeVisible();
+
+    // A later switch is recorded, and no second restore starts.
+    await page.getByRole("button", { name: "To the panel" }).click();
+    await expect.poll(lastWrite).toMatchObject({ view: "panel" });
+    expect(await lastViewReads()).toBe(1);
+  });
+
   test("departments group the floors from the seeded tree (D2, FR-003)", async ({
     page,
   }) => {

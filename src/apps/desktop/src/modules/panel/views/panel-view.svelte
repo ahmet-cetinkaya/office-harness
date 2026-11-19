@@ -9,8 +9,6 @@
     ConfirmDialog,
     ProjectFormDialog,
     ProjectList,
-    LAST_AGENT_GONE_LEAD,
-    LAST_AGENT_GONE_MESSAGE,
     type Project,
   } from "../../agent";
   import { INITIAL_HIERARCHY, type HierarchyController } from "../../hierarchy";
@@ -18,7 +16,6 @@
     INITIAL_NOTIFICATIONS,
     NotificationDialog,
     NotificationLiveRegion,
-    resolveLastView,
     rowText,
     UnreadButton,
     unreadCount,
@@ -158,50 +155,6 @@
     window.addEventListener("keydown", handleAppKeys);
     return () => window.removeEventListener("keydown", handleAppKeys);
   });
-
-  /**
-   * The last view's restore (FR-008, D6), once the office's first load has
-   * brought its projects and agents. A view this app cannot apply falls back
-   * piece by piece, and each fallback says what it fell back from (US3).
-   * The once-guard lives in the store, not here: the shell unmounts this
-   * view for the scene, and a per-mount flag would restore again on the
-   * way back and revert the user's choices since.
-   */
-  $effect(() => {
-    if (
-      office.phase !== "ready" ||
-      store.lastView.isRestoring ||
-      store.lastView.isRestored
-    ) {
-      return;
-    }
-    void restoreLastView();
-  });
-
-  async function restoreLastView(): Promise<void> {
-    store.lastView.markRestoring();
-    const stored = await store.lastView.read(store.client);
-    if (stored !== null) {
-      const plan = resolveLastView(
-        stored,
-        office.projects.map((project) => project.id),
-        office.agents.map((agent) => agent.id),
-      );
-      store.setProjectChoice(plan.choice);
-      store.restoreView(stored.view);
-      if (plan.agent.kind === "missing") {
-        controller.showNotice(LAST_AGENT_GONE_LEAD, LAST_AGENT_GONE_MESSAGE);
-      } else if (plan.agent.kind === "present") {
-        controller.select(plan.agent.agentId);
-        if (stored.terminal_open && stored.view === "panel") {
-          openAgent(plan.agent.agentId);
-        }
-      }
-    }
-    // The shell writes the last view only from here on, so its eager write
-    // cannot land between this read and its use.
-    store.lastView.markRestored();
-  }
 
   function chooseFromSwitcher(agentId: string): void {
     isSwitchingAgent = false;
