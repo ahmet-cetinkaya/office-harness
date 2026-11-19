@@ -174,6 +174,7 @@
         projectChoice={panel.projectChoice}
         onProjectChoice={panel.setProjectChoice}
         bind:openAgentId
+        onreopen={(agentId) => void panel.notifications.readAgent(agentId)}
       />
     {/if}
     <LoginStartPanel {client} />

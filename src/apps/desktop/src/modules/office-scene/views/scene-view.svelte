@@ -32,6 +32,8 @@
     onProjectChoice: (choice: string | null) => void;
     /** The desk whose terminal is embedded, or none (the shell records it). */
     openAgentId?: string | null;
+    /** A click on the desk that is already open: its rows are read again. */
+    onreopen: (agentId: string) => void;
   }
 
   let {
@@ -40,6 +42,7 @@
     projectChoice,
     onProjectChoice,
     openAgentId = $bindable(null),
+    onreopen,
   }: Props = $props();
 
   const office = $derived(store.snapshot);
@@ -273,6 +276,7 @@
     const wasOpen = openAgentId === agentId;
     openAgentId = agentId;
     if (wasOpen) {
+      onreopen(agentId);
       void tick().then(() => {
         sceneRoot?.querySelector("textarea")?.focus();
       });
