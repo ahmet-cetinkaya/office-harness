@@ -75,6 +75,16 @@ describe("hold announcements", () => {
     );
   });
 
+  test("an agent that the app does not know is not announced", () => {
+    const known = (agentId: string) => (agentId === "ada" ? "ADA" : null);
+    const held = { office: null, agents: [ada] };
+    expect(announcementOfChange(held, NO_HOLDS, () => null)).toBeNull();
+    expect(announcementOfChange(NO_HOLDS, held, () => null)).toBeNull();
+    expect(
+      announcementOfChange(held, { office: OFFICE, agents: [] }, known),
+    ).toBe("Office on hold. ADA released from hold");
+  });
+
   test("a state that changed nothing announces nothing", () => {
     const held = { office: OFFICE, agents: [ada] };
     expect(announcementOfChange(held, held, nameOf)).toBeNull();

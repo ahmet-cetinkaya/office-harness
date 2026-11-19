@@ -28,7 +28,7 @@ export function createPanelStore(client: CoreClient) {
     client,
     (agentId) =>
       office.snapshot.agents.find((agent) => agent.id === agentId)?.name ??
-      agentId,
+      null,
   );
   // The restore is the one reader of `last_view` and the only place the
   // stored view word is applied. The shell writes the last view only after

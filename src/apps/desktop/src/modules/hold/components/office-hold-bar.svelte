@@ -12,10 +12,13 @@
     isOfficeHeld: boolean;
     /** The server's refusal of the last hold or release, or null. */
     failure: FailureText;
+    /** True while a hold or release waits for the server. */
+    isPending: boolean;
     ontoggle: () => void;
   }
 
-  let { controller, isOfficeHeld, failure, ontoggle }: Props = $props();
+  let { controller, isOfficeHeld, failure, isPending, ontoggle }: Props =
+    $props();
 
   let isShowingRecord = $state(false);
   let isEditingLimits = $state(false);
@@ -28,7 +31,7 @@
         {OFFICE_ON_HOLD_TEXT}
       </p>
     {/if}
-    <Button variant="secondary" onclick={ontoggle}>
+    <Button variant="secondary" disabled={isPending} onclick={ontoggle}>
       {isOfficeHeld ? "Release office" : "Hold office"}
     </Button>
     <Button variant="secondary" onclick={() => (isShowingRecord = true)}>

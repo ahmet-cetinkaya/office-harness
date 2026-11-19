@@ -6,10 +6,10 @@
   import FailureMessage from "$shared/ui/failure-message.svelte";
   import TextField from "$shared/ui/text-field.svelte";
   import {
+    firstLimitProblem,
     LIMIT_MAX,
     LIMIT_MIN,
     LIMIT_SETTINGS,
-    limitProblem,
   } from "../models/limits";
   import type { HoldController } from "../state/hold-controller";
 
@@ -20,8 +20,12 @@
 
   let { controller, onclose }: Props = $props();
 
+  const ERROR_ID = "limits-error";
+
   let values = $state<Record<string, string> | null>(null);
   let failure = $state<string | null>(null);
+  /** The limit whose value the client refused, so its field points at the error. */
+  let invalidKey = $state<string | null>(null);
   let isSaving = $state(false);
   let form = $state<HTMLFormElement | null>(null);
 
@@ -38,20 +42,15 @@
     form?.querySelector<HTMLElement>("input")?.focus();
   });
 
-  /** The first limit that the client refuses, as "label: reason", or null. */
-  function firstProblem(current: Record<string, string>): string | null {
-    for (const limit of LIMIT_SETTINGS) {
-      const problem = limitProblem(current[limit.key]);
-      if (problem !== null) return `${limit.label}: ${problem}`;
-    }
-    return null;
-  }
-
   async function save(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     if (values === null) return;
-    failure = firstProblem(values);
-    if (failure !== null) return;
+    const refused = firstLimitProblem(values);
+    invalidKey = refused?.limit.key ?? null;
+    if (refused !== null) {
+      failure = `${refused.limit.label}: ${refused.problem}`;
+      return;
+    }
     isSaving = true;
     failure = await controller.saveLimits(values);
     isSaving = false;
@@ -74,11 +73,16 @@
         <TextField
           label={limit.label}
           hint={`Default ${limit.defaultValue}. A whole number from ${LIMIT_MIN} to ${LIMIT_MAX}.`}
+          errorId={invalidKey === limit.key ? ERROR_ID : undefined}
           bind:value={values[limit.key]}
         />
       {/each}
       {#if failure !== null}
-        <FailureMessage lead="The limits were not saved." message={failure} />
+        <FailureMessage
+          id={ERROR_ID}
+          lead="The limits were not saved."
+          message={failure}
+        />
       {/if}
       <div class="flex flex-wrap gap-3">
         <Button type="submit" disabled={isSaving}>Save limits</Button>

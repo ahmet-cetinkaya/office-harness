@@ -21,7 +21,7 @@ const EVENT_TEXT: Record<string, string> = {
   bell: "rang the bell",
 };
 
-const EVENT_AUTO_HOLD = "auto_hold";
+export const EVENT_AUTO_HOLD = "auto_hold";
 /** How many refusals by one limit put an agent on hold (0007 D7). */
 const AUTO_HOLD_REFUSALS = 3;
 
