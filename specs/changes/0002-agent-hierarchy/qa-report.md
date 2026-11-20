@@ -162,7 +162,7 @@ Merge shas and head run ids below were read from `gh pr view` and `gh run view` 
 
 | SC | OS | Method | Measured value | Verdict | Evidence |
 |---|---|---|---|---|---|
-| SC-001 | any | A person builds 1 CEO, 2 leads, 12 members from the app alone, timed | Not measured | NOT RUN | Manual QA did not happen (see Manual QA). The e2e test `US1 builds a company from an empty office with the keyboard alone` (on `main`) proves the flow and the keyboard path against a mock core; it proves neither the timing nor the real server. |
+| SC-001 | any | A person builds 1 CEO, 2 leads, 12 members from the app alone, timed | Not measured | NOT RUN | Manual QA did not happen (see Manual QA). The e2e test `US1 builds a company from an empty office with the keyboard alone` (on `main`) proves the flow and the keyboard path against a mock core; it proves neither the timing nor the real server. Note for the human run: a fresh office has no project, so the CEO needs an absolute working folder. |
 
 ## SC-002: 30 running agents, 100% shown under their correct parents
 
