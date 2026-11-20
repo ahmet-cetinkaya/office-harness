@@ -77,14 +77,14 @@ impl NotificationRow {
     }
 }
 
-fn corrupt(field: &'static str, text: &str) -> NotificationApplicationError {
+pub(super) fn corrupt(field: &'static str, text: &str) -> NotificationApplicationError {
     NotificationApplicationError::Storage {
         message: format!("stored data is invalid, {field}: {text}"),
         is_disk_failure: false,
     }
 }
 
-fn storage_failure(error: &rusqlite::Error) -> NotificationApplicationError {
+pub(super) fn storage_failure(error: &rusqlite::Error) -> NotificationApplicationError {
     let is_disk_failure = matches!(
         error.sqlite_error_code(),
         Some(
