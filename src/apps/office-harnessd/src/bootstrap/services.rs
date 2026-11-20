@@ -22,7 +22,9 @@ use super::{
     build_hierarchy_services, build_notification_services, build_terminal_services, open_database,
     run_migrations,
 };
-use crate::bridges::{AgentCalls, CallHelper, NotificationBridge, SystemClock};
+use crate::bridges::{
+    AgentCalls, CallHelper, NeedsYouBridge, NotificationBridge, SettingsQuietPeriod, SystemClock,
+};
 use crate::config::Config;
 use crate::server::EventHub;
 
@@ -44,6 +46,9 @@ pub struct Services {
     /// Writes the notification rows; the hold notifier shares it with the
     /// status stream (0007 D7).
     pub notification_bridge: NotificationBridge,
+    /// Changes the Needs you queue and tells the clients; every hook of
+    /// 0008 D2 goes through it.
+    pub needs_you_bridge: NeedsYouBridge,
     /// The agent store as the bridge reads it, for the agent name a
     /// notification copies at creation.
     pub agent_bridge_store: Arc<dyn agent_application::common::interfaces::AgentStore>,
@@ -121,16 +126,30 @@ pub fn start_with(
         log,
         agent_calls,
     );
-    let notification = build_notification_services(connection.handle());
-    // The bridge reads the agent name at creation through the agent module's
-    // own store adapter; the repository is only a handle on the connection.
+    // The bridges read the agent name through the agent module's own store
+    // adapter; the repository is only a handle on the connection.
     let agent_bridge_store: Arc<dyn agent_application::common::interfaces::AgentStore> =
         Arc::new(AgentRepository::new(connection.clone()));
+    let notification =
+        build_notification_services(connection.handle(), Arc::clone(&agent_bridge_store));
+    let needs_you_bridge = NeedsYouBridge::new(
+        notification.needs_you.clone(),
+        Arc::clone(&agent_bridge_store),
+        events.clone(),
+        storage_alerts.clone(),
+        log.clone(),
+    );
+    // Items of agents deleted while the server was down would never clear.
+    needs_you_bridge.forget_deleted_agents();
     let notification_bridge = NotificationBridge::new(
         notification.create.clone(),
         Arc::clone(&agent_bridge_store),
         Arc::clone(&terminal.runtime),
         Arc::new(SystemClock),
+        Arc::new(SettingsQuietPeriod::new(
+            agent.handlers.use_cases().get_settings.clone(),
+        )),
+        needs_you_bridge.clone(),
         events.clone(),
         storage_alerts.clone(),
         log.clone(),
@@ -143,6 +162,7 @@ pub fn start_with(
         log,
         &events,
         &notification_bridge,
+        &needs_you_bridge,
     )?;
     Ok(Services {
         machine,
@@ -157,6 +177,7 @@ pub fn start_with(
         hierarchy,
         notification,
         notification_bridge,
+        needs_you_bridge,
         agent_bridge_store,
     })
 }

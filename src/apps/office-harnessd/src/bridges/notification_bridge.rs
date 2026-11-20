@@ -5,18 +5,22 @@ use std::sync::Arc;
 
 use agent_application::common::errors::PortError;
 use agent_application::common::interfaces::{AgentStore, Clock};
-use kernel::AgentId;
+use kernel::{AgentId, Timestamp};
 use notification_application::commands::create_notification::{
     CreateNotification, CreateNotificationHandler,
 };
+use notification_application::commands::needs_you::NeedsYouClearReason;
 use notification_application::common::errors::NotificationApplicationError;
-use notification_domain::{Notification, NotificationEvent};
+use notification_domain::{
+    AttentionEvent, AttentionKind, Notification, NotificationEvent, NotificationId,
+};
 use terminal_application::common::interfaces::TerminalRuntime;
 use terminal_domain::events::TerminalEvent;
 use tokio::sync::broadcast::error::RecvError;
 use wire::Event;
 
 use super::terminal_events::AgentTerminalEvent;
+use super::{NeedsYouBridge, QuietPeriodSource};
 use crate::bootstrap::{ServerLog, StorageAlerts};
 use crate::server::EventHub;
 
@@ -29,12 +33,18 @@ use crate::server::EventHub;
 /// deleted agent. A failed lookup or row write records nothing and is
 /// reported like any storage failure, and a lagged broadcast is surfaced as
 /// one too, so the client learns which notifications are missing.
+///
+/// Every one of these events also goes to the Needs you queue, even a bell
+/// that the notification rules coalesce (0008 D3). The queue is cleared by the
+/// statuses that show the agent moved on (0008 D2).
 #[derive(Clone)]
 pub struct NotificationBridge {
     create: CreateNotificationHandler,
     agents: Arc<dyn AgentStore>,
     runtime: Arc<dyn TerminalRuntime>,
     clock: Arc<dyn Clock>,
+    quiet_periods: Arc<dyn QuietPeriodSource>,
+    needs_you: NeedsYouBridge,
     hub: EventHub,
     alerts: StorageAlerts,
     log: ServerLog,
@@ -42,11 +52,17 @@ pub struct NotificationBridge {
 
 impl NotificationBridge {
     #[must_use]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the bridge joins the notification, queue, agent, terminal, and settings services"
+    )]
     pub fn new(
         create: CreateNotificationHandler,
         agents: Arc<dyn AgentStore>,
         runtime: Arc<dyn TerminalRuntime>,
         clock: Arc<dyn Clock>,
+        quiet_periods: Arc<dyn QuietPeriodSource>,
+        needs_you: NeedsYouBridge,
         hub: EventHub,
         alerts: StorageAlerts,
         log: ServerLog,
@@ -56,6 +72,8 @@ impl NotificationBridge {
             agents,
             runtime,
             clock,
+            quiet_periods,
+            needs_you,
             hub,
             alerts,
             log,
@@ -110,10 +128,38 @@ impl NotificationBridge {
 
     /// Records what a published `agent.status` frame asks for.
     fn apply_frame(&self, frame: &str) {
-        let Some((agent_id, event)) = notification_of_frame(frame) else {
+        let Some(status) = StatusFrame::parse(frame) else {
             return;
         };
-        self.record(agent_id, event, None);
+        if CLEARING_STATUSES.contains(&status.name.as_str()) {
+            self.needs_you
+                .clear(status.agent_id, NeedsYouClearReason::StatusChanged);
+        }
+        if let Some(event) = status.notification_event() {
+            let attention_detail = self.attention_detail(event, status.detail);
+            self.record(status.agent_id, event, None, attention_detail);
+        }
+    }
+
+    /// What the queue shows beside the event (0008 D3): the quiet period for
+    /// a wait, the status frame's exit code text for an end.
+    fn attention_detail(
+        &self,
+        event: NotificationEvent,
+        frame_detail: Option<String>,
+    ) -> Option<String> {
+        if event != NotificationEvent::WaitingForInput {
+            return frame_detail;
+        }
+        match self.quiet_periods.quiet_period_ms() {
+            Ok(milliseconds) => Some(milliseconds.to_string()),
+            Err(error) => {
+                self.log.error(&format!(
+                    "the quiet period could not be read for the needs-you item: {error}"
+                ));
+                None
+            }
+        }
     }
 
     /// Records a bell of the terminal's current run; an earlier run's bell is
@@ -125,36 +171,76 @@ impl NotificationBridge {
         if self.runtime.current_run(item.agent_id) != Some(item.run) {
             return;
         }
-        self.record(item.agent_id, NotificationEvent::Bell, None);
+        self.record(item.agent_id, NotificationEvent::Bell, None, None);
     }
 
     /// Records that the office held the agent after its limit refusals; the
     /// limit's name travels as the row's detail (0007 D7).
     pub fn record_auto_hold(&self, agent_id: AgentId, limit_name: &str) {
+        let detail = Some(limit_name.to_owned());
         self.record(
             agent_id,
             NotificationEvent::AutoHold,
-            Some(limit_name.to_owned()),
+            detail.clone(),
+            detail,
         );
     }
 
-    fn record(&self, agent_id: AgentId, event: NotificationEvent, detail: Option<String>) {
+    /// The notification first, then the queue: the queue item names the
+    /// notification that created it, and the clients hear
+    /// `notification.created` before `needs_you.changed`. The queue is fed
+    /// even when no notification was created, so a coalesced bell still
+    /// updates its item.
+    fn record(
+        &self,
+        agent_id: AgentId,
+        event: NotificationEvent,
+        notification_detail: Option<String>,
+        attention_detail: Option<String>,
+    ) {
+        let at = self.clock.now();
+        let origin = self.create_notification(agent_id, event, at, notification_detail);
+        let attention = AttentionEvent {
+            kind: attention_kind_of(event),
+            detail: attention_detail,
+            at,
+        };
+        self.needs_you.record(agent_id, attention, origin);
+    }
+
+    /// Creates and publishes the notification; its id when one was created.
+    fn create_notification(
+        &self,
+        agent_id: AgentId,
+        event: NotificationEvent,
+        at: Timestamp,
+        detail: Option<String>,
+    ) -> Option<NotificationId> {
         let name = match self.name_of(agent_id) {
             Ok(name) => name,
-            Err(error) => return self.report_lookup_failure(&error, agent_id, event),
+            Err(error) => {
+                self.report_lookup_failure(&error, agent_id, event);
+                return None;
+            }
         };
         let created = self.create.handle(CreateNotification {
             agent_id,
             agent_name: name,
             event,
-            at: self.clock.now(),
+            at,
             detail,
         });
         match created {
+            Ok(Some(notification)) => {
+                self.hub.publish(&created_event(&notification));
+                Some(notification.id)
+            }
             // A coalesced bell adds no row and no event.
-            Ok(Some(notification)) => self.hub.publish(&created_event(&notification)),
-            Ok(None) => {}
-            Err(error) => self.report(&error, agent_id, event),
+            Ok(None) => None,
+            Err(error) => {
+                self.report(&error, agent_id, event);
+                None
+            }
         }
     }
 
@@ -210,22 +296,54 @@ impl NotificationBridge {
 
 const DELETED_AGENT_NAME: &str = "deleted agent";
 
-/// The (agent, event) that one published status frame asks to record, if any.
-/// `stopped` and `interrupted` are the user's own action, so they record
-/// nothing (US2 scenario 7, FR-006).
-fn notification_of_frame(frame: &str) -> Option<(AgentId, NotificationEvent)> {
-    let body: serde_json::Value = serde_json::from_str(frame).ok()?;
-    if body.get("type").and_then(serde_json::Value::as_str) != Some("agent.status") {
-        return None;
+/// The statuses that show the agent moved on, so its queue item goes
+/// (0008 D2). `interrupted` is absent: a server restart marks agents
+/// interrupted, and the item must survive it.
+const CLEARING_STATUSES: [&str; 3] = ["starting", "working", "stopped"];
+
+/// What one published `agent.status` frame says.
+struct StatusFrame {
+    agent_id: AgentId,
+    name: String,
+    detail: Option<String>,
+}
+
+impl StatusFrame {
+    /// `None` for anything that is not an `agent.status` frame of an agent.
+    fn parse(frame: &str) -> Option<Self> {
+        let body: serde_json::Value = serde_json::from_str(frame).ok()?;
+        if body.get("type").and_then(serde_json::Value::as_str) != Some("agent.status") {
+            return None;
+        }
+        let text_of = |key: &str| body.get(key)?.as_str().map(str::to_owned);
+        Some(Self {
+            agent_id: AgentId::from_str(&text_of("agent_id")?).ok()?,
+            name: text_of("status")?,
+            detail: text_of("detail"),
+        })
     }
-    let agent_id = AgentId::from_str(body.get("agent_id")?.as_str()?).ok()?;
-    let event = match body.get("status").and_then(serde_json::Value::as_str)? {
-        "exited" => NotificationEvent::Exited,
-        "failed" => NotificationEvent::Failed,
-        "waiting_for_input" => NotificationEvent::WaitingForInput,
-        _ => return None,
-    };
-    Some((agent_id, event))
+
+    /// The event this status asks to record, if any. `stopped` and
+    /// `interrupted` are the user's own action, so they record nothing (US2
+    /// scenario 7, FR-006; 0008 PB-3).
+    fn notification_event(&self) -> Option<NotificationEvent> {
+        match self.name.as_str() {
+            "exited" => Some(NotificationEvent::Exited),
+            "failed" => Some(NotificationEvent::Failed),
+            "waiting_for_input" => Some(NotificationEvent::WaitingForInput),
+            _ => None,
+        }
+    }
+}
+
+const fn attention_kind_of(event: NotificationEvent) -> AttentionKind {
+    match event {
+        NotificationEvent::Exited => AttentionKind::Exited,
+        NotificationEvent::Failed => AttentionKind::Failed,
+        NotificationEvent::WaitingForInput => AttentionKind::WaitingForInput,
+        NotificationEvent::Bell => AttentionKind::Bell,
+        NotificationEvent::AutoHold => AttentionKind::AutoHold,
+    }
 }
 
 fn created_event(notification: &Notification) -> Event {
