@@ -64,6 +64,7 @@ Every request is a JSON text frame `{"id":<u32>,"type":"<name>",...}`. The respo
 | `agent.status` | agent_id, status, detail? | FR-014 |
 | `agent.changed` | agent | FR-012 |
 | `agent.deleted` | agent_id (an attached client closes its terminal) | Edge cases |
+| `project.changed` | cause (`created` or `deleted`), project_id. Sent after a successful `project.create` or `project.delete`, to every client including the sender; a client reads `project.list` again (a project that another client made shows without a restart) | ACF-166 |
 | `action.recorded` | entry | FR-011 |
 | `agent.additions.changed` | agent_id, additions (another client's open editor refreshes) | Edge cases |
 | `storage.error` | message (for example, disk full) | Edge cases |

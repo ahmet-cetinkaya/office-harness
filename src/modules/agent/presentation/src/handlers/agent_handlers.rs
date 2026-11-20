@@ -38,8 +38,11 @@ use crate::contracts::{
 };
 use crate::mappings::{
     additions_changed_event, additions_json, agent_changed_event, agent_deleted_event, agent_json,
-    agent_status_event, project_json, session_json, setting_json,
+    agent_status_event, project_changed_event, project_json, session_json, setting_json,
 };
+
+const PROJECT_CREATED: &str = "created";
+const PROJECT_DELETED: &str = "deleted";
 
 /// The host sends every request whose type starts with one of these to
 /// `AgentHandlers`, except `agent.actions`.
@@ -207,14 +210,15 @@ impl AgentHandlers {
             name: body.name,
             folder: PathBuf::from(body.folder),
         })?;
-        Ok(Success::result(project_json(&project)))
+        Ok(Success::result(project_json(&project))
+            .with_event(project_changed_event(PROJECT_CREATED, project.id)))
     }
 
     fn delete_project(&self, request: &Request) -> Result<Success, HandlerError> {
         let body = ProjectIdRequest::read(&request.fields).map_err(HandlerError::invalid)?;
         let project_id: ProjectId = parse_id("project_id", &body.project_id)?;
         self.use_cases.delete_project.handle(project_id)?;
-        Ok(Success::done())
+        Ok(Success::done().with_event(project_changed_event(PROJECT_DELETED, project_id)))
     }
 
     fn list_agents(&self) -> Result<Success, HandlerError> {

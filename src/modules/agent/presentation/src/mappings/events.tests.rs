@@ -75,3 +75,14 @@ fn an_additions_event_names_the_agent_and_carries_the_additions() {
     assert_eq!(event["additions"]["startup_prompt"], "go");
     assert_eq!(event["additions"]["applies_next_session"], true);
 }
+
+#[test]
+fn a_project_changed_event_names_the_cause_and_the_project() {
+    let project_id = ProjectId::generate();
+
+    let event = frame(&project_changed_event("created", project_id));
+
+    assert_eq!(event["type"], "project.changed");
+    assert_eq!(event["cause"], "created");
+    assert_eq!(event["project_id"], project_id.to_string());
+}

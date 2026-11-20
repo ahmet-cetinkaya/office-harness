@@ -489,6 +489,11 @@ export async function installMockCore(
             folder: String(fields.folder),
           };
           office.projects.push(project);
+          pushEvent({
+            type: "project.changed",
+            cause: "created",
+            project_id: project.id,
+          });
           return project;
         }
         case "project.delete": {
@@ -501,6 +506,11 @@ export async function installMockCore(
           office.projects = office.projects.filter(
             (project) => project.id !== fields.project_id,
           );
+          pushEvent({
+            type: "project.changed",
+            cause: "deleted",
+            project_id: fields.project_id,
+          });
           return null;
         }
         case "agent.list":
