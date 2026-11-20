@@ -25,6 +25,7 @@ import {
   EVENT_AGENT_LINE,
   EVENT_AGENT_STATUS,
   EVENT_CLIENT_RESYNC,
+  EVENT_PROJECT_CHANGED,
   EVENT_STORAGE_ERROR,
   readActionRecorded,
   readAdditionsChanged,
@@ -168,6 +169,23 @@ export function createOfficeController(
     }
   }
 
+  /**
+   * Reads the project list again: another client created or deleted a
+   * project, and only the server knows the current list.
+   */
+  async function refreshProjects(): Promise<void> {
+    try {
+      update({ projects: await service.listProjects() });
+    } catch (rejection) {
+      update({
+        notice: {
+          lead: "The project list did not load.",
+          message: describe(rejection),
+        },
+      });
+    }
+  }
+
   /** Runs one request for the user. A failure shows as the notice. */
   async function perform(
     lead: string,
@@ -276,6 +294,8 @@ export function createOfficeController(
           actions: actionRecord.merge(details.actions, entry),
         });
       }
+      case EVENT_PROJECT_CHANGED:
+        return void refreshProjects();
       case EVENT_CLIENT_RESYNC:
         return void load();
       case EVENT_STORAGE_ERROR:

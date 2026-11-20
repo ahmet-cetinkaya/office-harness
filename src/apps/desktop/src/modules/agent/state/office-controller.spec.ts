@@ -241,6 +241,24 @@ describe("office controller", () => {
     expect(state().agents[1].last_line).toBe("Ready.");
   });
 
+  test("a project change event reloads the project list", async () => {
+    const created = { id: "p", name: "Api", folder: "/api" };
+    let projects: unknown[] = [];
+    const { client, push } = fakeClient((kind, fields) =>
+      kind === "project.list" ? projects : officeHandler([])(kind, fields),
+    );
+    const { controller, state } = observe(client);
+    await controller.watch();
+    await controller.load();
+    expect(state().projects).toEqual([]);
+
+    projects = [created];
+    push({ type: "project.changed", cause: "created", project_id: "p" });
+    await settle();
+
+    expect(state().projects).toEqual([created]);
+  });
+
   test("a deleted agent that is open closes its details and says why", async () => {
     const { client, push } = fakeClient(officeHandler([agent("a")]));
     const { controller, state } = observe(client);
