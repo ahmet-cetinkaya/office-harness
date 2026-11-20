@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use hierarchy_domain::entities::TeamId;
+use hierarchy_domain::entities::{Team, TeamId};
 use hierarchy_domain::{Placement, Role, check_placement, resolved_parent};
 use kernel::AgentId;
 
@@ -71,9 +71,10 @@ impl CreateRoleAgentHandler {
         };
         check_placement(&snapshot.rows, placement)
             .map_err(HierarchyApplicationError::from_place)?;
+        let seed = with_team_project(request.seed, &snapshot.teams, team_id);
         let agent_id = self
             .creator
-            .create(request.seed)
+            .create(seed)
             .map_err(CreatorError::into_application)?;
         match self.store.place_agent(
             agent_id,
@@ -115,6 +116,23 @@ impl CreateRoleAgentHandler {
             ));
         }
         placing
+    }
+}
+
+/// The seed with its team's project, when the team has one: a member's or
+/// lead's project is its team's project, and an empty working folder then
+/// means that project's folder (A6, 0001 A6). Without this, a member
+/// created with no folder was refused for having neither.
+fn with_team_project(seed: AgentSeed, teams: &[Team], team_id: Option<TeamId>) -> AgentSeed {
+    let team_project = team_id
+        .and_then(|id| teams.iter().find(|team| team.id() == id))
+        .and_then(Team::project_id);
+    match team_project {
+        Some(project_id) => AgentSeed {
+            project_id: Some(project_id),
+            ..seed
+        },
+        None => seed,
     }
 }
 
