@@ -292,11 +292,19 @@ fn bridge_over(
     let log = crate::bootstrap::open_log(&config).expect("log");
     let hub = EventHub::new();
     let alerts = StorageAlerts::new(log.clone());
+    let needs_you = NeedsYouBridge::in_memory(
+        Arc::clone(&agents),
+        hub.clone(),
+        alerts.clone(),
+        log.clone(),
+    );
     let bridge = NotificationBridge {
         create: CreateNotificationHandler::new(Arc::clone(&store) as Arc<dyn NotificationStore>),
         agents,
         runtime: Arc::new(RunOnly(current_run)),
         clock: Arc::new(FixedClock(NOW)),
+        quiet_periods: Arc::new(FixedQuietPeriod(QUIET_PERIOD_MS)),
+        needs_you,
         hub: hub.clone(),
         alerts: alerts.clone(),
         log,
@@ -304,9 +312,32 @@ fn bridge_over(
     (bridge, store, hub, alerts)
 }
 
+const QUIET_PERIOD_MS: u64 = 5_000;
+
+/// A settings read that always answers the same quiet period.
+struct FixedQuietPeriod(u64);
+
+impl QuietPeriodSource for FixedQuietPeriod {
+    fn quiet_period_ms(&self) -> Result<u64, String> {
+        Ok(self.0)
+    }
+}
+
 /// The status frame exactly as the office publishes it.
 fn status_frame(agent_id: AgentId, status: AgentStatus) -> String {
     agent_presentation::agent_status_event(agent_id, status, None).encode()
+}
+
+fn frame_with_detail(agent: &Agent, status: AgentStatus, detail: &str) -> String {
+    agent_presentation::agent_status_event(agent.id, status, Some(detail)).encode()
+}
+
+fn bell_of(agent: &Agent) -> AgentTerminalEvent {
+    AgentTerminalEvent {
+        agent_id: agent.id,
+        run: RunId(1),
+        event: TerminalEvent::Bell,
+    }
 }
 
 fn frame_of(status: &str, agent: &Agent) -> String {
@@ -331,6 +362,21 @@ fn created_events(store: &MemoryNotifications) -> Vec<(String, String)> {
                 notification.event.as_str().to_owned(),
             )
         })
+        .collect()
+}
+
+/// The `notification.created` frames among the published ones: the 0003
+/// tests count these, and the queue adds `needs_you.changed` frames of its own.
+/// The (agent, event) that one published status frame asks to record, if any.
+fn notification_of_frame(frame: &str) -> Option<(AgentId, NotificationEvent)> {
+    let status = StatusFrame::parse(frame)?;
+    Some((status.agent_id, status.notification_event()?))
+}
+
+fn created_frames(frames: Vec<String>) -> Vec<String> {
+    frames
+        .into_iter()
+        .filter(|frame| frame.contains("notification.created"))
         .collect()
 }
 
@@ -393,7 +439,7 @@ mod records {
                 created_events(&store),
                 vec![("Ana".to_owned(), status.to_owned())]
             );
-            let sent = published_events(&mut published);
+            let sent = created_frames(published_events(&mut published));
             assert_eq!(sent.len(), 1, "one event for {status}");
             assert!(sent[0].contains("notification.created"), "{}", sent[0]);
             assert!(sent[0].contains("\"agent_name\":\"Ana\""), "{}", sent[0]);
@@ -531,7 +577,7 @@ mod records {
         });
 
         assert_eq!(store.all().len(), 1);
-        assert_eq!(published_events(&mut published).len(), 1);
+        assert_eq!(created_frames(published_events(&mut published)).len(), 1);
     }
 }
 
@@ -552,4 +598,136 @@ fn an_auto_hold_row_carries_the_limit_name_as_its_detail_and_reaches_the_clients
     );
     assert!(rows[0].is_unread());
     assert!(published_events(&mut frames)[0].contains("auto_hold"));
+}
+
+mod needs_you_queue {
+    use super::*;
+
+    fn kinds_and_details(bridge: &NotificationBridge) -> Vec<(String, Option<String>)> {
+        bridge
+            .needs_you
+            .items()
+            .iter()
+            .map(|item| (item.latest.kind.to_string(), item.latest.detail.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn a_coalesced_bell_updates_the_item_and_creates_no_second_notification() {
+        let agent = agent_named("Ana");
+        let (bridge, store, _agents, hub) = bridge_for(&agent, Some(RunId(1)));
+        bridge.apply_bell(bell_of(&agent));
+        let first = bridge.needs_you.items().remove(0);
+        let mut published = hub.subscribe();
+
+        bridge.apply_bell(bell_of(&agent));
+
+        assert_eq!(store.all().len(), 1);
+        let item = bridge.needs_you.items().remove(0);
+        assert_eq!(item.origin, Some(store.all()[0].id));
+        assert_eq!(item.first_event_at, first.first_event_at);
+        let sent = published_events(&mut published);
+        assert_eq!(created_frames(sent.clone()), Vec::<String>::new());
+        assert_eq!(sent.len(), 1, "one needs_you.changed for the second bell");
+        assert!(sent[0].contains("needs_you.changed"), "{}", sent[0]);
+    }
+
+    #[test]
+    fn the_item_follows_the_notification_event_with_its_origin() {
+        let agent = agent_named("Ana");
+        let (bridge, store, _agents, hub) = bridge_for(&agent, Some(RunId(1)));
+        let mut published = hub.subscribe();
+
+        bridge.apply_frame(&frame_of("waiting_for_input", &agent));
+
+        let sent = published_events(&mut published);
+        assert!(sent[0].contains("notification.created"), "{}", sent[0]);
+        assert!(sent[1].contains("needs_you.changed"), "{}", sent[1]);
+        let item = bridge.needs_you.items().remove(0);
+        assert_eq!(item.origin, Some(store.all()[0].id));
+    }
+
+    #[test]
+    fn the_detail_of_each_kind_is_the_one_the_contract_names() {
+        let waiting = agent_named("Ana");
+        let (bridge, ..) = bridge_for(&waiting, Some(RunId(1)));
+        bridge.apply_frame(&frame_of("waiting_for_input", &waiting));
+        assert_eq!(
+            kinds_and_details(&bridge),
+            [("waiting_for_input".to_owned(), Some("5000".to_owned()))]
+        );
+
+        let failed = agent_named("Bo");
+        let (bridge, ..) = bridge_for(&failed, Some(RunId(1)));
+        bridge.apply_frame(&frame_with_detail(
+            &failed,
+            AgentStatus::Failed,
+            "exit code 2",
+        ));
+        assert_eq!(
+            kinds_and_details(&bridge),
+            [("failed".to_owned(), Some("exit code 2".to_owned()))]
+        );
+
+        let held = agent_named("Cy");
+        let (bridge, ..) = bridge_for(&held, None);
+        bridge.record_auto_hold(held.id, "creates");
+        assert_eq!(
+            kinds_and_details(&bridge),
+            [("auto_hold".to_owned(), Some("creates".to_owned()))]
+        );
+
+        let ringing = agent_named("Di");
+        let (bridge, ..) = bridge_for(&ringing, Some(RunId(1)));
+        bridge.apply_bell(bell_of(&ringing));
+        assert_eq!(kinds_and_details(&bridge), [("bell".to_owned(), None)]);
+    }
+
+    #[test]
+    fn stopped_and_interrupted_add_no_item() {
+        for status in ["stopped", "interrupted"] {
+            let agent = agent_named("Ana");
+            let (bridge, ..) = bridge_for(&agent, Some(RunId(1)));
+
+            bridge.apply_frame(&frame_of(status, &agent));
+
+            assert_eq!(bridge.needs_you.items(), [], "{status}");
+        }
+    }
+
+    #[test]
+    fn interrupted_keeps_an_item_and_stopped_working_and_starting_clear_it() {
+        let agent = agent_named("Ana");
+        let (bridge, ..) = bridge_for(&agent, Some(RunId(1)));
+        bridge.apply_frame(&frame_of("waiting_for_input", &agent));
+
+        bridge.apply_frame(&frame_of("interrupted", &agent));
+        assert_eq!(bridge.needs_you.items().len(), 1);
+
+        for status in [
+            AgentStatus::Starting,
+            AgentStatus::Working,
+            AgentStatus::Stopped,
+        ] {
+            bridge.apply_frame(&frame_of("waiting_for_input", &agent));
+            bridge.apply_frame(&status_frame(agent.id, status));
+            assert_eq!(bridge.needs_you.items(), [], "{status:?}");
+        }
+    }
+
+    #[test]
+    fn working_after_waiting_for_input_clears_the_item_and_tells_the_clients() {
+        let agent = agent_named("Ana");
+        let (bridge, _store, _agents, hub) = bridge_for(&agent, Some(RunId(1)));
+        bridge.apply_frame(&frame_of("waiting_for_input", &agent));
+        let mut published = hub.subscribe();
+
+        bridge.apply_frame(&status_frame(agent.id, AgentStatus::Working));
+
+        assert_eq!(bridge.needs_you.items(), []);
+        let sent = published_events(&mut published);
+        assert_eq!(sent.len(), 1);
+        assert!(sent[0].contains("needs_you.changed"), "{}", sent[0]);
+        assert!(sent[0].contains("\"items\":[]"), "{}", sent[0]);
+    }
 }

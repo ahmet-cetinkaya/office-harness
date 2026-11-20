@@ -2,15 +2,19 @@
 
 use std::sync::Arc;
 
+use agent_application::common::interfaces::AgentStore;
 use notification_application::commands::create_notification::CreateNotificationHandler;
+use notification_application::commands::needs_you::NeedsYouService;
 use notification_application::commands::read_agent_notifications::ReadAgentNotificationsHandler;
 use notification_application::commands::read_notification::ReadNotificationHandler;
 use notification_application::common::interfaces::{NotificationClock, NotificationStore};
 use notification_application::queries::list_notifications::ListNotificationsHandler;
-use notification_infrastructure::persistence::{NotificationRepository, SharedHandle};
+use notification_infrastructure::persistence::{
+    NeedsYouRepository, NotificationRepository, SharedHandle,
+};
 use notification_presentation::{NotificationHandlers, NotificationUseCases};
 
-use crate::bridges::SystemClock;
+use crate::bridges::{AgentNames, SystemClock};
 
 /// The notification module, wired: the store behind the use cases, and the
 /// use cases behind the handlers.
@@ -18,12 +22,22 @@ pub struct NotificationServices {
     pub handlers: NotificationHandlers,
     /// Creates a row for the bridge, so the bridge holds no handlers.
     pub create: CreateNotificationHandler,
+    /// The Needs you queue, for the bridges that feed and clear it.
+    pub needs_you: NeedsYouService,
 }
 
 /// Builds the notification services over the shared connection that the host
-/// app opened on the office database.
+/// app opened on the office database. The queue shares that connection and
+/// takes agent names from the agent store.
 #[must_use]
-pub fn build_notification_services(connection: SharedHandle) -> NotificationServices {
+pub fn build_notification_services(
+    connection: SharedHandle,
+    agents: Arc<dyn AgentStore>,
+) -> NotificationServices {
+    let needs_you = NeedsYouService::new(
+        Arc::new(NeedsYouRepository::new(Arc::clone(&connection))),
+        Arc::new(AgentNames::new(agents)),
+    );
     let store: Arc<dyn NotificationStore> = Arc::new(NotificationRepository::new(connection));
     let clock: Arc<dyn NotificationClock> = Arc::new(SystemClock);
     let create = CreateNotificationHandler::new(Arc::clone(&store));
@@ -34,5 +48,6 @@ pub fn build_notification_services(connection: SharedHandle) -> NotificationServ
             read_agent: ReadAgentNotificationsHandler::new(store, clock),
         }),
         create,
+        needs_you,
     }
 }
