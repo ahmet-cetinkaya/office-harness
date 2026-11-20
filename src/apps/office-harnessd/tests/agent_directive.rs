@@ -256,6 +256,29 @@ async fn a_directive_to_a_running_non_descendant_is_refused_and_recorded() {
 }
 
 #[tokio::test]
+async fn a_refused_directive_is_recorded_for_the_sender_and_for_the_target() {
+    let office = Office::open().await;
+    // The stranger stays unplaced, so the tree refuses the directive.
+    let (lead, stranger, token, server_file) = office_with(&office, None).await;
+
+    let request = json!({"target_agent_id": stranger, "text": "you there?"});
+    let outcome = send_directive(&token, &server_file, &request).await;
+    assert!(!outcome.status.success(), "{outcome:?}");
+
+    // Both agents' records, read back, list the refusal once (ACF-168).
+    let mut client = office.client().await;
+    for agent in [&lead, &stranger] {
+        let entries = actions_of(&mut client, agent).await;
+        let refused = entries
+            .iter()
+            .filter(|entry| entry["action"] == "directive" && entry["result"] != "ok")
+            .count();
+        assert_eq!(refused, 1, "{agent}: {entries:?}");
+    }
+    office.serving.stop().await;
+}
+
+#[tokio::test]
 async fn an_escape_in_the_text_is_invalid_and_recorded() {
     let office = Office::open().await;
     let (lead, member, token, server_file) = office_with(&office, Some(Role::Lead)).await;

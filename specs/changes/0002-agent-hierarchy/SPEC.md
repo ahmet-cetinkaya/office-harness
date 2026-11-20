@@ -126,7 +126,7 @@ A parent agent creates child agents and sends directives to them, as a CEO gives
 | Agent (extends 0001) | One agent CLI that office-harness runs. | role (optional), parent agent (optional), team (optional) | Has at most one parent and belongs to at most one team. A member's team is its lead's team. |
 | Team | A group of agents for one area or project. | name, project (optional) | Name is unique in the office. Has one team lead and zero or more members. |
 | Directive | Text that a parent agent sends to a descendant. | sender agent, target agent, text, time | Recorded as an action record entry. |
-| Action record entry (extends 0001) | One recorded action. | action now also `directive` and `refused`; actor can be a named agent | Belongs to the office and shows in the target agent's details. |
+| Action record entry (extends 0001) | One recorded action. | action now also `directive` and `refused`; actor can be a named agent | Belongs to the office and shows in the target agent's details; a refused directive also shows in the sender's details. |
 
 ## Success criteria
 
@@ -176,6 +176,7 @@ A parent agent creates child agents and sends directives to them, as a CEO gives
 
 - Q: How many levels does the hierarchy have, and which roles may create which roles? → A: Three levels, CEO > team lead > member. office-harness has no sub-agent role, because members use their CLI's own sub-agent feature (FR-001, A3, A4).
 - Q: Should the MVP spec be split? → A: Yes, into `0001-office-server-and-terminal`, `0002-agent-hierarchy`, and `0003-panel-practicality`. This change depends on 0001.
+- Q: Where is a refused directive recorded, in the sender's action record or the target's? → A: In both, one entry each, one entry when they are the same agent (owner decision, ACF-168, relayed by god on 2026-11-20).
 
 ## Out of scope
 

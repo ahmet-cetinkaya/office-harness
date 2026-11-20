@@ -56,4 +56,4 @@ No fields. Result: the office-level action record entries (no target agent), new
 | 2 | `the agent <id> is on hold` (the caller, the target, or one of their ancestors) |
 | 3 | `the limit "<name>" allows <n> per 60 seconds` with `<name>` one of `directives sent by one agent`, `directives sent to one target agent`, `agents created by one agent`, `starts, stops, and new tasks by one agent` |
 
-Each refusal is recorded with the calling agent as actor (MODIFIED 0002/FR-009). An agent placed on hold automatically is recorded as `hold` with actor `office`.
+Each refusal is recorded with the calling agent as actor (MODIFIED 0002/FR-009). A refused `directive.send` is recorded in the action record of the sender and in the action record of the target, one entry each; when sender and target are one agent, one entry. An accepted directive stays in the target's record only. An agent placed on hold automatically is recorded as `hold` with actor `office`.

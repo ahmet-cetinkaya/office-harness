@@ -91,7 +91,7 @@ An agent that sends directives or creates agents faster than a set limit gets it
 - **FR-007** (US3): IF an agent's agent-made action would exceed one of the rate limits in the table under Assumption A3, THEN THE SYSTEM SHALL refuse the action with a reason that names the limit and its value.
 - **FR-008** (US3): WHEN an agent is refused by a rate limit for the third time within 60 seconds, THE SYSTEM SHALL put that agent on hold and notify the user once, naming the agent.
 - **FR-009** (US3): THE SYSTEM SHALL let the user change each rate limit in the office settings, and SHALL apply a changed value to the next agent-made action.
-- **FR-010** (US1, US2, US3): THE SYSTEM SHALL add every hold, release, and refusal of this change to the action record, with the user as the actor of a hold or release that the user takes, the office as the actor of an automatic hold, and the refused agent as the actor of a refusal.
+- **FR-010** (US1, US2, US3): THE SYSTEM SHALL add every hold, release, and refusal of this change to the action record, with the user as the actor of a hold or release that the user takes, the office as the actor of an automatic hold, and the refused agent as the actor of a refusal. A refused directive appears in the action record of the sender and in the action record of the target.
 - **FR-011** (US1, US2): THE SYSTEM SHALL show in the desktop app, as text, whether the office is on hold and which agents are on hold.
 
 ### MODIFIED
@@ -201,6 +201,7 @@ An agent that sends directives or creates agents faster than a set limit gets it
 
 - Q: Should this change add a size cap on agent-created agents (for example 50 per office, 12 per parent), modifying 0002/FR-005? → A: No. 0002/FR-005 stays unchanged; the creation rate limit (A3) and the automatic hold (FR-008) cover runaway creation.
 - Q: Does an agent hold also refuse actions on the held agent by agents outside its subtree (its parent and the CEO)? → A: Yes, as FR-004 says. The user's own actions are never refused (PB-1).
+- Q: Where is a refused directive recorded, in the sender's action record or the target's? → A: In both, one entry each, one entry when they are the same agent (owner decision, ACF-168, relayed by god on 2026-11-20).
 
 ## Out of scope
 
