@@ -5,22 +5,21 @@ use std::sync::Arc;
 
 use agent_application::common::errors::PortError;
 use agent_application::common::interfaces::{AgentStore, Clock};
+use agent_domain::entities::Agent;
 use kernel::{AgentId, Timestamp};
 use notification_application::commands::create_notification::{
     CreateNotification, CreateNotificationHandler,
 };
 use notification_application::commands::needs_you::NeedsYouClearReason;
 use notification_application::common::errors::NotificationApplicationError;
-use notification_domain::{
-    AttentionEvent, AttentionKind, Notification, NotificationEvent, NotificationId,
-};
+use notification_domain::{AttentionEvent, AttentionKind, Notification, NotificationEvent};
 use terminal_application::common::interfaces::TerminalRuntime;
 use terminal_domain::events::TerminalEvent;
 use tokio::sync::broadcast::error::RecvError;
 use wire::Event;
 
+use super::NeedsYouBridge;
 use super::terminal_events::AgentTerminalEvent;
-use super::{NeedsYouBridge, QuietPeriodSource};
 use crate::bootstrap::{ServerLog, StorageAlerts};
 use crate::server::EventHub;
 
@@ -43,7 +42,9 @@ pub struct NotificationBridge {
     agents: Arc<dyn AgentStore>,
     runtime: Arc<dyn TerminalRuntime>,
     clock: Arc<dyn Clock>,
-    quiet_periods: Arc<dyn QuietPeriodSource>,
+    /// The quiet period the terminal runtime was started with, the value the
+    /// terminal waits for before it calls an agent waiting.
+    quiet_period_ms: u64,
     needs_you: NeedsYouBridge,
     hub: EventHub,
     alerts: StorageAlerts,
@@ -61,7 +62,7 @@ impl NotificationBridge {
         agents: Arc<dyn AgentStore>,
         runtime: Arc<dyn TerminalRuntime>,
         clock: Arc<dyn Clock>,
-        quiet_periods: Arc<dyn QuietPeriodSource>,
+        quiet_period_ms: u64,
         needs_you: NeedsYouBridge,
         hub: EventHub,
         alerts: StorageAlerts,
@@ -72,7 +73,7 @@ impl NotificationBridge {
             agents,
             runtime,
             clock,
-            quiet_periods,
+            quiet_period_ms,
             needs_you,
             hub,
             alerts,
@@ -118,11 +119,12 @@ impl NotificationBridge {
     /// Reports the events a full broadcast channel dropped: FR-006
     /// notifications are missing for them, so the client learns of the loss
     /// as a storage alert, the same channel a failed row write takes, and
-    /// can resync with `notification.list`.
+    /// can resync with `notification.list` and `needs_you.list`.
     fn missed(&self, count: u64, source: &str) {
         self.alerts.report_disk_failure(&format!(
             "the notification bridge missed {count} {source}; \
-             notifications are missing for them"
+             notifications are missing for them; \
+             read notification.list and needs_you.list again"
         ));
     }
 
@@ -141,25 +143,17 @@ impl NotificationBridge {
         }
     }
 
-    /// What the queue shows beside the event (0008 D3): the quiet period for
-    /// a wait, the status frame's exit code text for an end.
+    /// What the queue shows beside the event (0008 D3): the terminal's quiet
+    /// period for a wait, the status frame's text for an end.
     fn attention_detail(
         &self,
         event: NotificationEvent,
         frame_detail: Option<String>,
     ) -> Option<String> {
-        if event != NotificationEvent::WaitingForInput {
-            return frame_detail;
+        if event == NotificationEvent::WaitingForInput {
+            return Some(self.quiet_period_ms.to_string());
         }
-        match self.quiet_periods.quiet_period_ms() {
-            Ok(milliseconds) => Some(milliseconds.to_string()),
-            Err(error) => {
-                self.log.error(&format!(
-                    "the quiet period could not be read for the needs-you item: {error}"
-                ));
-                None
-            }
-        }
+        frame_detail
     }
 
     /// Records a bell of the terminal's current run; an earlier run's bell is
@@ -188,9 +182,11 @@ impl NotificationBridge {
 
     /// The notification first, then the queue: the queue item names the
     /// notification that created it, and the clients hear
-    /// `notification.created` before `needs_you.changed`. The queue is fed
-    /// even when no notification was created, so a coalesced bell still
-    /// updates its item.
+    /// `notification.created` after the item is stored and before
+    /// `needs_you.changed`. The queue is fed even when no notification was
+    /// created, so a coalesced bell still updates its item. An agent that is
+    /// already deleted keeps its notification but gets no item: the delete
+    /// cleanup has run, so nothing would ever clear it.
     fn record(
         &self,
         agent_id: AgentId,
@@ -199,27 +195,44 @@ impl NotificationBridge {
         attention_detail: Option<String>,
     ) {
         let at = self.clock.now();
-        let origin = self.create_notification(agent_id, event, at, notification_detail);
+        let agent = self.agents.find(agent_id);
+        let created = self.create_notification(agent_id, &agent, event, at, notification_detail);
+        let announce_created = || {
+            if let Some(notification) = &created {
+                self.hub.publish(&created_event(notification));
+            }
+        };
+        if matches!(agent, Ok(None)) {
+            announce_created();
+            return;
+        }
         let attention = AttentionEvent {
             kind: attention_kind_of(event),
             detail: attention_detail,
             at,
         };
-        self.needs_you.record(agent_id, attention, origin);
+        let origin = created.as_ref().map(|notification| notification.id);
+        self.needs_you
+            .record(agent_id, attention, origin, announce_created);
     }
 
-    /// Creates and publishes the notification; its id when one was created.
+    /// Creates the notification, copying the agent's name now; the row is
+    /// published by the caller. A deleted agent has no name, so the row says
+    /// so (spec edge case). A store failure is not a delete: it stops the
+    /// record, so nothing claims a name nobody confirmed.
     fn create_notification(
         &self,
         agent_id: AgentId,
+        agent: &Result<Option<Agent>, PortError>,
         event: NotificationEvent,
         at: Timestamp,
         detail: Option<String>,
-    ) -> Option<NotificationId> {
-        let name = match self.name_of(agent_id) {
-            Ok(name) => name,
+    ) -> Option<Notification> {
+        let name = match agent {
+            Ok(Some(agent)) => agent.name.as_str().to_owned(),
+            Ok(None) => DELETED_AGENT_NAME.to_owned(),
             Err(error) => {
-                self.report_lookup_failure(&error, agent_id, event);
+                self.report_lookup_failure(error, agent_id, event);
                 return None;
             }
         };
@@ -230,28 +243,11 @@ impl NotificationBridge {
             at,
             detail,
         });
-        match created {
-            Ok(Some(notification)) => {
-                self.hub.publish(&created_event(&notification));
-                Some(notification.id)
-            }
-            // A coalesced bell adds no row and no event.
-            Ok(None) => None,
-            Err(error) => {
-                self.report(&error, agent_id, event);
-                None
-            }
-        }
-    }
-
-    /// The agent's name now, copied into the row. A deleted agent has none,
-    /// so the row says so (spec edge case). A store failure is not a delete:
-    /// it stops the record, so nothing claims a name nobody confirmed.
-    fn name_of(&self, agent_id: AgentId) -> Result<String, PortError> {
-        match self.agents.find(agent_id)? {
-            Some(agent) => Ok(agent.name.as_str().to_owned()),
-            None => Ok(DELETED_AGENT_NAME.to_owned()),
-        }
+        // A coalesced bell adds no row, so `Ok(None)` makes no notification.
+        created.unwrap_or_else(|error| {
+            self.report(&error, agent_id, event);
+            None
+        })
     }
 
     fn report(

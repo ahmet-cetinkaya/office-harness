@@ -26,7 +26,7 @@ item := {
 
 The items come in the FR-003 order: group (`failed`; then `waiting_for_input`, `bell`, `auto_hold`; then `exited`), then `first_event_at` ascending, then agent name. The list holds at most one item per agent. The list is empty when no agent waits (FR-008).
 
-`detail` per `kind` (data model, D3): `waiting_for_input` the quiet period in ms; `failed` and `exited` the exit code text; `auto_hold` the limit name; `bell` null. The desktop writes the text from `kind` and `detail`. It computes the wait time from `first_event_at` (FR-002).
+`detail` per `kind` (data model, D3): `waiting_for_input` the quiet period in ms that the terminal runtime started with; `failed` the `agent.status` frame's `detail` exactly as the server writes it, for example "the command ended with exit code 2", or the launcher's error text for a start failure; `exited` null, because an exit with code 0 carries no detail; `auto_hold` the limit name; `bell` null. The desktop shows `kind` and `detail` together and does not parse `detail`. It computes the wait time from `first_event_at` (FR-002).
 
 Errors: `internal` when the items cannot be read.
 
@@ -54,7 +54,7 @@ Errors:
 
 The server publishes it after each of these:
 
-- an attention event records or updates an item (FR-001), after `notification.created` for the same event;
+- an attention event records or updates an item (FR-001). The item is stored first, then `notification.created` is published for the same event, then `needs_you.changed`;
 - a clear: `notification.read_agent`, `notification.read` of the origin, `needs_you.dismiss`, status `starting`, `working`, or `stopped`, an agent delete, or the release of a hold when the item's latest event is `auto_hold` (FR-004, FR-005).
 
 The event arrives within 2 seconds of the attention event. For `waiting_for_input` the clock starts when the quiet period ends (SC-003). A client that connects after the event gets the item from `needs_you.list` (FR-006, SC-004).

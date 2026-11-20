@@ -7,7 +7,7 @@ use std::time::Duration;
 use agent_application::common::errors::PortError;
 use agent_application::common::interfaces::AgentStore;
 use agent_domain::entities::Agent;
-use agent_domain::enums::AgentStatus;
+use agent_domain::enums::{AgentStatus, StatusEvent};
 use agent_domain::value_objects::{AgentCommand, DisplayName, MachineId};
 use kernel::{AgentId, Timestamp};
 use notification_application::commands::create_notification::CreateNotificationHandler;
@@ -303,7 +303,7 @@ fn bridge_over(
         agents,
         runtime: Arc::new(RunOnly(current_run)),
         clock: Arc::new(FixedClock(NOW)),
-        quiet_periods: Arc::new(FixedQuietPeriod(QUIET_PERIOD_MS)),
+        quiet_period_ms: QUIET_PERIOD_MS,
         needs_you,
         hub: hub.clone(),
         alerts: alerts.clone(),
@@ -314,22 +314,22 @@ fn bridge_over(
 
 const QUIET_PERIOD_MS: u64 = 5_000;
 
-/// A settings read that always answers the same quiet period.
-struct FixedQuietPeriod(u64);
-
-impl QuietPeriodSource for FixedQuietPeriod {
-    fn quiet_period_ms(&self) -> Result<u64, String> {
-        Ok(self.0)
-    }
-}
-
 /// The status frame exactly as the office publishes it.
 fn status_frame(agent_id: AgentId, status: AgentStatus) -> String {
     agent_presentation::agent_status_event(agent_id, status, None).encode()
 }
 
-fn frame_with_detail(agent: &Agent, status: AgentStatus, detail: &str) -> String {
-    agent_presentation::agent_status_event(agent.id, status, Some(detail)).encode()
+/// The status frame of a command that ended with `exit_code`, with the text
+/// that the status bridge writes for it.
+fn frame_of_exit(agent: &Agent, exit_code: u32) -> String {
+    let (event, detail) =
+        super::super::agent_status_bridge::status_event(TerminalEvent::Exited { exit_code })
+            .expect("an exit is a status event");
+    let status = match event {
+        StatusEvent::ExitedWithCodeZero => AgentStatus::Exited,
+        _ => AgentStatus::Failed,
+    };
+    agent_presentation::agent_status_event(agent.id, status, detail.as_deref()).encode()
 }
 
 fn bell_of(agent: &Agent) -> AgentTerminalEvent {
@@ -365,14 +365,14 @@ fn created_events(store: &MemoryNotifications) -> Vec<(String, String)> {
         .collect()
 }
 
-/// The `notification.created` frames among the published ones: the 0003
-/// tests count these, and the queue adds `needs_you.changed` frames of its own.
 /// The (agent, event) that one published status frame asks to record, if any.
 fn notification_of_frame(frame: &str) -> Option<(AgentId, NotificationEvent)> {
     let status = StatusFrame::parse(frame)?;
     Some((status.agent_id, status.notification_event()?))
 }
 
+/// The `notification.created` frames among the published ones: the 0003
+/// tests count these, and the queue adds `needs_you.changed` frames of its own.
 fn created_frames(frames: Vec<String>) -> Vec<String> {
     frames
         .into_iter()
@@ -555,7 +555,8 @@ mod records {
         assert_eq!(
             alert.message,
             "the notification bridge missed 3 status events; \
-             notifications are missing for them"
+             notifications are missing for them; \
+             read notification.list and needs_you.list again"
         );
     }
 
@@ -659,15 +660,19 @@ mod needs_you_queue {
 
         let failed = agent_named("Bo");
         let (bridge, ..) = bridge_for(&failed, Some(RunId(1)));
-        bridge.apply_frame(&frame_with_detail(
-            &failed,
-            AgentStatus::Failed,
-            "exit code 2",
-        ));
+        bridge.apply_frame(&frame_of_exit(&failed, 2));
         assert_eq!(
             kinds_and_details(&bridge),
-            [("failed".to_owned(), Some("exit code 2".to_owned()))]
+            [(
+                "failed".to_owned(),
+                Some("the command ended with exit code 2".to_owned())
+            )]
         );
+
+        let exited = agent_named("Eli");
+        let (bridge, ..) = bridge_for(&exited, Some(RunId(1)));
+        bridge.apply_frame(&frame_of_exit(&exited, 0));
+        assert_eq!(kinds_and_details(&bridge), [("exited".to_owned(), None)]);
 
         let held = agent_named("Cy");
         let (bridge, ..) = bridge_for(&held, None);
@@ -729,5 +734,67 @@ mod needs_you_queue {
         assert_eq!(sent.len(), 1);
         assert!(sent[0].contains("needs_you.changed"), "{}", sent[0]);
         assert!(sent[0].contains("\"items\":[]"), "{}", sent[0]);
+    }
+
+    #[test]
+    fn a_read_right_after_notification_created_finds_the_item_and_clears_it() {
+        let agent = agent_named("Ana");
+        let (bridge, store, _agents, hub) = bridge_for(&agent, Some(RunId(1)));
+        let mut published = hub.subscribe();
+        let queue = bridge.needs_you.clone();
+        let notifications = Arc::clone(&store);
+        // The desktop of a focused terminal reads the notification the moment
+        // it hears of it.
+        let reading_client = std::thread::spawn(move || {
+            loop {
+                let frame = published.blocking_recv().expect("an event");
+                if frame.contains("notification.created") {
+                    queue.clear_on_read(notifications.all()[0].id);
+                    return;
+                }
+            }
+        });
+
+        bridge.apply_frame(&frame_of("failed", &agent));
+        reading_client.join().expect("the reading client");
+
+        assert_eq!(bridge.needs_you.items(), []);
+    }
+
+    #[test]
+    fn a_deleted_agent_keeps_its_notification_but_gets_no_item() {
+        let agent = agent_named("Ana");
+        let (bridge, store, agents, hub) = bridge_for(&agent, Some(RunId(1)));
+        agents.deleted.store(true, Ordering::SeqCst);
+        let mut published = hub.subscribe();
+
+        bridge.apply_frame(&frame_of("failed", &agent));
+
+        assert_eq!(bridge.needs_you.items(), []);
+        assert_eq!(store.all().len(), 1);
+        let sent = published_events(&mut published);
+        assert_eq!(sent.len(), 1, "only notification.created: {sent:?}");
+        assert!(sent[0].contains("notification.created"), "{}", sent[0]);
+    }
+
+    #[test]
+    fn a_coalesced_bell_after_a_clear_makes_an_item_with_a_null_origin_on_the_wire() {
+        let agent = agent_named("Ana");
+        let (bridge, _store, _agents, hub) = bridge_for(&agent, Some(RunId(1)));
+        bridge.apply_bell(bell_of(&agent));
+        bridge
+            .needs_you
+            .clear(agent.id, NeedsYouClearReason::TerminalOpened);
+        let mut published = hub.subscribe();
+
+        bridge.apply_bell(bell_of(&agent));
+
+        assert_eq!(bridge.needs_you.items().remove(0).origin, None);
+        let sent = published_events(&mut published);
+        assert!(
+            sent[0].contains("\"origin_notification_id\":null"),
+            "{}",
+            sent[0]
+        );
     }
 }

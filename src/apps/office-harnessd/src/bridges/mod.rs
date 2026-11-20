@@ -10,7 +10,6 @@ mod directive_bridges;
 mod hold_bridges;
 mod needs_you_bridge;
 mod notification_bridge;
-mod quiet_period_source;
 mod rate_limit_source;
 mod role_requests;
 mod saved_output;
@@ -28,7 +27,6 @@ pub use directive_bridges::{DirectiveJournalBridge, DirectiveTargetBridge, Direc
 pub use hold_bridges::{HoldJournalBridge, HoldNotifierBridge};
 pub use needs_you_bridge::{AgentNames, NeedsYouBridge};
 pub use notification_bridge::NotificationBridge;
-pub use quiet_period_source::{QuietPeriodSource, SettingsQuietPeriod};
 pub use rate_limit_source::SettingsRateLimits;
 pub use role_requests::{AgentCreatorBridge, RoleRequestsBridge};
 pub use saved_output::{SavedOutputError, SavedOutputs};

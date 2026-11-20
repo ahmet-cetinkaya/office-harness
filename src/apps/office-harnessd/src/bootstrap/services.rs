@@ -22,9 +22,7 @@ use super::{
     build_hierarchy_services, build_notification_services, build_terminal_services, open_database,
     run_migrations,
 };
-use crate::bridges::{
-    AgentCalls, CallHelper, NeedsYouBridge, NotificationBridge, SettingsQuietPeriod, SystemClock,
-};
+use crate::bridges::{AgentCalls, CallHelper, NeedsYouBridge, NotificationBridge, SystemClock};
 use crate::config::Config;
 use crate::server::EventHub;
 
@@ -103,7 +101,8 @@ pub fn start_with(
     let machine = MachineRepository::new(connection.clone()).ensure_local(&host_name())?;
     let settings = SettingsRepository::new(connection.clone());
     let attribution = login.attribution;
-    let terminal = build_terminal_services(config, &settings.load()?, login)?;
+    let startup_settings = settings.load()?;
+    let terminal = build_terminal_services(config, &startup_settings, login)?;
     let events = EventHub::new();
     let storage_alerts = StorageAlerts::new(log.clone());
     let access = build_access_services(config)?;
@@ -146,9 +145,7 @@ pub fn start_with(
         Arc::clone(&agent_bridge_store),
         Arc::clone(&terminal.runtime),
         Arc::new(SystemClock),
-        Arc::new(SettingsQuietPeriod::new(
-            agent.handlers.use_cases().get_settings.clone(),
-        )),
+        startup_settings.quiet_period_ms,
         needs_you_bridge.clone(),
         events.clone(),
         storage_alerts.clone(),
