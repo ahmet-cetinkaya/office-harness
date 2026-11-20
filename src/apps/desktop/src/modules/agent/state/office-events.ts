@@ -8,6 +8,7 @@ export const EVENT_AGENT_STATUS = "agent.status";
 export const EVENT_AGENT_CHANGED = "agent.changed";
 export const EVENT_AGENT_LINE = "agent.line";
 export const EVENT_AGENT_DELETED = "agent.deleted";
+export const EVENT_PROJECT_CHANGED = "project.changed";
 export const EVENT_ADDITIONS_CHANGED = "agent.additions.changed";
 export const EVENT_ACTION_RECORDED = "action.recorded";
 export const EVENT_STORAGE_ERROR = "storage.error";

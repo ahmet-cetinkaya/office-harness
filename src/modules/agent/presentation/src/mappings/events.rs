@@ -3,6 +3,7 @@
 use agent_application::common::models::AdditionsView;
 use agent_domain::entities::Agent;
 use agent_domain::enums::AgentStatus;
+use agent_domain::value_objects::ProjectId;
 use kernel::AgentId;
 use serde_json::{Map, Value};
 use wire::Event;
@@ -58,3 +59,16 @@ pub fn additions_changed_event(agent_id: AgentId, view: &AdditionsView) -> Event
 #[cfg(test)]
 #[path = "events.tests.rs"]
 mod tests;
+
+/// `project.changed`: a client that did not send the project request
+/// reloads its project list. `cause` is `created` or `deleted`.
+#[must_use]
+pub fn project_changed_event(cause: &str, project_id: ProjectId) -> Event {
+    let mut fields = Map::new();
+    fields.insert("cause".to_owned(), Value::String(cause.to_owned()));
+    fields.insert(
+        "project_id".to_owned(),
+        Value::String(project_id.to_string()),
+    );
+    Event::new("project.changed", fields)
+}

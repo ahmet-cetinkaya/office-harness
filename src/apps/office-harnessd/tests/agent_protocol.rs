@@ -1004,3 +1004,55 @@ async fn a_failed_action_record_raises_storage_error_and_the_change_still_succee
     assert!(office.serving.office.log_text().contains("action record"));
     office.serving.stop().await;
 }
+
+/// Reads events until one of the type `kind` arrives. Returns it.
+async fn next_event_of(client: &mut WireClient, kind: &str) -> Value {
+    loop {
+        let message = client.receive_json().await;
+        if message["type"] == kind {
+            return message;
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_project_create_and_delete_tell_every_client_the_projects_changed() {
+    let office = Office::open().await;
+    let mut client = office.client().await;
+    let mut watcher = office.client().await;
+
+    let created = call(
+        &mut client,
+        1,
+        "project.create",
+        json!({"name": "Docs", "folder": office.work_path()}),
+    )
+    .await;
+    let project_id = created["result"]["id"].as_str().expect("id").to_owned();
+
+    let created_event = next_event_of(&mut watcher, "project.changed").await;
+    assert_eq!(created_event["cause"], "created", "{created_event}");
+    assert_eq!(created_event["project_id"], project_id.as_str());
+
+    let deleted = call(
+        &mut client,
+        2,
+        "project.delete",
+        json!({"project_id": project_id}),
+    )
+    .await;
+    assert_eq!(deleted["ok"], true, "{deleted}");
+    let deleted_event = next_event_of(&mut watcher, "project.changed").await;
+    assert_eq!(deleted_event["cause"], "deleted", "{deleted_event}");
+    assert_eq!(deleted_event["project_id"], project_id.as_str());
+
+    let refused = call(
+        &mut client,
+        3,
+        "project.create",
+        json!({"name": "NoFolder"}),
+    )
+    .await;
+    assert_eq!(refused["ok"], false, "{refused}");
+    office.serving.stop().await;
+}

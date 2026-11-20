@@ -20,6 +20,14 @@ pub const REQUEST_PREFIXES: [&str; 2] = ["team.", "hierarchy."];
 /// The tree event every client gets after a change (D6).
 pub const TREE_EVENT: &str = "hierarchy.changed";
 
+/// The causes of `hierarchy.changed` (0002 contract).
+pub const CAUSE_TEAM_CREATED: &str = "team.created";
+pub const CAUSE_TEAM_DELETED: &str = "team.deleted";
+pub const CAUSE_AGENT_PLACED: &str = "agent.placed";
+pub const CAUSE_AGENT_UNPLACED: &str = "agent.unplaced";
+pub const CAUSE_SUBTREE_STOPPED: &str = "subtree.stopped";
+pub const CAUSE_SUBTREE_DELETED: &str = "subtree.deleted";
+
 /// The use cases the hierarchy handlers call.
 pub struct HierarchyUseCases {
     pub tree: Arc<TreeQuery>,
@@ -117,7 +125,7 @@ impl HierarchyHandlers {
             }
         }
         .map_err(|error| handler_error(&error))?;
-        Ok(Success::result(team_json(&team)).with_event(tree_event("team.created")))
+        Ok(Success::result(team_json(&team)).with_event(tree_event(CAUSE_TEAM_CREATED)))
     }
 
     fn delete_team(&self, request: &Request) -> Result<Success, HandlerError> {
@@ -136,7 +144,7 @@ impl HierarchyHandlers {
                 },
             )
             .map_err(|error| handler_error(&error))?;
-        Ok(Success::done().with_event(tree_event("team.deleted")))
+        Ok(Success::done().with_event(tree_event(CAUSE_TEAM_DELETED)))
     }
 
     fn descendants(&self, request: &Request) -> Result<Success, HandlerError> {
@@ -195,7 +203,10 @@ pub fn subtree_request(request: &Request, agent_id: AgentId) -> SubtreeRequest {
     }
 }
 
-fn tree_event(cause: &str) -> Event {
+/// The `hierarchy.changed` event of one cause. Other crates of the host
+/// publish it for the changes that arrive through the agent requests.
+#[must_use]
+pub fn tree_event(cause: &str) -> Event {
     Event::new(TREE_EVENT, {
         let mut fields = serde_json::Map::new();
         fields.insert("cause".to_owned(), Value::String(cause.to_owned()));
