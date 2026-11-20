@@ -69,7 +69,7 @@ Same envelope, but the connection proves an agent call token instead of the offi
 | `target_agent_id` | string | must be a running descendant of the caller |
 | `text` | string | 1 to 8192 characters; no C0 control characters (the server appends the Enter itself) |
 
-Result: `{}`. Errors: `refused` (not a descendant: names the rule; not running: says so), `invalid` (control characters, empty, oversize). Every refusal is recorded with the actor and the reason.
+Result: `{}`. Errors: `refused` (not a descendant: names the rule; not running: says so), `invalid` (control characters, empty, oversize). Every refusal is recorded with the actor and the reason, in the action record of the sender and in the action record of the target (one entry when they are the same agent); an accepted directive is recorded in the target's record only.
 
 > Amended by 0007: `directive.send`, `agent.create`, `agent.start`, `agent.stop`, and `agent.new_task` can also fail with `refused` for a hold or a rate limit. The reasons and their order are in `specs/changes/0007-hold-and-limits/contracts/hold-protocol.md`. They are checked after every refusal above.
 
