@@ -1,10 +1,10 @@
 ---
-status: draft
+status: approved
 spec: specs/changes/0011-task-line/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (through Efe's review gate, PR #67, main 037b10f). Needs approval through Efe's plan review; Efe gates the PR at its head sha. -->
+<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (through Efe's review gate, PR #67, main 037b10f). Approved 2026-11-20 after Efe's plan review PASS (r3 at 4a0f66f); Efe gates the PR at its head sha. -->
 
 # Plan: Task line per agent (0011)
 
