@@ -18,7 +18,9 @@ use wire::{ErrorCode, Request, Response};
 use super::event_hub::EventHub;
 use super::hold_requests::HoldGateway;
 use crate::bootstrap::StorageAlerts;
-use crate::bridges::{StatusOrder, StoppingFlag, TerminalEvents, take_recorded_events};
+use crate::bridges::{
+    NeedsYouBridge, StatusOrder, StoppingFlag, TerminalEvents, take_recorded_events,
+};
 
 /// The requests that change an agent's status or its terminal. They run one
 /// at a time, and apart from the status bridge, so that a delete never
@@ -57,6 +59,7 @@ pub struct AgentGateway {
     runtime: Arc<dyn TerminalRuntime>,
     hierarchy: Arc<TreeQuery>,
     holds: HoldGateway,
+    needs_you: NeedsYouBridge,
 }
 
 impl AgentGateway {
@@ -76,6 +79,7 @@ impl AgentGateway {
         runtime: Arc<dyn TerminalRuntime>,
         hierarchy: Arc<TreeQuery>,
         holds: HoldGateway,
+        needs_you: NeedsYouBridge,
     ) -> Self {
         Self {
             agents,
@@ -88,6 +92,7 @@ impl AgentGateway {
             runtime,
             hierarchy,
             holds,
+            needs_you,
         }
     }
 
@@ -148,6 +153,8 @@ impl AgentGateway {
             // subtree delete that fails part way keeps the agents it already
             // deleted, and pruning a missing agent's hold is idempotent.
             self.holds.forget_deleted_agents();
+            // The same for the Needs you items (0008 D2).
+            self.needs_you.forget_deleted_agents();
         }
         self.add_last_lines(&mut response);
         if request.kind.starts_with(AGENT_PREFIX) {

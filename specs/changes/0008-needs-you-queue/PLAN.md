@@ -48,7 +48,7 @@ Deliver spec 0008. Needs you lists exactly the agents that wait for the user, in
   - Bell coalescing: `create_notification_handler.rs:44` drops a bell while the agent has an unread bell. Spec FR-001 says a coalesced bell still counts for Needs you.
   - Bridge: `H/bridges/notification_bridge.rs`. `spawn` (66) listens to `agent.status` frames and bells. `notification_of_frame` (216) maps `exited`, `failed`, `waiting_for_input`. `record_auto_hold` (133) and `record` (141) publish `notification.created`. Wired at `H/server/running_server.rs:79`.
   - Read rule: `notification.read_agent` (`read_agent_notifications_handler.rs:29`) is sent on every route that opens a terminal: `panel-store.svelte.ts:72,82,95,151` and `app.svelte:177`. `notification.read` marks one row. The routing is `notification_handlers.rs:56`, and the gateway accepts the `notification.` prefix (`H/server/notification_requests.rs:33`).
-  - Status frames: `agent_status_event` (`M/agent/presentation/src/mappings/events.rs:14`) carries `status` and an optional `detail` (the exit code text for `exited` and `failed`). Delete cleanup precedent: `H/server/agent_requests.rs:145-158` (`holds.forget_deleted_agents()`).
+  - Status frames: `agent_status_event` (`M/agent/presentation/src/mappings/events.rs:14`) carries `status` and an optional `detail` (the text of the status machine for `exited` with a failure and for `failed`, for example "the command ended with exit code 2"; none for exit code 0). Delete cleanup precedent: `H/server/agent_requests.rs:145-158` (`holds.forget_deleted_agents()`).
   - Hold release: `HoldService::release_hold` (`M/hierarchy/application/src/commands/hold/hold_service.rs:156`) calls `HoldJournal::released`, bridged at `H/bridges/hold_bridges.rs:69`.
   - Settings: `quiet_period_ms` (`M/agent/domain/src/value_objects/settings.rs:90`); `RESERVED_SHORTCUTS` has 11 entries (`:28`); `normalized_shortcut` (`:61`).
   - Desktop: `D/core/shortcuts/app-shortcuts.ts` (table at 48, kinds at 15); terminal passthrough `D/modules/terminal/views/terminal-view.svelte:143`; the only app key handler `D/modules/panel/views/panel-view.svelte:195`; the live region `:270`; the left column `:339`. The scene (`D/modules/office-scene/views/scene-view.svelte`) has no app key handler and is mounted instead of the panel (`D/app.svelte:158-179`); `openDesk` is at `:275`. The window title is fixed (`src-tauri/tauri.conf.json:15`); `src-tauri/capabilities/default.json` has no window permission. The e2e mock core is `src/apps/desktop/e2e/support/mock-core.ts` (`send_request` switch, invokes at 821-865).
@@ -68,13 +68,13 @@ Deliver spec 0008. Needs you lists exactly the agents that wait for the user, in
   - A dismiss clears the item only and marks nothing read (A4).
   - Status `starting`, `working`, or `stopped`, an agent delete, and the release of an agent hold when `latest.kind` is `AutoHold` clear it (FR-005).
   - `interrupted` neither adds nor clears (PB-3, edge case "server restarts").
-- **D3 Recording:** the bridge calls `NeedsYouService::record` for every attention event before the 0003 coalescing check, so a coalesced bell still updates the item (FR-001, LOW-2). It stores `detail` as follows:
-  - `waiting_for_input`: the quiet period in ms, read through the existing settings query at event time, shown as "quiet for 5 s".
-  - `exited` and `failed`: the status frame's exit code text.
+- **D3 Recording:** the bridge calls `NeedsYouService::record` for every attention event, even one that the 0003 coalescing check turns into no notification, so a coalesced bell still updates the item (FR-001, LOW-2). It stores `detail` as follows:
+  - `waiting_for_input`: the quiet period in ms that the terminal runtime started with, shown as "quiet for 5 s".
+  - `exited` and `failed`: the status frame's `detail` text exactly as the server writes it, for example "the command ended with exit code 2". It is none for exit code 0 and the launcher's error text for a start failure.
   - `auto_hold`: the limit name.
   - `bell`: none.
 
-  The bridge creates the 0003 notification first, then records the item with `origin` (the new notification id, or none for a coalesced bell), then publishes `notification.created` before `needs_you.changed`. The bell check reads the unread state, not the item, so FR-001 still holds.
+  The bridge creates the 0003 notification without publishing it, then stores the item with `origin` (the new notification id, or none for a coalesced bell), then publishes `notification.created`, then `needs_you.changed`. A client that reads the origin notification on arrival thus always finds the item to clear. The bell check reads the unread state, not the item, so FR-001 still holds. An agent that is already deleted keeps its notification and gets no item.
 - **D4 Protocol** (user clients only; the agent connection never answers `needs_you.*`):
   - `needs_you.list` returns `{items: [{agent_id, kind, detail, first_event_at, latest_at, origin_notification_id}]}` in the D1 order. `origin_notification_id` is text or null.
   - `needs_you.dismiss {agent_id}` returns the list. An agent without an item answers `not_found`.
@@ -151,7 +151,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 
 - **Files:** `H/bridges/notification_bridge.rs` (+ tests), `H/bridges/hold_bridges.rs`, `H/server/agent_requests.rs` (delete), `H/bootstrap/{notification_services.rs,services.rs}`, `M/notification/application/src/commands/{read_agent_notifications,read_notification}/` (clear calls).
 - **Work:**
-  - (a) Record every attention event before coalescing, with the D3 detail. The quiet period is read through a small port bridged to the agent settings query.
+  - (a) Record every attention event, coalesced or not, with the D3 detail. The quiet period is the value the terminal runtime started with.
   - (b) Clear on `starting`, `working`, `stopped`. Ignore `interrupted`.
   - (c) Clear on `notification.read_agent` and on `notification.read` of the origin.
   - (d) Clear the items of deleted agents in the delete path. Drop items of missing agents at startup.
@@ -200,7 +200,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 - **Acceptance:**
   - `bun test` for the state: order kept from the server, wait time text, count.
   - Playwright with axe on the mock core:
-    - Items show name, project, event text ("quiet for 5 s", "failed, exit code 2"), and wait time.
+    - Items show name, project, event text ("quiet for 5 s", "failed: the command ended with exit code 2"), and wait time.
     - 5 jump presses with a terminal focused open the 5 terminals in order and empty the list (SC-002), and the key never reaches the CLI.
     - Jump with an empty list keeps the view and announces "No agent needs you".
     - Jump in the scene opens the top desk with focus and leaves the panel's project and selection unchanged (FR-010).

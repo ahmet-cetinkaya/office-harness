@@ -90,7 +90,7 @@ impl NotificationHandlers {
     }
 }
 
-fn parse_id<T: std::str::FromStr>(field: &str, text: &str) -> Result<T, HandlerError> {
+pub(super) fn parse_id<T: std::str::FromStr>(field: &str, text: &str) -> Result<T, HandlerError> {
     text.parse()
         .map_err(|_| HandlerError::invalid(format!("{field} is not a valid identifier: {text}")))
 }
