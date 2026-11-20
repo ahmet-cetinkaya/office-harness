@@ -77,7 +77,7 @@ Result: `{}`. Errors: `refused` (not a descendant: names the rule; not running: 
 
 ### `hierarchy.changed`
 
-Fields: `{ cause: "team.created" | "team.deleted" | "agent.placed" | "agent.unplaced" | "subtree.stopped" | "subtree.deleted" }`. Sent after any change that alters the tree shape or a role. Clients re-read `hierarchy.tree`. No per-node deltas in 0002 (plan D6).
+Fields: `{ cause: "team.created" | "team.deleted" | "agent.placed" | "agent.unplaced" | "subtree.stopped" | "subtree.deleted" }`. Sent after any change that alters the tree shape or a role, and only after the change succeeded. Clients re-read `hierarchy.tree`. The causes: `team.created` and `team.deleted` for `team.create` and `team.delete`; `agent.placed` for a successful `agent.create` with a `role` (user or agent connection); `agent.unplaced` for a successful `agent.delete` of an agent that held a place; `subtree.stopped` for a successful `agent.stop` with `include_descendants`; `subtree.deleted` for a successful `agent.delete` with `include_descendants` of a placed agent. When a request also sends `agent.changed` for a new agent, that event goes first. No per-node deltas in 0002 (plan D6).
 
 ## Environment contract (agent children)
 
