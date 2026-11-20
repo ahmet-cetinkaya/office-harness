@@ -13,7 +13,7 @@ Table `notification_needs_you`, migration `0003_needs_you.sql` of the notificati
 | `latest_kind` | TEXT NOT NULL | One of: `failed`, `waiting_for_input`, `bell`, `auto_hold`, `exited` (FR-002, FR-003). |
 | `latest_detail` | TEXT | The detail of the latest event. NULL when the kind has none (see below). |
 | `latest_at` | INTEGER NOT NULL | Unix milliseconds. The time of the latest event. |
-| `origin_notification_id` | TEXT | The id of the 0003 notification that made the item. NULL when no notification was made (a bell that 0003 coalesces, FR-001). |
+| `origin` | TEXT | The id of the 0003 notification that made the item. NULL when no notification was made (a bell that 0003 coalesces, FR-001). The wire calls it `origin_notification_id`. An index on it serves the clear on read. |
 
 - No foreign key. The notification ledger has none across modules, and the agent row lives in another module. Items of deleted agents are removed by the delete request and dropped at startup (FR-005).
 - A clear deletes the row. The next attention event of that agent inserts a new row with a new `first_event_at` (edge case "dismiss, then a new event").
@@ -26,13 +26,13 @@ Domain types: `NeedsYouItem { agent_id, first_event_at, latest: AttentionEvent {
 
 | `latest_kind` | `latest_detail` | Shown as (FR-002) |
 |---|---|---|
-| `waiting_for_input` | The quiet period in ms, as decimal text, read from the settings at event time (for example `5000`). | "quiet for 5 s" |
-| `failed` | The exit code text of the status frame (for example `2`). | "failed, exit code 2" |
-| `exited` | The exit code text of the status frame. | "exited, exit code 0" |
+| `waiting_for_input` | The quiet period in ms, as decimal text, that the terminal runtime started with (for example `5000`). A later `settings.set` does not change it, because the terminal keeps its start value too. | "quiet for 5 s" |
+| `failed` | The `detail` of the `agent.status` frame exactly as the server writes it: "the command ended with exit code 2" for a command that ended with a non-zero code, or the launcher's error text for a start failure. | "failed" and the text |
+| `exited` | NULL. An exit with code 0 has no frame detail. | "exited" |
 | `auto_hold` | The limit name that held the agent. | "put on hold by the office, limit: <name>" |
 | `bell` | NULL. | "bell" |
 
-The server stores the facts. The desktop writes the words. The detail is never a guess about the agent's intent (0001 A1, 0003 A3). When a frame has no exit code text, `latest_detail` is NULL and the row text omits the code.
+The server stores the facts. The desktop writes the words from `latest_kind` and the stored text. It does not parse the text. The detail is never a guess about the agent's intent (0001 A1, 0003 A3). When a frame has no detail, `latest_detail` is NULL and the row shows the kind alone.
 
 ## Order (D1, FR-003)
 
@@ -48,10 +48,12 @@ A waiting agent that then fails moves to group 0 and keeps its `first_event_at` 
 
 ## Record rules (D3, FR-001)
 
-- The bridge creates the 0003 notification first. It then records the item with `origin_notification_id` set to the new notification id.
-- A second event for an agent that has an item updates `latest_kind`, `latest_detail`, and `latest_at`. It keeps `first_event_at` and `origin_notification_id`.
-- A bell that 0003 coalesces still records the event. It makes no notification. For a new item its `origin_notification_id` is NULL.
-- The record step runs before the 0003 coalescing check. The bell check reads the unread notification state, not this table.
+- The bridge creates the 0003 notification first, without publishing it. It then stores the item with `origin` set to the new notification id, then publishes `notification.created`, then `needs_you.changed`. A client that reads the notification on arrival therefore finds the item to clear.
+- A second event for an agent that has an item updates `latest_kind`, `latest_detail`, and `latest_at`. It keeps `first_event_at` and `origin`.
+- A bell that 0003 coalesces still records the event. It makes no notification. For a new item its `origin` is NULL.
+- The record step runs after the notification is created. The coalescing check reads the unread notification state, not this table.
+- An agent that no longer exists gets no item. Its notification is still created, with the name "deleted agent".
+- One lock covers each queue write, the list read after it, and the publish, so changes publish in the order they happen.
 - `stopped` and `interrupted` record nothing (PB-3).
 
 ## Clear reasons (D2, FR-004, FR-005)
@@ -59,7 +61,7 @@ A waiting agent that then fails moves to group 0 and keeps its `first_event_at` 
 | Reason | Trigger | Message or source |
 |---|---|---|
 | Opened | The user opens the agent's terminal by any route. | `notification.read_agent {agent_id}` (FR-004) |
-| Read on arrival | The client marks the item's origin notification read. | `notification.read {id}` equal to `origin_notification_id` (FR-001 edge case "terminal open in the focused window") |
+| Read on arrival | The client marks the item's origin notification read. | `notification.read {id}` equal to `origin` (FR-001 edge case "terminal open in the focused window") |
 | Dismissed | The user dismisses the item. It marks no notification read and changes no status (A4). | `needs_you.dismiss {agent_id}` (FR-004) |
 | Status | The agent changes to `starting`, `working`, or `stopped`. | `agent.status` frame (FR-005) |
 | Deleted | The agent is deleted. | `agent.delete` request, and the startup drop of items whose agent is missing (FR-005) |

@@ -176,7 +176,7 @@ fn the_office_hold_release_keeps_the_item_of_an_automatic_agent_hold() {
     let log = Arc::new(MemoryLog::default());
     let (bridge, _hub, needs_you) = bridge_with_queue(&log);
     let agent = AgentId::generate();
-    needs_you.record(agent, attention_of(AttentionKind::AutoHold), None);
+    needs_you.record(agent, attention_of(AttentionKind::AutoHold), None, || {});
 
     bridge.released(HoldScope::Office);
 
@@ -188,7 +188,7 @@ fn releasing_the_agent_hold_clears_its_auto_hold_item_and_tells_the_clients() {
     let log = Arc::new(MemoryLog::default());
     let (bridge, hub, needs_you) = bridge_with_queue(&log);
     let agent = AgentId::generate();
-    needs_you.record(agent, attention_of(AttentionKind::AutoHold), None);
+    needs_you.record(agent, attention_of(AttentionKind::AutoHold), None, || {});
     let mut events = hub.subscribe();
 
     bridge.released(HoldScope::Agent(agent));
@@ -209,7 +209,12 @@ fn releasing_an_agent_hold_keeps_an_item_of_another_kind() {
     let log = Arc::new(MemoryLog::default());
     let (bridge, _hub, needs_you) = bridge_with_queue(&log);
     let agent = AgentId::generate();
-    needs_you.record(agent, attention_of(AttentionKind::WaitingForInput), None);
+    needs_you.record(
+        agent,
+        attention_of(AttentionKind::WaitingForInput),
+        None,
+        || {},
+    );
 
     bridge.released(HoldScope::Agent(agent));
 

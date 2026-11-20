@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use agent_application::common::interfaces::AgentStore;
 use kernel::AgentId;
@@ -40,6 +40,10 @@ impl AgentNameLookup for AgentNames {
 /// change that took effect is followed by `needs_you.changed` with the whole
 /// ordered list (0008 contract). A failed write is reported like the
 /// notification bridge reports one, and the queue stays as it was.
+///
+/// One turn lock covers each write, the list read after it, and the publish,
+/// so a clear cannot slip between a find and a save, and two changes cannot
+/// publish their lists in reverse order.
 #[derive(Clone)]
 pub struct NeedsYouBridge {
     service: NeedsYouService,
@@ -47,6 +51,7 @@ pub struct NeedsYouBridge {
     hub: EventHub,
     alerts: StorageAlerts,
     log: ServerLog,
+    turn: Arc<Mutex<()>>,
 }
 
 impl NeedsYouBridge {
@@ -64,23 +69,36 @@ impl NeedsYouBridge {
             hub,
             alerts,
             log,
+            turn: Arc::new(Mutex::new(())),
         }
     }
 
     /// Records one attention event; `origin` is the notification it created,
-    /// none for a coalesced bell.
-    pub fn record(&self, agent_id: AgentId, event: AttentionEvent, origin: Option<NotificationId>) {
+    /// none for a coalesced bell. `announce_origin` runs once the item is
+    /// stored and before the list goes out: a client that reads the origin on
+    /// arrival then finds the item to clear (0008 D3).
+    pub fn record(
+        &self,
+        agent_id: AgentId,
+        event: AttentionEvent,
+        origin: Option<NotificationId>,
+        announce_origin: impl FnOnce(),
+    ) {
+        let _turn = self.take_turn();
         let outcome = self.service.record(agent_id, event, origin).map(|_| true);
+        announce_origin();
         self.publish_if_changed("recorded", agent_id, outcome);
     }
 
     pub fn clear(&self, agent_id: AgentId, reason: NeedsYouClearReason) {
+        let _turn = self.take_turn();
         let outcome = self.service.clear(agent_id, reason);
         self.publish_if_changed("cleared", agent_id, outcome);
     }
 
     /// A read of the notification that created an item clears the item.
     pub fn clear_on_read(&self, notification_id: NotificationId) {
+        let _turn = self.take_turn();
         let outcome = self.service.clear_on_read(notification_id);
         self.publish_if_changed("cleared by a read", notification_id, outcome);
     }
@@ -88,6 +106,7 @@ impl NeedsYouBridge {
     /// Drops the items of agents that no longer exist: after a delete, and at
     /// start for agents deleted while the server was down.
     pub fn forget_deleted_agents(&self) {
+        let _turn = self.take_turn();
         let outcome = self.existing_agents().and_then(|existing| {
             self.service
                 .forget_missing(&existing)
@@ -95,10 +114,19 @@ impl NeedsYouBridge {
         });
         match outcome {
             Ok(removed) => self.publish_when(removed),
-            Err(error) => self
-                .log
-                .error(&format!("the items of deleted agents were kept: {error}")),
+            Err(error) => self.report_cleanup_failure(&error),
         }
+    }
+
+    /// A failed cleanup leaves items of agents that are gone, so it raises
+    /// the storage alert like the hold cleanup does.
+    fn report_cleanup_failure(&self, error: &str) {
+        self.alerts
+            .report_disk_failure(&format!("the items of deleted agents were kept: {error}"));
+    }
+
+    fn take_turn(&self) -> MutexGuard<'_, ()> {
+        self.turn.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn existing_agents(&self) -> Result<Vec<AgentId>, String> {
@@ -151,6 +179,7 @@ impl NeedsYouUseCases for NeedsYouBridge {
         &self,
         agent_id: AgentId,
     ) -> Result<Vec<NeedsYouItem>, NotificationApplicationError> {
+        let _turn = self.take_turn();
         let items = self.service.dismiss(agent_id)?;
         self.hub
             .publish(&notification_presentation::needs_you_changed_event(&items));

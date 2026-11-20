@@ -282,7 +282,7 @@ async fn an_agent_that_keeps_writing_and_rings_no_bell_gets_no_item() {
 }
 
 #[tokio::test]
-async fn a_bell_makes_an_item() {
+async fn a_bell_makes_a_bell_item() {
     let office = Office::open().await;
     office
         .clis
@@ -291,12 +291,51 @@ async fn a_bell_makes_an_item() {
     let agent = client.create_agent(&office, "Ana", "bell-cli", None).await;
     client.start(&agent).await;
 
+    // The first change is the bell: the quiet period ends after it, so the
+    // wait can only come as a later change.
+    let event = tokio::time::timeout(WAIT_LIMIT, client.next_event("needs_you.changed"))
+        .await
+        .expect("needs_you.changed within the limit");
+
+    assert_eq!(event["items"][0]["agent_id"], agent.as_str());
+    assert_eq!(event["items"][0]["kind"], "bell");
+    assert_eq!(event["items"][0]["detail"], Value::Null);
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_failed_command_shows_the_text_the_status_frame_carries() {
+    let office = Office::open().await;
+    office.clis.add("failing-cli", "exit 2");
+    let mut client = office.client().await;
+    let agent = client
+        .create_agent(&office, "Ana", "failing-cli", None)
+        .await;
+    client.start(&agent).await;
+
     let items = wait_for_items(&mut client, 1).await;
 
-    // The quiet period may end after the bell, so the wait can be the latest
-    // event; either way the agent has the one item.
-    assert_eq!(items[0]["agent_id"], agent.as_str());
-    assert!(["bell", "waiting_for_input"].contains(&kinds_of(&items)[0]));
+    assert_eq!(kinds_of(&items), ["failed"]);
+    assert_eq!(items[0]["detail"], "the command ended with exit code 2");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn reading_the_origin_notification_clears_the_item_and_tells_the_clients() {
+    let (office, mut client, agents) = office_with_agents(&["Ana"]).await;
+    let mut watcher = office.client().await;
+    publish_status(&office, &agents[0], AgentStatus::Exited);
+    let items = wait_for_items(&mut client, 1).await;
+    let origin = items[0]["origin_notification_id"].clone();
+    assert!(origin.is_string(), "{}", items[0]);
+
+    let read = client
+        .ask("notification.read", json!({"notification_id": origin}))
+        .await;
+    assert_eq!(read["ok"], true, "{read}");
+
+    next_changed_with(&mut watcher, 0).await;
+    assert_eq!(list_items(&mut client).await, Vec::<Value>::new());
     office.serving.stop().await;
 }
 
