@@ -3,11 +3,13 @@
 use crate::errors::AgentError;
 
 /// One environment variable that an agent's CLI gets on top of the login
-/// environment.
+/// environment. A variable without a value ("no value", `None`) is never
+/// passed to the CLI, so the login environment's value stays in effect; an
+/// empty text (`Some("")`) is a value set on purpose (0009/FR-011).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnvEntry {
     name: String,
-    value: String,
+    value: Option<String>,
 }
 
 /// Names with this prefix belong to the server: it sets them for the agent's
@@ -19,7 +21,7 @@ impl EnvEntry {
     /// # Errors
     /// `InvalidEnvName` naming the entry when the name does not match
     /// `[A-Za-z_][A-Za-z0-9_]*`, and `ContainsNul` for a value with a NUL.
-    pub fn parse(name: &str, value: &str) -> Result<Self, AgentError> {
+    pub fn parse(name: &str, value: Option<&str>) -> Result<Self, AgentError> {
         if !is_valid_name(name) {
             return Err(AgentError::InvalidEnvName {
                 name: name.to_owned(),
@@ -30,14 +32,14 @@ impl EnvEntry {
                 name: name.to_owned(),
             });
         }
-        if value.contains('\0') {
+        if value.is_some_and(|text| text.contains('\0')) {
             return Err(AgentError::ContainsNul {
                 field: format!("the value of environment entry {name}"),
             });
         }
         Ok(Self {
             name: name.to_owned(),
-            value: value.to_owned(),
+            value: value.map(str::to_owned),
         })
     }
 
@@ -47,8 +49,8 @@ impl EnvEntry {
     }
 
     #[must_use]
-    pub fn value(&self) -> &str {
-        &self.value
+    pub fn value(&self) -> Option<&str> {
+        self.value.as_deref()
     }
 }
 

@@ -57,7 +57,7 @@ fn an_additions_event_names_the_agent_and_carries_the_additions() {
         record: AdditionsRecord {
             additions: OfficeAdditions::new(
                 vec!["--x".to_owned()],
-                vec![EnvEntry::parse("KEY", "v").expect("entry")],
+                vec![EnvEntry::parse("KEY", Some("v")).expect("entry")],
                 Some("go".to_owned()),
             )
             .expect("additions"),

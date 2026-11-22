@@ -23,13 +23,17 @@ export function formatFlags(flags: string[]): string {
   return flags.join("\n");
 }
 
-/** One NAME=value for each line. The value is what follows the first `=`. */
+/**
+ * One NAME=value for each line. The value is what follows the first `=`. A
+ * bare NAME is "no value" (null); `NAME=` is an empty value.
+ */
 export function parseEnvironment(text: string): EnvParse {
   const entries: EnvironmentEntry[] = [];
   for (const line of nonEmptyLines(text)) {
     const separatorAt = line.indexOf(ENV_SEPARATOR);
     if (separatorAt < 0) {
-      return { ok: false, message: `"${line}" needs the form NAME=value.` };
+      entries.push({ name: line, value: null });
+      continue;
     }
     const name = line.slice(0, separatorAt).trim();
     if (name === "") {
@@ -41,7 +45,13 @@ export function parseEnvironment(text: string): EnvParse {
 }
 
 export function formatEnvironment(entries: EnvironmentEntry[]): string {
-  return entries.map((entry) => `${entry.name}=${entry.value}`).join("\n");
+  return entries
+    .map((entry) =>
+      entry.value === null
+        ? entry.name
+        : `${entry.name}${ENV_SEPARATOR}${entry.value}`,
+    )
+    .join("\n");
 }
 
 /** An empty prompt means no prompt. */

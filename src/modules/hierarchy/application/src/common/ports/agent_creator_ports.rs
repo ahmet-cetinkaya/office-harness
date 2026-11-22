@@ -13,7 +13,7 @@ use crate::common::errors::HierarchyApplicationError;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SeedAdditions {
     pub flags: Vec<String>,
-    pub env: Vec<(String, String)>,
+    pub env: Vec<(String, Option<String>)>,
     pub startup_prompt: Option<String>,
 }
 
