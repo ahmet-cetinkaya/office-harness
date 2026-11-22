@@ -12,7 +12,8 @@ use std::time::{Duration, Instant};
 
 use kernel::AgentId;
 use support::{
-    Client, RecordingSink, Release, limits, runtime_in, size, spawn_fixture, wait_until,
+    Client, QUIET_PERIOD, RecordingSink, Release, limits, runtime_in, size, spawn_fixture,
+    wait_until,
 };
 #[cfg(unix)]
 use support::{process_is_alive, spawn_program};
@@ -200,6 +201,39 @@ fn output_after_a_quiet_period_is_reported_once_for_the_change_not_for_each_chun
             TerminalEvent::Exited { exit_code: 0 }
         ]
     );
+}
+
+#[test]
+fn the_quiet_time_grows_in_silence_restarts_with_output_and_ends_with_the_child() {
+    let folder = TempDir::new().expect("temp folder");
+    let (runtime, sink) = runtime_in(folder.path(), limits(1000));
+    let agent = AgentId::generate();
+    let signals = TempDir::new().expect("signal folder");
+    let resume = Release::in_folder(signals.path(), "resume");
+    let exit = Release::in_folder(signals.path(), "exit");
+    spawn_fixture(
+        &runtime,
+        agent,
+        &["pause-resume", resume.argument(), exit.argument()],
+    );
+    wait_until("the first quiet period", || quiet_periods(&sink) == 1);
+    let silent = runtime.quiet_for(agent).expect("a running child");
+    assert!(silent >= QUIET_PERIOD, "{silent:?}");
+
+    // The output that ends the silence comes after the release, so the
+    // quiet time can be at most the time since the release.
+    let released = Instant::now();
+    resume.signal();
+    wait_until("the resumed output", || {
+        sink.events().contains(&TerminalEvent::OutputResumed)
+    });
+    let after_output = runtime.quiet_for(agent).expect("a running child");
+    assert!(after_output <= released.elapsed(), "{after_output:?}");
+
+    exit.signal();
+    wait_until("the exit", || sink.has_exited());
+    wait_until("the child to stop running", || !runtime.is_running(agent));
+    assert_eq!(runtime.quiet_for(agent), None);
 }
 
 #[cfg(unix)]

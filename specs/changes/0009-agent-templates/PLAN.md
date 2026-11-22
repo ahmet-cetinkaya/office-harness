@@ -196,7 +196,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 - **Files:** `specs/changes/0009-agent-templates/{data-model.md,contracts/template-protocol.md}`.
 - **Work:** the D1 table, the D2 body and file format with examples, the D3 `null` rule, and the D7 requests, codes, and event.
 - **Depends on:** none.
-- **Acceptance:** every FR names its message, field, or rule; style as `0007-hold-and-limits/contracts/hold-protocol.md`.
+- **Acceptance:** every FR names its message, field, or rule; style as `specs/changes/archive/0007-hold-and-limits/contracts/hold-protocol.md`.
 
 ### T2: "No value" in the agent module (FR-011)
 
@@ -318,7 +318,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 
 ### T8: Docs and QA (all criteria)
 
-- **Files:** `README.md` (templates, export and import, "no value"), `specs/changes/0002-agent-hierarchy/contracts/hierarchy-protocol.md` (a cross-reference), `specs/changes/0009-agent-templates/qa-report.md`.
+- **Files:** `README.md` (templates, export and import, "no value"), `specs/changes/archive/0002-agent-hierarchy/contracts/hierarchy-protocol.md` (a cross-reference), `specs/changes/0009-agent-templates/qa-report.md`.
 - **Work:**
   - Document the flows.
   - QA rows for SC-001 to SC-005 and the edge cases.
@@ -347,7 +347,7 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 | 5 | T5 | `M/template/presentation/`, `H/server/`, `src/apps/office-harnessd/tests/` | `feat(server): answer template requests` |
 | 6 | T6 | `Cargo.toml`, `Cargo.lock`, `src/apps/desktop/src-tauri/`, `src/apps/desktop/e2e/support/mock-core.ts`, `specs/changes/0009-agent-templates/qa-report.md` | `feat(desktop): export and import template files` |
 | 7 | T7 | `D/`, `src/apps/desktop/e2e/` | `feat(desktop): manage templates and create from them` |
-| 8 | T8 | `README.md`, `specs/changes/0002-agent-hierarchy/contracts/hierarchy-protocol.md`, `specs/changes/0009-agent-templates/qa-report.md` | `docs(spec-0009): document templates and record QA` |
+| 8 | T8 | `README.md`, `specs/changes/archive/0002-agent-hierarchy/contracts/hierarchy-protocol.md`, `specs/changes/0009-agent-templates/qa-report.md` | `docs(spec-0009): document templates and record QA` |
 
 ## QA and evidence
 

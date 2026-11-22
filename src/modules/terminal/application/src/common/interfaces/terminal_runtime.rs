@@ -76,4 +76,9 @@ pub trait TerminalRuntime: Send + Sync {
     fn screen(&self, _agent_id: AgentId) -> Option<ScreenView> {
         None
     }
+
+    /// How long the running child has written nothing: since its last output,
+    /// or since its start when it wrote nothing yet. `None` when it does not
+    /// run. Only the time leaves the terminal, never the output (0014).
+    fn quiet_for(&self, agent_id: AgentId) -> Option<Duration>;
 }

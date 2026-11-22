@@ -77,6 +77,10 @@ impl TerminalRuntime for RecordingRuntime {
     fn current_run(&self, _agent_id: AgentId) -> Option<RunId> {
         self.current
     }
+
+    fn quiet_for(&self, _agent_id: AgentId) -> Option<Duration> {
+        None
+    }
 }
 
 fn not_running(agent_id: AgentId) -> TerminalRuntimeError {
