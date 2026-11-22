@@ -527,6 +527,49 @@ fn own_commits_count_what_the_base_lacks_and_a_missing_base_keeps_the_branch() {
 }
 
 #[test]
+fn own_commits_that_cannot_be_counted_keep_the_branch() {
+    let fixture = fixture();
+    let made = created(&fixture, "x");
+    commit_all(&fixture.home, &made.worktree.folder, "own");
+    let commit = git(&fixture.home, &made.worktree.folder, &["rev-parse", "HEAD"]);
+    let (directory, file) = commit.trim().split_at(2);
+    let objects = fixture.repository.join(".git").join("objects");
+    fs::remove_file(objects.join(directory).join(file)).expect("loose object");
+    let status = fixture.worktrees.status(&made.worktree);
+    assert_eq!(status.own_commits, None);
+    assert!(!status.branch_is_deletable());
+}
+
+#[test]
+fn info_in_a_linked_worktree_names_the_main_repository() {
+    let fixture = fixture();
+    let linked = fixture.home.join("linked");
+    git(
+        &fixture.home,
+        &fixture.repository,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "side",
+            &linked.to_string_lossy(),
+        ],
+    );
+    let info = fixture
+        .worktrees
+        .info(&linked.join("sub"), "x")
+        .expect("info")
+        .expect("in a repository");
+    assert_eq!(
+        info.top.canonicalize().expect("top"),
+        fixture.repository.canonicalize().expect("repository")
+    );
+    assert_eq!(info.base, "side");
+    assert_eq!(info.subfolder, "sub/");
+}
+
+#[test]
 fn a_branch_checked_out_elsewhere_is_not_deleted() {
     let fixture = fixture();
     let made = created(&fixture, "x");
@@ -538,6 +581,12 @@ fn a_branch_checked_out_elsewhere_is_not_deleted() {
 #[test]
 fn a_worktree_that_became_dirty_is_refused_by_the_plain_remove() {
     let fixture = fixture();
+    // Git's own clean check would not see the new file with this setting.
+    git(
+        &fixture.home,
+        &fixture.repository,
+        &["config", "status.showUntrackedFiles", "no"],
+    );
     let made = created(&fixture, "x");
     fs::write(made.worktree.folder.join("new.txt"), "x").expect("file");
     let error = fixture.worktrees.remove(&made.worktree, false);
