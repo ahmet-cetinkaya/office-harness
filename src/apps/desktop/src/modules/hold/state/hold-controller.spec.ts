@@ -164,6 +164,7 @@ describe("hold controller", () => {
       limit_directives_per_target: "3",
       limit_creates_per_agent: "7",
       limit_lifecycle_per_agent: "10",
+      limit_reports_per_agent: "5",
     });
   });
 
@@ -176,6 +177,7 @@ describe("hold controller", () => {
       limit_directives_per_target: "4",
       limit_creates_per_agent: "0",
       limit_lifecycle_per_agent: "9",
+      limit_reports_per_agent: "5",
     });
 
     expect(failure).toBe(
@@ -231,6 +233,7 @@ describe("hold controller", () => {
       limit_directives_per_target: "4",
       limit_creates_per_agent: "6",
       limit_lifecycle_per_agent: "9",
+      limit_reports_per_agent: "5",
     });
 
     expect(failure).toBe(

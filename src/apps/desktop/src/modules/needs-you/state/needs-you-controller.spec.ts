@@ -38,6 +38,7 @@ function item(agentId: string, origin: string | null = null): NeedsYouItem {
     first_event_at: 1_000,
     latest_at: 1_000,
     origin_notification_id: origin,
+    report: null,
   };
 }
 

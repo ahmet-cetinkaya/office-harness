@@ -336,7 +336,7 @@ test.describe("limits", () => {
     return dialog;
   }
 
-  test("the dialog shows the four limits with their defaults and saves new values", async ({
+  test("the dialog shows the five limits with their defaults and saves new values", async ({
     page,
   }) => {
     await openPanel(page);
@@ -354,6 +354,9 @@ test.describe("limits", () => {
     await expect(
       dialog.getByLabel("Starts, stops, and new tasks by one agent"),
     ).toHaveValue("10");
+    await expect(dialog.getByLabel("Reports sent by one agent")).toHaveValue(
+      "5",
+    );
     // Focus lands on the first field.
     await expect(
       dialog.getByLabel("Directives sent by one agent"),
