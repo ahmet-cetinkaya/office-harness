@@ -188,8 +188,41 @@ fn a_text_that_names_no_key_stores_as_before_and_conflicts_nothing() {
     }
 
     settings
-        .set_from_text(SettingKey::FocusShortcut, "Ctrl+Shift+F11")
+        .set_from_text(SettingKey::FocusShortcut, "Ctrl+Shift+F13")
         .expect("a key outside the table is free");
+}
+
+#[test]
+fn a_stored_jump_shortcut_is_kept_in_every_spelling() {
+    for stored in ["Ctrl+Shift+F11", "Shift+Ctrl+F11", " ctrl + shift + f11 "] {
+        let mut settings = Settings::default();
+
+        settings
+            .set_from_stored_text(SettingKey::FocusShortcut, stored)
+            .expect("kept");
+
+        assert_eq!(settings.focus_shortcut, stored);
+    }
+}
+
+#[test]
+fn a_stored_value_loads_as_a_new_value_does_except_the_jump_shortcut() {
+    let stored_values = [
+        ("Ctrl+Shift+F1", false),
+        ("Ctrl+Shift+F10", false),
+        ("Ctrl+Shift+H", false),
+        ("Ctrl+Shift+F12", true),
+        ("Ctrl+Alt+F11", true),
+        ("Ctrl+Shift+F13", true),
+        ("Ctrl+Shift", true),
+    ];
+    for (stored, accepted) in stored_values {
+        let mut settings = Settings::default();
+
+        let outcome = settings.set_from_stored_text(SettingKey::FocusShortcut, stored);
+
+        assert_eq!(outcome.is_ok(), accepted, "{stored}");
+    }
 }
 
 #[test]

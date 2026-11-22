@@ -28,7 +28,7 @@ use super::{
 };
 use crate::bridges::{
     AgentCreatorBridge, DirectiveJournalBridge, DirectiveTargetBridge, DirectiveWriterBridge,
-    HoldJournalBridge, HoldNotifierBridge, NotificationBridge, RoleRequestsBridge,
+    HoldJournalBridge, HoldNotifierBridge, NeedsYouBridge, NotificationBridge, RoleRequestsBridge,
     SettingsRateLimits, SteadyClock, SubtreeRequestsBridge,
 };
 use crate::server::EventHub;
@@ -61,6 +61,10 @@ pub struct HierarchyServices {
 ///
 /// # Errors
 /// A migration failure, or holds that cannot be read.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the hierarchy joins the agent, terminal, notification, and queue services"
+)]
 pub fn build_hierarchy_services(
     connection: &SharedConnection,
     agent: &AgentServices,
@@ -69,6 +73,7 @@ pub fn build_hierarchy_services(
     log: &ServerLog,
     events: &EventHub,
     notifications: &NotificationBridge,
+    needs_you: &NeedsYouBridge,
 ) -> Result<HierarchyServices, StartupError> {
     let handle = connection.handle();
     let mut guard = handle
@@ -121,7 +126,15 @@ pub fn build_hierarchy_services(
         alerts.clone(),
     ));
     let agents: Arc<dyn AgentStore> = Arc::new(AgentRepository::new(connection.clone()));
-    let holds = build_hold_service(connection, agent, alerts, log, events, notifications)?;
+    let holds = build_hold_service(
+        connection,
+        agent,
+        alerts,
+        log,
+        events,
+        notifications,
+        needs_you,
+    )?;
     prune_holds(&holds, agents.as_ref(), log);
     let send_directive = Arc::new(
         SendDirectiveHandler::new(
@@ -148,6 +161,7 @@ fn build_hold_service(
     log: &ServerLog,
     events: &EventHub,
     notifications: &NotificationBridge,
+    needs_you: &NeedsYouBridge,
 ) -> Result<Arc<HoldService>, StartupError> {
     let store: Arc<dyn HoldStore> = Arc::new(HoldRepository::new(connection.handle()));
     let limits: Arc<dyn RateLimitSource> = Arc::new(SettingsRateLimits::new(
@@ -156,6 +170,7 @@ fn build_hold_service(
     ));
     let journal: Arc<dyn HoldJournal> = Arc::new(HoldJournalBridge::new(
         agent.record_action.clone(),
+        needs_you.clone(),
         events.clone(),
         alerts.clone(),
     ));

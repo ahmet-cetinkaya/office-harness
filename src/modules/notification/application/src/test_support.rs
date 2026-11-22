@@ -5,10 +5,12 @@
 use std::sync::Mutex;
 
 use kernel::{AgentId, Timestamp};
-use notification_domain::{Notification, NotificationEvent, NotificationId};
+use notification_domain::{NeedsYouItem, Notification, NotificationEvent, NotificationId};
 
 use crate::common::errors::NotificationApplicationError;
-use crate::common::interfaces::{NotificationClock, NotificationStore};
+use crate::common::interfaces::{
+    AgentNameLookup, NeedsYouStore, NotificationClock, NotificationStore,
+};
 use crate::queries::list_notifications::LIST_LIMIT;
 
 /// The clock the tests stamp reads with.
@@ -135,4 +137,57 @@ pub fn notification_of(
         event,
         Timestamp::from_unix_millis(created_at),
     )
+}
+
+/// Keeps the needs-you items in memory, one per agent.
+#[derive(Default)]
+pub struct MemoryNeedsYou(Mutex<Vec<NeedsYouItem>>);
+
+impl NeedsYouStore for MemoryNeedsYou {
+    fn find(
+        &self,
+        agent_id: AgentId,
+    ) -> Result<Option<NeedsYouItem>, NotificationApplicationError> {
+        Ok(locked(&self.0)
+            .iter()
+            .find(|item| item.agent_id == agent_id)
+            .cloned())
+    }
+
+    fn save(&self, item: &NeedsYouItem) -> Result<(), NotificationApplicationError> {
+        let mut items = locked(&self.0);
+        items.retain(|stored| stored.agent_id != item.agent_id);
+        items.push(item.clone());
+        Ok(())
+    }
+
+    fn list(&self) -> Result<Vec<NeedsYouItem>, NotificationApplicationError> {
+        Ok(locked(&self.0).clone())
+    }
+
+    fn remove(&self, agent_id: AgentId) -> Result<bool, NotificationApplicationError> {
+        let mut items = locked(&self.0);
+        let before = items.len();
+        items.retain(|item| item.agent_id != agent_id);
+        Ok(items.len() != before)
+    }
+
+    fn remove_by_origin(
+        &self,
+        notification_id: NotificationId,
+    ) -> Result<bool, NotificationApplicationError> {
+        let mut items = locked(&self.0);
+        let before = items.len();
+        items.retain(|item| item.origin != Some(notification_id));
+        Ok(items.len() != before)
+    }
+}
+
+/// Names every agent the same, so the order tests rely on wait times alone.
+pub struct NoNames;
+
+impl AgentNameLookup for NoNames {
+    fn name_of(&self, _agent_id: AgentId) -> String {
+        String::new()
+    }
 }

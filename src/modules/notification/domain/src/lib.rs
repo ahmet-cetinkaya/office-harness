@@ -8,7 +8,7 @@ mod enums;
 mod errors;
 mod value_objects;
 
-pub use entities::Notification;
+pub use entities::{NeedsYouItem, Notification, order, record_event};
 pub use enums::NotificationEvent;
 pub use errors::NotificationError;
-pub use value_objects::NotificationId;
+pub use value_objects::{AttentionEvent, AttentionKind, NotificationId};
