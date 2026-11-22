@@ -39,6 +39,9 @@ const STDERR_LIMIT_BYTES: usize = 64 * 1024;
 const REASON_MAX_CHARS: usize = 500;
 const READ_CHUNK_BYTES: usize = 8 * 1024;
 const EXIT_POLL: Duration = Duration::from_millis(10);
+/// How long a pipe may stay open after git exited: the reader needs only
+/// to take what git already wrote.
+const PIPE_DRAIN: Duration = Duration::from_millis(500);
 const MINIMUM_VERSION: (u32, u32) = (2, 22);
 const GIT_VARIABLE_PREFIX: &str = "GIT_";
 const ASKPASS_VARIABLES: [&str; 2] = ["SSH_ASKPASS", "SUDO_ASKPASS"];
@@ -52,6 +55,9 @@ const FIXED_VARIABLES: [(&str, &str); 3] = [
 /// Read commands do not refresh the index, so a status never takes a lock
 /// that the user's own git would then find.
 const NO_OPTIONAL_LOCKS: (&str, &str) = ("GIT_OPTIONAL_LOCKS", "0");
+/// Read commands never fetch a missing object: in a partial clone that
+/// fetch runs the transport the repository's configuration names.
+const NO_LAZY_FETCH: (&str, &str) = ("GIT_NO_LAZY_FETCH", "1");
 
 /// Why a git run failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,13 +188,9 @@ impl GitRunner {
             end_tree(&mut child);
             return Err(GitFailure::Timeout);
         };
-        // A helper git started may still hold a pipe; the deadline bounds
-        // the wait for it too.
-        let (Some((stdout, stdout_overflow)), Some((stderr, _))) = (
-            finish_reader(stdout, deadline),
-            finish_reader(stderr, deadline),
-        ) else {
-            end_tree(&mut child);
+        let (Some((stdout, stdout_overflow)), stderr) =
+            exited_output(&mut child, stdout.as_ref(), stderr.as_ref())
+        else {
             return Err(GitFailure::Timeout);
         };
         if !status.success() {
@@ -218,7 +220,9 @@ impl GitRunner {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         if is_read {
-            command.env(NO_OPTIONAL_LOCKS.0, NO_OPTIONAL_LOCKS.1);
+            command
+                .env(NO_OPTIONAL_LOCKS.0, NO_OPTIONAL_LOCKS.1)
+                .env(NO_LAZY_FETCH.0, NO_LAZY_FETCH.1);
         }
         own_process_group(&mut command);
         command
@@ -315,15 +319,36 @@ fn bounded_reader(mut pipe: impl Read + Send + 'static, limit: usize) -> ReaderR
     receiver
 }
 
-/// The reader's bytes, or `None` when the pipe is still open at the
-/// deadline. A pipe that was never opened reads as empty.
-fn finish_reader(reader: Option<ReaderResult>, deadline: Instant) -> Option<(Vec<u8>, bool)> {
+/// The output of a git that has exited. A helper it started may still hold
+/// a pipe, which would never end the read: after a short drain the whole
+/// group is ended, so the pipes close. Standard output is `None` when it
+/// still did not end; standard error then reads as empty, because only a
+/// failure's reason needs it.
+fn exited_output(
+    child: &mut Child,
+    stdout: Option<&ReaderResult>,
+    stderr: Option<&ReaderResult>,
+) -> (Option<(Vec<u8>, bool)>, Vec<u8>) {
+    let mut stdout_read = drained(stdout);
+    let mut stderr_read = drained(stderr);
+    if stdout_read.is_none() || stderr_read.is_none() {
+        end_tree(child);
+        stdout_read = stdout_read.or_else(|| drained(stdout));
+        stderr_read = stderr_read.or_else(|| drained(stderr));
+    }
+    (
+        stdout_read,
+        stderr_read.map_or_else(Vec::new, |(bytes, _)| bytes),
+    )
+}
+
+/// The reader's bytes, or `None` when the pipe is still open after the
+/// drain. A pipe that was never opened reads as empty.
+fn drained(reader: Option<&ReaderResult>) -> Option<(Vec<u8>, bool)> {
     let Some(reader) = reader else {
         return Some((Vec::new(), false));
     };
-    reader
-        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .ok()
+    reader.recv_timeout(PIPE_DRAIN).ok()
 }
 
 fn wait_until(child: &mut Child, deadline: Instant) -> Option<std::process::ExitStatus> {

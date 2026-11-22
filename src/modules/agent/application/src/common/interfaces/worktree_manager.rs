@@ -149,6 +149,8 @@ pub trait WorktreeManager: Send + Sync {
     fn delete_branch(&self, worktree: &AgentWorktree, commit: &str) -> Result<(), WorktreeError>;
 
     /// The undo of a create: removes the worktree, its folder, and its
-    /// branch without asking. Best effort; nothing to report.
+    /// branch without asking. Best effort: the answer already carries the
+    /// failure that began the undo, so the service raises what it leaves
+    /// behind as a storage alert.
     fn discard(&self, worktree: &AgentWorktree);
 }

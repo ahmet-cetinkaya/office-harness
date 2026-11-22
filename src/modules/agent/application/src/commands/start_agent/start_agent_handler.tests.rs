@@ -121,12 +121,22 @@ fn a_missing_folder_refuses_the_start_and_names_it() {
     assert!(office.recorder.entries()[0].failure.is_some());
 }
 
-/// An agent whose working folder is a worktree: `folder` holds a `.git`
-/// file naming `git_folder`.
+/// `repository/.git` with the record of one linked worktree, laid out as
+/// git does; the answer is the record folder.
+fn repository_with_record(repository: &std::path::Path) -> std::path::PathBuf {
+    let record = repository.join(".git").join("worktrees").join("wt");
+    std::fs::create_dir_all(&record).expect("record");
+    std::fs::write(record.join("commondir"), "../..\n").expect("commondir");
+    record
+}
+
+/// An agent of `repository` whose working folder is a worktree: `folder`
+/// holds a `.git` file naming `git_folder`.
 fn agent_in_worktree(
     office: &Office,
     folder: &std::path::Path,
     git_folder: &std::path::Path,
+    repository: &std::path::Path,
 ) -> agent_domain::entities::Agent {
     std::fs::create_dir_all(folder).expect("worktree");
     std::fs::write(
@@ -137,7 +147,7 @@ fn agent_in_worktree(
     let mut agent = office.add_agent("Ana", "claude", folder, AgentStatus::Stopped);
     office.agents.delete(agent.id).expect("delete");
     agent.worktree = Some(agent_domain::value_objects::AgentWorktree {
-        repository: folder.to_path_buf(),
+        repository: repository.to_path_buf(),
         base: "main".to_owned(),
         branch: "office-harness/ana".to_owned(),
         folder: folder.to_path_buf(),
@@ -151,7 +161,14 @@ fn a_worktree_with_a_broken_git_link_refuses_the_start() {
     let office = Office::new();
     let temp = tempfile::TempDir::new().expect("temp");
     let worktree = temp.path().join("wt");
-    let agent = agent_in_worktree(&office, &worktree, &temp.path().join("moved-repository"));
+    let repository = temp.path().join("repo");
+    repository_with_record(&repository);
+    let agent = agent_in_worktree(
+        &office,
+        &worktree,
+        &temp.path().join("moved-repository"),
+        &repository,
+    );
 
     let error = office.start_agent().handle(agent.id).expect_err("broken");
 
@@ -166,13 +183,30 @@ fn a_worktree_with_a_broken_git_link_refuses_the_start() {
 }
 
 #[test]
+fn a_worktree_linked_to_another_repository_refuses_the_start() {
+    let office = Office::new();
+    let temp = tempfile::TempDir::new().expect("temp");
+    let worktree = temp.path().join("wt");
+    let repository = temp.path().join("repo");
+    repository_with_record(&repository);
+    let other = repository_with_record(&temp.path().join("other"));
+    let agent = agent_in_worktree(&office, &worktree, &other, &repository);
+
+    let error = office.start_agent().handle(agent.id).expect_err("swapped");
+
+    assert!(matches!(&error, ApplicationError::Invalid(text)
+        if text.starts_with("the worktree folder is missing or broken")));
+    assert_eq!(office.terminals.started().len(), 0);
+}
+
+#[test]
 fn a_deleted_worktree_folder_refuses_the_start() {
     let office = Office::new();
     let temp = tempfile::TempDir::new().expect("temp");
     let worktree = temp.path().join("wt");
-    let git_folder = temp.path().join("git");
-    std::fs::create_dir_all(&git_folder).expect("git folder");
-    let agent = agent_in_worktree(&office, &worktree, &git_folder);
+    let repository = temp.path().join("repo");
+    let git_folder = repository_with_record(&repository);
+    let agent = agent_in_worktree(&office, &worktree, &git_folder, &repository);
     std::fs::remove_dir_all(&worktree).expect("deleted by hand");
 
     let error = office.start_agent().handle(agent.id).expect_err("missing");
@@ -186,9 +220,9 @@ fn a_linked_worktree_starts_and_a_new_task_keeps_the_same_folder() {
     let office = Office::new();
     let temp = tempfile::TempDir::new().expect("temp");
     let worktree = temp.path().join("wt");
-    let git_folder = temp.path().join("git");
-    std::fs::create_dir_all(&git_folder).expect("git folder");
-    let agent = agent_in_worktree(&office, &worktree, &git_folder);
+    let repository = temp.path().join("repo");
+    let git_folder = repository_with_record(&repository);
+    let agent = agent_in_worktree(&office, &worktree, &git_folder, &repository);
 
     office.start_agent().handle(agent.id).expect("start");
     office.start_new_task().handle(agent.id).expect("new task");
