@@ -4,6 +4,7 @@ use std::future::Future;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use access_application::common::interfaces::NonceSource;
 use access_infrastructure::services::RandomNonceSource;
@@ -13,10 +14,13 @@ use tokio::sync::{Semaphore, watch};
 
 use super::agent_requests::AgentGateway;
 use super::dispatcher::Dispatcher;
+use super::event_hub::EventHub;
 use super::hierarchy_requests::HierarchyGateway;
 use super::hold_requests::HoldGateway;
 use super::notification_requests::NotificationGateway;
 use super::restart_signal::RestartSignal;
+use super::resume_requests::ResumeGateway;
+use super::resume_run::ResumeContext;
 use super::router::build_router;
 use super::server_error::ServerError;
 use super::server_file::write_server_file;
@@ -36,6 +40,27 @@ pub struct Server {
     state: ServerState,
     shutdown: watch::Sender<bool>,
     announcement_path: PathBuf,
+}
+
+/// The bulk resume of 0013: it starts through the agent gateway, so every
+/// start keeps the status order and the action record.
+fn resume_gateway(
+    services: &Services,
+    agents: &AgentGateway,
+    events: &EventHub,
+    check_period: Duration,
+) -> ResumeGateway {
+    ResumeGateway::new(
+        ResumeContext {
+            agents: agents.clone(),
+            store: Arc::clone(&services.agent_bridge_store),
+            holds: Arc::clone(&services.hierarchy.holds),
+            events: events.clone(),
+            alerts: services.storage_alerts.clone(),
+            check_period,
+        },
+        Arc::clone(&services.hierarchy.tree),
+    )
 }
 
 /// The user's `template.*` requests, over the template services.
@@ -122,6 +147,7 @@ impl Server {
             Arc::new(services.notification.handlers.clone()),
             services.needs_you_bridge.clone(),
         );
+        let resume = resume_gateway(services, &agents, &events, options.resume_check_period);
         let (shutdown, stopping) = watch::channel(false);
         let state = ServerState {
             port,
@@ -142,6 +168,7 @@ impl Server {
             directive_journal: Arc::clone(&services.hierarchy.directive_journal),
             notification,
             templates: template_gateway(services),
+            resume,
             events,
             restart: RestartSignal::default(),
             token_generations: services.access.token_store.subscribe(),
