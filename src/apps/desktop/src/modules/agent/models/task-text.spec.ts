@@ -33,10 +33,20 @@ describe("visibleText", () => {
 });
 
 describe("taskLine", () => {
-  test("takes the first line of a multi-line text", () => {
-    expect(taskLine("first\nsecond")).toBe("first");
-    expect(taskLine("first\r\nsecond")).toBe("first");
-    expect(taskLine("first\rsecond")).toBe("first");
+  test("takes the first line of a multi-line text and marks the cut", () => {
+    expect(taskLine("first\nsecond")).toBe("first…");
+    expect(taskLine("first\r\nsecond")).toBe("first…");
+    expect(taskLine("first\rsecond")).toBe("first…");
+  });
+
+  test("adds no ellipsis when only blank lines follow", () => {
+    expect(taskLine("first\n")).toBe("first");
+    expect(taskLine("first\n  \n")).toBe("first");
+  });
+
+  test("adds one ellipsis to a long first line with more lines", () => {
+    const text = "a".repeat(TASK_LINE_MAX_GRAPHEMES + 1) + "\nmore";
+    expect(taskLine(text)).toBe("a".repeat(TASK_LINE_MAX_GRAPHEMES) + "…");
   });
 
   test("shows exactly 80 graphemes whole", () => {
@@ -55,7 +65,7 @@ describe("taskLine", () => {
   });
 
   test("shows an escape sequence as one visible line", () => {
-    expect(taskLine("\u001b[31mred\nmore")).toBe("␛[31mred");
+    expect(taskLine("\u001b[31mred\nmore")).toBe("␛[31mred…");
   });
 });
 

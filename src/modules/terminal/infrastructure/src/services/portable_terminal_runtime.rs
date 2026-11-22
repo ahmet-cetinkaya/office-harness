@@ -180,4 +180,9 @@ impl TerminalRuntime for PortableTerminalRuntime {
         self.running_session(agent_id)
             .map(|session| session.screen())
     }
+
+    fn quiet_for(&self, agent_id: AgentId) -> Option<Duration> {
+        self.running_session(agent_id)
+            .map(|session| session.quiet_for())
+    }
 }

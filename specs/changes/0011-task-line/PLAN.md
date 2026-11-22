@@ -116,7 +116,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 - **Files:** `specs/changes/0011-task-line/{data-model.md,contracts/task-protocol.md}`.
 - **Work:** the three columns and their rules (D1); `agent.task.set` with codes and the 8,192 message; the `task` object in `agent_json` (`{text, set_at, source}` or `null`); the event `agent.task {agent_id, task}` on each change, with no `last_line` and no `status`; the `task_text` action kind.
 - **Depends on:** none.
-- **Acceptance:** every server-side FR names its message or column; style as `0007-hold-and-limits/contracts/hold-protocol.md`.
+- **Acceptance:** every server-side FR names its message or column; style as `specs/changes/archive/0007-hold-and-limits/contracts/hold-protocol.md`.
 
 ### T2: Agent task value, storage, action kind (FR-003 rules, FR-004, SC-005)
 

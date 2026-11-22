@@ -163,6 +163,10 @@ impl TerminalRuntime for RecordingRuntime {
     fn screen(&self, agent_id: AgentId) -> Option<ScreenView> {
         (agent_id == self.running_for).then(|| locked(&self.screen).clone())
     }
+
+    fn quiet_for(&self, _agent_id: AgentId) -> Option<Duration> {
+        None
+    }
 }
 
 fn target_bridge(store: Arc<dyn AgentStore>) -> DirectiveTargetBridge {

@@ -59,14 +59,21 @@ export function visibleText(text: string): string {
   return text.replace(UNSAFE_CHARACTER, visibleCharacter);
 }
 
-/** The first line of the text, at most 80 graphemes, in visible form. */
+/**
+ * The first line of the text, at most 80 graphemes, in visible form. An
+ * ellipsis marks a shortened line: a first line over 80 graphemes, or more
+ * lines with text after it (0011 US1 scenario 2).
+ */
 export function taskLine(text: string): string {
-  const firstLine = text.split(LINE_BREAKS)[0];
+  const [firstLine, ...laterLines] = text.split(LINE_BREAKS);
   const parts = Array.from(
     graphemes.segment(firstLine),
     (part) => part.segment,
   );
-  if (parts.length <= TASK_LINE_MAX_GRAPHEMES) return visibleText(firstLine);
+  const hasMoreText = laterLines.some((line) => line.trim() !== "");
+  if (parts.length <= TASK_LINE_MAX_GRAPHEMES) {
+    return visibleText(firstLine) + (hasMoreText ? ELLIPSIS : "");
+  }
   return (
     visibleText(parts.slice(0, TASK_LINE_MAX_GRAPHEMES).join("")) + ELLIPSIS
   );
