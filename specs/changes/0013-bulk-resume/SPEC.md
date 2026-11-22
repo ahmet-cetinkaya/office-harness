@@ -52,7 +52,7 @@ After a restart, the user sees how many agents are interrupted, opens one list, 
 4. Given the user unchecks one agent and confirms, When the office resumes, Then the unchecked agent stays `interrupted`.
 5. Given a CEO, a lead, and two members of that lead are interrupted, When the user confirms, Then both members start before the lead and the lead starts before the CEO.
 6. Given the user started one listed agent by hand after the list opened, When the user confirms, Then the office skips that agent and says that it is no longer interrupted.
-7. Given the server stopped uncleanly while two agents ran, When the user opens the action, Then the list marks those two agents and warns, before Confirm, that their CLI processes from before may still run and that resuming can start a second copy next to them.
+7. Given the server stopped uncleanly while two agents ran, When the user opens the action, Then the list marks those two agents and warns, before Confirm, that their CLI processes from before may still run and that resuming can start a second copy next to them, and Confirm is unavailable until the user acknowledges the warning while a marked agent is checked.
 8. Given the server stopped cleanly, When the user opens the action, Then no agent is marked and no warning shows.
 
 ### US2: Start a new session when the CLI refuses to continue (Priority: P1)
@@ -94,7 +94,7 @@ When the new session also ends at once, the office stops trying, puts the agent 
 - **FR-005** (US3): IF a new session that this action started ends by itself within the check period, or does not start, THEN THE SYSTEM SHALL NOT start the agent again, SHALL put the agent on hold (0007/FR-003) with the office as actor and the reason, and SHALL notify the user once, naming the agent.
 - **FR-006** (US1, US2, US3): THE SYSTEM SHALL show the result of each checked agent as text as soon as it is known: checking (during the check period), continued, new session (with the reason), on hold (with the reason), or skipped (with the reason).
 - **FR-007** (US2): WHEN this action starts a new session instead of continuing the last one, for any reason, THE SYSTEM SHALL keep the reason with that start's entry in the agent's action record, so the user sees in the agent's details that the CLI's earlier context was not carried over.
-- **FR-008** (US1): WHERE the last session of a listed agent was still open when the server stopped uncleanly, THE SYSTEM SHALL mark that agent in the list and SHALL show, before the user confirms, a warning that the CLI processes of those agents from before the stop may still run and that resuming can start a second copy of a CLI next to them.
+- **FR-008** (US1): WHERE the last session of a listed agent was still open when the server stopped uncleanly, THE SYSTEM SHALL mark that agent in the list, SHALL show, before the user confirms, a warning that the CLI processes of those agents from before the stop may still run and that resuming can start a second copy of a CLI next to them, and SHALL keep Confirm unavailable while a marked agent is checked until the user acknowledges the warning.
 
 ### PRESERVED
 
@@ -109,7 +109,7 @@ When the new session also ends at once, the office stops trying, puts the agent 
 **Flow:**
 
 1. After a server start, the panel header offers "Resume interrupted (N)".
-2. The user opens it. A dialog lists the interrupted agents in start order: name, role, what will happen, and "on hold" where it applies, each with a check box. After an unclean stop, the agents whose last session was open are marked, and a warning above Confirm says that their CLI processes from before may still run.
+2. The user opens it. A dialog lists the interrupted agents in start order: name, role, what will happen, and "on hold" where it applies, each with a check box. After an unclean stop, the agents whose last session was open are marked, and a warning above Confirm says that their CLI processes from before may still run; while a marked agent is checked, the user acknowledges the warning before Confirm becomes available.
 3. The user unchecks agents to leave out and confirms.
 4. The dialog shows each checked agent's result and updates it: checking, then continued, new session with the reason, on hold with the reason, or skipped with the reason.
 5. The user closes the dialog at any time. The office finishes the check periods without it, and the action record and the hold list keep what happened.
@@ -124,7 +124,7 @@ When the new session also ends at once, the office stops trying, puts the agent 
 | Loading the list | A loading text in the dialog. | FR-002 |
 | List | Each agent with its check box, what will happen, and "on hold" where it applies. | FR-002 |
 | Nothing checked | Confirm is unavailable, with the text that at least one agent must be checked. | Edge cases |
-| After an unclean stop | The affected agents are marked; a warning above Confirm says their CLI processes from before may still run and resuming can start a second copy. | FR-008 |
+| After an unclean stop | The affected agents are marked; a warning above Confirm says their CLI processes from before may still run and resuming can start a second copy; an acknowledgement check box that Confirm waits for while a marked agent is checked. | FR-008 |
 | Results | Each checked agent with its result text, updated live. | FR-006 |
 | Request failed | The reason in the dialog; nothing started. | Edge cases |
 | Agent details after a new session | The action record entry of that start, with its actor (user or office) and the reason. | FR-004, FR-007 |
@@ -149,12 +149,12 @@ When the new session also ends at once, the office stops trying, puts the agent 
 
 ## Success criteria
 
-- **SC-001:** With 30 interrupted agents, the user resumes all of them with 2 activations (open the action, confirm), and 100% of them have a started session within 60 seconds of the confirm.
+- **SC-001:** With 30 interrupted agents, the user resumes all of them with 2 activations after a clean stop (open the action, confirm) and 3 after an unclean stop (open, acknowledge the warning, confirm), and 100% of them have a started session within 60 seconds of the confirm.
 - **SC-002:** With a CLI that ends within 1 second of every continue, 100% of the checked agents run a new session within 30 seconds of the confirm, and each has exactly 1 action record entry for that start with the office as actor and a reason.
 - **SC-003:** An agent whose CLI ends within 1 second of every start is started at most 2 times by one bulk action, is on hold after it, and causes exactly 1 notification.
 - **SC-004:** After 10 server starts that follow a SIGKILL of the server, 0 agents start without an action of the user.
 - **SC-005:** In a tree of 1 CEO, 2 leads, and 4 members, all interrupted, 100% of the members start before their lead and both leads start before the CEO.
-- **SC-006:** After a SIGKILL of the server while agents run, the warning of FR-008 shows and marks 100% of those agents; after a clean stop, it shows 0 times.
+- **SC-006:** After a SIGKILL of the server while agents run, the warning of FR-008 shows and marks 100% of those agents, and 0 confirms are possible before the acknowledgement while a marked agent is checked; after a clean stop, the warning shows 0 times.
 
 ## Edge cases
 
