@@ -415,6 +415,7 @@ fn a_checkout_that_times_out_leaves_nothing() {
     assert_nothing_left(&fixture);
 }
 
+#[cfg(unix)]
 const READ_TIMEOUT_FOR_TESTS: std::time::Duration = std::time::Duration::from_secs(10);
 
 #[cfg(unix)]
@@ -463,9 +464,11 @@ fn the_hash_changes_when_one_file_is_reverted_and_another_added() {
     let fixture = fixture();
     let made = created(&fixture, "x");
     let folder = &made.worktree.folder;
+    // The checkout's own bytes: git may have written other line endings.
+    let original = fs::read(folder.join("a.txt")).expect("file");
     fs::write(folder.join("a.txt"), "changed\n").expect("file");
     let first = fixture.worktrees.status(&made.worktree);
-    fs::write(folder.join("a.txt"), "a\n").expect("reverted");
+    fs::write(folder.join("a.txt"), original).expect("reverted");
     fs::write(folder.join("c.txt"), "c\n").expect("added");
     let second = fixture.worktrees.status(&made.worktree);
     assert_eq!(first.changed_files, second.changed_files);
