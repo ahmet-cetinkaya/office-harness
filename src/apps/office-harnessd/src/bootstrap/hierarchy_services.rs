@@ -212,7 +212,9 @@ fn repair_parentless_leads(repository: &HierarchyRepository, log: &ServerLog) {
     match repository.repair_parentless_leads() {
         Ok(0) => {}
         Ok(moved) => log.info(&format!("{moved} team leads moved under the CEO (0002 A5)")),
-        Err(error) => log.error(&format!("the team leads were not moved under the CEO: {error}")),
+        Err(error) => log.error(&format!(
+            "the team leads were not moved under the CEO: {error}"
+        )),
     }
 }
 
