@@ -206,6 +206,11 @@ impl HierarchyStore for HierarchyRepository {
                 .transaction()
                 .map_err(|error| error.to_string())?;
             places.write_place(&transaction, agent_id, role, parent_agent_id, team_id)?;
+            // In the same transaction: a CEO and the leads it adopts are
+            // written together or not at all.
+            if role == Some(Role::Ceo) {
+                places.adopt_parentless_leads(&transaction, agent_id)?;
+            }
             if let Some(team) = team_id {
                 transaction
                     .execute(
