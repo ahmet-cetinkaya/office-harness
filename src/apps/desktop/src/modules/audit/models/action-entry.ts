@@ -20,6 +20,7 @@ const ACTION_TEXT: Record<string, string> = {
   delete: "Deleted",
   new_task: "Started a new task",
   continue: "Continued a session",
+  task_text: "Changed the task text",
   hold: "Put on hold",
   release: "Released from hold",
 };
