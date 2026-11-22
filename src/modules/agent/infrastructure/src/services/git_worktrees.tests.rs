@@ -288,14 +288,15 @@ fn create_and_remove_leave_nothing_and_the_git_configuration_unchanged() {
     assert!(made.worktree.folder.starts_with(&fixture.root));
     let status = fixture.worktrees.status(&made.worktree);
     assert_eq!(status.changed_files, 0);
-    assert!(status.reachable && status.base_exists && status.branch_is_deletable());
+    assert!(status.reachable && status.base_exists);
+    let commit = status.deletable_branch_commit().expect("deletable");
     fixture
         .worktrees
         .remove(&made.worktree, false)
         .expect("removed");
     fixture
         .worktrees
-        .delete_branch(&made.worktree)
+        .delete_branch(&made.worktree, commit)
         .expect("branch deleted");
     assert_nothing_left(&fixture);
     assert_eq!(fs::read(&config).expect("config"), before);
@@ -446,6 +447,8 @@ fn neither_a_hook_file_nor_a_configured_hook_runs() {
         );
     }
     let made = created(&fixture, "x");
+    let status = fixture.worktrees.status(&made.worktree);
+    let commit = status.deletable_branch_commit().expect("deletable");
     assert!(!file_marker.exists());
     assert!(!config_marker.exists());
     fixture
@@ -454,7 +457,7 @@ fn neither_a_hook_file_nor_a_configured_hook_runs() {
         .expect("removed");
     fixture
         .worktrees
-        .delete_branch(&made.worktree)
+        .delete_branch(&made.worktree, commit)
         .expect("deleted");
     assert!(!file_marker.exists());
     assert!(!config_marker.exists());
@@ -542,7 +545,7 @@ fn own_commits_count_what_the_base_lacks_and_a_missing_base_keeps_the_branch() {
     commit_all(&fixture.home, &made.worktree.folder, "own 2");
     let status = fixture.worktrees.status(&made.worktree);
     assert_eq!(status.own_commits, Some(2));
-    assert!(!status.branch_is_deletable());
+    assert!(status.deletable_branch_commit().is_none());
     git(
         &fixture.home,
         &fixture.repository,
@@ -550,7 +553,7 @@ fn own_commits_count_what_the_base_lacks_and_a_missing_base_keeps_the_branch() {
     );
     let status = fixture.worktrees.status(&made.worktree);
     assert!(!status.base_exists);
-    assert!(!status.branch_is_deletable());
+    assert!(status.deletable_branch_commit().is_none());
 }
 
 #[test]
@@ -564,7 +567,7 @@ fn own_commits_that_cannot_be_counted_keep_the_branch() {
     fs::remove_file(objects.join(directory).join(file)).expect("loose object");
     let status = fixture.worktrees.status(&made.worktree);
     assert_eq!(status.own_commits, None);
-    assert!(!status.branch_is_deletable());
+    assert!(status.deletable_branch_commit().is_none());
 }
 
 #[test]
@@ -600,7 +603,28 @@ fn info_in_a_linked_worktree_names_the_main_repository() {
 fn a_branch_checked_out_elsewhere_is_not_deleted() {
     let fixture = fixture();
     let made = created(&fixture, "x");
-    let error = fixture.worktrees.delete_branch(&made.worktree);
+    let status = fixture.worktrees.status(&made.worktree);
+    let commit = status.deletable_branch_commit().expect("deletable");
+    let error = fixture.worktrees.delete_branch(&made.worktree, commit);
+    assert!(matches!(error, Err(WorktreeError::Failed(_))), "{error:?}");
+    assert!(branches(&fixture).contains("office-harness/x"));
+}
+
+#[test]
+fn a_branch_that_moved_since_its_count_is_not_deleted() {
+    let fixture = fixture();
+    let made = created(&fixture, "x");
+    let status = fixture.worktrees.status(&made.worktree);
+    let counted = status
+        .deletable_branch_commit()
+        .expect("deletable")
+        .to_owned();
+    commit_all(&fixture.home, &made.worktree.folder, "late");
+    fixture
+        .worktrees
+        .remove(&made.worktree, true)
+        .expect("removed");
+    let error = fixture.worktrees.delete_branch(&made.worktree, &counted);
     assert!(matches!(error, Err(WorktreeError::Failed(_))), "{error:?}");
     assert!(branches(&fixture).contains("office-harness/x"));
 }
