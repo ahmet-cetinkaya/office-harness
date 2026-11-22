@@ -1,11 +1,11 @@
 ---
-status: draft
+status: approved
 capability: office
 plan: specs/changes/0017-orphan-sweep/PLAN.md
 supersedes: 0013/FR-008
 ---
 
-<!-- Draft for the spec review gate. Only the owner's approval, given through the review gate, changes the status. -->
+<!-- Approved for coding on 2026-11-23 through the review gate (Efe r2 at 350ff07), under the owner's spec delegation. -->
 
 # 0017: End the processes left over from an unclean stop
 
