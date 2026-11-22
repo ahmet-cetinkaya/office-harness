@@ -65,6 +65,26 @@ impl AgentPlaces {
             .map_err(|error| error.to_string())
     }
 
+    /// Moves every team lead that has no parent under the new CEO (0002 A5),
+    /// so the CEO's descendant rules cover the teams made before it.
+    ///
+    /// # Errors
+    /// A SQLite error.
+    pub fn adopt_parentless_leads(
+        &self,
+        connection: &Connection,
+        ceo_id: AgentId,
+    ) -> Result<(), String> {
+        connection
+            .execute(
+                "UPDATE agent_agents SET parent_agent_id = ?1 \
+                 WHERE role = ?2 AND parent_agent_id IS NULL AND id <> ?1",
+                params![ceo_id.as_uuid_text(), Role::Lead.as_str()],
+            )
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+
     /// Whether the place columns exist yet (migration 0004 has run).
     ///
     /// # Errors
