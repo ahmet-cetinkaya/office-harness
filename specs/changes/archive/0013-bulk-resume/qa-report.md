@@ -4,7 +4,7 @@
 
 - **Date:** 2026-11-23.
 - **Build under test:** branch `feat/0013-bulk-resume` with `main` c07f21c merged (0014 and the specs archive), the tree of the implementation commits (T1 to T5), toolchain 1.100.0 in CI and the local nix clippy 1.99. Every local gate below ran on that merged tree.
-- **Overall status:** the automated evidence stands for FR-001 to FR-008, PB-1 to PB-5, SC-002, SC-003, SC-005, and SC-006. SC-001 and SC-004 are PARTIAL: the behavior is proven, the stated counts (30 agents in 60 s, 10 restarts) were not run. Rows that need a person or a signed-in real CLI are BLOCKED; nobody ran them.
+- **Overall status:** complete. The automated evidence stands for FR-001 to FR-008, PB-1 to PB-5, SC-002, SC-003, SC-005, and SC-006. SC-001 and SC-004 are PARTIAL: the behavior is proven, the stated counts (30 agents in 60 s, 10 restarts) were not run. Hands-on rows: the real `claude` resume after a SIGKILL and the 200% zoom and 360 px dialog are PASS (agent-run, 2026-11-23, `main` 468ad56); the screen reader row and the macOS and Windows rows are WAIVED (owner).
 - **Status of this file:** the gate numbers come from local runs on 2026-11-23. The CI result is in the PR, not here.
 
 ### Verdict words
@@ -12,8 +12,9 @@
 | Verdict | Meaning |
 |---|---|
 | PASS (automated) | An automated test proves the criterion. The evidence column names the test. |
+| PASS (agent-run) | An agent ran the check by hand in the real app. The note says when and on which build. |
 | PARTIAL (automated) | Automated tests prove part of the criterion. The evidence column names what is proven and the gap. |
-| BLOCKED | A person must run the check. Nobody has run it. It is not a PASS. |
+| WAIVED (owner) | The owner accepted the row without a run. The note says when and why. It is not a PASS. |
 | GAP | No test proves the criterion. The evidence column says why. |
 
 ### Scope of the automated evidence
@@ -97,10 +98,10 @@ Paths are relative to the repository root. `H` is `src/apps/office-harnessd`, `M
 
 | Check | Verdict | Note |
 |---|---|---|
-| A signed-in `claude` agent resumed after a SIGKILL of the server, in the real app | BLOCKED | Needs a signed-in CLI and the built app; nobody ran it. |
-| The warning and the results announced by a screen reader | BLOCKED | The dialog uses `role="status"` and `aria-describedby`; nobody listened with a screen reader. |
-| 200% zoom and 360 px width of the dialog | BLOCKED | Not run. |
-| macOS and Windows | BLOCKED | CI runs the automated tests on both; nobody used the dialog there. |
+| A signed-in `claude` agent resumed after a SIGKILL of the server, in the real app | PASS (agent-run) | Run 2026-11-23 on Linux, app and server from `main` 468ad56, clean data folder. The CLI answered one prompt; the server got a SIGKILL and was started again from the app. The panel showed "Resume interrupted (1)". The dialog listed the agent with "Continues the session started ...", the unclean-stop mark, the warning, and the acknowledgement; Confirm stayed unavailable until the tick. After Confirm the result read "Checking: continuing a session", then "Continued" at 20.6 s. Asked in the resumed terminal, the CLI named its earlier reply, so its context was kept. The old session ended with "lost". |
+| The warning and the results announced by a screen reader | WAIVED (owner) | The dialog uses `role="status"` and `aria-describedby`; nobody listened with a screen reader. WAIVED under the owner's waiver of person-only rows, accepted 2026-11-23. |
+| 200% zoom and 360 px width of the dialog | PASS (agent-run) | Run 2026-11-23 on Linux, `main` 468ad56, app at device scale 2 (GDK_SCALE=2), three interrupted agents with long names after an unclean stop. At 960 CSS px (maximized) and at 360 CSS px: no sideways scroll, 0 elements past the right edge, 0 cut text. Long names wrap; the dialog scrolls up and down to the warning, the acknowledgement, and Confirm. |
+| macOS and Windows | WAIVED (owner) | CI runs the automated tests on both; nobody used the dialog there. WAIVED per the owner decision of 2026-11-20 (ACF-106) that CI evidence is enough. |
 
 ## Gaps
 

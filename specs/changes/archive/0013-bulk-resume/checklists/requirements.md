@@ -1,6 +1,6 @@
 # Requirements checklist: 0013-bulk-resume
 
-Spec: `specs/changes/0013-bulk-resume/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0007/`, and `0010/` reference was checked against the specs on `main` at 6e3d197.
+Spec: `specs/changes/archive/0013-bulk-resume/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0007/`, and `0010/` reference was checked against the specs on `main` at 6e3d197.
 
 ## Content quality
 
