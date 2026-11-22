@@ -25,6 +25,9 @@
   // The text the draft started from; a different text arriving while the
   // editor is open (a directive, or a clear) is the user's to know about.
   let openedText = $state<string | null>(null);
+  // The server publishes the new task before it answers the save, so the
+  // user's own text arrives while the editor is still open.
+  let isSaving = $state(false);
   let failure = $state<FailureText>(null);
   let editor = $state<HTMLElement | null>(null);
   let editButton = $state<HTMLButtonElement | null>(null);
@@ -32,7 +35,7 @@
   // No maxlength on the field: it counts UTF-16 units, the server counts
   // Unicode scalar values, so the server's refusal is the one rule.
   const changedWhileEditing = $derived(
-    isEditing && (task?.text ?? null) !== openedText,
+    isEditing && !isSaving && (task?.text ?? null) !== openedText,
   );
 
   async function startEditing(): Promise<void> {
@@ -52,7 +55,12 @@
 
   async function save(event: SubmitEvent): Promise<void> {
     event.preventDefault();
-    failure = await onsave(draft);
+    isSaving = true;
+    try {
+      failure = await onsave(draft);
+    } finally {
+      isSaving = false;
+    }
     if (failure === null) await stopEditing();
   }
 

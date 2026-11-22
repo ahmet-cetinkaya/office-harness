@@ -47,6 +47,10 @@ export interface OfficeSeed {
   /** Milliseconds that `notification.read_agent` waits before it answers and
    * clears the agent's item, as a slow server. Answers at once when left out. */
   readAgentDelayMs?: number;
+  /** Milliseconds that `agent.task.set` waits after it publishes the task
+   * event and before it answers, as a slow server. Answers at once when left
+   * out. */
+  setTaskDelayMs?: number;
   /** The holds the faked server keeps. None when left out. */
   holds?: Partial<HoldState>;
   /** Limit settings that differ from the server's defaults, by key. */
@@ -794,6 +798,11 @@ export async function installMockCore(
               : { text, set_at: Date.now(), source: "user" as const };
           setTask(agent, task);
           record(agent.id, "task_text");
+          if (mock.office?.setTaskDelayMs) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, mock.office?.setTaskDelayMs),
+            );
+          }
           return { ...agent, last_line: null };
         }
         case "session.list":
