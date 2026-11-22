@@ -31,11 +31,12 @@
   const hierarchyLine = $derived(hierarchyText(hierarchy));
 
   // The line is drawn from the clock, which ticks once a minute so the age
-  // stays true. A new task re-reads the clock, since a row may be older than
-  // the task that just arrived.
+  // stays true, and only while the row has a task. A new task re-reads the
+  // clock, since a row may be older than the task that just arrived.
   let now = $state(Date.now());
   $effect(() => {
-    void agent.task?.set_at;
+    if (agent.task == null) return;
+    void agent.task.set_at;
     now = Date.now();
     const timer = setInterval(() => (now = Date.now()), TASK_AGE_TICK_MS);
     return () => clearInterval(timer);
