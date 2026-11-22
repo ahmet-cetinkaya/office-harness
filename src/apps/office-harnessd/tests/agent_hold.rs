@@ -418,6 +418,33 @@ async fn a_hundred_directives_deliver_at_most_the_limit_and_every_refusal_is_rec
         .filter(|entry| entry["result"] != "ok")
         .count();
     assert_eq!(refused, SC001_DIRECTIVES - DEFAULT_DIRECTIVE_LIMIT);
+
+    // FR-010: the sender's own record lists each limit and hold refusal too
+    // (ACF-168), with the same reasons as the answers.
+    let lead = setup.lead.clone();
+    let sender_refusals: Vec<String> = setup
+        .actions_of(&lead)
+        .await
+        .iter()
+        .filter(|entry| entry["action"] == "directive" && entry["result"] != "ok")
+        .map(|entry| entry["result"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(
+        sender_refusals.len(),
+        SC001_DIRECTIVES - DEFAULT_DIRECTIVE_LIMIT
+    );
+    assert!(
+        sender_refusals
+            .iter()
+            .any(|result| result.contains(DIRECTIVE_LIMIT_NAME)),
+        "{sender_refusals:?}"
+    );
+    assert!(
+        sender_refusals
+            .iter()
+            .any(|result| result.contains("is on hold")),
+        "{sender_refusals:?}"
+    );
 }
 
 #[tokio::test]
