@@ -6,7 +6,9 @@
 //! a second take of the tree exclusion would hang a test instead of passing.
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError, mpsc};
 use std::thread;
@@ -38,7 +40,7 @@ const TEAM_NAME: &str = "Core";
 struct Office {
     services: Services,
     folder: TempDir,
-    _data: TempDir,
+    data: TempDir,
 }
 
 fn office() -> Office {
@@ -51,7 +53,7 @@ fn office() -> Office {
     Office {
         services,
         folder: tempfile::tempdir().expect("working folder"),
-        _data: data,
+        data,
     }
 }
 
@@ -72,7 +74,13 @@ fn agent_body(pattern: &str, working_folder: Option<&Path>) -> AgentBody {
         working_folder: working_folder.map(|folder| folder.display().to_string()),
         additions: AdditionsBody::default(),
         role: None,
+        own_worktree: false,
     }
+}
+
+fn with_own_worktree(mut body: AgentBody) -> AgentBody {
+    body.own_worktree = true;
+    body
 }
 
 fn with_role(mut body: AgentBody, role: TemplateRole) -> AgentBody {
@@ -129,6 +137,72 @@ impl Office {
             .expect("tree")
             .teams
             .len()
+    }
+
+    /// Makes the working folder a git repository with one commit on `main`.
+    fn init_repository(&self) {
+        self.git(&["init", "--quiet", "--initial-branch=main"]);
+        fs::write(self.folder.path().join("a.txt"), "a\n").expect("file");
+        self.git(&["add", "--all"]);
+        self.git(&["commit", "--quiet", "-m", "first"]);
+    }
+
+    /// The real git on the working folder, with no user configuration.
+    fn git(&self, arguments: &[&str]) -> String {
+        let home = self.data.path().join("home");
+        fs::create_dir_all(&home).expect("home");
+        let output = Command::new("git")
+            .args([
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "-C",
+            ])
+            .arg(self.folder.path())
+            .args(arguments)
+            .env("HOME", &home)
+            .env("XDG_CONFIG_HOME", &home)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .expect("git runs");
+        assert!(
+            output.status.success(),
+            "git {arguments:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
+    fn branches(&self) -> Vec<String> {
+        self.git(&["branch", "--format=%(refname:short)"])
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn worktree_count(&self) -> usize {
+        self.git(&["worktree", "list", "--porcelain"])
+            .matches("worktree ")
+            .count()
+    }
+
+    /// The agent folders under the office's worktrees folder: the entries
+    /// of each repository's own folder. The repository folder itself stays
+    /// when it is empty, as after any discard (0010 D2).
+    fn worktree_folders(&self) -> Vec<PathBuf> {
+        let root = self.data.path().join("office").join("worktrees");
+        let Ok(repositories) = fs::read_dir(root) else {
+            return Vec::new();
+        };
+        repositories
+            .map(|entry| entry.expect("entry").path())
+            .filter(|path| path.file_name().is_none_or(|name| name != ".no-hooks"))
+            .flat_map(|repository| fs::read_dir(repository).expect("repository folder"))
+            .map(|entry| entry.expect("entry").path())
+            .collect()
     }
 
     fn try_create_agent(
@@ -213,6 +287,7 @@ impl Office {
             creator,
             agents,
             Arc::clone(&self.services.template.projects),
+            Arc::clone(&self.services.terminal.worktrees),
             self.services.storage_alerts.clone(),
         ))
     }
@@ -1111,4 +1186,122 @@ fn an_undo_that_leaves_an_agent_behind_raises_an_alert() {
     let alert = alerts.try_recv().expect("an alert");
     assert!(alert.message.contains("Core-member-1"));
     assert!(alert.message.contains("injected remove failure"));
+}
+
+const MEMBER_COUNT: u32 = 6;
+
+fn team_with_member_worktrees(folder: &Path, member_count: u32) -> TemplateBody {
+    TemplateBody::Team(TeamBody {
+        lead: agent_body("{team}-lead", Some(folder)),
+        members: vec![MemberEntry {
+            entry: with_own_worktree(agent_body("{team}-member-{n}", Some(folder))),
+            count: member_count,
+        }],
+    })
+}
+
+#[test]
+fn a_team_whose_members_choose_an_own_worktree_gets_one_branch_and_worktree_each() {
+    let office = office();
+    office.init_repository();
+    let ceo = office.create_ceo();
+    let id = office.save(
+        "Team",
+        team_with_member_worktrees(office.folder.path(), MEMBER_COUNT),
+    );
+
+    let creation = office
+        .try_create_team(id, TEAM_NAME, ceo, None)
+        .expect("team");
+
+    assert_eq!(creation.agents.len(), 1 + MEMBER_COUNT as usize);
+    let lead = agent_of(&creation.agents[0]);
+    assert!(lead.worktree.is_none(), "the lead did not choose one");
+    let mut branches = HashSet::new();
+    let mut folders = HashSet::new();
+    for member in &creation.agents[1..] {
+        let worktree = agent_of(member)
+            .worktree
+            .as_ref()
+            .expect("each member has its own worktree");
+        assert!(worktree.folder.is_dir(), "{}", worktree.folder.display());
+        assert!(branches.insert(worktree.branch.clone()), "one branch each");
+        assert!(folders.insert(worktree.folder.clone()), "one folder each");
+    }
+    assert!(
+        branches.contains("office-harness/core-member-1"),
+        "{branches:?}"
+    );
+    assert!(
+        branches.contains("office-harness/core-member-6"),
+        "{branches:?}"
+    );
+    assert_eq!(office.worktree_count(), 1 + MEMBER_COUNT as usize);
+    assert_eq!(office.branches().len(), 1 + MEMBER_COUNT as usize);
+}
+
+#[test]
+fn an_own_worktree_choice_outside_a_repository_refuses_the_whole_creation_and_leaves_nothing() {
+    let office = office();
+    let ceo = office.create_ceo();
+    let id = office.save(
+        "Team",
+        team_with_member_worktrees(office.folder.path(), MEMBER_COUNT),
+    );
+
+    let failure = office
+        .try_create_team(id, TEAM_NAME, ceo, None)
+        .expect_err("the folder is not in a repository");
+
+    assert_eq!(failure.code, ErrorCode::Invalid);
+    assert!(
+        failure
+            .message
+            .contains("own worktree needs a git repository"),
+        "{}",
+        failure.message
+    );
+    assert_eq!(office.agent_names(), vec!["ceo"]);
+    assert_eq!(office.team_count(), 0);
+    assert_eq!(office.worktree_folders(), Vec::<PathBuf>::new());
+}
+
+#[test]
+fn a_failure_at_the_last_member_removes_every_worktree_and_branch() {
+    let office = office();
+    office.init_repository();
+    let ceo = office.create_ceo();
+    let id = office.save(
+        "Team",
+        team_with_member_worktrees(office.folder.path(), MEMBER_COUNT),
+    );
+    let store = FaultyStore::failing_place_at(
+        Arc::clone(&office.services.hierarchy.store),
+        MEMBER_COUNT as usize,
+    );
+    let bridge = office.bridge_over_store(store);
+
+    let failure = within_deadline(move || bridge.create_team(id, TEAM_NAME, ceo, None))
+        .expect_err("the injected failure stops the creation");
+
+    assert!(failure.message.contains("injected place failure"));
+    assert_eq!(office.agent_names(), vec!["ceo"]);
+    assert_eq!(office.team_count(), 0);
+    assert_eq!(office.worktree_count(), 1, "only the repository's own");
+    assert_eq!(office.branches(), vec!["main"]);
+    assert_eq!(office.worktree_folders(), Vec::<PathBuf>::new());
+}
+
+#[test]
+fn an_agent_template_with_the_choice_creates_an_agent_in_its_own_worktree() {
+    let office = office();
+    office.init_repository();
+    let body = with_own_worktree(agent_body("solo", Some(office.folder.path())));
+    let id = office.save("Solo", TemplateBody::Agent(body));
+
+    let created = office.try_create_agent(id, None, None).expect("agent");
+
+    let worktree = agent_of(&created).worktree.as_ref().expect("worktree");
+    assert_eq!(worktree.branch, "office-harness/solo");
+    assert_eq!(worktree.base, "main");
 }

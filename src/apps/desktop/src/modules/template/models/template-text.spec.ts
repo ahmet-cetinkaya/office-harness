@@ -14,6 +14,7 @@ const BODY: AgentBody = {
     startup_prompt: "run \u001b[31mred\u001b[0m",
   },
   role: null,
+  own_worktree: false,
 };
 
 function rowValue(label: string): string | undefined {
@@ -30,11 +31,21 @@ describe("template text", () => {
       "Name pattern",
       "Role",
       "Command",
+      "Own worktree",
       "Working folder",
       "Flags",
       "Environment variables",
       "Startup prompt",
     ]);
+  });
+
+  test("the own worktree choice reads as no or yes", () => {
+    expect(rowValue("Own worktree")).toBe("no");
+    expect(
+      agentRows({ ...BODY, own_worktree: true }).find(
+        (row) => row.label === "Own worktree",
+      )?.value,
+    ).toBe("yes");
   });
 
   test("a body with no folder reads as the project folder", () => {

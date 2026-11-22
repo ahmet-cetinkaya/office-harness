@@ -42,6 +42,19 @@ describe("reading templates", () => {
     ]);
   });
 
+  test("a body without the own worktree field reads as off, and true reads as on", () => {
+    const read = (body: unknown) =>
+      readTemplates([
+        { id: "t1", name: "R", kind: "agent", body, updated_at: 1 },
+      ]);
+
+    const [without] = read(AGENT_BODY);
+    const [chosen] = read({ ...AGENT_BODY, own_worktree: true });
+
+    expect(without.kind === "agent" && without.body.own_worktree).toBe(false);
+    expect(chosen.kind === "agent" && chosen.body.own_worktree).toBe(true);
+  });
+
   test("an entry that is not a template is dropped", () => {
     expect(readTemplates([{ id: 1 }, null, "x"])).toEqual([]);
     expect(readTemplates(undefined)).toEqual([]);

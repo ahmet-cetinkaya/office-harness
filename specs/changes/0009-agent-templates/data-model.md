@@ -21,7 +21,7 @@ Table `template_templates`, migration `0001_templates.sql` of the template ledge
 
 ## Body (D2)
 
-The `body` column and the `body` field of the wire hold the same JSON. `body_version` is 1 and is on the top-level body only. A field that this build does not know is refused and named, so a build never drops a field on save or import (0010 adds `own_worktree` by its own text; a 0009 build refuses it).
+The `body` column and the `body` field of the wire hold the same JSON. `body_version` is 1 and is on the top-level body only. A field that this build does not know is refused and named, so a build never drops a field on save or import (0010 adds `own_worktree`; a build without 0010 refuses a body that has it).
 
 ### Agent body (FR-001)
 
@@ -36,7 +36,8 @@ The `body` column and the `body` field of the wire hold the same JSON. `body_ver
     "env": [{"name": "API_KEY", "value": null}, {"name": "MODE", "value": "fast"}],
     "startup_prompt": "Review the open change."
   },
-  "role": "member"
+  "role": "member",
+  "own_worktree": false
 }
 ```
 
@@ -49,6 +50,7 @@ The `body` column and the `body` field of the wire hold the same JSON. `body_ver
 | `additions.env` | list of `{name, value}` | optional, default empty; `value` is a string or null; null is "no value" (D3) |
 | `additions.startup_prompt` | string? | optional |
 | `role` | `"ceo"`, `"lead"`, `"member"`? | optional; applies only to a direct creation (A4) |
+| `own_worktree` | boolean? | optional, default `false`; a file without it imports as `false` (0010 FR-009). When `true`, a creation makes the agent's own git branch and worktree from the base of the chosen folder. The base and the branch name are never stored: the creation reads the base from the folder (0010 A2) and takes the next free branch name |
 
 ### Team body (FR-003)
 
@@ -62,7 +64,7 @@ The `body` column and the `body` field of the wire hold the same JSON. `body_ver
 }
 ```
 
-`lead` and each `entry` are agent bodies without `body_version`, copied from agent templates (A5). The `role` of an entry is kept as saved and ignored at team creation (A4).
+`lead` and each `entry` are agent bodies without `body_version`, copied from agent templates (A5). The `role` of an entry is kept as saved and ignored at team creation (A4). The `own_worktree` of an entry is used at team creation: each agent made from an entry with `true` gets its own branch and worktree (0010 FR-009).
 
 ### Save rules (FR-001, FR-003, FR-010)
 

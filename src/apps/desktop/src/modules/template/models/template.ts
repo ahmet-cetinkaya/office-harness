@@ -12,6 +12,8 @@ export interface AgentBody {
   working_folder: string | null;
   additions: Additions;
   role: TemplateRole | null;
+  /** The agent gets its own git branch and worktree at creation (0010). */
+  own_worktree: boolean;
 }
 
 export interface MemberEntry {
@@ -95,6 +97,8 @@ export function readAgentBody(value: unknown): AgentBody {
       startup_prompt: textOrNull(additions.startup_prompt),
     },
     role: readRole(fields.role),
+    // A file without the field means off.
+    own_worktree: fields.own_worktree === true,
   };
 }
 

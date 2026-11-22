@@ -73,6 +73,19 @@ impl<'a> KnownObject<'a> {
     }
 
     /// # Errors
+    /// `WrongShape` when the field is present and not true or false.
+    pub fn optional_bool(&self, field: &str) -> Result<Option<bool>, TemplateError> {
+        self.optional(field)
+            .map(|value| {
+                value.as_bool().ok_or_else(|| TemplateError::WrongShape {
+                    path: self.path_of(field),
+                    expected: "true or false",
+                })
+            })
+            .transpose()
+    }
+
+    /// # Errors
     /// `WrongShape` when the field is present and not a list.
     pub fn optional_list(&self, field: &str) -> Result<&'a [Value], TemplateError> {
         match self.optional(field) {
