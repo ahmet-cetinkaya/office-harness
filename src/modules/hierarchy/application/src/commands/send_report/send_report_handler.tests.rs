@@ -155,6 +155,8 @@ struct Recorder {
     typed: Mutex<Vec<(AgentId, String)>>,
     received: Mutex<Vec<AgentId>>,
     directives: Mutex<Vec<(AgentId, Option<String>)>>,
+    /// Set when the typed text must not show at the input line.
+    hides_text: Mutex<bool>,
 }
 
 impl ReportJournal for Recorder {
@@ -184,7 +186,11 @@ impl PersonReports for Recorder {
 impl DirectiveWriter for Recorder {
     fn deliver(&self, agent_id: AgentId, text: &str) -> Result<Delivery, String> {
         locked(&self.typed).push((agent_id, text.to_owned()));
-        Ok(Delivery::Submitted)
+        Ok(if *locked(&self.hides_text) {
+            Delivery::Unsubmitted
+        } else {
+            Delivery::Submitted
+        })
     }
 }
 
@@ -634,4 +640,28 @@ fn a_hold_on_the_parent_refuses_its_childs_report() {
         refused,
         Err(HierarchyApplicationError::Refused(_))
     ));
+}
+
+#[test]
+fn a_report_that_does_not_show_at_the_input_line_is_recorded_as_unsubmitted() {
+    let harness = harness();
+    *locked(&harness.recorder.hides_text) = true;
+
+    let delivery = harness.handler.handle(&report(MEMBER, "done", false));
+
+    assert_eq!(
+        delivery,
+        Ok(ReportDelivery::Parent(DirectiveOutcome::Unsubmitted))
+    );
+    let entries = locked(&harness.recorder.entries).clone();
+    assert!(entries.contains(&Entry::Accepted {
+        sender: id(MEMBER),
+        receiver: id(LEAD),
+        text: "question: done".to_owned(),
+    }));
+    assert!(entries.contains(&Entry::Refused {
+        sender: id(MEMBER),
+        parent: Some(id(LEAD)),
+        reason: UNSUBMITTED.to_owned(),
+    }));
 }
