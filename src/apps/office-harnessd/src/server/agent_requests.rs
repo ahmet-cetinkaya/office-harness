@@ -177,6 +177,13 @@ impl AgentGateway {
     /// True when the agent that a delete names holds a place in the tree
     /// before the delete runs; after it, the place is gone. A failed read
     /// raises the storage alert and counts as no place.
+    ///
+    /// The read runs outside the tree exclusion, which the delete takes
+    /// inside the hierarchy module. A place change by another client between
+    /// the read and the delete can pick the wrong cause or skip the event.
+    /// That costs one missing or one extra re-read of the tree, which is
+    /// harmless, and a bridge to hold the exclusion across both steps would
+    /// cost more than the re-read it saves.
     fn has_place(&self, request: &Request) -> bool {
         if request.kind != DELETE_REQUEST {
             return false;
