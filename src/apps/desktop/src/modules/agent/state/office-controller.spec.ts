@@ -435,6 +435,82 @@ describe("office controller", () => {
     });
   });
 
+  test("saving a task stores what the server answers on that agent only", async () => {
+    const task = { text: "Fix the build", set_at: 5, source: "user" } as const;
+    const { client, requests } = fakeClient((kind, fields) =>
+      kind === "agent.task.set"
+        ? { ...agent("a"), task }
+        : officeHandler([agent("a"), agent("b")])(kind, fields),
+    );
+    const { controller, state } = observe(client);
+    await controller.load();
+
+    const failure = await controller.saveTask("a", "Fix the build");
+
+    expect(failure).toBeNull();
+    expect(state().agents.find((known) => known.id === "a")?.task).toEqual(
+      task,
+    );
+    expect(state().agents.find((known) => known.id === "b")?.task).toBe(
+      undefined,
+    );
+    expect(
+      requests.find((request) => request.kind === "agent.task.set")?.fields,
+    ).toEqual({ agent_id: "a", text: "Fix the build" });
+  });
+
+  test("a blank task answer clears the task", async () => {
+    const task = { text: "Old", set_at: 1, source: "directive" } as const;
+    const { client } = fakeClient((kind, fields) =>
+      kind === "agent.task.set"
+        ? agent("a")
+        : officeHandler([{ ...agent("a"), task }])(kind, fields),
+    );
+    const { controller, state } = observe(client);
+    await controller.load();
+
+    const failure = await controller.saveTask("a", "  ");
+
+    expect(failure).toBeNull();
+    expect(state().agents[0]?.task).toBeNull();
+  });
+
+  test("a refused task save gives the failure text and keeps the task", async () => {
+    const task = { text: "Old", set_at: 1, source: "directive" } as const;
+    const { client } = fakeClient((kind, fields) => {
+      if (kind === "agent.task.set") {
+        throw new CoreRequestError("invalid", "the task text is too long");
+      }
+      return officeHandler([{ ...agent("a"), task }])(kind, fields);
+    });
+    const { controller, state } = observe(client);
+    await controller.load();
+
+    const failure = await controller.saveTask("a", "x".repeat(10));
+
+    expect(failure).toBe("the task text is too long");
+    expect(state().agents[0]?.task).toEqual(task);
+  });
+
+  test("a task event patches the task and keeps the last line", async () => {
+    const { client, push } = fakeClient(
+      officeHandler([{ ...agent("a"), last_line: "building" }]),
+    );
+    const { controller, state } = observe(client);
+    await controller.watch();
+    await controller.load();
+
+    push({
+      type: "agent.task",
+      agent_id: "a",
+      task: { text: "Ship it", set_at: 9, source: "directive" },
+    });
+    await settle();
+
+    expect(state().agents[0]?.task?.text).toBe("Ship it");
+    expect(state().agents[0]?.last_line).toBe("building");
+  });
+
   test("the bridge's lag text leads with the fall-behind and refetches the list (LOW-1)", async () => {
     let lostCalls = 0;
     const { client, push } = fakeClient((kind) =>
