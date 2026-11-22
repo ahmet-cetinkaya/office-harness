@@ -3,7 +3,7 @@
 ## Summary
 
 - **Date:** 2026-11-23.
-- **Build under test:** branch `feat/0016-agent-file-browser` at e2e4d07 (T5 desktop 23a561e, T2 to T4 server e65896b, T6 docs b394077, then main 468ad56 merged with 0013 and the 0002 A5 fix), toolchain 1.100.0, on Linux.
+- **Build under test:** branch `feat/0016-agent-file-browser` at the merge of main b768b63 (T5 desktop 23a561e, T2 to T4 server e65896b, T6 docs b394077, then main 468ad56 merged with 0013 and the 0002 A5 fix, then main b768b63 merged with 0012), toolchain 1.100.0, on Linux.
 - **Overall status:** every requirement and success criterion has automated evidence. The server side runs against the real server and real git repositories; the desktop side runs the real webview code against the mock core. macOS and Windows rely on CI.
 - **Status of this file:** the gate numbers come from local runs on 2026-11-23. The CI result of the PR is not in this file.
 
@@ -29,11 +29,11 @@
 | `scripts/lint-rust.sh` (fmt check, clippy `-D warnings`, all targets) | `agent-domain`, `agent-application`, `agent-infrastructure`, `agent-presentation`, `office-harnessd` | PASS (clean) |
 | `cargo test` | `agent-domain` 74, `agent-application` 136, `agent-infrastructure` 165 and persistence 18, `agent-presentation` 36, `office-harnessd` lib 183 | PASS |
 | `tests/file_view.rs` | 8 tests, 3 runs in a row | PASS (8 passed each time) |
-| Regression | `agent_call` 22, `agent_worktree` 16, `agent_subtree_status` 9, `agent_directive` 8; after the merge of main `file_view` 8, `agent_call` 22, `bulk_resume` 8, `agent-presentation` 39, `agent-application` 151 | PASS |
+| Regression | `agent_call` 22, `agent_worktree` 16, `agent_subtree_status` 9, `agent_directive` 8; after the merge of main b768b63: `file_view` 8, `agent_call` 22, `agent_directive` 13, `bulk_resume` 8, `agent_worktree` 16, `office-harnessd` lib 213, `agent-domain` 75, `agent-application` 151, `agent-infrastructure` 166 + 19, `agent-presentation` 39 | PASS |
 | `bun test src` | 380 tests after the merge of main, with the new `models/file-view.spec.ts` | PASS |
 | `bun run check`, `bun run lint`, `prettier --check` | the desktop app | PASS (0 errors, 0 warnings) |
 | Playwright `e2e/file-view.spec.ts` | 23 tests, 2 workers | PASS |
-| Playwright full suite | 254 tests, 2 workers, on the merged tree e2e4d07 | PASS |
+| Playwright full suite | 254 tests, 2 workers, on the tree with main b768b63 merged | PASS |
 
 ## Requirements
 
