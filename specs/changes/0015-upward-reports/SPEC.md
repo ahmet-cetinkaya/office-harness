@@ -16,7 +16,7 @@ Directives go down the tree (0002), and a parent can read its descendants' state
 ## Context
 
 - Source of truth: `docs/PRD.md`, R2 (deep hierarchy) and R9 (find the agent that needs the user).
-- This change depends on 0001 (agents, statuses, terminals, the action record), 0002 (the tree, parents, the agent's calls from inside its session, directives), 0003 (notifications), 0007 (holds and rate limits), 0008 (Needs you), 0012 (safe directive delivery), and 0014 (the visible form of control characters). References such as `0002/FR-008` point to requirements in those changes.
+- This change depends on 0001 (agents, statuses, terminals, the action record), 0002 (the tree, parents, the agent's calls from inside its session, directives), 0003 (notifications), 0007 (holds and rate limits), 0008 (Needs you), 0012 (safe directive delivery), 0013 (the resume hold, an automatic hold under 0003/FR-006), and 0014 (the visible form of control characters). References such as `0002/FR-008` point to requirements in those changes.
 - 0002 A2 says that the MVP has no reply channel and that a parent reads a child's result from its terminal or its files. This change adds a report channel upward. It does not add a channel between siblings or a reply object: a parent still answers with a directive.
 - 0012 is approved and built on its own branch, and not yet on `main` when this spec is written. The delivery rules of this change are the 0012 rules, applied to a report as to a directive.
 - The office does not read a CLI's prompts (0001 A1, 0003 A3). The report's kind is what the sender says, not what the office saw.
@@ -55,7 +55,8 @@ Directives go down the tree (0002), and a parent can read its descendants' state
   | A control character, an escape code, or a line break in the text acts on the parent's terminal, submits part of the text early, or changes the owner's view. | The office turns the text into its visible form once, when it accepts the report, and uses only that form afterwards (FR-003, SC-004). |
   | A bidirectional format character reorders the text the parent or the owner reads. | Shown as a visible symbol (FR-003, SC-004). |
   | A long report floods a parent's context or the owner's list. | 1,000 characters at most; a longer one is refused (FR-001, SC-005). |
-  | A looping agent floods its parent or Needs you with reports. | A rate limit of its own, the holds, and the automatic hold of 0007 apply (FR-006, SC-007); Needs you keeps one item per agent (0008). |
+  | A looping agent floods its parent or Needs you with reports. | A rate limit of its own, the holds, and the automatic hold of 0007 apply (FR-006, SC-007); Needs you keeps one item per agent (0008), and a further report adds no notification while one is unread (0003/FR-006 as modified). |
+  | A parent's children fill its queue with reports, so directives from the parent's own parent are refused as "queue full". | One waiting report per sender, and at most 10 waiting reports per queue, so at least 10 of the 20 places stay for directives (FR-010, SC-011). |
   | A report's text pretends to be the office, for example by repeating a report heading. | The heading comes first on the line and the text follows it on the same line, so a fake heading can only follow the real one. The parent treats the text as data (Residual risk). |
   | A child's report steers its parent (prompt injection). | Not prevented: a report is text from a child by design. The heading names the kind and the sender, so the parent can tell a report from a directive of its own parent (Residual risk). |
 
@@ -127,22 +128,22 @@ A report is short, its control and bidirectional characters show as visible symb
 - **FR-004** (US1): WHEN a report goes to a parent, THE SYSTEM SHALL type the report heading and the report text into the parent's terminal as one line, in the parent's queue together with its directives, under the rules of 0012/FR-001 to 0012/FR-005 as they apply to a directive whose target is the parent, and SHALL answer the sender that the report was submitted, waits with its place in the queue, or was left unsubmitted.
 - **FR-005** (US1): IF the sender's parent is not running, THEN THE SYSTEM SHALL refuse a report to it, say that the parent is not running, and record the refusal; IF a waiting report's sender is no longer a child of the report's parent, THEN THE SYSTEM SHALL withdraw it as 0012/FR-005 withdraws a directive whose target left the sender's subtree.
 - **FR-006** (US3): THE SYSTEM SHALL treat sending a report as an agent-made action under 0007: the office hold and an agent hold that covers the sender refuse it (0007/FR-002, 0007/FR-004), and a rate limit "reports sent by one agent", 5 per rolling 60 seconds by default, refuses a report beyond it (0007/FR-007), counts toward the automatic hold (0007/FR-008), and is changed by the user in the office settings like the other limits (0007/FR-009).
-- **FR-007** (US2): WHEN the system accepts a report for the person, THE SYSTEM SHALL record it as an attention event of the sender, notify the owner once with the sender's name and the report's kind, and answer the sender that the report is in Needs you.
+- **FR-007** (US2): WHEN the system accepts a report for the person, THE SYSTEM SHALL record it as an attention event of the sender, notify the owner with the sender's name and the report's kind as 0003/FR-006 (as modified) allows, and answer the sender that the report is in Needs you.
 - **FR-008** (US2): WHILE an item in Needs you holds a report, THE SYSTEM SHALL keep showing that report on the item when later attention events change the item's latest event, and SHALL replace it only with the sender's next report for the person.
 - **FR-009** (US1, US2, US3): THE SYSTEM SHALL add each accepted report to the action record with the sender as the actor, the kind, and the text in visible form, under the parent for a report to a parent and under the sender for a report for the person, and SHALL record each refusal in the sender's action record and, when the report had a parent, in the parent's.
-
+- **FR-010** (US1): WHILE reports wait in a parent's queue, THE SYSTEM SHALL keep at most one waiting report per sender, replacing a sender's waiting report with its newer report in the same place and recording the replaced one as withdrawn, and SHALL keep at most 10 waiting reports per queue, refusing a further report with the reason that the parent's queue has no room for reports, and SHALL NOT count such a refusal toward any rate limit or automatic hold.
 ### MODIFIED
 
 - **0002/FR-008** (as modified by 0014) (US1): THE SYSTEM SHALL let a running agent, from inside its own session, create, start, and stop agents, start new tasks, send directives, and read the state of agents only within its own descendants and only for the roles that 0002/FR-001 allows, and send reports only to its own parent or to the person.
-- **0003/FR-006** (as modified by 0007) (US2): WHEN an agent exits, fails, changes from `working` to `waiting for input`, rings the terminal bell, is put on hold automatically (0007/FR-008), or sends a report for the person (0015/FR-007), THE SYSTEM SHALL notify the user with the agent's name and the event, EXCEPT that (a) while an unread bell notification of that agent exists, a further bell adds none, and (b) for the agent whose terminal is open in the focused desktop app window, an exit, failure, `waiting for input`, or bell event shows in the notification list as read and sends no OS notification. Exception (b) does not apply to the automatic hold or to a report, because the terminal does not show them.
+- **0003/FR-006** (as modified by 0007) (US2): WHEN an agent exits, fails, changes from `working` to `waiting for input`, rings the terminal bell, is put on hold automatically (0007/FR-008), or sends a report for the person (0015/FR-007), THE SYSTEM SHALL notify the user with the agent's name and the event, EXCEPT that (a) while an unread bell notification of that agent exists, a further bell adds none, and while an unread report notification of that agent exists, a further report adds none, and (b) for the agent whose terminal is open in the focused desktop app window, an exit, failure, `waiting for input`, or bell event shows in the notification list as read and sends no OS notification. Exception (b) does not apply to the automatic hold or to a report, because the terminal does not show them.
 - **0008/FR-002** (US2): THE SYSTEM SHALL show each item with the agent's name, project, latest event as the office saw it (quiet for the quiet period, bell, exit with its exit code, put on hold by the office with the limit it hit, or a report with its kind), and wait time, as text, and, while the item holds a report, the report's kind and its whole text in visible form.
-- **0008/FR-003** (US2): THE SYSTEM SHALL order the items in groups by their latest event, `failed` first, then `waiting for input`, bell, automatic hold, and report, then `exited`, and inside each group by wait time, longest first, and items with the same wait time by agent name.
-- **0008/FR-005** (US2): WHEN an agent with an item is deleted or changes to `stopped`, or, for an item that holds no report, changes to `starting` or `working`, or, for an item that holds no report and whose latest event is an automatic hold, has its hold released, THE SYSTEM SHALL remove that agent's item from Needs you.
+- **0008/FR-003** (US2): THE SYSTEM SHALL order the items in groups by their latest event, `failed` first, then `waiting for input`, bell, automatic hold (the resume hold of 0013 included), and report, then `exited`, and inside each group by wait time, longest first, and items with the same wait time by agent name.
+- **0008/FR-005** (US2): WHEN an agent with an item is deleted or changes to `stopped`, or, for an item that holds no report, changes to `starting` or `working`, or, for an item that holds no report and whose latest event is an automatic hold (the resume hold of 0013 included), has its hold released, THE SYSTEM SHALL remove that agent's item from Needs you.
 
 ### PRESERVED
 
 - **PB-1:** The 0002 tree rules stay: directives go down to descendants only, and every other agent request is refused and recorded (0002/FR-008, 0002/FR-009 as modified by 0007). A report goes up one level only, or to the person.
-- **PB-2:** A directive keeps every 0012 behavior: one queue per target, the readiness and question checks, the input-line check before Enter, the 20-entry queue, the 10-minute limit, and the withdrawals. Reports share the queue; they do not jump it.
+- **PB-2:** A directive keeps every 0012 behavior: one queue per target, the readiness and question checks, the input-line check before Enter, the 20-entry queue, the 10-minute limit, and the withdrawals. Reports share the queue and do not jump it; they take at most 10 of its places (FR-010), so directives always keep at least 10.
 - **PB-3:** The task line shows the last submitted directive (0011/FR-002, 0012 PB-3). A report changes no task text, neither the sender's nor the parent's.
 - **PB-4:** Needs you keeps one item per agent, its order inside a group, the jump shortcut, the count, and dismiss (0008). An item without a report behaves as before.
 - **PB-5:** The office reads no CLI prompt and writes nothing into a CLI's configuration (0001/FR-021).
@@ -176,6 +177,8 @@ A report is short, its control and bidirectional characters show as visible symb
 | In Needs you | The sender's answer says so; the owner sees the item with the kind and the text. | FR-007, 0008/FR-002 |
 | Refused | The sender's answer gives the reason; the refusal is in the record. | FR-001, FR-005, FR-006, FR-009 |
 | Withdrawn | The sender's and the parent's records show the text and the reason. | FR-004, FR-005 |
+| Replaced | The sender's newer report waits in the older one's place; the records show the older one as withdrawn because it was replaced. | FR-010 |
+| No room for reports | The sender's answer gives the reason; the refusal is in the record and counts toward no limit. | FR-010 |
 | Needs you item with a long report | The item shows the first lines of the text and a control that shows the whole text. | 0008/FR-002 |
 
 **Design:** no new screen. Needs you gets the report's kind and text on an item; the plan must not add other visuals without a design that the owner approves.
@@ -207,6 +210,8 @@ A report is short, its control and bidirectional characters show as visible symb
 - **SC-008:** A lead that received a member's report sends a directive to the id in the report heading, and the member's terminal receives it (1 of 1).
 - **SC-009:** A report item stays in Needs you while its agent changes to `working` and back to `waiting for input`, and leaves when the owner opens the agent's terminal (1 of 1, and 1 of 1 for dismiss).
 - **SC-010:** 100% of accepted, refused, withdrawn, and unsubmitted reports have an entry in the action records that FR-009 names.
+- **SC-011:** With 10 reports from 10 children waiting in a working lead's queue, a directive from the CEO to that lead is accepted (1 of 1), an 11th report from another child is refused, and a second report from a child whose report waits leaves exactly one waiting report of that child.
+- **SC-012:** 5 reports for the person from one agent, with the first notification unread, add exactly 1 notification, and the item shows the 5th report.
 
 ## Edge cases
 
@@ -221,7 +226,9 @@ A report is short, its control and bidirectional characters show as visible symb
 | The text is blank, or longer than 1,000 characters. | Invalid | Refused and recorded with the reason (FR-001). |
 | The text holds line breaks, escape codes, C1 controls, or bidirectional format characters. | Boundary | Each shows as a visible symbol everywhere, and the parent's terminal receives one line (FR-003). |
 | The text holds a fake report heading. | Boundary | It shows after the real heading on the same line (Residual risk). |
-| The parent's queue already holds 20 entries, directives and reports together. | Boundary | The report is refused with the reason that the queue is full; the refusal counts toward no rate limit (0012/FR-004, 0012 A6). |
+| The sender sends a second report while its first waits in the parent's queue. | Boundary | The newer report takes the first one's place; the first is withdrawn and recorded as replaced (FR-010). |
+| 10 reports from different children already wait in the parent's queue. | Boundary | A further report is refused with the reason that the parent's queue has no room for reports; the refusal counts toward no rate limit or automatic hold (FR-010). A directive to the parent is still accepted. |
+| The parent's queue holds 20 entries, at least 10 of them directives. | Boundary | A report or a directive is refused with the reason that the queue is full; the refusal counts toward no rate limit (0012/FR-004, 0012 A6). |
 | The parent shows a question, works, or a person types in its terminal. | Concurrent | The report waits in the queue (0012/FR-002). |
 | A waiting report is not typed within 10 minutes, the parent stops, a hold starts, or the server stops. | Failure | It is withdrawn and recorded in the sender's and the parent's records (0012/FR-005). |
 | The sender is moved under another parent, or deleted, while its report waits. | Concurrent | The report is withdrawn and recorded (FR-005). |
@@ -230,6 +237,7 @@ A report is short, its control and bidirectional characters show as visible symb
 | The agent goes back to `working` after its report for the person. | Concurrent | The item stays (0008/FR-005 as modified). |
 | The agent stops or is deleted while its item holds a report. | Concurrent | The item leaves (0008/FR-005). |
 | The owner has the agent's terminal open in the focused window when the report arrives. | Boundary | The item and the notification still appear; the terminal does not show the report (0003/FR-006 as modified). |
+| An agent sends a second report for the person while its first report notification is unread. | Boundary | The item shows the second report; no second notification is added (0003/FR-006 as modified). |
 | The report text is long. | Boundary | Needs you shows its first lines and a control that shows the whole text (0008/FR-002 as modified). |
 | The sender's session ends while its report waits in the parent's queue. | Concurrent | The report stays in the queue; the sender's end does not withdraw it, because the parent can still read it. |
 | The background server crashes while reports wait. | Failure | They are lost, as directives are (0012 A4); their acceptance stays in the record. |
@@ -258,6 +266,13 @@ A report is short, its control and bidirectional characters show as visible symb
 - Q: How does a parent answer? → A: With a directive to the sender's id from the heading; there is no reply request (A9).
 - Q: Are control characters refused, as in a directive? → A: No; they are shown as visible symbols, line breaks included, so a report never fails for a stray character and never acts on a terminal (FR-003, A3).
 - Q: Do holds and rate limits apply? → A: Yes; a report is an agent-made action with its own limit (FR-006, A5).
+
+### Session 2026-11-23 (spec review r1)
+
+- Q: Can a parent's children lock its queue against directives from above? → A: No; one waiting report per sender (a newer one replaces it, recorded) and at most 10 waiting reports per queue, so directives keep at least 10 of the 20 places (FR-010, SC-011).
+- Q: Does each report for the person notify? → A: Only while no report notification of that agent is unread, like the bell rule (0003/FR-006 as modified, SC-012).
+- Q: Does a report survive the release of a resume hold (0013)? → A: Yes; the resume hold is an automatic hold, and an item that holds a report does not leave on a hold release (0008/FR-005 as modified).
+- Judgment calls A3, A5, and A7 were agreed at the review gate.
 
 ## Out of scope
 
