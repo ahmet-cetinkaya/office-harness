@@ -53,3 +53,14 @@ export function matchesShortcut(
     event.metaKey === shortcut.meta
   );
 }
+
+/** True when both name the same modifiers and key. */
+export function sameShortcut(first: Shortcut, second: Shortcut): boolean {
+  return (
+    first.key === second.key &&
+    first.ctrl === second.ctrl &&
+    first.alt === second.alt &&
+    first.shift === second.shift &&
+    first.meta === second.meta
+  );
+}

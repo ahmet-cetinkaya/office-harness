@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   APP_SHORTCUT_TABLE,
   DEFAULT_FOCUS_SHORTCUT,
   isAppShortcut,
   parseShortcut,
+  isJumpUnbound,
   pressedAppShortcut,
-  pressedTerminalShortcut,
+  setCurrentFocusShortcut,
   type ShortcutEvent,
 } from "./index";
 
@@ -35,8 +36,8 @@ function pressed(text: string): ShortcutEvent {
 }
 
 describe("app shortcut table", () => {
-  test("holds eleven entries: agents 1 to 9, the switcher, the office hold", () => {
-    expect(APP_SHORTCUT_TABLE).toHaveLength(11);
+  test("holds twelve entries: agents 1 to 9, the switcher, the jump, the office hold", () => {
+    expect(APP_SHORTCUT_TABLE).toHaveLength(12);
     expect(APP_SHORTCUT_TABLE.map((entry) => entry.position)).toEqual([
       1,
       2,
@@ -49,16 +50,19 @@ describe("app shortcut table", () => {
       9,
       null,
       null,
+      null,
     ]);
     expect(APP_SHORTCUT_TABLE[9].label).toBe("Ctrl+Shift+F10");
-    expect(APP_SHORTCUT_TABLE[10].label).toBe("Ctrl+Shift+H");
+    expect(APP_SHORTCUT_TABLE[10].label).toBe("Ctrl+Shift+F11");
+    expect(APP_SHORTCUT_TABLE[10].kind).toBe("jump");
+    expect(APP_SHORTCUT_TABLE[11].label).toBe("Ctrl+Shift+H");
   });
 
-  test("holds eleven distinct combinations", () => {
+  test("holds twelve distinct combinations", () => {
     const keys = APP_SHORTCUT_TABLE.map((entry) =>
       JSON.stringify(entry.shortcut),
     );
-    expect(new Set(keys).size).toBe(11);
+    expect(new Set(keys).size).toBe(12);
   });
 
   test("no entry equals the focus shortcut", () => {
@@ -81,8 +85,8 @@ describe("app shortcut table", () => {
     const positions = APP_SHORTCUT_TABLE.map((entry) => entry.position);
     expect(positions).not.toContain(10);
     expect(pressedAppShortcut(pressed("Ctrl+Shift+F10"))?.position).toBeNull();
-    expect(pressedAppShortcut(pressed("Ctrl+Shift+F11"))).toBeNull();
     expect(pressedAppShortcut(pressed("Ctrl+Shift+F12"))).toBeNull();
+    expect(pressedAppShortcut(pressed("Ctrl+Shift+F13"))).toBeNull();
   });
 
   test("each agent combination maps to its own position", () => {
@@ -92,14 +96,38 @@ describe("app shortcut table", () => {
     expect(positions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
-  test("a focused terminal lets the office hold out (0007 D9 = b)", () => {
-    const hold = pressed("Ctrl+Shift+H");
-    expect(pressedAppShortcut(hold)?.kind).toBe("office_hold");
-    expect(pressedTerminalShortcut(hold)?.kind).toBe("office_hold");
-    expect(pressedTerminalShortcut(pressed("Ctrl+Shift+F1"))?.position).toBe(1);
-    expect(pressedTerminalShortcut(pressed("Ctrl+Shift+F10"))?.kind).toBe(
+  // The terminal lets out exactly the keys that pressedAppShortcut matches
+  // (0008 modifies 0001/FR-017), so each kind must match from a terminal.
+  test("every kind of entry leaves a focused terminal, the jump too", () => {
+    expect(pressedAppShortcut(pressed("Ctrl+Shift+H"))?.kind).toBe(
+      "office_hold",
+    );
+    expect(pressedAppShortcut(pressed("Ctrl+Shift+F1"))?.position).toBe(1);
+    expect(pressedAppShortcut(pressed("Ctrl+Shift+F10"))?.kind).toBe(
       "switcher",
     );
+    expect(pressedAppShortcut(pressed("Ctrl+Shift+F11"))?.kind).toBe("jump");
+  });
+
+  describe("when the focus shortcut holds the jump key (0008 D6)", () => {
+    afterEach(() => setCurrentFocusShortcut(null));
+
+    test("the jump entry is unbound and the other entries stay bound", () => {
+      setCurrentFocusShortcut(parseShortcut("Shift+Ctrl+F11"));
+
+      expect(isJumpUnbound()).toBe(true);
+      expect(pressedAppShortcut(pressed("Ctrl+Shift+F11"))).toBeNull();
+      expect(pressedAppShortcut(pressed("Ctrl+Shift+F10"))?.kind).toBe(
+        "switcher",
+      );
+    });
+
+    test("the jump is bound for the default focus shortcut", () => {
+      setCurrentFocusShortcut(parseShortcut(DEFAULT_FOCUS_SHORTCUT));
+
+      expect(isJumpUnbound()).toBe(false);
+      expect(pressedAppShortcut(pressed("Ctrl+Shift+F11"))?.kind).toBe("jump");
+    });
   });
 
   test("a key with the wrong modifiers matches nothing", () => {
@@ -114,7 +142,7 @@ describe("app shortcut table", () => {
   });
 
   // SERVER_RESERVED mirrors settings.rs RESERVED_SHORTCUTS by hand ("agent 1"
-  // to "agent 9", "the agent switcher", and "the office hold"); nothing checks the server side
+  // to "agent 9", "the agent switcher", the jump, and "the office hold"); nothing checks the server side
   // automatically. This test pins the desktop table to that copy: a
   // desktop-side drift fails here, and a server-side change to
   // RESERVED_SHORTCUTS must be mirrored here in the same change, reviewed as
@@ -131,6 +159,7 @@ describe("app shortcut table", () => {
       "Ctrl+Shift+F8",
       "Ctrl+Shift+F9",
       "Ctrl+Shift+F10",
+      "Ctrl+Shift+F11",
       "Ctrl+Shift+H",
     ];
     for (const label of SERVER_RESERVED)
@@ -145,7 +174,8 @@ describe("app shortcut table", () => {
     expect(isAppShortcut("ctrl + shift + f1")).toBe(true);
     expect(isAppShortcut("Shift+Ctrl+F1")).toBe(true);
     expect(isAppShortcut("Ctrl+Shift+F12")).toBe(false);
-    expect(isAppShortcut("Ctrl+Shift+F11")).toBe(false);
+    expect(isAppShortcut("Ctrl+Shift+F11")).toBe(true);
+    expect(isAppShortcut("Ctrl+Shift+F13")).toBe(false);
     expect(isAppShortcut("Ctrl+F1")).toBe(false);
     expect(isAppShortcut("Ctrl+Shift")).toBe(false);
     expect(isAppShortcut("")).toBe(false);
