@@ -726,6 +726,22 @@ fn a_team_lead_entry_with_the_ceo_role_is_created_as_a_lead() {
 }
 
 #[test]
+fn a_member_entry_with_the_team_lead_role_is_created_as_a_member() {
+    let office = office();
+    let ceo = office.create_ceo();
+    let mut body = team_body(office.folder.path(), 1);
+    body.members[0].entry.role = Some(TemplateRole::Lead);
+    let id = office.save("Team", TemplateBody::Team(body));
+
+    let created = office
+        .try_create_team(id, TEAM_NAME, ceo, None)
+        .expect("team");
+
+    let roles: Vec<Option<Role>> = created.agents.iter().map(|agent| agent.role).collect();
+    assert_eq!(roles, vec![Some(Role::Lead), Some(Role::Member)]);
+}
+
+#[test]
 fn a_team_creation_names_every_agent_from_its_pattern() {
     let office = office();
     let ceo = office.create_ceo();

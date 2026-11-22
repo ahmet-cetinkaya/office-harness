@@ -18,15 +18,29 @@
   }
 
   let { entries, failure, isBusy, onconfirm, oncancel }: Props = $props();
+
+  // The explanation takes the opening focus, so one Enter cannot save a file
+  // that the user has not read.
+  let explanation = $state<HTMLElement | null>(null);
 </script>
 
-<Dialog title="Import preview" onclose={oncancel}>
-  <p class="text-neutral-700">
+<Dialog title="Import preview" onclose={oncancel} initialFocus={explanation}>
+  <p
+    bind:this={explanation}
+    tabindex="-1"
+    class="text-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+  >
     Nothing is saved yet. Values in the file are not imported: every environment
     variable is saved with no value. Control characters are shown as symbols.
     Press Escape to cancel.
   </p>
-  <ul class="flex flex-col gap-4">
+  <!-- Focusable, so the keyboard can scroll the list on WebKitGTK. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <ul
+    aria-label="Templates in the file"
+    tabindex="0"
+    class="flex max-h-[50dvh] flex-col gap-4 overflow-y-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+  >
     {#each entries as entry (entry.save_name)}
       <li class="flex flex-col gap-2 rounded-md border border-neutral-400 p-3">
         <h3 class="text-base font-semibold text-neutral-900">

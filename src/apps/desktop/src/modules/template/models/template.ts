@@ -53,9 +53,6 @@ export const BODY_VERSION = 1;
 /** The most agents one team template may create (FR-010). */
 export const TEAM_AGENT_LIMIT = 50;
 
-/** What the app shows for an environment variable without a value (FR-011). */
-export const NO_VALUE_TEXT = "no value";
-
 type Fields = Record<string, unknown>;
 
 function fieldsOf(value: unknown): Fields {
