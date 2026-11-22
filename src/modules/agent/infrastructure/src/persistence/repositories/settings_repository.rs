@@ -31,11 +31,12 @@ impl SettingsRepository {
             let mut settings = Settings::default();
             for (name, value) in rows {
                 let key = SettingKey::parse(&name)?;
-                match settings.set_from_text(key, &value) {
+                match settings.set_from_stored_text(key, &value) {
                     // A focus shortcut stored before a later change reserved
                     // its keys (0007 took Ctrl+Shift+H for the office hold)
                     // falls back to the default instead of stopping the
-                    // server from starting.
+                    // server from starting. The jump key is the exception
+                    // and is kept (0008 D6).
                     Err(AgentError::ReservedShortcut { .. })
                         if key == SettingKey::FocusShortcut => {}
                     stored => stored?,

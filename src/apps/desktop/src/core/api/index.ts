@@ -9,4 +9,7 @@ export {
 } from "./core-request-error";
 export type { ApiError } from "./generated/ApiError";
 export type { ConnectionState } from "./generated/ConnectionState";
-export { createTauriCoreClient } from "./tauri-core-client";
+export {
+  createTauriCoreClient,
+  setWindowTitleCount,
+} from "./tauri-core-client";

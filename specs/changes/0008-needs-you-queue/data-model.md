@@ -61,7 +61,7 @@ A waiting agent that then fails moves to group 0 and keeps its `first_event_at` 
 | Reason | Trigger | Message or source |
 |---|---|---|
 | Opened | The user opens the agent's terminal by any route. | `notification.read_agent {agent_id}` (FR-004) |
-| Read on arrival | The client marks the item's origin notification read. | `notification.read {id}` equal to `origin` (FR-001 edge case "terminal open in the focused window") |
+| Read on arrival | The client marks the item's origin notification read. | `notification.read {notification_id}` equal to `origin` (FR-001 edge case "terminal open in the focused window") |
 | Dismissed | The user dismisses the item. It marks no notification read and changes no status (A4). | `needs_you.dismiss {agent_id}` (FR-004) |
 | Status | The agent changes to `starting`, `working`, or `stopped`. | `agent.status` frame (FR-005) |
 | Deleted | The agent is deleted. | `agent.delete` request, and the startup drop of items whose agent is missing (FR-005) |

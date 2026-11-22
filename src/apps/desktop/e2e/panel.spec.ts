@@ -418,14 +418,15 @@ test.describe("agent shortcuts", () => {
     await expect(input).toBeFocused();
 
     await page.keyboard.type("hi");
-    // F11 is outside the table, so its sequence goes to the agent too.
-    await page.keyboard.press("Control+Shift+F11");
+    // Ctrl+Alt+F11 is outside the table, and not the test default focus
+    // shortcut (Ctrl+Shift+F12), so its sequence goes to the agent too.
+    await page.keyboard.press("Control+Alt+F11");
     await page.keyboard.press("Enter");
 
     // One request is in flight at a time, so fast typing may share one.
     await expect
       .poll(async () => (await sentTerminalInputs(page)).join(""))
-      .toBe(`hi\u001b[23;6~\r`);
+      .toBe(`hi\u001b[23;7~\r`);
     await expect(input).toBeFocused();
   });
 });
