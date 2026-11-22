@@ -194,6 +194,27 @@ impl AgentIdRequest {
     }
 }
 
+/// `agent.resume`: the agent, and for the fallback step the session that the
+/// CLI refused.
+#[derive(Debug)]
+pub struct ResumeAgentRequest {
+    pub agent_id: String,
+    pub after_session: Option<String>,
+}
+
+impl ResumeAgentRequest {
+    /// # Errors
+    /// The text names the field at fault.
+    pub fn read(body: &Map<String, Value>) -> Result<Self, String> {
+        let fields = Fields(body);
+        fields.refuse_other_than("agent.resume", &["agent_id", "after_session"])?;
+        Ok(Self {
+            agent_id: fields.required_text("agent_id")?,
+            after_session: fields.optional_text("after_session")?,
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct CreateProjectRequest {
     pub name: String,

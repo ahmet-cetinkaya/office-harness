@@ -19,6 +19,7 @@ use crate::commands::continue_session::ContinueSessionHandler;
 use crate::commands::create_agent::CreateAgentHandler;
 use crate::commands::delete_agent::DeleteAgentHandler;
 use crate::commands::end_session::EndSessionHandler;
+use crate::commands::resume_agent::ResumeAgentHandler;
 use crate::commands::set_office_additions::SetOfficeAdditionsHandler;
 use crate::commands::set_task_text::SetTaskTextHandler;
 use crate::commands::start_agent::StartAgentHandler;
@@ -658,6 +659,17 @@ impl Office {
             self.sessions.clone(),
             Arc::new(FakeAdapters),
             self.ender(),
+            self.launcher(),
+            self.journal(),
+        )
+    }
+
+    #[must_use]
+    pub fn resume_agent(&self) -> ResumeAgentHandler {
+        ResumeAgentHandler::new(
+            self.agents.clone(),
+            self.sessions.clone(),
+            Arc::new(FakeAdapters),
             self.launcher(),
             self.journal(),
         )

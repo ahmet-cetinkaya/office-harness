@@ -18,6 +18,7 @@ fn record(agent_id: AgentId, action: ActionKind, result: ActionResult) -> Action
         action,
         result,
         at: Timestamp::from_unix_millis(1_700_000_000_000),
+        detail: None,
     }
 }
 
@@ -88,6 +89,7 @@ fn office_record(action: ActionKind, at: i64) -> ActionRecord {
         action,
         result: ActionResult::Ok,
         at: Timestamp::from_unix_millis(at),
+        detail: None,
     }
 }
 
@@ -201,6 +203,7 @@ fn the_nullable_target_migration_keeps_every_row() {
             ),
         ]
     );
+    connection.execute_batch(SCRIPTS[2]).expect("0003");
     let repository = ActionRepository::new(Arc::new(Mutex::new(connection)));
     let appended = repository
         .append(&office_record(ActionKind::Hold, 7))
@@ -208,4 +211,29 @@ fn the_nullable_target_migration_keeps_every_row() {
     // Ids keep counting after the rebuild: a new entry never reuses a copied id.
     assert_eq!(appended.id, 3);
     assert_eq!(repository.list_office_level().expect("list").len(), 1);
+}
+
+#[test]
+fn a_detail_reads_back_and_an_entry_from_before_the_detail_column_reads_as_none() {
+    let connection = Connection::open_in_memory().expect("open");
+    connection.execute_batch(SCRIPTS[0]).expect("0001");
+    connection.execute_batch(SCRIPTS[1]).expect("0002");
+    let agent_id = AgentId::generate();
+    connection
+        .execute(
+            "INSERT INTO audit_actions (actor, target_agent_id, action, result, at) \
+             VALUES ('user', ?1, 'start', 'ok', 5)",
+            [agent_id.to_string()],
+        )
+        .expect("insert");
+    connection.execute_batch(SCRIPTS[2]).expect("0003");
+    let repository = ActionRepository::new(Arc::new(Mutex::new(connection)));
+    let mut detailed = record(agent_id, ActionKind::Start, ActionResult::Ok);
+    detailed.detail = Some("new session: the CLI cannot continue".to_owned());
+    repository.append(&detailed).expect("append");
+
+    let listed = repository.list_for_agent(agent_id).expect("list");
+
+    assert_eq!(listed[0].record.detail, None);
+    assert_eq!(listed[1].record, detailed);
 }

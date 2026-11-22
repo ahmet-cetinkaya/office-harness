@@ -65,6 +65,22 @@ fn waiting_bell_and_auto_hold_share_one_group_ordered_by_wait() {
 }
 
 #[test]
+fn a_resume_hold_waits_in_the_same_group_as_an_auto_hold() {
+    let resume_held = AgentId::generate();
+    let failed = AgentId::generate();
+    let exited = AgentId::generate();
+    let items = vec![
+        item(exited, AttentionKind::Exited, 1),
+        item(resume_held, AttentionKind::ResumeHold, 20),
+        item(failed, AttentionKind::Failed, 30),
+    ];
+
+    let ordered = order(items, names(&[]));
+
+    assert_eq!(agents_of(&ordered), [failed, resume_held, exited]);
+}
+
+#[test]
 fn the_longest_wait_comes_first_inside_a_group() {
     let newer = AgentId::generate();
     let older = AgentId::generate();

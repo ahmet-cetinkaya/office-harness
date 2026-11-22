@@ -14,6 +14,7 @@ import {
 } from "../../agent";
 import { createHoldController } from "../../hold";
 import { createNeedsYouController } from "../../needs-you";
+import { createResumeController } from "../../resume";
 import { createTemplateController } from "../../template";
 
 export type OpenView = "panel" | "scene";
@@ -21,7 +22,7 @@ export type OpenView = "panel" | "scene";
 /**
  * The panel's stores over one client: the office, the project choice, the
  * notification list with its OS notifications, the holds (0007), Needs you
- * (0008), the templates (0009), and the last view (0003).
+ * (0008), the resume of interrupted agents (0013), the templates (0009), and the last view (0003).
  */
 export function createPanelStore(client: CoreClient) {
   const office = createOfficeStore(client, () => void notifications.load());
@@ -42,6 +43,7 @@ export function createPanelStore(client: CoreClient) {
       office.snapshot.agents.find((agent) => agent.id === agentId)?.name ??
       null,
   );
+  const resume = createResumeController(client);
   // The restore is the one reader of `last_view` and the only place the
   // stored view word is applied. The shell writes the last view only after
   // the restore has settled, or an eager write would clobber the stored
@@ -167,6 +169,7 @@ export function createPanelStore(client: CoreClient) {
     notifications,
     needsYou,
     hold,
+    resume,
     templates,
     lastView,
     client,

@@ -368,6 +368,7 @@ describe("office controller", () => {
       action: "start",
       result: "ok",
       at: 1,
+      detail: null,
     };
 
     push({ type: "action.recorded", entry });
