@@ -6,6 +6,8 @@ Date: 2026-11-22. Extends the 0001 wire protocol and the 0002 and 0007 contracts
 
 Every request here is for user clients only. The agent connection never answers them; they are outside its allowlist and are refused as not allowed (0002 contract, A9).
 
+The field that names a template is `template_id`, never `id`: `id` is the request's own number in the 0001 envelope.
+
 A field a request does not name below is refused with `invalid` and the message `<field> is not a field of <request>`, so a misspelt `template_id` never acts on the office.
 
 ## Shapes
@@ -27,7 +29,7 @@ No fields. Result: `{templates: [template]}`, ordered by name case-insensitively
 
 | Field | Type | Rule |
 |---|---|---|
-| `id` | string | the template |
+| `template_id` | string | the template |
 
 Result: `{template}`. Errors: `not_found` "template <id> does not exist".
 
@@ -35,18 +37,18 @@ Result: `{template}`. Errors: `not_found` "template <id> does not exist".
 
 | Field | Type | Rule |
 |---|---|---|
-| `id` | string? | absent creates; present replaces that template |
+| `template_id` | string? | absent creates; present replaces that template |
 | `name` | string | the save rules of data-model.md |
 | `kind` | string | `agent` or `team`; must match the body |
 | `body` | object | an agent body or a team body |
 
-Result: `{template}`. Errors: `invalid` with the save rule text, or "`kind` is \"<kind>\" but the body is a <other> body"; `conflict` "template name \"<name>\" is already used"; `not_found` for an unknown `id`. Sends `template.changed`. Saving an agent leaves every agent and team created from it unchanged (FR-006), and writes nothing to the action record (A10).
+Result: `{template}`. Errors: `invalid` with the save rule text, or "`kind` is \"<kind>\" but the body is a <other> body"; `conflict` "template name \"<name>\" is already used"; `not_found` for an unknown `template_id`. Sends `template.changed`. Saving an agent leaves every agent and team created from it unchanged (FR-006), and writes nothing to the action record (A10).
 
 ### `template.delete` (FR-006)
 
 | Field | Type | Rule |
 |---|---|---|
-| `id` | string | the template |
+| `template_id` | string | the template |
 
 Result: `{}`. Errors: `not_found`. Sends `template.changed`. A team template keeps its own copy of each entry (A5).
 
