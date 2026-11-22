@@ -468,7 +468,7 @@ These are not built in 0001. The structure leaves room for them:
 
 - **R5 distributed machines:** a `machine` module, and a TLS listener in the host app next to the loopback one. Remote clients use the same `wire` protocol and the same token proof. Each agent already belongs to a machine (data model).
 - **R7 office scene:** a webview module that reads agents, roles, and statuses. It needs no server change.
-- **R8 meeting room:** a `meeting` module that sends directives (0002) and reads terminal output through ports.
+- **R8 meeting room:** a `meeting` module that sends each brief to a participant's terminal through the terminal port and reads terminal output through ports. It does not send 0002 directives: spec 0004 and its plan do not depend on 0002.
 - **Docker Compose:** the container runs `office-harnessd` and the agent CLIs. It needs the R5 listener first, because the 0001 server accepts loopback only.
 
 ## Open Items

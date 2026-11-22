@@ -4,7 +4,7 @@ spec: specs/changes/0006-distributed-machines/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-17. Status: draft. Build starts after the owner approves spec 0006; the spec is a draft awaiting owner approval. The build also waits for 0003 to merge to `main`, which itself starts after 0002. The owner or god approves the plan before the build. A security review of this plan passes before the build starts. -->
+<!-- Drafted 2026-11-17. Status: draft. Build starts after the owner approves spec 0006; the spec is a draft awaiting owner approval. 0002 and 0003 are merged to `main` (re-checked 2026-11-22), so the build waits for the owner's approval only. The owner or god approves the plan before the build. A security review of this plan passes before the build starts. -->
 
 # Plan: distributed machines (0006)
 
@@ -32,12 +32,12 @@ This change opens the office to the network for the first time. The office serve
 - The automated suite runs on one machine; a true two-machine join over a real network is a hands-on row. Mitigated by loopback integration tests with two processes (the office server and a joined daemon) that exercise the full protocol, and by the hands-on rows in the QA report recorded as BLOCKED until a person runs them.
 - The lockout can lock a shared NAT address that several machines use. Mitigated by the spec's own answer: the lockout blocks joins only, clears when the listener turns off and on, and the panel says that a source is locked out (FR-005, edge cases).
 - Terminal relay latency over a slow link (SC-011). Mitigated by forwarding frames unchanged, keeping no per-frame server processing on the relay path, and measuring with a delay-inserting proxy; the 250 ms limit at 50 ms round trip is the spec's accepted figure.
-- 0003 is not merged, so the panel code this change extends does not exist on `main` yet. Mitigated by the merge gate; T10 and T11 re-read the merged panel code before any desktop change.
+- The panel code this change extends is on `main` and may change before the build starts. Mitigated by T10 and T11, which re-read the merged panel code before any desktop change.
 - A TLS or key-handling mistake is hard to see in review. Mitigated by one identity module with redaction tests, the full-hash comparison on every connection, and the security-review gates before the start and before the merge.
 
 **Decisions made for you:** the `machine` module layout, a server-created TLS identity checked by fingerprint, the code and credential formats and their hashed storage, the constant-time credential check over the pinned link, the in-memory per-source lockout, the join mode of the existing server binary, the heartbeat figures (5 second ping, 15 second offline), `unreachable` as a derived display state rather than a new status-machine state, per-machine project folders as one new agent migration, and rustls with rcgen as the TLS stack (T1 confirms versions).
 
-**Blockers:** the owner's approval of spec 0006, 0003 merged to `main`, and a security review of this plan passed (advisor or `/security-review`). Nothing else.
+**Blockers:** the owner's approval of spec 0006 and a security review of this plan passed (advisor or `/security-review`). Nothing else.
 
 ## Goal
 
@@ -45,13 +45,13 @@ Deliver spec 0006: the user turns on the listener, hands one join code to a seco
 
 ## Context
 
-- **Repository:** 0001 is on `main` (merge 4425166). 0002 is approved and its build branch exists; 0003 is approved with a drafted plan. This plan branches from `main` after 0003 merges. Spec 0006 itself is a draft awaiting owner approval; the build starts only after that approval.
+- **Repository:** 0001, 0002, and 0003 are merged to `main` (re-checked 2026-11-22). This plan branches from `main` when the owner approves the spec. Spec 0006 itself is a draft awaiting owner approval; the build starts only after that approval.
 - **Existing seams this change touches** (verified at `origin/main` 7750602 on 2026-11-17):
   - Server socket: `src/apps/office-harnessd/src/server/` binds `127.0.0.1` on a free port in `running_server.rs`, refuses non-loopback peers and wrong `Host` or `Origin` in `upgrade_check.rs`, and runs the token handshake in `handshake.rs` and `connection.rs`. The listener is a second server beside this one, not a change to it.
   - Auth: `src/shared/wire/src/proof.rs` computes HMAC proofs over `nonce || port || role`; `src/modules/access/infrastructure/src/services/` has `random_bytes.rs` (getrandom), `hmac_proof_scheme.rs`, and `file_token_store.rs` (owner-only file through `private-fs`).
   - Machines today: `src/modules/agent/domain/src/entities/machine.rs` (id and name only), table `agent_machines` in `src/modules/agent/infrastructure/src/persistence/migrations/0001_machines_projects_agents.sql`, `machine_id` on every agent row. One home machine row exists.
   - Statuses: `src/modules/agent/domain/src/enums/agent_status.rs` and `services/status_machine.rs` hold the seven statuses; the desktop shows them through `statusText` in `src/apps/desktop/src/modules/agent/models/agent.ts`.
-  - Action record: `src/modules/audit/domain/src/action_kind.rs` holds six kinds; each writing module declares its own `ActionRecorder` port and the host bridges to `audit-application`.
+  - Action record: `src/modules/audit/domain/src/action_kind.rs` holds 13 kinds (`create`, `start`, `stop`, `delete`, `new_task`, `continue`, `team_create`, `team_delete`, `directive`, `refused`, `hold`, `release`, `task_text`), and `ActionKind::ALL` lists them, so the four new kinds of D11 extend that list; each writing module declares its own `ActionRecorder` port and the host bridges to `audit-application`.
   - Composition: `src/apps/office-harnessd/src/bootstrap/` builds services per module and runs per-module migrations (`migrations.rs`); `src/apps/office-harnessd/src/bridges/` holds the cross-module adapters. `scripts/check-boundaries.sh` reads crate roles from manifest paths, so a new module needs no script change.
   - Desktop: `app.svelte` renders `OfficeView` after the connection states; the create flow is `modules/agent/components/agent-form-dialog.svelte`; requests go through `modules/agent/services/agent-service.ts`; state lives in `modules/agent/state/office-controller.ts`; the e2e mock core is `src/apps/desktop/e2e/support/mock-core.ts`.
   - Protocol surface: `specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md` fixes the message shapes, error codes, and close codes that this change extends.
@@ -104,7 +104,7 @@ Deliver spec 0006: the user turns on the listener, hands one join code to a seco
 | 2 Machine link | Join mode, relay, unreachable and reconnect | T8, T9 | `feat/0006-p2-machine-link` (umbrella after p1) | p2 → umbrella |
 | 3 Desktop and ship | Machines view, picker, docs and amendments, QA and threat tests, security gate | T10 to T13 | `feat/0006-p3-desktop` (umbrella after p2) | p3 → umbrella, then umbrella → `main` |
 
-The umbrella `feat/0006-distributed-machines` is created from `main` after 0003 merges and the owner approves the spec; it holds the approved spec and this plan (committed by the docs PR). Phases are sequential; each phase PR runs CI on three OSes and gets Efe's review at its head sha.
+The umbrella `feat/0006-distributed-machines` is created from `main` after the owner approves the spec; it holds the approved spec and this plan (committed by the docs PR). Phases are sequential; each phase PR runs CI on three OSes and gets Efe's review at its head sha.
 
 ## Tasks
 
@@ -297,7 +297,7 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9 → T10 → T11 → T
 - **Sequential:** T2 to T7 build one security core on the same new module and the host wiring; T8 and T9 change the same link code; T10 and T11 change the same desktop files and the agent module; T13 re-runs every suite.
 - **Parallel:** none; the shared crates, manifests, `Cargo.lock`, and migrations make parallel tasks collide.
 - **Exclusive:** `Cargo.lock`, the migration ledgers, `src/shared/wire`, and the e2e mock core are owned by one running task at a time.
-- **Gate before everything:** the owner approves spec 0006, and 0003 (and therefore 0002) is merged to `main`; the umbrella branch is created from that `main`; T1 starts only then. A second gate holds before T2: a security review of this plan (advisor or `/security-review`) passes with its findings closed or recorded.
+- **Gate before everything:** the owner approves spec 0006; the umbrella branch is created from `main` then (0002 and 0003 are already merged); T1 starts only then. A second gate holds before T2: a security review of this plan (advisor or `/security-review`) passes with its findings closed or recorded.
 
 ## Commit strategy
 
