@@ -153,9 +153,9 @@ fn lines() {
     }
 }
 
-/// Redraws one row nine times, about 30 ms apart. Every redraw lands inside
-/// the report throttle's one-second window, so the tests can hold the report
-/// count without racing a monitor tick.
+/// Redraws one row nine times, about 30 ms apart, then stays on the last one.
+/// On a fast machine every redraw lands inside one report window; tests must
+/// not rely on that, because a slow runner can spread them over several.
 fn progress() {
     announce("PROGRESS:0%");
     for percent in 1..=9 {
