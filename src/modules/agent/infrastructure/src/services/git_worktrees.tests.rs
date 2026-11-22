@@ -7,6 +7,8 @@ use kernel::AgentId;
 use tempfile::TempDir;
 
 use super::*;
+use crate::services::login_environment::{Environment, LoginEnvironment};
+use crate::services::program_lookup::find_program;
 
 /// A repository with `a.txt` and `sub/b.txt` on `main`, a home folder that
 /// holds no git configuration, and the office's worktrees folder.
@@ -753,10 +755,14 @@ fn without_git_on_the_login_path_the_folder_is_not_in_a_repository() {
     let environment = [("PATH".to_owned(), empty.to_string_lossy().into_owned())]
         .into_iter()
         .collect();
-    let worktrees = GitWorktrees::new(
+    let runner = LazyGitRunner::login(
         fixture.root.clone(),
         Arc::new(LoginEnvironment::fixed(environment)),
         Environment::new(),
+    );
+    let worktrees = GitWorktrees::new(
+        fixture.root.clone(),
+        Arc::new(runner),
         Arc::new(RecordedFailures::default()),
     );
     assert_eq!(worktrees.info(&fixture.repository, "x"), Ok(None));

@@ -81,3 +81,21 @@ fn a_role_that_is_not_an_object_is_named() {
     let error = CreateAgentRequest::read(body.as_object().expect("object")).expect_err("refused");
     assert_eq!(error, "role.kind is required");
 }
+
+#[test]
+fn a_whole_number_field_is_read_and_a_bad_one_is_named() {
+    let body = map(
+        json!({"skip": 7, "negative": -1, "fraction": 1.5, "text": "7", "huge": 4_294_967_296_u64, "nothing": null}),
+    );
+    let fields = Fields(&body);
+
+    assert_eq!(fields.optional_u32("skip"), Ok(Some(7)));
+    assert_eq!(fields.optional_u32("nothing"), Ok(None));
+    assert_eq!(fields.optional_u32("absent"), Ok(None));
+    for name in ["negative", "fraction", "text", "huge"] {
+        assert_eq!(
+            fields.optional_u32(name),
+            Err(format!("{name} must be a whole number of at least 0"))
+        );
+    }
+}

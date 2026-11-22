@@ -26,6 +26,20 @@ impl Fields<'_> {
     }
 
     /// # Errors
+    /// The field is present but is not a whole number from 0 to 4,294,967,295.
+    /// A `null` counts as absent.
+    pub fn optional_u32(&self, name: &str) -> Result<Option<u32>, String> {
+        match self.0.get(name) {
+            None | Some(Value::Null) => Ok(None),
+            Some(value) => value
+                .as_u64()
+                .and_then(|number| u32::try_from(number).ok())
+                .map(Some)
+                .ok_or_else(|| format!("{name} must be a whole number of at least 0")),
+        }
+    }
+
+    /// # Errors
     /// The field is present but is not text. A `null` counts as absent.
     pub fn optional_text(&self, name: &str) -> Result<Option<String>, String> {
         match self.0.get(name) {
