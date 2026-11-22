@@ -1,6 +1,6 @@
 ---
-status: in_progress
-spec: specs/changes/0014-subtree-status/SPEC.md
+status: completed
+spec: specs/changes/archive/0014-subtree-status/SPEC.md
 commits: per-task
 ---
 

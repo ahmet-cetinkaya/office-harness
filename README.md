@@ -195,7 +195,7 @@ When the background server stops while agents run (a crash, a logout, a restart 
 - The office watches each start for 20 seconds. When a continued session ends by itself in that time, the office starts the agent once in a new session. That start is in the agent's action record with the office as actor and the reason, because the CLI's earlier context was not carried over. When that new session also ends within 20 seconds, the office does not start the agent again: it puts the agent on hold with the reason and notifies you once.
 - Any end of the CLI within the 20 seconds counts, whatever its exit code. A command that ends quickly by design is started twice and then held; uncheck such agents.
 
-The shapes of the requests are in [the resume protocol](specs/changes/0013-bulk-resume/contracts/resume-protocol.md).
+The shapes of the requests are in [the resume protocol](specs/changes/archive/0013-bulk-resume/contracts/resume-protocol.md).
 
 ## Start at login
 
@@ -320,7 +320,7 @@ An agent reads the state of the agents below it with `agent.subtree`, which take
 office-harnessd agent-call agent.subtree
 ```
 
-The answer lists each descendant after its parent, with its name, role, status, the time its terminal last showed output, whether it waits in Needs you, whether a hold covers it, and its task line. It never carries terminal output, and it lists no agent outside the caller's own subtree. A hold does not refuse the read, the read counts toward no rate limit, and an answered read is not in the action record. The shapes are in `specs/changes/0014-subtree-status/contracts/subtree-protocol.md`.
+The answer lists each descendant after its parent, with its name, role, status, the time its terminal last showed output, whether it waits in Needs you, whether a hold covers it, and its task line. It never carries terminal output, and it lists no agent outside the caller's own subtree. A hold does not refuse the read, the read counts toward no rate limit, and an answered read is not in the action record. The shapes are in `specs/changes/archive/0014-subtree-status/contracts/subtree-protocol.md`.
 
 An agent reports to its parent with `report.send`, with a kind (`done`, `question`, `blocked`, or `info`) and a text of up to 1,000 characters:
 

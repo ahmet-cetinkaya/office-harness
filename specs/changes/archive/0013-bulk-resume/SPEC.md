@@ -1,11 +1,11 @@
 ---
-status: approved
+status: shipped
 capability: office
-plan: specs/changes/0013-bulk-resume/PLAN.md
+plan: specs/changes/archive/0013-bulk-resume/PLAN.md
 supersedes:
 ---
 
-<!-- Approved for coding on 2026-11-23 through the review gate (r3 at a7df68d), under the owner's spec delegation. -->
+<!-- Approved for coding on 2026-11-23 through the review gate (r3 at a7df68d), under the owner's spec delegation; shipped in PR #117. -->
 
 # 0013: Resume all interrupted agents
 

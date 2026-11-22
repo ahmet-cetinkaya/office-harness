@@ -1,6 +1,6 @@
 ---
-status: in_progress
-spec: specs/changes/0013-bulk-resume/SPEC.md
+status: completed
+spec: specs/changes/archive/0013-bulk-resume/SPEC.md
 commits: per-task
 ---
 

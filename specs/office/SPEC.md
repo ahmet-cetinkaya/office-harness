@@ -20,8 +20,10 @@ Archived change specs merged here:
 - [0003-panel-practicality](../changes/archive/0003-panel-practicality/SPEC.md)
 - [0005-office-scene](../changes/archive/0005-office-scene/SPEC.md)
 - [0007-hold-and-limits](../changes/archive/0007-hold-and-limits/SPEC.md)
+- [0013-bulk-resume](../changes/archive/0013-bulk-resume/SPEC.md)
+- [0014-subtree-status](../changes/archive/0014-subtree-status/SPEC.md)
 
-Changes 0008 to 0011 merge in when they ship. 0004, 0006, 0012 to 0014, and 0016 are not merged.
+Changes 0008 to 0011 merge in when they are archived. 0004, 0006, 0012, and changes after 0014 are not merged.
 
 ## How to read this file
 
@@ -36,6 +38,7 @@ Modified requirements:
 | Requirement | Modified by | Final text is under |
 |---|---|---|
 | 0001/FR-017 | 0003 | Change 0001, Requirements |
+| 0002/FR-008 | 0014 | Change 0002, Requirements |
 | 0002/FR-009 | 0007 | Change 0002, Requirements |
 | 0003/FR-006 (in part) | 0007 | Change 0003, Requirements |
 | 0003/FR-008 (in part) | 0005 | Change 0003, Requirements |
@@ -78,8 +81,6 @@ The owner runs many AI coding agent CLIs and opens a separate terminal for each 
 - **0001/FR-028** (US1, US2): THE SYSTEM SHALL make every desktop app action available from the keyboard.
 
 ### Key entities
-
-## Key entities
 
 | Entity | Represents | Key attributes | Identity and relationships |
 |---|---|---|---|
@@ -126,7 +127,7 @@ With 12 or more agents, a flat set of terminals is hard to follow. This change o
 - **0002/FR-005** (US1): THE SYSTEM SHALL NOT limit the number of agents in an office to a fixed maximum.
 - **0002/FR-006** (US1): WHEN the user deletes an agent that has descendants, THE SYSTEM SHALL show how many agents will stop and be deleted, and SHALL delete them only after the user confirms.
 - **0002/FR-007** (US1): WHEN the user stops an agent that has descendants, THE SYSTEM SHALL offer to stop all of its descendants in the same action.
-- **0002/FR-008** (US2): THE SYSTEM SHALL let a running agent, from inside its own session, create, start, and stop agents, start new tasks, and send directives only within its own descendants and only for the roles that FR-001 allows.
+- **0002/FR-008** (US1, US2): THE SYSTEM SHALL let a running agent, from inside its own session, create, start, and stop agents, start new tasks, send directives, and read the state of agents only within its own descendants and only for the roles that FR-001 allows. (modified by 0014)
   - Amended by 0015 (`specs/changes/0015-upward-reports/SPEC.md`): a running agent also sends reports, only to its own parent or to the person, with no field that names another agent (0015/FR-002).
 - **0002/FR-009** (US1, US2, US3): IF an agent asks for an action on an agent that is not its descendant, for a role or action that 0002/FR-008 does not allow, for an action while it, its target, or the office is on hold, or for an action beyond a rate limit, THEN THE SYSTEM SHALL refuse the action, tell the agent the reason in the answer to its request, and record the refusal. (modified by 0007)
 - **0002/FR-010** (US2): WHEN a parent agent sends a directive, THE SYSTEM SHALL enter the directive text into the target agent's terminal as one unbroken input followed by Enter.
@@ -328,3 +329,87 @@ The rate limits and their defaults, each counted over a rolling 60 seconds:
 | Starts, stops, and new tasks by one agent | 10 | One restart round of a 5-member team fits twice. |
 
 Amended by 0015: a fifth limit, "reports sent by one agent", 5 per 60 seconds, counts reports (0015/FR-006).
+
+## Change 0013: Resume all interrupted agents
+
+### Intent
+
+After a server restart, the user must resume each interrupted agent one by one: open it, pick its last session, and continue it. When a CLI cannot continue its session, the agent ends at once and the user must notice it. This change adds one confirmed action that resumes every interrupted agent that the user checks. When a CLI refuses to continue, the office starts that agent once in a new session. An agent that still fails is put on hold. The office still starts no agent by itself (0001/FR-004). This change extends 0001 and 0007.
+
+### Requirements
+
+- **0013/FR-001** (US1): WHILE at least one agent of the office is `interrupted`, THE SYSTEM SHALL offer a "Resume interrupted" action that shows the number of interrupted agents.
+- **0013/FR-002** (US1, US3): WHEN the user opens the "Resume interrupted" action, THE SYSTEM SHALL list every interrupted agent in start order, with what will happen to it (continue its last session, shown with that session's start time, or start a new session, shown with the reason) and with whether it is on hold, SHALL check every listed agent that is not on hold, and SHALL start nothing before the user confirms.
+- **0013/FR-003** (US1, US2): WHEN the user confirms, THE SYSTEM SHALL, for each checked agent that is still `interrupted`, continue its last session where the agent's CLI supports continuing it (0001/FR-025) and otherwise start a new session (0001/FR-024), SHALL start every member before its lead and every lead before the CEO, and SHALL skip each checked agent that is no longer `interrupted`, with that reason.
+- **0013/FR-004** (US2): IF a session that this action continued ends by itself within the check period, or does not start, THEN THE SYSTEM SHALL start the agent once in a new session and SHALL record that start in the agent's action record with the office as actor and the reason (which session the CLI refused, and how).
+- **0013/FR-005** (US3): IF a new session that this action started ends by itself within the check period, or does not start, THEN THE SYSTEM SHALL NOT start the agent again, SHALL put the agent on hold (0007/FR-003) with the office as actor and the reason, and SHALL notify the user once, naming the agent.
+- **0013/FR-006** (US1, US2, US3): THE SYSTEM SHALL show the result of each checked agent as text as soon as it is known: checking (during the check period), continued, new session (with the reason), on hold (with the reason), or skipped (with the reason).
+- **0013/FR-007** (US2): WHEN this action starts a new session instead of continuing the last one, for any reason, THE SYSTEM SHALL keep the reason with that start's entry in the agent's action record, so the user sees in the agent's details that the CLI's earlier context was not carried over.
+- **0013/FR-008** (US1): WHERE the last session of a listed agent was still open when the server stopped uncleanly, THE SYSTEM SHALL mark that agent in the list, SHALL show, before the user confirms, a warning that the CLI processes of those agents from before the stop may still run and that resuming can start a second copy of a CLI next to them, and SHALL keep Confirm unavailable while a marked agent is checked until the user acknowledges the warning.
+
+### Preserved behaviors
+
+- **0013/PB-1:** No agent starts without an explicit action of the user; the server starts no interrupted agent by itself at its start (0001/FR-004).
+- **0013/PB-2:** The user can still continue any previous session of an agent from its details, also a session that the CLI refused before (0001/FR-025).
+- **0013/PB-3:** A hold refuses only agent-made actions; the user's own actions, this action included, work as before (0007 PB-1, PB-2).
+- **0013/PB-4:** office-harness creates, changes, or deletes nothing in a CLI's configuration (0001/FR-021).
+- **0013/PB-5:** Each start, continue, and hold is recorded in the action record with its actor (0001/FR-011, 0007/FR-010).
+- **0013/PB-6:** The notification of FR-005 is a notification of an automatic hold under 0003/FR-006 (as modified by 0007): it names the agent and the event, and the focused-terminal exception does not apply to it.
+
+### Key entities
+
+| Entity | Represents | Key attributes | Identity and relationships |
+|---|---|---|---|
+| Resume result | What the action did to one checked agent. | agent, result (checking, continued, new session, on hold, skipped), reason | Shown while the dialog is open; not stored. What happened stays in the action record and the hold list. |
+| Hold (extends 0007) | An agent hold. | reason, which can now also be a failed resume | Set by the office (FR-005). |
+| Session (extends 0001) | One run of an agent CLI. | end result: also "lost", when the session was still open at an unclean stop | As in 0001. |
+| Action record entry (extends 0001) | One recorded action. | reason (optional): why a start began a new session instead of a continue | Belongs to the agent it names (0001/FR-011). |
+
+### Success criteria
+
+- **0013/SC-001:** With 30 interrupted agents, the user resumes all of them with 2 activations after a clean stop (open the action, confirm) and 3 after an unclean stop (open, acknowledge the warning, confirm), and 100% of them have a started session within 60 seconds of the confirm.
+- **0013/SC-002:** With a CLI that ends within 1 second of every continue, 100% of the checked agents run a new session within 30 seconds of the confirm, and each has exactly 1 action record entry for that start with the office as actor and a reason.
+- **0013/SC-003:** An agent whose CLI ends within 1 second of every start is started at most 2 times by one bulk action, is on hold after it, and causes exactly 1 notification.
+- **0013/SC-004:** After 10 server starts that follow a SIGKILL of the server, 0 agents start without an action of the user.
+- **0013/SC-005:** In a tree of 1 CEO, 2 leads, and 4 members, all interrupted, 100% of the members start before their lead and both leads start before the CEO.
+- **0013/SC-006:** After a SIGKILL of the server while agents run, the warning of FR-008 shows and marks 100% of those agents, and 0 confirms are possible before the acknowledgement while a marked agent is checked; after a clean stop, the warning shows 0 times.
+
+## Change 0014: A parent reads the state of its descendants
+
+### Intent
+
+A parent agent sends directives down the tree (0002), but it cannot see what its team does. This change lets a running agent read the state of its own descendants from inside its session: name, place in the tree, status, last output time, Needs you, hold, and task line. The agent reads state, never terminal content, and only below itself. This change amends the approved 0002.
+
+### Requirements
+
+- **0014/FR-001** (US1): WHEN a running agent reads its subtree, THE SYSTEM SHALL answer with one entry for each of its descendants, each entry with the descendant's name, parent, role, status, last output time, whether it has an item in Needs you, whether an office hold or an agent hold covers it under the rules of 0007/FR-004, and its task line with the time the task text was set.
+- **0014/FR-002** (US1): THE SYSTEM SHALL include in the answer only the descendants of the reading agent, as the tree is at the moment of the read, and SHALL NOT include the reading agent itself, its ancestors, or any other agent.
+- **0014/FR-003** (US1): THE SYSTEM SHALL NOT include terminal content, the full task text past its task line, the CLI command, the working folder, environment values, or office additions in the answer.
+- **0014/FR-004** (US1): THE SYSTEM SHALL answer a read while the office or an agent is on hold as without the hold, and SHALL NOT count a read toward any rate limit or automatic hold of 0007.
+- **0014/FR-005** (US1): THE SYSTEM SHALL NOT add a read that it answers to the action record, and SHALL record a read that it refuses as 0002/FR-009 and 0002/FR-011 require.
+
+This change modified: 0002/FR-008. The final text is under the change that owns each id.
+
+### Preserved behaviors
+
+- **0014/PB-1:** The 0002 tree rules stay as they are: an agent creates, starts, stops, gives new tasks to, and sends directives to its own descendants only, and every other agent request is refused and recorded (0002/FR-008, 0002/FR-009 as modified by 0007).
+- **0014/PB-2:** Holds and rate limits refuse agent-made actions as before (0007/FR-002, FR-004, FR-007, FR-008). A read is not an agent-made action, so it adds no new way past a hold.
+- **0014/PB-3:** A read changes no state: no status, task text, Needs you item, hold, notification, or action record entry changes because an agent read it (0008, 0011/FR-007).
+- **0014/PB-4:** The office reads no CLI prompt and creates, changes, or deletes no file in a CLI's configuration (0001/FR-021).
+- **0014/PB-5:** The desktop app shows the same as before, and the agent's connection to the office still gets no events and no terminals (0002).
+
+### Key entities
+
+| Entity | Represents | Key attributes | Identity and relationships |
+|---|---|---|---|
+| Subtree entry | The state of one descendant at the moment of a read. Not stored. | agent, name, parent, role, status, last output time, in Needs you (yes or no), covered by a hold (yes or no), task line and the time of its task text | One per descendant of the reading agent, in one answer. |
+
+### Success criteria
+
+- **0014/SC-001:** In a tree of 1 CEO, 2 leads, and 6 members, each of the 9 agents reads once. 100% of the answers list exactly the reader's descendants: 0 entries for the reader itself, a sibling, an ancestor, or an agent in another branch.
+- **0014/SC-002:** Each descendant prints a known marker text in its terminal before the read. 0 answers hold any part of a marker text.
+- **0014/SC-003:** After a member's status changes to `working`, then to `waiting for input`, then to `stopped`, its lead's next read after each change shows the new status (3 of 3).
+- **0014/SC-004:** While the office is on hold, 100% of 10 reads are answered. With no hold, after 30 reads within 60 seconds, the reader's next directive is not refused by a rate limit, and 0 automatic holds occur.
+- **0014/SC-005:** With 30 agents in the office, a read answers within 2 seconds.
+- **0014/SC-006:** In 10 attempts to point a read at a sibling, an ancestor, or an agent of another branch, 100% are refused and recorded, and 0 answers hold data of that agent.
+- **0014/SC-007:** A descendant whose task text holds an escape character (U+001B), a one-byte control sequence introducer (U+009B), a right-to-left override (U+202E), and a second line: the reader's answer holds only the first line, and 0 control or bidirectional format characters reach the reader as themselves.

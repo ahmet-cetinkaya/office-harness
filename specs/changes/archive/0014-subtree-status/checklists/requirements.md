@@ -1,6 +1,6 @@
 # Requirements checklist: 0014-subtree-status
 
-Spec: `specs/changes/0014-subtree-status/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass after five rounds. No `[NEEDS CLARIFICATION]` marker; the one judgment call (holds and rate limits do not apply to the read, A2) is flagged for the review gate in the Clarifications. Every `0001/`, `0002/`, `0007/`, `0008/`, and `0011/` reference was checked against the approved specs on `main` at 6e3d197.
+Spec: `specs/changes/archive/0014-subtree-status/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass after five rounds. No `[NEEDS CLARIFICATION]` marker; the one judgment call (holds and rate limits do not apply to the read, A2) is flagged for the review gate in the Clarifications. Every `0001/`, `0002/`, `0007/`, `0008/`, and `0011/` reference was checked against the approved specs on `main` at 6e3d197.
 
 ## Content quality
 

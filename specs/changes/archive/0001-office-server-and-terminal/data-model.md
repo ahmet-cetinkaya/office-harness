@@ -99,4 +99,4 @@ The text `waiting for input` is the display text. The stored and wire value is `
 
 A new agent that has never run shows `stopped`. Only an explicit start or a new task moves an agent out of `interrupted` (FR-004).
 
-> Amended by 0013: the user's "Resume interrupted" action is such an explicit start; it continues the last session or starts a new one (`specs/changes/0013-bulk-resume/SPEC.md`). After an unclean stop, the session that was open ends as `lost`, not `interrupted`; the agent still shows `interrupted`.
+> Amended by 0013: the user's "Resume interrupted" action is such an explicit start; it continues the last session or starts a new one (`specs/changes/archive/0013-bulk-resume/SPEC.md`). After an unclean stop, the session that was open ends as `lost`, not `interrupted`; the agent still shows `interrupted`.

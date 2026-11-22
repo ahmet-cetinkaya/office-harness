@@ -1,11 +1,11 @@
 ---
-status: draft
+status: shipped
 capability: office
-plan: specs/changes/0014-subtree-status/PLAN.md
+plan: specs/changes/archive/0014-subtree-status/PLAN.md
 supersedes: 0002/FR-008
 ---
 
-<!-- Draft for the spec review gate. Only the owner's approval, given through the review gate, changes the status. -->
+<!-- Approved under the owner's spec delegation on 2026-11-23; shipped in PR #116. -->
 
 # 0014: A parent reads the state of its descendants
 
