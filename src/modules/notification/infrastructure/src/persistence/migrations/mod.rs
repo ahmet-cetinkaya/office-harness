@@ -10,4 +10,5 @@ pub const SCRIPTS: &[&str] = &[
     include_str!("0001_notifications.sql"),
     include_str!("0002_detail.sql"),
     include_str!("0003_needs_you.sql"),
+    include_str!("0004_needs_you_report.sql"),
 ];

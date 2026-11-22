@@ -18,9 +18,15 @@ pub struct CreateNotification {
     pub detail: Option<String>,
 }
 
-/// Adds one notification row (FR-006). A bell while the agent still has an
-/// unread bell notification adds nothing (FR-006a); every other event always
-/// becomes its own row, so agents that finish together are all listed.
+/// The events that add no row while an unread row of the same event and agent
+/// exists: a bell (0003/FR-006 (a)) and a report for the person (0015).
+const COALESCED_EVENTS: [NotificationEvent; 2] =
+    [NotificationEvent::Bell, NotificationEvent::Report];
+
+/// Adds one notification row (FR-006). A bell or a report while the agent
+/// still has an unread one of the same event adds nothing (FR-006a, as 0015
+/// modified it); every other event always becomes its own row, so agents
+/// that finish together are all listed.
 #[derive(Clone)]
 pub struct CreateNotificationHandler {
     store: Arc<dyn NotificationStore>,
@@ -32,8 +38,9 @@ impl CreateNotificationHandler {
         Self { store }
     }
 
-    /// The stored row, or `None` when the bell was coalesced into the unread
-    /// one that is already there.
+    /// The stored row, or `None` when a bell or a report was coalesced into
+    /// the unread one of the same event that is already there (0003/FR-006
+    /// (a), as 0015 modified it).
     ///
     /// # Errors
     /// `Storage`.
@@ -41,7 +48,9 @@ impl CreateNotificationHandler {
         &self,
         request: CreateNotification,
     ) -> Result<Option<Notification>, NotificationApplicationError> {
-        if request.event == NotificationEvent::Bell && self.has_unread_bell(request.agent_id)? {
+        if COALESCED_EVENTS.contains(&request.event)
+            && self.has_unread(request.agent_id, request.event)?
+        {
             return Ok(None);
         }
         let mut notification = Notification::new(
@@ -55,11 +64,15 @@ impl CreateNotificationHandler {
         Ok(Some(self.store.insert(&notification)?))
     }
 
-    fn has_unread_bell(&self, agent_id: AgentId) -> Result<bool, NotificationApplicationError> {
+    fn has_unread(
+        &self,
+        agent_id: AgentId,
+        event: NotificationEvent,
+    ) -> Result<bool, NotificationApplicationError> {
         Ok(self
             .store
             .list_unread_for_agent(agent_id)?
             .iter()
-            .any(|notification| notification.event == NotificationEvent::Bell))
+            .any(|notification| notification.event == event))
     }
 }

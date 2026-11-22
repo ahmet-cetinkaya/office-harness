@@ -154,3 +154,69 @@ fn an_agent_without_an_item_gets_a_new_one_with_its_origin_at_the_event_time() {
     assert_eq!(created.first_event_at, Timestamp::from_unix_millis(70));
     assert_eq!(created.origin, Some(origin));
 }
+
+fn report(kind: &str, text: &str, at: i64) -> ItemReport {
+    ItemReport {
+        kind: kind.to_owned(),
+        text: text.to_owned(),
+        at: Timestamp::from_unix_millis(at),
+    }
+}
+
+#[test]
+fn a_report_starts_an_item_in_the_waiting_group() {
+    let asking = AgentId::generate();
+    let exited = AgentId::generate();
+
+    let reported = record_report(None, asking, report("question", "which branch?", 30), None);
+    let items = order(
+        vec![item(exited, AttentionKind::Exited, 10), reported.clone()],
+        names(&[]),
+    );
+
+    assert_eq!(agents_of(&items), vec![asking, exited]);
+    assert_eq!(reported.latest.kind, AttentionKind::Report);
+    assert_eq!(reported.latest.detail.as_deref(), Some("question"));
+    assert_eq!(reported.first_event_at, Timestamp::from_unix_millis(30));
+}
+
+#[test]
+fn a_later_event_keeps_the_report_and_a_second_report_replaces_it() {
+    let agent = AgentId::generate();
+    let first = record_report(None, agent, report("question", "first", 10), None);
+
+    let waited = record_event(
+        Some(first),
+        agent,
+        event(AttentionKind::WaitingForInput, 20),
+        None,
+    );
+    let second = record_report(
+        Some(waited.clone()),
+        agent,
+        report("done", "second", 30),
+        None,
+    );
+
+    assert_eq!(waited.latest.kind, AttentionKind::WaitingForInput);
+    assert_eq!(waited.report, Some(report("question", "first", 10)));
+    assert_eq!(second.report, Some(report("done", "second", 30)));
+    assert_eq!(second.first_event_at, Timestamp::from_unix_millis(10));
+}
+
+#[test]
+fn a_report_on_a_waiting_item_keeps_its_wait_time_and_origin() {
+    let agent = AgentId::generate();
+    let origin = NotificationId::generate();
+    let waiting = record_event(
+        None,
+        agent,
+        event(AttentionKind::WaitingForInput, 5),
+        Some(origin),
+    );
+
+    let reported = record_report(Some(waiting), agent, report("blocked", "no key", 40), None);
+
+    assert_eq!(reported.first_event_at, Timestamp::from_unix_millis(5));
+    assert_eq!(reported.origin, Some(origin));
+}
