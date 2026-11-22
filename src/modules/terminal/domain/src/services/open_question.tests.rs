@@ -81,3 +81,66 @@ fn blank_rows_do_not_push_a_question_out_of_the_bottom_rows() {
     rows.extend([""; 40]);
     assert!(shows_open_question(&screen(&rows)));
 }
+
+#[test]
+fn a_choice_list_without_numbers_at_the_bottom_is_a_question() {
+    let dialog = [
+        " Pick a mode for this folder.",
+        "",
+        " ❯ Leave",
+        "   Stay and work here",
+        "",
+        " Enter to confirm · Esc to cancel",
+        "",
+        "",
+    ];
+    assert!(shows_open_question(&screen(&dialog)));
+    assert!(shows_open_question(&screen(&[
+        "Pick a fruit",
+        "  Apple",
+        "> Pear",
+        "  Plum"
+    ])));
+}
+
+#[test]
+fn a_numbered_choice_list_with_a_hint_below_is_still_a_question() {
+    let dialog = [
+        " Pick a mode.",
+        " ❯ 1. Leave",
+        "   2. Stay",
+        "",
+        " Esc to cancel",
+    ];
+    assert!(shows_open_question(&screen(&dialog)));
+}
+
+#[test]
+fn output_with_a_quote_row_is_not_a_question() {
+    let output = [
+        "The review says:",
+        "> Keep the guard clause first.",
+        "I agree with that.",
+        "> ",
+    ];
+    assert!(!shows_open_question(&screen(&output)));
+}
+
+#[test]
+fn a_marked_row_with_wrapped_text_above_more_output_is_not_a_question() {
+    let output = [
+        "● The answer wraps",
+        "  onto a second row.",
+        "",
+        "────────",
+        "❯ ",
+        "────────",
+    ];
+    assert!(!shows_open_question(&screen(&output)));
+}
+
+#[test]
+fn a_blank_row_ends_a_choice_list() {
+    let idle = ["› Ask anything", "", "  ? for shortcuts"];
+    assert!(!shows_open_question(&screen(&idle)));
+}
