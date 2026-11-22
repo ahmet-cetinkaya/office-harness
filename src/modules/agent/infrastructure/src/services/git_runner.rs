@@ -131,7 +131,8 @@ impl GitRunner {
         self.run(folder, arguments, self.read_timeout, false)
     }
 
-    /// Runs `worktree add`, which may take long on a large repository.
+    /// Runs `worktree add` or `worktree remove`, which may take long on a
+    /// large repository.
     ///
     /// # Errors
     /// See `GitFailure`.

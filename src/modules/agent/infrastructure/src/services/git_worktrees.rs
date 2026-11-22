@@ -23,6 +23,9 @@ use crate::services::program_lookup::find_program;
 const GIT_PROGRAM: &str = "git";
 const HOOKS_FOLDER: &str = ".no-hooks";
 const BRANCH_REF_PREFIX: &str = "refs/heads/";
+const WORKTREE_RECORD_PREFIX: &str = "worktree ";
+const BARE_RECORD: &str = "bare";
+const SHOW_UNTRACKED_FILES: &str = "status.showUntrackedFiles=normal";
 const SHORT_ID_CHARS: usize = 8;
 const REPOSITORY_HASH_CHARS: usize = 8;
 const NEEDS_REPOSITORY: &str = "own worktree needs a git repository";
@@ -155,11 +158,19 @@ impl GitWorktrees {
             )));
         }
         let runner = self.require_runner()?;
-        let mut arguments = vec![OsStr::new("worktree"), OsStr::new("remove")];
+        // Git's own clean check follows `status.showUntrackedFiles`; with
+        // `no` a plain remove would delete a new untracked file unasked.
+        let mut arguments = vec![
+            OsStr::new("-c"),
+            OsStr::new(SHOW_UNTRACKED_FILES),
+            OsStr::new("worktree"),
+            OsStr::new("remove"),
+        ];
         arguments.extend(std::iter::repeat_n(OsStr::new("--force"), force));
         arguments.extend([OsStr::new("--"), worktree.folder.as_os_str()]);
+        // Deleting a large folder can take as long as checking it out.
         runner
-            .write(&worktree.repository, &arguments)
+            .checkout(&worktree.repository, &arguments)
             .map(|_| ())
             .map_err(|failure| WorktreeError::Failed(failure.reason()))
     }
@@ -247,7 +258,9 @@ impl WorktreeManager for GitWorktrees {
         let (Some(top), subfolder) = (lines.next(), lines.next().unwrap_or_default()) else {
             return Ok(None);
         };
-        let top = PathBuf::from(top);
+        // A folder inside a linked worktree belongs to the main one, which
+        // outlives every linked worktree (another agent's included).
+        let top = main_worktree(runner, Path::new(top)).unwrap_or_else(|| PathBuf::from(top));
         let Ok(branch_list) = runner.read(
             &top,
             &["for-each-ref", "--format=%(refname)", "refs/heads/"],
@@ -344,7 +357,7 @@ impl WorktreeManager for GitWorktrees {
         let own_commits = base_exists
             .then(|| {
                 let range = format!("{}..{}", worktree.base_ref(), worktree.branch_ref());
-                runner.read(&worktree.repository, &["rev-list", "--count", &range])
+                runner.read(&worktree.repository, &["rev-list", "--count", &range, "--"])
             })
             .and_then(Result::ok)
             .and_then(|count| count.trim().parse().ok());
@@ -402,6 +415,20 @@ fn login_runner(
         &login,
         GitWorktrees::hooks_folder(root),
     ))
+}
+
+/// The main worktree of the repository that holds `top`; `None` for a bare
+/// repository, whose linked worktree is then the top.
+fn main_worktree(runner: &GitRunner, top: &Path) -> Option<PathBuf> {
+    let records = runner
+        .read(top, &["worktree", "list", "--porcelain"])
+        .ok()?;
+    let mut lines = records.lines();
+    let path = lines.next()?.strip_prefix(WORKTREE_RECORD_PREFIX)?;
+    let is_bare = lines
+        .take_while(|line| !line.is_empty())
+        .any(|line| line == BARE_RECORD);
+    (!is_bare).then(|| PathBuf::from(path))
 }
 
 /// The branch checked out in `folder`, or its commit when detached. `None`
