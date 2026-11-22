@@ -6,7 +6,7 @@
 - **Build under test:** branch `feat/0011-task-line`. The server gates ran on the tree of 8910f6d (T2 and T3), toolchain 1.100.0. The desktop gates ran on the working tree of T4 on top of 8910f6d (the T4 and T5 commits did not exist yet when they ran).
 - **Overall status:** the automated evidence stands. Rows that need a person, a real CLI, or a real app are BLOCKED. Nobody ran them.
 - **Owner decision, 2026-11-20:** separate hands-on runs on macOS and Windows are not needed; the CI evidence is enough. The macOS and Windows hands-on rows are WAIVED (owner), not PASS: nobody ran them.
-- **Status of this file:** the gate numbers below come from runs on 2026-11-22. The test names were read from the repository on 2026-11-22. The CI result of the PR is not in this file.
+- **Status of this file:** the gate numbers below come from runs on 2026-11-22. The test names were read from the repository on 2026-11-22. The CI result of the PR is not in this file. The test gaps of PR #109 were closed on 2026-11-23 (PB-3).
 
 ### Verdict words
 
@@ -58,7 +58,7 @@ Paths are relative to the repository root. `H` is `src/apps/office-harnessd`, `D
 | 0003/FR-002 (modified) | PASS (automated) | `D/e2e/task-line.spec.ts`, `a pushed task shows in the row and in its accessible name`. |
 | PB-1 | PASS (automated) | `a_directive_sets_the_task_and_every_client_gets_agent_task_without_line_or_status` (the terminal types exactly the directive and Enter). |
 | PB-2 | PASS (automated) | `a_new_task_clears_the_text_and_start_and_continue_keep_it` (start and continue keep the text). |
-| PB-3 | GAP | No test reads or writes a CLI prompt, title, or configuration. The change adds no such code path; the evidence is the diff, not a test. |
+| PB-3 | PASS (automated) | `the_task_text_neither_reads_a_cli_title_nor_writes_a_cli_configuration`: a member sets its terminal title and shows a prompt again and again, and no title or prompt becomes a task text or an `agent.task` event; setting and clearing the text leaves every file and folder of the fake CLI homes and of the project folder as they were. The test sets the title with the OSC 0 sequence; a CLI that shows its title another way is the BLOCKED real-CLI row of SC-002. |
 | PB-4 | PASS (automated) | `D/e2e/task-line.spec.ts`, `the task event keeps the last line and the status`; the existing panel, office, and scene suites pass unchanged in the full run of 169. |
 | PB-5 | PASS (automated) | `D/e2e/task-line.spec.ts`, `a task is set, edited, and cleared by keyboard`, `Cancel leaves the task as it was`, and `8,193 characters show the refusal and keep the editor open`: Set, Edit, Save, Cancel, and Clear all run by keyboard with visible focus returned to the Edit control, each state with axe (no serious or critical violation). |
 | A1, A3 | PASS (automated) | `task-text.spec.ts`: `taskAge` and `taskLine`. |
@@ -92,8 +92,7 @@ Paths are relative to the repository root. `H` is `src/apps/office-harnessd`, `D
 1. **The mock core is not the server.** The desktop tests prove the webview against the contract's shapes. The real server and the real app were not run together by an agent here.
 2. **No unit test covers `withTask` and the controller's `saveTask` on their own.** The Playwright tests cover them through the screen.
 3. **The age ticks once a minute and is proven only at its first reading** ("0 min ago"). No test waits a minute.
-4. **PB-3 has no test** (see the row above).
-5. **The security pass** of the plan (`secure-engineering`, light) is not recorded here. The server enforces the length cap (`a_task_text_of_the_limit_is_accepted_and_one_past_it_is_refused`), refuses the agent connection (`an_agent_connection_may_not_set_a_task_text`), and the display never applies control codes (FR-006 rows); the review itself was not run in this task.
+4. **The security pass** of the plan (`secure-engineering`, light) is not recorded here. The server enforces the length cap (`a_task_text_of_the_limit_is_accepted_and_one_past_it_is_refused`), refuses the agent connection (`an_agent_connection_may_not_set_a_task_text`), and the display never applies control codes (FR-006 rows); the review itself was not run in this task.
 
 ## Plan deviations
 

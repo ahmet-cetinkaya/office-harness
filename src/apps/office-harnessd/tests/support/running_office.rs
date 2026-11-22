@@ -104,6 +104,29 @@ fn serve_bound(mut office: RunningOffice) -> ServingOffice {
     ServingOffice { office, stop, task }
 }
 
+/// Starts a server again on the data folder of a stopped one, as a restart of
+/// the server process does: new services over the same database.
+pub async fn serve_again(stopped: RunningOffice, login: LoginSetup) -> ServingOffice {
+    let RunningOffice {
+        config,
+        log,
+        _folder: folder,
+        ..
+    } = stopped;
+    let services = bootstrap::start_with(&config, &log, login).expect("restart");
+    let server = Server::bind(&config, &services, &log, ServerOptions::default())
+        .await
+        .expect("bind");
+    serve_bound(RunningOffice {
+        port: server.port(),
+        config,
+        services,
+        log,
+        server: Some(server),
+        _folder: folder,
+    })
+}
+
 impl RunningOffice {
     pub fn token(&self) -> String {
         std::fs::read_to_string(self.config.token_path()).expect("token file")
