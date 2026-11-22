@@ -2,8 +2,6 @@
 
 use std::sync::Arc;
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
 use kernel::AgentId;
 use terminal_application::commands::resize_terminal::ResizeTerminalHandler;
 use terminal_application::commands::send_terminal_input::SendTerminalInputHandler;
@@ -82,9 +80,7 @@ impl TerminalHandlers {
     /// `invalid` for a bad field, `not_found` when the agent is not running.
     pub fn input(&self, request: &InputRequest) -> Result<(), HandlerError> {
         let agent_id = parse_agent_id(&request.agent_id)?;
-        let bytes = STANDARD
-            .decode(&request.data)
-            .map_err(|_| TerminalError::InvalidEncoding { field: "data" })?;
+        let bytes = request.bytes()?;
         Ok(self.input.handle(agent_id, &bytes)?)
     }
 

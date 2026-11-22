@@ -2,22 +2,28 @@
 
 use std::fmt::Write as _;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use agent_application::common::action_journal::ActionJournal;
 use agent_application::common::actor_scope::ActorScope;
 use agent_application::common::interfaces::{AgentStore, Clock};
 use agent_application::common::models::AgentAction;
+use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{TaskSource, TaskText};
 use agent_presentation::agent_task_event;
 use hierarchy_application::common::ports::{
-    DirectiveJournal, DirectiveReceipt, DirectiveTarget, DirectiveWriter, ReportJournal,
+    Delivery, DirectiveJournal, DirectiveReceipt, DirectiveTarget, DirectiveWriter, Readiness,
+    ReportJournal,
 };
 use hierarchy_domain::DIRECTIVE_MAX_CHARS;
 use kernel::{Actor, AgentId};
 use sha2::{Digest, Sha256};
 use terminal_application::common::interfaces::TerminalRuntime;
+use terminal_domain::services::{shows_open_question, shows_typed_text};
+use terminal_domain::value_objects::ScreenView;
 
-use super::SystemClock;
+use super::{PersonInput, SystemClock};
 use crate::bootstrap::StorageAlerts;
 use crate::server::EventHub;
 
@@ -32,18 +38,44 @@ const HASH_HEX_CHARS: usize = 16;
 /// the one is the ellipsis itself.
 const PREFIX_CHARS: usize = JOURNAL_MAX_CHARS - 1 - HASH_HEX_CHARS;
 
-/// Answers the hierarchy's target port from the agent store: whether the
-/// member's session can take input, and the name a refusal shows. A store
-/// failure reads as not running, because the write itself reports its own
-/// failure to the caller.
+/// How long a typed directive may take to show at the input line before the
+/// office gives up on its Enter (0012/FR-003).
+const INPUT_LINE_WAIT: Duration = Duration::from_secs(2);
+
+/// How often the screen is read while the office waits for the text.
+const INPUT_LINE_POLL: Duration = Duration::from_millis(50);
+
+const ENTER: &[u8] = b"\r";
+
+/// Answers the hierarchy's target port: whether the member's session runs,
+/// the name a refusal shows, and whether a directive may be typed now
+/// (0012/FR-002) from the stored status, the person input, and the screen.
 pub struct DirectiveTargetBridge {
     agents: Arc<dyn AgentStore>,
+    runtime: Arc<dyn TerminalRuntime>,
+    person_input: PersonInput,
 }
 
 impl DirectiveTargetBridge {
     #[must_use]
-    pub fn new(agents: Arc<dyn AgentStore>) -> Self {
-        Self { agents }
+    pub fn new(
+        agents: Arc<dyn AgentStore>,
+        runtime: Arc<dyn TerminalRuntime>,
+        person_input: PersonInput,
+    ) -> Self {
+        Self {
+            agents,
+            runtime,
+            person_input,
+        }
+    }
+
+    /// A screen the office cannot read counts as busy: it cannot tell that
+    /// no question shows.
+    fn screen_is_clear(&self, agent_id: AgentId) -> bool {
+        self.runtime
+            .screen(agent_id)
+            .is_some_and(|screen| !shows_open_question(&screen))
     }
 }
 
@@ -64,28 +96,84 @@ impl DirectiveTarget for DirectiveTargetBridge {
             .flatten()
             .map(|agent| agent.name.to_string())
     }
+
+    fn readiness(&self, agent_id: AgentId) -> Result<Readiness, String> {
+        let status = self
+            .agents
+            .find(agent_id)
+            .map_err(|error| error.to_string())?
+            .map(|agent| agent.status);
+        let Some(status) = status.filter(|status| status.is_running()) else {
+            return Ok(Readiness::Gone);
+        };
+        let held_by_person = self
+            .person_input
+            .holds_directives(agent_id, self.runtime.current_run(agent_id));
+        if status != AgentStatus::WaitingForInput || held_by_person {
+            return Ok(Readiness::Busy);
+        }
+        Ok(if self.screen_is_clear(agent_id) {
+            Readiness::Ready
+        } else {
+            Readiness::Busy
+        })
+    }
 }
 
-/// Delivers one directive with one `write_input` of the text and the Enter
-/// (SC-006). The bridge appends the Enter, so the use case stays
-/// terminal-free and the member receives the text as one input.
+/// Delivers one directive: the text as one paste, marked as a paste when
+/// the CLI asked for that, then the Enter only once the text, or a paste
+/// placeholder, shows at the input line (0012/FR-003). Text that got no
+/// Enter holds the target's next directives until a person types there
+/// (0012 A11). The member still receives the text as one input (SC-006).
 pub struct DirectiveWriterBridge {
     runtime: Arc<dyn TerminalRuntime>,
+    person_input: PersonInput,
+    input_line_wait: Duration,
 }
 
 impl DirectiveWriterBridge {
     #[must_use]
-    pub fn new(runtime: Arc<dyn TerminalRuntime>) -> Self {
-        Self { runtime }
+    pub fn new(runtime: Arc<dyn TerminalRuntime>, person_input: PersonInput) -> Self {
+        Self {
+            runtime,
+            person_input,
+            input_line_wait: INPUT_LINE_WAIT,
+        }
+    }
+
+    /// Reads the screen until the typed text shows or the wait ends.
+    fn text_showed(&self, agent_id: AgentId, before: &ScreenView, text: &str) -> bool {
+        let deadline = Instant::now() + self.input_line_wait;
+        loop {
+            let shows = self
+                .runtime
+                .screen(agent_id)
+                .is_some_and(|after| shows_typed_text(before, &after, text));
+            if shows || Instant::now() >= deadline {
+                return shows;
+            }
+            thread::sleep(INPUT_LINE_POLL);
+        }
     }
 }
 
 impl DirectiveWriter for DirectiveWriterBridge {
-    fn write(&self, agent_id: AgentId, text: &str) -> Result<(), String> {
-        let typed = format!("{text}\r");
+    fn deliver(&self, agent_id: AgentId, text: &str) -> Result<Delivery, String> {
+        let before = self.runtime.screen(agent_id).unwrap_or_default();
+        let run = self.runtime.current_run(agent_id);
         self.runtime
-            .write_input(agent_id, typed.as_bytes())
-            .map_err(|error| error.to_string())
+            .paste(agent_id, text)
+            .map_err(|error| error.to_string())?;
+        if self.text_showed(agent_id, &before, text) {
+            self.runtime
+                .write_input(agent_id, ENTER)
+                .map_err(|error| error.to_string())?;
+            return Ok(Delivery::Submitted);
+        }
+        if let Some(run) = run {
+            self.person_input.office_text_left(agent_id, run);
+        }
+        Ok(Delivery::Unsubmitted)
     }
 }
 
