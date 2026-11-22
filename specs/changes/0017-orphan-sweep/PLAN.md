@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 spec: specs/changes/0017-orphan-sweep/SPEC.md
 commits: per-task
 ---
@@ -24,7 +24,7 @@ While a session runs, the server stores the identity of its CLI process and of e
 
 **What it will not do:** end a process that has no stored identity, sweep without a `lost` session, end helpers after a normal end of a session, or sweep other machines (spec Out of scope).
 
-**Shape of the work:** 6 tasks in one PR (`feat/0017-orphan-sweep`), one commit per task. **Effort:** M.
+**Shape of the work:** 6 tasks in one PR (#126, branch `spec/0017-orphan-sweep`), one commit per task. **Effort:** M.
 
 **Main risks:**
 - **Ending a wrong process.** Every value must match, the match is checked again just before each end request (FR-003), and the end goes through the verified handle where the OS has one (Linux 5.3 and later, Windows), never to a process group. A test proves each non-match reason (SC-002) and that the port has no end call by process id outside the handle (T1).
@@ -183,7 +183,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 
 ## Review log
 
-r1 (Efe, fa44fb0): M1 to M3, L1, L2 resolved as below.
+r1 (Efe, fa44fb0): M1 to M3, L1, L2 resolved as below. r2 (Efe, 350ff07): PASS for coding; N1 (macOS FR-011 residual under A10) is checked in the code review.
 
 - M1: handle-based end in D1 (crates and APIs), D2 (`ProcessHandle`, 100 ns Windows start time), D6 (pidfd, Windows handle, macOS and old-kernel fallback), Summary and Main risks; tests in T1 and T3; `research.md` accepted risk is now macOS and old Linux only.
 - M2: D2 and D3 (hash plus capped display text), D4 (helper limit of 200), D6 (visible form), D9; spec FR-001, FR-004 to FR-006, FR-010, key entities, edge cases, SC-004 and SC-008; tests in T2 and T5.
