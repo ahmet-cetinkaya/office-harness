@@ -450,6 +450,50 @@ async fn a_start_after_the_worktree_folder_is_gone_is_refused() {
 }
 
 #[tokio::test]
+async fn a_continue_after_the_worktree_folder_is_gone_is_refused_and_starts_nothing() {
+    let mut fixture = Fixture::open().await;
+    fixture.office.clis.add("claude", "echo ready");
+    let created = fixture
+        .client
+        .ask(
+            "agent.create",
+            json!({
+                "name": "Ana",
+                "command": "claude",
+                "working_folder": fixture.repository(),
+                "own_worktree": true,
+            }),
+        )
+        .await;
+    assert_eq!(created["ok"], true, "{created}");
+    let agent = created["result"].clone();
+    let first = fixture.client.start(&id_of(&agent)).await;
+    fixture
+        .client
+        .wait_for_status(&id_of(&agent), "exited")
+        .await;
+    fs::remove_dir_all(folder_of(&agent)).expect("deleted by hand");
+
+    let answer = fixture
+        .client
+        .ask("session.continue", json!({"session_id": first["id"]}))
+        .await;
+
+    assert_eq!(
+        error_text(&answer),
+        (
+            "invalid",
+            &*format!(
+                "the worktree folder is missing or broken: {}",
+                folder_of(&agent).display()
+            )
+        )
+    );
+    assert_eq!(fixture.client.sessions(&id_of(&agent)).await.len(), 1);
+    fixture.office.serving.stop().await;
+}
+
+#[tokio::test]
 async fn a_subtree_delete_asks_once_and_a_stale_member_stops_it_before_any_delete() {
     let mut fixture = Fixture::open().await;
     let chief = fixture

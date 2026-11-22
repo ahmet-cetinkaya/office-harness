@@ -621,6 +621,36 @@ fn a_project_gives_the_working_folder_when_the_template_has_none() {
 }
 
 #[test]
+fn a_project_whose_folder_is_missing_is_named_before_anything_is_created() {
+    let office = office();
+    let missing = office.folder.path().join("missing-project-folder");
+    let project = Project::new(
+        kernel::ProjectId::generate(),
+        DisplayName::parse("project", "api").expect("name"),
+        missing,
+    )
+    .expect("project");
+    office
+        .services
+        .template
+        .projects
+        .insert(&project)
+        .expect("insert");
+    let id = office.save(
+        "Reviewer",
+        TemplateBody::Agent(agent_body("reviewer-{n}", None)),
+    );
+
+    let failure = office
+        .try_create_agent(id, None, Some(project.id))
+        .expect_err("the project folder is missing");
+
+    assert_eq!(failure.code, ErrorCode::Invalid);
+    assert!(failure.message.contains("missing-project-folder"));
+    assert_eq!(office.agent_names(), Vec::<String>::new());
+}
+
+#[test]
 fn a_team_pattern_on_a_direct_creation_without_a_team_names_the_pattern() {
     let office = office();
     let id = office.save(
