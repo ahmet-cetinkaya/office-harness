@@ -425,19 +425,33 @@ impl Clock for FixedClock {
     }
 }
 
+/// Keeps every entry; after `fail_from_now` it refuses every write.
 #[derive(Default)]
-pub struct RecordingRecorder(Mutex<Vec<AgentActionEntry>>);
+pub struct RecordingRecorder {
+    entries: Mutex<Vec<AgentActionEntry>>,
+    is_failing: Mutex<bool>,
+}
 
 impl RecordingRecorder {
     #[must_use]
     pub fn entries(&self) -> Vec<AgentActionEntry> {
-        locked(&self.0).clone()
+        locked(&self.entries).clone()
+    }
+
+    pub fn fail_from_now(&self) {
+        *locked(&self.is_failing) = true;
     }
 }
 
 impl ActionRecorder for RecordingRecorder {
     fn record(&self, entry: &AgentActionEntry) -> Result<(), PortError> {
-        locked(&self.0).push(entry.clone());
+        if *locked(&self.is_failing) {
+            return Err(PortError::Storage {
+                message: "the record is full".to_owned(),
+                is_disk_failure: true,
+            });
+        }
+        locked(&self.entries).push(entry.clone());
         Ok(())
     }
 }

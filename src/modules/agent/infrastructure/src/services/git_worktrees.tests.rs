@@ -33,7 +33,7 @@ fn fixture() -> Fixture {
     fs::write(repository.join("a.txt"), "a\n").expect("file");
     fs::write(repository.join("sub").join("b.txt"), "b\n").expect("file");
     commit_all(&home, &repository, "first");
-    let worktrees = GitWorktrees::with_runner(root.clone(), Some(runner(&home, &root)));
+    let worktrees = GitWorktrees::with_runner(root.clone(), Some(runner(&home)));
     Fixture {
         _temp: temp,
         home,
@@ -51,10 +51,10 @@ fn test_environment(home: &Path) -> Environment {
     environment
 }
 
-fn runner(home: &Path, root: &Path) -> GitRunner {
+fn runner(home: &Path) -> GitRunner {
     let environment = test_environment(home);
     let program = find_program("git", &environment, home).expect("git is installed");
-    GitRunner::new(program, &environment, GitWorktrees::hooks_folder(root))
+    GitRunner::new(program, &environment)
 }
 
 /// Runs the real git for the fixture, with no user or system configuration.
@@ -129,7 +129,6 @@ fn assert_nothing_left(fixture: &Fixture) {
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|entry| entry.file_name() != HOOKS_FOLDER)
         .flat_map(|entry| fs::read_dir(entry.path()).into_iter().flatten().flatten())
         .map(|entry| entry.path())
         .collect();
@@ -200,7 +199,6 @@ fn info_outside_a_repository_or_without_git_is_not_in_a_repository() {
     let missing = GitRunner::new(
         fixture.home.join("no-git-here"),
         &test_environment(&fixture.home),
-        GitWorktrees::hooks_folder(&fixture.root),
     );
     let missing = GitWorktrees::with_runner(fixture.root.clone(), Some(missing));
     assert_eq!(missing.info(&fixture.repository, "x"), Ok(None));
@@ -327,10 +325,8 @@ fn a_subfolder_untracked_in_the_base_refuses_the_create_and_leaves_nothing() {
 #[test]
 fn the_data_folder_inside_the_repository_is_refused() {
     let fixture = fixture();
-    let inside = GitWorktrees::with_runner(
-        fixture.repository.join("data"),
-        Some(runner(&fixture.home, &fixture.repository.join("data"))),
-    );
+    let inside =
+        GitWorktrees::with_runner(fixture.repository.join("data"), Some(runner(&fixture.home)));
     let error = inside
         .create(&WorktreeCreate {
             folder: &fixture.repository,
@@ -393,7 +389,7 @@ fn a_checkout_that_times_out_leaves_nothing() {
     let slow = GitWorktrees::with_runner(
         fixture.root.clone(),
         Some(
-            runner(&fixture.home, &fixture.root)
+            runner(&fixture.home)
                 .with_timeouts(READ_TIMEOUT_FOR_TESTS, std::time::Duration::from_secs(1)),
         ),
     );
@@ -420,20 +416,48 @@ const READ_TIMEOUT_FOR_TESTS: std::time::Duration = std::time::Duration::from_se
 
 #[cfg(unix)]
 #[test]
-fn a_repository_hook_does_not_run() {
+fn neither_a_hook_file_nor_a_configured_hook_runs() {
     use std::os::unix::fs::PermissionsExt;
     let fixture = fixture();
-    let marker = fixture.home.join("hook-ran");
+    let file_marker = fixture.home.join("file-hook-ran");
     let hook = fixture
         .repository
         .join(".git")
         .join("hooks")
         .join("post-checkout");
-    fs::write(&hook, format!("#!/bin/sh\ntouch '{}'\n", marker.display())).expect("hook");
+    fs::write(
+        &hook,
+        format!("#!/bin/sh\ntouch '{}'\n", file_marker.display()),
+    )
+    .expect("hook");
     fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("runnable");
+    // Hooks named in the configuration, which newer git runs on its own.
+    let config_marker = fixture.home.join("configured-hook-ran");
+    let command = format!("touch '{}'", config_marker.display());
+    for (key, value) in [
+        ("hook.marker.command", command.as_str()),
+        ("hook.marker.event", "post-checkout"),
+        ("hook.marker.event", "reference-transaction"),
+    ] {
+        git(
+            &fixture.home,
+            &fixture.repository,
+            &["config", "--add", key, value],
+        );
+    }
     let made = created(&fixture, "x");
-    assert!(made.worktree.folder.is_dir());
-    assert!(!marker.exists());
+    assert!(!file_marker.exists());
+    assert!(!config_marker.exists());
+    fixture
+        .worktrees
+        .remove(&made.worktree, false)
+        .expect("removed");
+    fixture
+        .worktrees
+        .delete_branch(&made.worktree)
+        .expect("deleted");
+    assert!(!file_marker.exists());
+    assert!(!config_marker.exists());
 }
 
 #[test]
@@ -626,9 +650,13 @@ fn a_forced_remove_of_a_missing_folder_clears_only_its_own_record() {
 fn a_folder_outside_the_worktrees_folder_is_never_removed() {
     let fixture = fixture();
     let made = created(&fixture, "x");
+    let repository_folder = made.worktree.folder.parent().expect("parent");
     for folder in [
         fixture.repository.clone(),
         fixture.root.join("..").join("repo"),
+        fixture.root.clone(),
+        repository_folder.to_path_buf(),
+        made.worktree.folder.join("sub"),
     ] {
         let outside = AgentWorktree {
             folder,

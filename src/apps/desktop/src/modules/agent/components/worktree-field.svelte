@@ -88,7 +88,7 @@
       Own worktree
     </label>
     <SelectField label="Base" options={baseOptions(info)} bind:value={base} />
-    <p class="text-sm text-neutral-900" aria-live="polite">
+    <p class="text-sm text-neutral-900">
       Branch to create: <strong class="break-all">{info.branch_name}</strong>
     </p>
     <p class="text-sm text-neutral-700">
