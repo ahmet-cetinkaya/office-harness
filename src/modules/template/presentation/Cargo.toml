@@ -6,5 +6,12 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[dependencies]
+template-application = { path = "../application" }
+template-domain = { path = "../domain" }
+kernel = { path = "../../../kernel" }
+serde_json.workspace = true
+wire = { path = "../../../shared/wire" }
+
 [lints]
 workspace = true
