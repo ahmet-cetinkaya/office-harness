@@ -8,7 +8,7 @@ use kernel::Timestamp;
 
 use super::*;
 use crate::common::interfaces::FileViewError;
-use crate::test_support::{Office, agent_in_project, project_named};
+use crate::test_support::{Office, absolute_folder, agent_in_project, project_named};
 
 const FULL_COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 
@@ -76,13 +76,13 @@ fn handler(office: &Office) -> (FileViewHandler, Arc<RecordingView>) {
 #[test]
 fn an_agent_with_a_working_folder_is_viewed_at_that_folder() {
     let office = Office::new();
-    let folder = Path::new("/work/here");
-    let agent = office.add_agent("Ana", "claude", folder, AgentStatus::Stopped);
+    let folder = absolute_folder("work");
+    let agent = office.add_agent("Ana", "claude", &folder, AgentStatus::Stopped);
     let (handler, view) = handler(&office);
 
     handler.list(agent.id, "").expect("list");
 
-    assert_eq!(view.roots(), [folder.to_path_buf()]);
+    assert_eq!(view.roots(), [folder]);
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn an_unknown_agent_is_not_found() {
 #[test]
 fn a_malformed_input_is_refused_before_the_view_is_asked() {
     let office = Office::new();
-    let agent = office.add_agent("Ana", "claude", Path::new("/w"), AgentStatus::Stopped);
+    let agent = office.add_agent("Ana", "claude", &absolute_folder("w"), AgentStatus::Stopped);
     let (handler, view) = handler(&office);
     let question = |commit| DiffQuestion {
         path: "a.txt",
