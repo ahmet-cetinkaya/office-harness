@@ -1,6 +1,6 @@
 # Requirements checklist: 0001-office-server-and-terminal
 
-Spec: `specs/changes/0001-office-server-and-terminal/SPEC.md` · Status: draft · Date: 2026-11-15 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker.
+Spec: `specs/changes/0001-office-server-and-terminal/SPEC.md` · Status: in progress (the owner decided the scope on 2026-11-15; the spec now has a Deviations section) · Date: 2026-11-15 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker.
 
 ## Content quality
 
@@ -38,6 +38,6 @@ Spec: `specs/changes/0001-office-server-and-terminal/SPEC.md` · Status: draft �
 ## Notes
 
 - **No implementation detail:** passes for Intent, stories, requirements, entities, and criteria. The Context section names the owner's stack decision ("a separate Rust background server, `office-harnessd` ... A thin Tauri v2 desktop app with an xterm.js terminal"), marked as a recorded decision and not a requirement. FR-015 says "pseudo-terminal" because R6 in `docs/PRD.md` sets the PTY level as user-visible behavior. SC-002 names the four CLIs because the owner chose them as the supported products.
-- **Sections:** the spec adds Context and Terms beyond the contract body. Deviations is absent because the executor appends it.
+- **Sections:** the spec adds Context and Terms beyond the contract body. Deviations was absent at the first pass; the executor appended it (see the spec).
 - **PRESERVED statements:** not applicable. This is the first change to the new capability `office`, so no existing behavior exists.
 - **Size rule:** 28 FRs, above the limit of ten. Out of scope records: "Split: done by owner decision on 2026-11-15 (see Clarifications). This change keeps 28 FRs, above the limit of ten, because the owner set its scope." A further split (server and terminal, then configuration and sessions) is possible if the owner wants smaller reviews.

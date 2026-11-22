@@ -24,7 +24,7 @@ Events on success: with `lead`, first `agent.changed` for the new lead, then `hi
 | `team_id` | string | an existing team |
 | `confirm` | boolean | must be `true`; the client asked the counted question first |
 
-Deletes the team record only; its members keep their agent rows and become no-role agents (they leave the hierarchy). The lead keeps its agent row. Result: `{}`. Errors: `not_found`; `invalid` when `confirm` is not `true`.
+It serves no FR of its own: it is an extra request next to FR-002 (see Deviations in the SPEC). It deletes the team record only; its members keep their agent rows and become no-role agents (they leave the hierarchy). The lead keeps its agent row. Result: `{}`. Errors: `not_found`; `invalid` when `confirm` is not `true`.
 
 ### `hierarchy.tree`
 
@@ -71,15 +71,15 @@ Every entry that a request on the agent connection writes, the record of a refus
 | `target_agent_id` | string | must be a running descendant of the caller |
 | `text` | string | 1 to 8192 characters; no C0 control characters (the server appends the Enter itself) |
 
-Result: `{}`. Errors: `refused` (not a descendant: names the rule; not running: says so), `invalid` (control characters, empty, oversize). Every refusal is recorded with the actor and the reason, in the action record of the sender and in the action record of the target (one entry when they are the same agent); an accepted directive is recorded in the target's record only.
+Result: `{}`. Errors: `refused` (not a descendant: names the rule; not running: "the agent is not running: <name>"). A stopped target gets that text with its name. A deleted target is no longer in the tree, so its refusal says "not a descendant". Only a delete between the tree read and the lookup gets the "not running" text, with the agent id in place of the name (`send_directive_handler.rs`, test `a_stopped_unknown_target_is_refused_by_id_before_any_write`), `invalid` (control characters, empty, oversize). Every refusal is recorded with the actor and the reason, in the action record of the sender and in the action record of the target (one entry when they are the same agent); an accepted directive is recorded in the target's record only.
 
-> Amended by 0007: `directive.send`, `agent.create`, `agent.start`, `agent.stop`, and `agent.new_task` can also fail with `refused` for a hold or a rate limit. The reasons and their order are in `specs/changes/0007-hold-and-limits/contracts/hold-protocol.md`. They are checked after every refusal above.
+> Amended by 0007: `directive.send`, `agent.create`, `agent.start`, `agent.stop`, and `agent.new_task` can also fail with `refused` for a hold or a rate limit. The reasons and their order are in `specs/changes/archive/0007-hold-and-limits/contracts/hold-protocol.md`. They are checked after every refusal above.
 
 ## New event
 
 ### `hierarchy.changed`
 
-Fields: `{ cause: "team.created" | "team.deleted" | "agent.placed" | "agent.unplaced" | "subtree.stopped" | "subtree.deleted" }`. Sent after any change that alters the tree shape or a role, and only after the change succeeded. Clients re-read `hierarchy.tree`. The causes: `team.created` and `team.deleted` for `team.create` and `team.delete`; `agent.placed` for a successful `agent.create` with a `role` (user or agent connection); `agent.unplaced` for a successful `agent.delete` of an agent that held a place; `subtree.stopped` for a successful `agent.stop` with `include_descendants`; `subtree.deleted` for a successful `agent.delete` with `include_descendants` of a placed agent. When a request also sends `agent.changed` for a new agent, that event goes first. No per-node deltas in 0002 (plan D6).
+Fields: `{ cause: "team.created" | "team.deleted" | "agent.placed" | "agent.unplaced" | "subtree.stopped" | "subtree.deleted" }`. Sent after any change that alters the tree shape or a role, and only after the change succeeded. Clients re-read `hierarchy.tree`. The causes: `team.created` and `team.deleted` for `team.create` and `team.delete`; `agent.placed` for a successful `agent.create` with a `role` (user or agent connection); `agent.unplaced` for a successful `agent.delete` of an agent that held a place; `subtree.stopped` for a successful `agent.stop` with `include_descendants`; `subtree.deleted` for a successful `agent.delete` with `include_descendants` of a placed agent. When a request also sends `agent.changed` for a new agent, that event goes first. No per-node deltas in 0002 (decision D6 of the 0002 plan, a local git-ignored file: events carry the cause only).
 
 ## Environment contract (agent children)
 
