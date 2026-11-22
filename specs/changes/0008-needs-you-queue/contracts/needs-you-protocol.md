@@ -61,6 +61,13 @@ The event arrives within 2 seconds of the attention event. For `waiting_for_inpu
 
 The server never learns which agent is on screen. A client that marks the origin notification read on arrival (0003/FR-006 (b)) removes the item through `notification.read`, so the event follows at once.
 
+## Amended by 0015
+
+- An item's `kind` may be `report`, with the report's kind as `detail`; `report` sorts with `waiting_for_input`, `bell`, `auto_hold`, and `resume_hold`.
+- Each item carries `report`: `null`, or `{kind, text, at}` with the latest report for the person, its text in visible form. A later event keeps it; a resume or a hold release does not remove an item that holds one.
+
+See `specs/changes/0015-upward-reports/contracts/report-protocol.md`.
+
 ## Unchanged messages
 
 - `notification.read_agent {agent_id}` now also clears the agent's item (FR-004). Its request and result do not change.

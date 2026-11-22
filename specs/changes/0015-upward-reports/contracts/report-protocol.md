@@ -40,7 +40,9 @@ Errors:
 |---|---|---|
 | `invalid` | A field is not taken; `kind` is missing or not one of the four; `text` is missing, not a string, blank, or longer than 1,000 characters; `for_person` is not a boolean. | Yes, the sender as actor. |
 | `refused` | The frame names `actor` or `caller`; the parent is not running; the office hold or an agent hold covers the sender (a hold on the parent or higher covers it, 0007/FR-004); the reports limit is reached; the parent's queue has no room for reports; the parent's queue is full. | Yes, in the sender's record and, when there is a parent, in the parent's. |
-| `internal` | The tree or Needs you cannot be read or written. | Yes. |
+| `internal` | The tree cannot be read. | Yes. |
+
+A failed write of the notification or the Needs you item does not refuse the report: it raises the office's storage alert, as for every attention event.
 
 A refused or withdrawn report counts as 0007 says: a limit refusal counts toward the automatic hold; a hold refusal, a no-room refusal, and a queue-full refusal do not.
 
