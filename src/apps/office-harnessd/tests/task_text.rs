@@ -56,7 +56,7 @@ const TASK_LIMIT_CHARS: usize = 8192;
 /// running. Its terminal echoes, as a CLI's input line shows typed text, so
 /// the office sees a directive and presses Enter (0012/FR-003).
 fn typing_member(typed: &Path) -> String {
-    format!("echo ready\nstty raw\ncat >> {}\n", typed.display())
+    format!("echo ready\nstty raw echo\ncat >> {}\n", typed.display())
 }
 
 /// A member that prints output until the test ends.

@@ -161,6 +161,9 @@ impl TerminalHost for TerminalHostBridge {
         // The session's output file is named by its id.
         let output_key =
             OutputKey::parse(&request.session_id.to_string()).map_err(|e| failed(&e))?;
+        // A new session has an empty input line: nothing a person or the
+        // office typed into an earlier one holds its directives (0012).
+        self.person_input.session_started(request.agent_id);
         // Subscribed before the start, so the first output is not missed.
         let first_output = request
             .typed_input

@@ -11,7 +11,7 @@ supersedes: 0002/FR-010
 
 ## Intent
 
-A parent agent sends a directive, and today the office types its text and Enter into the target's terminal at once, whenever the target runs. When the target's CLI shows a question for a person at that moment, such as "Allow this command?", the Enter, or a letter of the text, can answer it: the CLI then runs a tool call that nobody saw. With many agents, nobody notices. This change puts each directive in a queue per target and types it only when the target waits for input, no person is typing in that terminal, no text the office typed without Enter waits there for the person, and the screen shows no question that the office recognises. It then presses Enter only after the typed text, or the CLI's placeholder for it, shows at the target's input line, so a question of a shape the office does not know gets at most the typed text, never the Enter. The sender learns whether its directive was submitted, waits, or was left unsubmitted, and a directive that cannot be typed in time is withdrawn and recorded. What the screen checks cannot cover is stated under Residual risk.
+A parent agent sends a directive, and today the office types its text and Enter into the target's terminal at once, whenever the target runs. When the target's CLI shows a question for a person at that moment, such as "Allow this command?", the Enter, or a letter of the text, can answer it: the CLI then runs a tool call that nobody saw. With many agents, nobody notices. This change puts each directive in a queue per target and types it only when the target waits for input, no person is typing in that terminal or has unsent text there, no text the office typed without Enter waits there for the person, and the screen shows no question that the office recognises. It then presses Enter only after the typed text, or the CLI's placeholder for it, shows at the target's input line, so a question of a shape the office does not know gets at most the typed text, never the Enter. The sender learns whether its directive was submitted, waits, or was left unsubmitted, and a directive that cannot be typed in time is withdrawn and recorded. What the screen checks cannot cover is stated under Residual risk.
 
 ## Context
 
@@ -37,6 +37,7 @@ A parent agent sends a directive, and today the office types its text and Enter 
 | Unsubmitted | The office typed the directive but pressed no Enter, because neither the text nor a paste placeholder showed at the input line. |
 | Person input | Input that a user's client sends to a terminal: keys, pastes, and answers. A directive is not person input. |
 | Startup prompt | The text from the office additions that the office pastes, without Enter, after a session's first output, for the person to review (0001/FR-022). |
+| Unsent person text | Text a person typed at the target's input line and has not sent with Enter or cleared, as the office reads it from the person's keys (A5). |
 | Pending office text | Text the office typed into the target's current session without Enter, a startup prompt or an unsubmitted directive, from its typing until a person input reaches the terminal after it or the session ends. |
 | Paste placeholder | A short bracketed text that some CLIs show at the input line instead of a long paste, such as `[Pasted text #1]`. |
 | Open question | A question on the screen that a key answers, such as a yes-or-no choice, a choice list, or a request for permission. |
@@ -46,7 +47,7 @@ A parent agent sends a directive, and today the office types its text and Enter 
 
 ### US1 — A directive does not press Enter into a question meant for a person (Priority: P1)
 
-The office types a directive only when the target waits for input, no person is typing in its terminal, no pending office text waits there, and its screen shows no open question. Until then the directive waits in the target's queue, in order. After typing, the office presses Enter only when the text, or the CLI's paste placeholder, shows at the target's input line, so a question the screen check did not recognise gets no Enter.
+The office types a directive only when the target waits for input, no person is typing in its terminal or has unsent text there, no pending office text waits there, and its screen shows no open question. Until then the directive waits in the target's queue, in order. After typing, the office presses Enter only when the text, or the CLI's paste placeholder, shows at the target's input line, so a question the screen check did not recognise gets no Enter.
 
 **Why this priority:** it removes the risk that motivates the change: an Enter from a directive can approve a tool call that nobody saw.
 
@@ -62,6 +63,7 @@ The office types a directive only when the target waits for input, no person is 
 6. Given the office typed a directive, When neither its text nor a paste placeholder shows at the input line within 2 seconds, Then the office presses no Enter, leaves the text in the terminal for the person to submit or clear, and records the directive as unsubmitted.
 7. Given the office pasted a startup prompt into the target's session and no person input reached the terminal since, When a directive arrives, Then the directive waits, so its Enter cannot submit the startup prompt.
 8. Given a directive was left unsubmitted and no person input reached the terminal since, When the next directive's turn comes, Then it waits, so its Enter cannot submit both texts.
+9. Given a person typed part of a line into the target's terminal and has not sent or cleared it, When a directive arrives, Then the directive waits, also after 30 seconds, until the person sends or clears the line.
 
 ### US2 — The sender knows what happened to its directive (Priority: P1)
 
@@ -87,7 +89,7 @@ The sender's answer says whether the directive was submitted, waits (with its pl
 ### ADDED
 
 - **FR-001** (US1): THE SYSTEM SHALL keep one queue of directives per target and SHALL type the directives of a queue one at a time, in the order it accepted them, each only after the previous one left the queue and the conditions of FR-002 hold again.
-- **FR-002** (US1): THE SYSTEM SHALL type a directive only WHILE the target waits for input, no person input reached the target's terminal in the last 30 seconds, no pending office text (a startup prompt or an unsubmitted directive) waits in the target's current session, and the bottom lines of the target's screen show no open question (a yes-or-no choice, a choice list with a selection mark, or a request for permission or approval); otherwise THE SYSTEM SHALL keep the directive in the queue.
+- **FR-002** (US1): THE SYSTEM SHALL type a directive only WHILE the target waits for input, no person input reached the target's terminal in the last 30 seconds, no unsent person text waits at its input line, no pending office text (a startup prompt or an unsubmitted directive) waits in the target's current session, and the bottom lines of the target's screen show no open question (a yes-or-no choice, a choice list with a selection mark, or a request for permission or approval); otherwise THE SYSTEM SHALL keep the directive in the queue.
 - **FR-003** (US1): WHEN the system has typed a directive, THE SYSTEM SHALL press Enter only IF the end of the directive's text, or a new paste placeholder, appears at the input line of the target's screen within 2 seconds, and otherwise SHALL press no Enter, leave the typed text in the terminal, and record the directive as unsubmitted with the reason in the sender's and the target's action records.
 - **FR-004** (US2): WHEN the system accepts a directive, THE SYSTEM SHALL answer the sender that the directive was submitted, that it waits with its place in the target's queue, or that it was left unsubmitted; IF 20 directives already wait for the target, THEN THE SYSTEM SHALL refuse the directive, say that the target's queue is full, and record the refusal.
 - **FR-005** (US2): IF a waiting directive was not typed within 10 minutes, its target stopped running, the target is no longer the sender's descendant, a hold would now refuse the directive (0007/FR-002, 0007/FR-004), or the background server stops normally, THEN THE SYSTEM SHALL withdraw the directive without typing it and SHALL record the withdrawal with the directive text and the reason in the sender's and the target's action records.
@@ -143,6 +145,7 @@ The sender's answer says whether the directive was submitted, waits (with its pl
 - **SC-005:** 100% of withdrawn and unsubmitted directives have an entry with the text and the reason in the sender's and the target's action records.
 - **SC-006:** A directive sent to an agent that waits for input and echoes input, with no open question and no person input in the last 30 seconds, is submitted within 2 seconds of sending.
 - **SC-007:** Of 10 directives sent to an agent with pending office text, a pasted startup prompt or an unsubmitted directive, 0 are typed before a person input reaches that terminal.
+- **SC-008:** Of 10 directives sent while a person's half-typed line waits unsent, 0 are typed until the person sends or clears the line.
 
 ## Edge cases
 
@@ -152,7 +155,8 @@ The sender's answer says whether the directive was submitted, waits (with its pl
 | A question appears while directives wait. | Concurrent | Nothing is typed while it shows (FR-002). |
 | The person answers the question and the target works again. | Concurrent | The directive waits until the target waits for input and 30 seconds passed since the person's last input (FR-002). |
 | A person types while a directive arrives. | Concurrent | The person's input reaches the terminal at once (PB-5); the directive waits (FR-002). This replaces the 0002 edge case "the directive arrives as one unbroken input" for that moment. |
-| A person leaves a half-typed line for longer than 30 seconds. | Boundary | The directive is typed after it, and the Enter sends both (A5). |
+| A person leaves a half-typed line for longer than 30 seconds. | Boundary | Directives wait until the person sends or clears the line (FR-002, A5); a directive that waits 10 minutes is withdrawn (FR-005). |
+| A person recalls an earlier line with an arrow key, or erases a word. | Boundary | The office cannot follow that edit, so it holds directives until the person sends the line or clears it with a line-clearing key (A5). |
 | The screen shows a question shape that the check does not know, and the question does not echo typed text. | Boundary | The text is typed, no Enter follows, and the directive is recorded as unsubmitted (FR-003). |
 | The CLI shows a long paste as a short placeholder instead of the text. | Boundary | A new placeholder at the input line counts like the text, and Enter follows (FR-003, A9). |
 | The office pasted a startup prompt and the person has not touched the terminal since. | Concurrent | Directives wait until a person input reaches the terminal (FR-002), so a directive's Enter never submits the startup prompt. |
@@ -174,7 +178,7 @@ The sender's answer says whether the directive was submitted, waits (with its pl
 - **A2:** The question check knows the common shapes: a yes-or-no choice such as `(y/n)` or `[Y/n]`, a numbered choice list with a selection mark, and words that ask for permission or approval. A question drawn in another shape may not be recognised; the input-line check is the second guard.
 - **A3:** A false match of the question check only delays a directive: it is withdrawn after 10 minutes with the reason, and the sender can send it again.
 - **A4:** Waiting directives live in the background server's memory. A normal stop withdraws and records them (FR-005); a crash drops them without a withdrawal entry, and their acceptance stays in the target's record.
-- **A5:** Any person input counts as typing for 30 seconds, also a key that answers a question or a paste. The office cannot see whether a person left a half-typed line, so after 30 seconds a directive is typed after it.
+- **A5:** Any person input counts as typing for 30 seconds, also a key that answers a question or a paste. Besides that pause, the office reads unsent person text from the person's keys: typed characters add to it, an erase key takes one off, and Enter outside a paste or a line-clearing key (Ctrl+C, Ctrl+U) empties it. A key whose effect it cannot follow (an arrow, a lone Escape, a word erase) keeps the line held until Enter or a line-clearing key. While unsent person text waits, directives wait with no time limit of their own; the office never sends Escape and never clears the line. A new session starts with an empty line. Decided by god and Efe under the owner's spec delegation, 2026-11-23; before, a half-typed line held directives for 30 seconds only.
 - **A6:** Rate limits (0007) count a directive when the office accepts it, not when it is typed. A queue-full refusal is not a rate-limit refusal: it does not count toward a limit and not toward the automatic hold (0007/FR-008). The hold check runs at sending and again before typing.
 - **A7:** The queue has no view and no request of its own. The sender learns the place from the answer; the user withdraws waiting directives by stopping the target or by a hold (FR-005), and clears an unsubmitted text in the terminal like any typed text; that input also lets the queue go on (A11).
 - **A8:** The 30-second typing pause, the 2-second wait for the input line, the 10-minute limit, and the 20-directive queue size are fixed in this change, not settings.
@@ -188,6 +192,7 @@ What this change does not cover, stated plainly:
 
 - **Letters into an unknown question.** When a question shape is not recognised (A2), the office types the text into it. A question that reads single keys, in a CLI that did not ask for marked pastes (A10), can take a letter of the text as an answer before the office can see anything. No Enter follows unless the text or a paste placeholder shows at the input line.
 - **A free-text question.** A question that asks for typed text, such as "what should I do instead?", echoes the directive at its own input line and then receives the Enter. The directive then becomes the answer to that question.
+- **Line edits the keys do not show.** The unsent-text count reads the person's keys only. A CLI that fills the line by itself, for example with a suggestion, is not seen; a key the count cannot follow holds the line until Enter or a line-clearing key (A5).
 - **The moment between check and typing.** The checks read the screen right before typing. A question that the CLI opens within that moment, while it was quiet for the whole quiet period, is not seen.
 - **A crash of the background server** loses waiting directives without a record (A4).
 - Closing these needs the CLI to report its own state, which waits on the owner's decision about an office settings file for the CLI.
@@ -205,6 +210,10 @@ What this change does not cover, stated plainly:
 - Q: Is a normal server stop recorded? → A: Yes, as a withdrawal with the reason that the office server stopped; only a crash stays unrecorded (FR-005, A4).
 - Q: Does a queue-full refusal count toward the automatic hold? → A: No (A6).
 
+### Session 2026-11-23 (decision after review r4)
+
+- Q: May a directive be typed after a person's half-typed line once 30 seconds have passed? → A: No; delivery holds until that text is sent or cleared, and the office never sends Escape or clears the line (A5, FR-002). Decided by god and Efe under the owner's spec delegation.
+
 ### Session 2026-11-23 (review r2)
 
 - Q: After a directive is left unsubmitted, can the next one's Enter submit both? → A: No; any text the office typed without Enter, a startup prompt or an unsubmitted directive, holds the queue until a person input reaches the terminal after it or the session ends (FR-002, A11).
@@ -214,7 +223,7 @@ What this change does not cover, stated plainly:
 - A view of waiting directives, and withdrawing one directive by hand (A7).
 - Checking what the CLI shows through CLI hooks or any office file that the CLI reads (Residual risk).
 - Keeping waiting directives across a restart of the background server (A4).
-- Detecting a half-typed line that a person left in the terminal (A5).
+- Reading a person's half-typed line from the screen; the office counts the person's keys instead (A5).
 - Erasing an unsubmitted text from the terminal; the person submits or clears it (A7).
 - Settings for the typing pause, the input-line wait, the time limit, or the queue size (A8).
 - Holding back input that a person types or pastes (PB-5).
