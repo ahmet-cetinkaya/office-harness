@@ -66,6 +66,7 @@ function item(
     first_event_at: firstEventAt,
     latest_at: firstEventAt,
     origin_notification_id: null,
+    report: null,
   };
 }
 

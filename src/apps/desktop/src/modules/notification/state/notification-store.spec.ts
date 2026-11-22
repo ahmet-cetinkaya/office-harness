@@ -207,6 +207,27 @@ describe("notification controller", () => {
     ).toEqual({ notification_id: "n9" });
   });
 
+  test("a report stays unread and pings the OS even for the open and focused agent (0015)", async () => {
+    const { client, push } = fakeClient(() => []);
+    const { os, shown } = fakeOs();
+    const { controller, state } = observe(
+      client,
+      os,
+      () => "agent-ada",
+      () => true,
+    );
+    await controller.load();
+
+    push({
+      type: "notification.created",
+      notification: row({ id: "n9", event: "report", detail: "question" }),
+    });
+    await settle();
+
+    expect(state().rows[0].read_at).toBeNull();
+    expect(shown).toHaveLength(1);
+  });
+
   test("an automatic hold stays unread and pings the OS even for the open and focused agent (0007)", async () => {
     const { client, push } = fakeClient(() => []);
     const { os, shown } = fakeOs();

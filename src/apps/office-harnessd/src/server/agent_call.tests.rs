@@ -585,3 +585,74 @@ fn an_office_request_with_only_its_own_fields_passes_the_allowlist() {
     .expect("a placed caller's create passes gate and place rules");
     assert!(fields.contains_key("role"), "{fields:?}");
 }
+
+fn report_fields(pairs: &[(&str, Value)]) -> serde_json::Map<String, Value> {
+    pairs
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), value.clone()))
+        .collect()
+}
+
+#[test]
+fn report_fields_are_read_and_for_person_defaults_to_false() {
+    let sender = AgentId::generate();
+    let fields = report_fields(&[("kind", json!("done")), ("text", json!("tests pass"))]);
+
+    let report = parse_report(sender, &fields).expect("a valid report");
+
+    assert_eq!(
+        report,
+        Report {
+            sender,
+            kind: ReportKind::Done,
+            text: "tests pass".to_owned(),
+            for_person: false,
+        }
+    );
+}
+
+#[test]
+fn a_report_field_that_names_an_agent_is_refused() {
+    for key in [
+        "target_agent_id",
+        "agent_id",
+        "parent_agent_id",
+        "team_id",
+        "to",
+    ] {
+        let fields = report_fields(&[
+            ("kind", json!("done")),
+            ("text", json!("x")),
+            (key, json!("00000000-0000-0000-0000-000000000001")),
+        ]);
+
+        let reason = parse_report(AgentId::generate(), &fields).expect_err("refused");
+
+        assert!(reason.contains(key), "{reason}");
+    }
+}
+
+#[test]
+fn a_bad_report_kind_text_or_person_flag_is_a_parse_failure() {
+    let sender = AgentId::generate();
+    let shapes = [
+        report_fields(&[("kind", json!("finished")), ("text", json!("x"))]),
+        report_fields(&[("text", json!("x"))]),
+        report_fields(&[("kind", json!("done")), ("text", json!(7))]),
+        report_fields(&[
+            ("kind", json!("done")),
+            ("text", json!("x")),
+            ("for_person", json!("yes")),
+        ]),
+    ];
+
+    for fields in shapes {
+        assert!(parse_report(sender, &fields).is_err());
+    }
+}
+
+#[test]
+fn reports_are_an_allowed_type_and_the_refusal_names_them() {
+    assert!(ALLOWED_REQUESTS.contains(&"report.send"));
+    assert!(NOT_ALLOWED.contains("send reports to its parent or the person"));
+}

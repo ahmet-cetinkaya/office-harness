@@ -106,8 +106,9 @@ export function createNotificationController(
   async function handleCreated(event: ServerEvent): Promise<void> {
     const row = rowOf(event);
     if (row === null) return;
-    // A hold is never on screen: the owner must see it even while watching
-    // that agent's terminal (0007, MODIFIED 0003/FR-006; 0013/PB-6).
+    // A hold or a report is never on screen: the owner must see it even
+    // while watching that agent's terminal (0007, MODIFIED 0003/FR-006;
+    // 0013/PB-6; 0015).
     const isOnScreen =
       !isNeverReadOnArrival(row.event) &&
       row.agent_id === selectedAgentId() &&

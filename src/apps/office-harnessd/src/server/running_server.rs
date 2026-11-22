@@ -63,6 +63,15 @@ fn resume_gateway(
     )
 }
 
+/// The terminal requests of a user client, over the terminal services.
+fn terminal_gateway(services: &Services) -> Arc<TerminalGateway> {
+    Arc::new(TerminalGateway::new(
+        services.terminal.handlers.clone(),
+        services.agent.saved_outputs.clone(),
+        services.terminal.person_input.clone(),
+    ))
+}
+
 /// The user's `template.*` requests, over the template services.
 fn template_gateway(services: &Services) -> TemplateGateway {
     TemplateGateway::new(
@@ -155,16 +164,13 @@ impl Server {
             authentication: services.access.authentication.clone(),
             agent_authentication: services.access.agent_authentication.clone(),
             dispatcher: Arc::new(Dispatcher::new(services.access.handlers.clone())),
-            terminals: Arc::new(TerminalGateway::new(
-                services.terminal.handlers.clone(),
-                services.agent.saved_outputs.clone(),
-                services.terminal.person_input.clone(),
-            )),
+            terminals: terminal_gateway(services),
             agents,
             hierarchy,
             holds,
             hold_service: Arc::clone(&services.hierarchy.holds),
             send_directive: Arc::clone(&services.hierarchy.send_directive),
+            send_report: Arc::clone(&services.hierarchy.send_report),
             hierarchy_tree: Arc::clone(&services.hierarchy.tree),
             directive_journal: Arc::clone(&services.hierarchy.directive_journal),
             notification,

@@ -25,6 +25,7 @@ const ACTION_TEXT: Record<string, string> = {
   task_text: "Changed the task text",
   hold: "Put on hold",
   release: "Released from hold",
+  report: "Sent a report",
 };
 
 const OFFICE_ACTOR = "office";

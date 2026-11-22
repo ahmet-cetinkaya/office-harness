@@ -25,6 +25,7 @@ fn wide_limits() -> RateLimits {
         directive_target: 100,
         create: 100,
         lifecycle: 100,
+        report: 100,
     }
 }
 
@@ -81,6 +82,35 @@ fn exactly_the_lifecycle_limit_passes_and_the_next_is_refused() {
         ..wide_limits()
     };
     assert_passes_limit_then_refuses(AgentAction::Lifecycle, &limits, LimitKind::Lifecycle, 3);
+}
+
+#[test]
+fn exactly_the_report_limit_passes_and_the_next_is_refused() {
+    let limits = RateLimits {
+        report: 5,
+        ..wide_limits()
+    };
+    assert_passes_limit_then_refuses(AgentAction::Report, &limits, LimitKind::Report, 5);
+}
+
+#[test]
+fn reports_take_no_directive_slot() {
+    let limits = RateLimits {
+        directive: 1,
+        directive_target: 1,
+        ..wide_limits()
+    };
+    let mut windows = RateWindows::default();
+    for _ in 0..5 {
+        assert_eq!(
+            windows.try_take(id(SENDER), AgentAction::Report, &limits, at_seconds(0)),
+            Ok(())
+        );
+    }
+    assert_eq!(
+        windows.try_take(id(SENDER), directive_to(TARGET), &limits, at_seconds(0)),
+        Ok(())
+    );
 }
 
 #[test]
@@ -206,9 +236,10 @@ fn defaults_and_refusal_text_follow_the_table() {
             limits.directive,
             limits.directive_target,
             limits.create,
-            limits.lifecycle
+            limits.lifecycle,
+            limits.report
         ),
-        (10, 3, 5, 10)
+        (10, 3, 5, 10, 5)
     );
     let refusal = LimitRefusal {
         kind: LimitKind::DirectiveTarget,

@@ -14,6 +14,7 @@ const DEFAULT_LIMIT_DIRECTIVES_PER_AGENT: u32 = 10;
 const DEFAULT_LIMIT_DIRECTIVES_PER_TARGET: u32 = 3;
 const DEFAULT_LIMIT_CREATES_PER_AGENT: u32 = 5;
 const DEFAULT_LIMIT_LIFECYCLE_PER_AGENT: u32 = 10;
+const DEFAULT_LIMIT_REPORTS_PER_AGENT: u32 = 5;
 
 /// The range of a rate limit (0007 D4). The upper bound keeps a typo from
 /// turning the limit off.
@@ -101,6 +102,7 @@ pub struct Settings {
     pub limit_directives_per_target: u32,
     pub limit_creates_per_agent: u32,
     pub limit_lifecycle_per_agent: u32,
+    pub limit_reports_per_agent: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,10 +116,11 @@ pub enum SettingKey {
     LimitDirectivesPerTarget,
     LimitCreatesPerAgent,
     LimitLifecyclePerAgent,
+    LimitReportsPerAgent,
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::QuietPeriodMs,
         Self::OutputLineLimit,
         Self::FocusShortcut,
@@ -127,6 +130,7 @@ impl SettingKey {
         Self::LimitDirectivesPerTarget,
         Self::LimitCreatesPerAgent,
         Self::LimitLifecyclePerAgent,
+        Self::LimitReportsPerAgent,
     ];
 
     #[must_use]
@@ -141,6 +145,7 @@ impl SettingKey {
             Self::LimitDirectivesPerTarget => "limit_directives_per_target",
             Self::LimitCreatesPerAgent => "limit_creates_per_agent",
             Self::LimitLifecyclePerAgent => "limit_lifecycle_per_agent",
+            Self::LimitReportsPerAgent => "limit_reports_per_agent",
         }
     }
 
@@ -166,6 +171,7 @@ impl Default for Settings {
             limit_directives_per_target: DEFAULT_LIMIT_DIRECTIVES_PER_TARGET,
             limit_creates_per_agent: DEFAULT_LIMIT_CREATES_PER_AGENT,
             limit_lifecycle_per_agent: DEFAULT_LIMIT_LIFECYCLE_PER_AGENT,
+            limit_reports_per_agent: DEFAULT_LIMIT_REPORTS_PER_AGENT,
         }
     }
 }
@@ -185,6 +191,7 @@ impl Settings {
             SettingKey::LimitDirectivesPerTarget => self.limit_directives_per_target.to_string(),
             SettingKey::LimitCreatesPerAgent => self.limit_creates_per_agent.to_string(),
             SettingKey::LimitLifecyclePerAgent => self.limit_lifecycle_per_agent.to_string(),
+            SettingKey::LimitReportsPerAgent => self.limit_reports_per_agent.to_string(),
         }
     }
 
@@ -215,6 +222,9 @@ impl Settings {
             }
             SettingKey::LimitLifecyclePerAgent => {
                 self.limit_lifecycle_per_agent = parse_limit(key, text)?;
+            }
+            SettingKey::LimitReportsPerAgent => {
+                self.limit_reports_per_agent = parse_limit(key, text)?;
             }
         }
         Ok(())

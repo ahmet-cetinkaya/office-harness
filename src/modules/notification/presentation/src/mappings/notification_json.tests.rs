@@ -2,7 +2,8 @@
 
 use kernel::{AgentId, Timestamp};
 use notification_domain::{
-    AttentionEvent, AttentionKind, NeedsYouItem, Notification, NotificationEvent, NotificationId,
+    AttentionEvent, AttentionKind, ItemReport, NeedsYouItem, Notification, NotificationEvent,
+    NotificationId,
 };
 use serde_json::Value;
 
@@ -76,6 +77,7 @@ fn item_with_origin(origin: Option<NotificationId>) -> NeedsYouItem {
             at,
         },
         origin,
+        report: None,
     }
 }
 
@@ -93,4 +95,22 @@ fn an_item_names_its_origin_notification_or_sends_null() {
     );
     assert_eq!(coalesced["origin_notification_id"], Value::Null);
     assert_eq!(coalesced["detail"], Value::Null);
+    assert_eq!(coalesced["report"], Value::Null);
+}
+
+#[test]
+fn an_item_with_a_report_sends_its_kind_text_and_time() {
+    let mut item = item_with_origin(None);
+    item.report = Some(ItemReport {
+        kind: "question".to_owned(),
+        text: "which branch?".to_owned(),
+        at: Timestamp::from_unix_millis(2_000),
+    });
+
+    let json = needs_you_item_json(&item);
+
+    assert_eq!(
+        json["report"],
+        serde_json::json!({"kind": "question", "text": "which branch?", "at": 2_000})
+    );
 }

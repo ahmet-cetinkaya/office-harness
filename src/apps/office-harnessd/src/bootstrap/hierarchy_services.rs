@@ -10,11 +10,13 @@ use agent_infrastructure::persistence::{AgentRepository, SharedConnection};
 use hierarchy_application::commands::create_role_agent::CreateRoleAgentHandler;
 use hierarchy_application::commands::hold::HoldService;
 use hierarchy_application::commands::send_directive::{DirectivePorts, SendDirectiveHandler};
+use hierarchy_application::commands::send_report::{ReportPorts, SendReportHandler};
 use hierarchy_application::commands::subtree::SubtreeHandler;
 use hierarchy_application::common::interfaces::{HierarchyStore, HoldStore};
 use hierarchy_application::common::ports::{
-    AgentCreator, DirectiveJournal, HoldClock, HoldJournal, HoldNotifier, RateLimitSource,
-    SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover, SubtreeWorktrees, WorktreeReport,
+    AgentCreator, DirectiveJournal, DirectiveTarget, HoldClock, HoldJournal, HoldNotifier,
+    RateLimitSource, ReportJournal, SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover,
+    SubtreeWorktrees, WorktreeReport,
 };
 use hierarchy_application::{CreateTeamHandler, DeleteTeamHandler, PlaceAgentHandler, TreeQuery};
 use hierarchy_infrastructure::persistence::migrations::{LEDGER_TABLE, SCRIPTS};
@@ -31,7 +33,8 @@ use super::{
 use crate::bridges::{
     AgentCreatorBridge, DirectiveJournalBridge, DirectiveReceiptBridge, DirectiveTargetBridge,
     DirectiveWriterBridge, HoldJournalBridge, HoldNotifierBridge, NeedsYouBridge,
-    NotificationBridge, RoleRequestsBridge, SettingsRateLimits, SteadyClock, SubtreeRequestsBridge,
+    NotificationBridge, PersonReportsBridge, RoleRequestsBridge, SettingsRateLimits, SteadyClock,
+    SubtreeRequestsBridge,
 };
 use crate::server::EventHub;
 
@@ -44,6 +47,9 @@ pub struct HierarchyServices {
     /// Sends one directive from a running agent to its member (FR-009). The
     /// agent-call server answers `directive.send` with it.
     pub send_directive: Arc<SendDirectiveHandler>,
+    /// Sends one report from a running agent to its parent or to the person
+    /// (0015). The agent-call server answers `report.send` with it.
+    pub send_report: Arc<SendReportHandler>,
     /// Journals the directive attempts and the gateway's own refusals into
     /// the shared action record (FR-011).
     pub directive_journal: Arc<DirectiveJournalBridge>,
@@ -143,14 +149,17 @@ pub fn build_hierarchy_services(
         needs_you,
     )?;
     prune_holds(&holds, agents.as_ref(), log);
+    // One target bridge for directives and reports: both read whether the
+    // receiver runs and what it is called the same way.
+    let targets: Arc<dyn DirectiveTarget> = Arc::new(DirectiveTargetBridge::new(
+        Arc::clone(&agents),
+        Arc::clone(&terminal.runtime),
+        terminal.person_input.clone(),
+    ));
     let send_directive = Arc::new(
         SendDirectiveHandler::new(DirectivePorts {
             store: Arc::clone(&store),
-            targets: Arc::new(DirectiveTargetBridge::new(
-                Arc::clone(&agents),
-                Arc::clone(&terminal.runtime),
-                terminal.person_input.clone(),
-            )),
+            targets: Arc::clone(&targets),
             writer: Arc::new(DirectiveWriterBridge::new(
                 Arc::clone(&terminal.runtime),
                 terminal.person_input.clone(),
@@ -164,13 +173,25 @@ pub fn build_hierarchy_services(
             )),
             clock: Arc::new(SteadyClock::default()),
         })
-        .with_hold_guard(Arc::clone(&holds)),
+        .with_hold_guard(Arc::clone(&holds))
+        .with_report_journal(Arc::clone(&directive_journal) as Arc<dyn ReportJournal>),
     );
     spawn_directive_delivery(&send_directive, events.clone());
+    let send_report = Arc::new(
+        SendReportHandler::new(ReportPorts {
+            store: Arc::clone(&store),
+            targets,
+            journal: Arc::clone(&directive_journal) as Arc<dyn ReportJournal>,
+            person: Arc::new(PersonReportsBridge::new(notifications.clone())),
+            parent_delivery: Arc::clone(&send_directive),
+        })
+        .with_hold_guard(Arc::clone(&holds)),
+    );
     Ok(HierarchyServices {
         handlers,
         tree,
         send_directive,
+        send_report,
         directive_journal,
         holds,
         store,

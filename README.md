@@ -42,13 +42,15 @@ The agent and switcher shortcuts are fixed: `Ctrl+Shift+F1` to `Ctrl+Shift+F9` o
 
 ## Needs you
 
-The panel has a "Needs you" section with the agents that wait for you. An agent gets one item when it asks for input (it was quiet for the quiet period), rings the terminal bell, fails, exits, or is put on hold by the office after it hit a limit. Each item shows the agent's name, its project, what the office saw, and how long the agent has waited, as text. A deleted agent, an agent that starts working again, and an agent that you stop have no item.
+The panel has a "Needs you" section with the agents that wait for you. An agent gets one item when it asks for input (it was quiet for the quiet period), rings the terminal bell, fails, exits, is put on hold by the office after it hit a limit, or sends you a report. Each item shows the agent's name, its project, what the office saw, and how long the agent has waited, as text. A deleted agent, an agent that starts working again, and an agent that you stop have no item.
 
 The items are in groups: failed agents first, then agents that wait for input, ring the bell, or were held by the office, then exited agents. Inside a group the longest wait comes first. The number of items shows next to "Needs you" and in the window title, in the panel and in the office scene. The server keeps the items, so events that happened while the app was closed show when it opens.
 
 Press `Ctrl+Shift+F11` to open the terminal of the agent at the top of the list, with keyboard focus, from the panel, from a focused terminal, or from the office scene (there it opens the top agent's desk). The item leaves the list. Press the key again for the next agent. When the list is empty the view stays and the app says "No agent needs you". An exited agent that you will not restart can leave the list with its "Dismiss" button, which changes nothing else. Opening an agent's terminal by any route also removes its item.
 
 If the stored `focus_shortcut` is `Ctrl+Shift+F11`, the focus shortcut keeps the key and the jump has no key. The Needs you section then says: "The jump shortcut is off because the focus shortcut uses Ctrl+Shift+F11. Change the focus_shortcut setting (see the README) and reopen the app to turn the jump on." Change the setting, as described above, and restart the app.
+
+A report from an agent shows its kind and text on the item; a long text shows its first three lines and a "Show the whole report" button. The item stays when the agent works again, and leaves when you open its terminal or dismiss it. Answer the agent in its terminal.
 
 A client reaches the list with the `needs_you.list` and `needs_you.dismiss` requests and the `needs_you.changed` event. The shapes are in [the needs-you protocol](specs/changes/0008-needs-you-queue/contracts/needs-you-protocol.md).
 
@@ -116,8 +118,9 @@ An agent can create agents, start and stop them, start new tasks, and send direc
 | Directives sent to one target agent | 3 |
 | Agents created by one agent | 5 |
 | Starts, stops, and new tasks by one agent | 10 |
+| Reports sent by one agent | 5 |
 
-A limit is a whole number from 1 to 1000. Choose "Limits" in the panel header to see each limit with its default and to change it. A client can also change a limit with `settings.set` and the keys `limit_directives_per_agent`, `limit_directives_per_target`, `limit_creates_per_agent`, and `limit_lifecycle_per_agent`. A new value applies to the next agent-made action. The office does not queue or retry a refused action. Rate counts start again at 0 after a server restart.
+A limit is a whole number from 1 to 1000. Choose "Limits" in the panel header to see each limit with its default and to change it. A client can also change a limit with `settings.set` and the keys `limit_directives_per_agent`, `limit_directives_per_target`, `limit_creates_per_agent`, `limit_lifecycle_per_agent`, and `limit_reports_per_agent`. A new value applies to the next agent-made action. The office does not queue or retry a refused action. Rate counts start again at 0 after a server restart.
 
 **Automatic hold.** When an agent is refused by a limit 3 times within 60 seconds, the office puts that agent on hold and sends you one notification. The notification names the agent and the limit. Refusals that come from a hold do not count. You release an automatic hold the same way as any other hold.
 
@@ -319,7 +322,15 @@ office-harnessd agent-call agent.subtree
 
 The answer lists each descendant after its parent, with its name, role, status, the time its terminal last showed output, whether it waits in Needs you, whether a hold covers it, and its task line. It never carries terminal output, and it lists no agent outside the caller's own subtree. A hold does not refuse the read, the read counts toward no rate limit, and an answered read is not in the action record. The shapes are in `specs/changes/0014-subtree-status/contracts/subtree-protocol.md`.
 
-An agent also creates, starts, and stops agents below it, starts new tasks on them, and sends them directives; the protocol contract lists the request shapes. Every other request type is refused, and the refusal names the rule: an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants.
+An agent reports to its parent with `report.send`, with a kind (`done`, `question`, `blocked`, or `info`) and a text of up to 1,000 characters:
+
+```sh
+office-harnessd agent-call report.send '{"kind":"done","text":"tests pass"}'
+```
+
+The office types the report into the parent's terminal as one line, `[report from <name> (<agent id>): <kind>] <text>`, with the same checks as a directive: it waits while the parent works, shows a question, or a person types there. The parent answers with `directive.send` to the id in the line. A report from the CEO, from an agent without a parent, or with `"for_person":true` goes to you instead: it joins Needs you and notifies you once. Control characters, line breaks, and bidirectional characters in the text show as visible symbols. One sender has at most one report waiting in its parent's queue (a newer one replaces it), and reports take at most 10 of the queue's 20 places. Holds and the reports limit apply. The shapes are in `specs/changes/0015-upward-reports/contracts/report-protocol.md`.
+
+An agent also creates, starts, and stops agents below it, starts new tasks on them, and sends them directives; the protocol contract lists the request shapes. Every other request type is refused, and the refusal names the rule: an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants, and send reports to its parent or the person.
 
 A hold or a limit can refuse these requests as well. The answer is `refused`, and its message is one of these, checked after the rules above in this order:
 
@@ -327,7 +338,7 @@ A hold or a limit can refuse these requests as well. The answer is `refused`, an
 | ------- | ------- |
 | `the office is on hold` | You hold the office. |
 | `the agent <id> is on hold` | The asking agent, the target, or one of their ancestors is on hold. |
-| `the limit "<name>" allows <n> per 60 seconds` | The agent is over a limit. `<name>` is `directives sent by one agent`, `directives sent to one target agent`, `agents created by one agent`, or `starts, stops, and new tasks by one agent`. |
+| `the limit "<name>" allows <n> per 60 seconds` | The agent is over a limit. `<name>` is `directives sent by one agent`, `directives sent to one target agent`, `agents created by one agent`, `starts, stops, and new tasks by one agent`, or `reports sent by one agent`. |
 
 The agent decides whether to try again. See [Holding the office and limiting agents](#holding-the-office-and-limiting-agents).
 

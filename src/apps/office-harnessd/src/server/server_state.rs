@@ -6,6 +6,7 @@ use access_application::commands::authenticate_agent_call::AgentAuthenticationHa
 use access_application::commands::authenticate_connection::AuthenticationHandler;
 use hierarchy_application::commands::hold::HoldService;
 use hierarchy_application::commands::send_directive::SendDirectiveHandler;
+use hierarchy_application::commands::send_report::SendReportHandler;
 use hierarchy_application::queries::tree::TreeQuery;
 use tokio::sync::{Semaphore, watch};
 
@@ -43,6 +44,8 @@ pub struct ServerState {
     /// Sends one directive from this agent to its member (FR-009), answered
     /// on the agent connections.
     pub send_directive: Arc<SendDirectiveHandler>,
+    /// Sends `report.send` upward (0015).
+    pub send_report: Arc<SendReportHandler>,
     /// The tree the agent-call gateway reads for the descendant rule
     /// (FR-008): a request an agent sends names an agent in its own subtree,
     /// or it never reaches a use case.

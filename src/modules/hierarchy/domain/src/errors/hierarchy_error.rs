@@ -16,6 +16,8 @@ pub enum HierarchyError {
     ControlCharacter { field: &'static str },
     #[error("{field} is not a valid identifier: {text}")]
     InvalidId { field: &'static str, text: String },
+    #[error("kind is not one of done, question, blocked, info: {text}")]
+    UnknownReportKind { text: String },
     #[error("{field} is not a role of the company: {text}")]
     UnknownRole { field: &'static str, text: String },
     #[error("a team named {name} already exists")]

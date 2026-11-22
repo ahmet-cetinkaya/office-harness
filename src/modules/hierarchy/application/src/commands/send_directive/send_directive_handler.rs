@@ -3,21 +3,27 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use hierarchy_domain::{AgentAction, HierarchyError, check_descendant, validate_directive_text};
+use hierarchy_domain::{
+    AgentAction, HierarchyError, ReportReceiver, TreeRow, check_descendant, report_receiver,
+    validate_directive_text,
+};
 use kernel::AgentId;
 
-use super::directive_queue::{DirectiveQueue, QUEUE_LIMIT, WaitingDirective};
+use super::directive_queue::{
+    DirectiveQueue, QUEUE_LIMIT, REPORT_SHARE, ReportPush, ReportRoom, WaitingDirective,
+};
 use crate::commands::hold::HoldService;
 use crate::common::errors::HierarchyApplicationError;
 use crate::common::interfaces::HierarchyStore;
 use crate::common::ports::{
     Delivery, DirectiveClock, DirectiveJournal, DirectiveReceipt, DirectiveTarget, DirectiveWriter,
-    Readiness,
+    Readiness, ReportJournal,
 };
 
 /// The record text of a directive that was typed but got no Enter
 /// (0012/FR-003).
-const UNSUBMITTED: &str = "typed but not submitted: the text did not show at the input line";
+pub(crate) const UNSUBMITTED: &str =
+    "typed but not submitted: the text did not show at the input line";
 
 /// The reason a directive that waited too long is withdrawn (0012/FR-005).
 const EXPIRED: &str = "not typed within 10 minutes";
@@ -25,6 +31,21 @@ const EXPIRED: &str = "not typed within 10 minutes";
 /// The refusal of a directive sent after a server stop withdrew the waiting
 /// ones (0012/FR-005).
 const STOPPING: &str = "the office server is stopping";
+
+/// Why a waiting report left the queue: its sender sent a newer one
+/// (0015/FR-010).
+const REPLACED: &str = "replaced by a newer report";
+
+/// A report to a parent, ready for the parent's queue (0015/FR-004). `line`
+/// is the heading and the text, `record_text` the kind and the text, both in
+/// visible form.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParentReport {
+    pub sender: AgentId,
+    pub parent: AgentId,
+    pub line: String,
+    pub record_text: String,
+}
 
 /// What became of an accepted directive (0012/FR-004).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +82,7 @@ pub struct SendDirectiveHandler {
     clock: Arc<dyn DirectiveClock>,
     queue: DirectiveQueue,
     hold_guard: Option<Arc<HoldService>>,
+    report_journal: Option<Arc<dyn ReportJournal>>,
 }
 
 /// The ports a `SendDirectiveHandler` talks to.
@@ -93,7 +115,17 @@ impl SendDirectiveHandler {
             clock,
             queue: DirectiveQueue::default(),
             hold_guard: None,
+            report_journal: None,
         }
+    }
+
+    /// Records the reports that share the queue (0015/FR-009): a report that
+    /// is withdrawn, replaced, or left unsubmitted goes into the report
+    /// journal, not the directive journal.
+    #[must_use]
+    pub fn with_report_journal(mut self, report_journal: Arc<dyn ReportJournal>) -> Self {
+        self.report_journal = Some(report_journal);
+        self
     }
 
     /// Puts the hold and rate-limit gate in front of the terminal write.
@@ -180,6 +212,102 @@ impl SendDirectiveHandler {
         self.accept(sender, target, text)
     }
 
+    /// Puts a report in its parent's queue, or types it at once when nothing
+    /// waits there and the parent is ready (0015/FR-004). Room comes first,
+    /// so a refused report takes no rate-window slot (0015/FR-010), then the
+    /// holds and the reports limit (FR-006). The caller has checked the text
+    /// and that the parent runs, and journals the outcome; this journals
+    /// only the report that a newer one replaces.
+    ///
+    /// # Errors
+    /// `Refused` when the parent's queue has no room, a hold or the reports
+    /// limit stops it, or a server stop has begun; `Conflict` carrying the
+    /// writer's message when the line cannot be typed.
+    pub fn send_report(
+        &self,
+        report: &ParentReport,
+        rows: &[TreeRow],
+    ) -> Result<DirectiveOutcome, HierarchyApplicationError> {
+        let room = self.queue.report_room(report.parent, report.sender);
+        self.check_report_room(report.parent, room)?;
+        if let Some(hold_guard) = &self.hold_guard {
+            hold_guard
+                .guard(
+                    report.sender,
+                    AgentAction::Report,
+                    Some(report.parent),
+                    rows,
+                )
+                .map_err(|refusal| HierarchyApplicationError::Refused(refusal.reason))?;
+        }
+        if room == ReportRoom::Add
+            && self
+                .queue
+                .claim_empty(report.parent, self.clock.steady_now())
+        {
+            if self.targets.readiness(report.parent) == Ok(Readiness::Ready) {
+                return self.type_report_now(report);
+            }
+            self.queue.release(report.parent);
+        }
+        self.queue_report(report)
+    }
+
+    fn check_report_room(
+        &self,
+        parent: AgentId,
+        room: ReportRoom,
+    ) -> Result<(), HierarchyApplicationError> {
+        match room {
+            ReportRoom::Replace | ReportRoom::Add => Ok(()),
+            ReportRoom::NoRoomForReports | ReportRoom::Full => Err(self.no_room(parent, room)),
+        }
+    }
+
+    /// The refusal of a report that finds no room in its parent's queue.
+    fn no_room(&self, parent: AgentId, room: ReportRoom) -> HierarchyApplicationError {
+        let name = self.name_of(parent);
+        HierarchyApplicationError::Refused(if room == ReportRoom::Full {
+            format!("the queue of {name} is full: {QUEUE_LIMIT} directives wait")
+        } else {
+            format!("the queue of {name} has no room for reports: {REPORT_SHARE} reports wait")
+        })
+    }
+
+    fn type_report_now(
+        &self,
+        report: &ParentReport,
+    ) -> Result<DirectiveOutcome, HierarchyApplicationError> {
+        match self.type_claimed(report.parent, &report.line, Some(&report.record_text)) {
+            Ok(Delivery::Submitted) => Ok(DirectiveOutcome::Submitted),
+            Ok(Delivery::Unsubmitted) => Ok(DirectiveOutcome::Unsubmitted),
+            Err(message) => Err(HierarchyApplicationError::Conflict(message)),
+        }
+    }
+
+    fn queue_report(
+        &self,
+        report: &ParentReport,
+    ) -> Result<DirectiveOutcome, HierarchyApplicationError> {
+        let waiting = WaitingDirective {
+            sender: report.sender,
+            target: report.parent,
+            text: report.line.clone(),
+            accepted_at: self.clock.steady_now(),
+            report: Some(report.record_text.clone()),
+        };
+        match self.queue.push_report(waiting) {
+            ReportPush::Replaced { position, replaced } => {
+                self.withdrawn(&replaced, REPLACED);
+                Ok(DirectiveOutcome::Waiting { position })
+            }
+            ReportPush::Added { position } => Ok(DirectiveOutcome::Waiting { position }),
+            // The queue filled between the room check and the push.
+            ReportPush::Refused(room) => Err(self.no_room(report.parent, room)),
+            ReportPush::Closed => Err(HierarchyApplicationError::Refused(STOPPING.to_owned())),
+        }
+    }
+
     /// Types waiting directives whose target is ready, one per target, and
     /// withdraws the ones that may no longer be typed (0012/FR-001, FR-005).
     /// A delivery thread calls it on a short period while directives wait.
@@ -223,6 +351,7 @@ impl SendDirectiveHandler {
             target,
             text: text.to_owned(),
             accepted_at: self.clock.steady_now(),
+            report: None,
         }) else {
             return Err(self.journaled(
                 sender,
@@ -242,7 +371,7 @@ impl SendDirectiveHandler {
         target: AgentId,
         text: &str,
     ) -> Result<DirectiveOutcome, HierarchyApplicationError> {
-        match self.type_claimed(target, text) {
+        match self.type_claimed(target, text, None) {
             Ok(Delivery::Submitted) => {
                 self.journal.record(sender, target, text, None);
                 Ok(DirectiveOutcome::Submitted)
@@ -263,11 +392,17 @@ impl SendDirectiveHandler {
 
     /// Delivers under the target's claim and ends it. The receipt comes
     /// before the claim ends, so the order of deliveries to one target is
-    /// the order of its receipts (0011 D2); only a submitted text is a
-    /// received task (0012 PB-3).
-    fn type_claimed(&self, target: AgentId, text: &str) -> Result<Delivery, String> {
+    /// the order of its receipts (0011 D2); only a submitted directive is a
+    /// received task (0012 PB-3), never a report (0015 PB-3), which carries
+    /// its record text in `report`.
+    fn type_claimed(
+        &self,
+        target: AgentId,
+        text: &str,
+        report: Option<&str>,
+    ) -> Result<Delivery, String> {
         let delivery = self.writer.deliver(target, text);
-        if delivery == Ok(Delivery::Submitted) {
+        if report.is_none() && delivery == Ok(Delivery::Submitted) {
             self.receipt.received(target, text);
         }
         self.queue.finish(target, self.clock.steady_now());
@@ -315,12 +450,9 @@ impl SendDirectiveHandler {
                     self.queue.release(target);
                     return;
                 }
-                match self.type_claimed(target, &head.text) {
+                match self.type_claimed(target, &head.text, head.report.as_deref()) {
                     Ok(Delivery::Submitted) => {}
-                    Ok(Delivery::Unsubmitted) => {
-                        self.journal
-                            .record(head.sender, target, &head.text, Some(UNSUBMITTED));
-                    }
+                    Ok(Delivery::Unsubmitted) => self.record_failure(head, UNSUBMITTED),
                     Err(message) => {
                         self.withdrawn(head, &format!("the text could not be typed: {message}"));
                     }
@@ -330,12 +462,22 @@ impl SendDirectiveHandler {
     }
 
     /// Runs the tree rule and the hold check again for a directive that
-    /// waited. The hold check counts nothing (0012 A6).
+    /// waited. The hold check counts nothing (0012 A6). A report's tree rule
+    /// is that its sender is still a child of the target (0015/FR-005).
     fn recheck(&self, head: &WaitingDirective) -> Recheck {
         let Ok(snapshot) = self.store.snapshot() else {
             return Recheck::Unreadable;
         };
-        if let Err(error) = check_descendant(&snapshot.rows, head.sender, head.target) {
+        if head.report.is_some() {
+            if report_receiver(&snapshot.rows, head.sender, false)
+                != ReportReceiver::Parent(head.target)
+            {
+                return Recheck::Refused(format!(
+                    "the sender is no longer a child of {}",
+                    self.name_of(head.target)
+                ));
+            }
+        } else if let Err(error) = check_descendant(&snapshot.rows, head.sender, head.target) {
             return Recheck::Refused(error.to_string());
         }
         let hold_reason = self
@@ -348,12 +490,27 @@ impl SendDirectiveHandler {
     /// Records a directive that left the queue untyped, in the sender's and
     /// the target's records (0012/FR-005).
     fn withdrawn(&self, directive: &WaitingDirective, reason: &str) {
-        self.journal.record(
-            directive.sender,
-            directive.target,
-            &directive.text,
-            Some(&format!("withdrawn before typing: {reason}")),
-        );
+        self.record_failure(directive, &format!("withdrawn before typing: {reason}"));
+    }
+
+    /// Records what went wrong with a waiting entry: a directive in the
+    /// directive journal, a report in the report journal with its record
+    /// text (0015/FR-009).
+    fn record_failure(&self, directive: &WaitingDirective, failure: &str) {
+        match (&directive.report, &self.report_journal) {
+            (Some(record_text), Some(report_journal)) => report_journal.refused(
+                directive.sender,
+                Some(directive.target),
+                record_text,
+                failure,
+            ),
+            _ => self.journal.record(
+                directive.sender,
+                directive.target,
+                &directive.text,
+                Some(failure),
+            ),
+        }
     }
 
     fn name_of(&self, target: AgentId) -> String {
