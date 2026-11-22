@@ -89,3 +89,7 @@ Fields: `{ cause: "team.created" | "team.deleted" | "agent.placed" | "agent.unpl
 | `OFFICE_HARNESS_CLI` | absolute path of the running `office-harnessd` binary |
 
 Helper: `office-harnessd agent-call <method> <json>` reads the token from its inherited environment and performs the loopback proof. The office token never appears in any child environment (research R2).
+
+## See also
+
+Change 0009 adds creation of agents and teams from saved templates. It uses the role placement rules of this contract and does not change them. The requests `template.create_agent` and `template.create_team` create the same agents and teams as `agent.create` and `team.create`, with the same events and the same refusals, in one all-or-nothing action. The shapes are in `specs/changes/0009-agent-templates/contracts/template-protocol.md`.

@@ -8,7 +8,7 @@ use agent_application::common::interfaces::{
 };
 use agent_domain::entities::{AdditionsRecord, Agent, Project, Session};
 use agent_domain::enums::AgentStatus;
-use agent_domain::value_objects::{ExitResult, ProjectId, SessionId, Settings};
+use agent_domain::value_objects::{ExitResult, ProjectId, SessionId, Settings, TaskText};
 use kernel::{AgentId, Timestamp};
 
 use crate::persistence::{
@@ -54,6 +54,10 @@ impl AgentStore for AgentRepository {
 
     fn update_status(&self, id: AgentId, status: AgentStatus) -> Result<(), PortError> {
         Ok(Self::update_status(self, id, status)?)
+    }
+
+    fn update_task(&self, id: AgentId, task: Option<&TaskText>) -> Result<(), PortError> {
+        Ok(Self::update_task(self, id, task)?)
     }
 
     fn delete(&self, id: AgentId) -> Result<(), PortError> {

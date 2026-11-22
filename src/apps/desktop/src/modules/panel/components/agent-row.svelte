@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
-  import { shownStatusText, type Agent } from "../../agent";
+  import { shownStatusText, taskRowText, type Agent } from "../../agent";
   import { AGENT_ON_HOLD_TEXT } from "../../hold";
   import { hierarchyText, type AgentHierarchy } from "../models/panel";
 
@@ -26,7 +26,24 @@
     onopen,
   }: Props = $props();
 
+  const TASK_AGE_TICK_MS = 60_000;
+
   const hierarchyLine = $derived(hierarchyText(hierarchy));
+
+  // The line is drawn from the clock, which ticks once a minute so the age
+  // stays true, and only while the row has a task. A new task re-reads the
+  // clock, since a row may be older than the task that just arrived.
+  let now = $state(Date.now());
+  $effect(() => {
+    if (agent.task == null) return;
+    void agent.task.set_at;
+    now = Date.now();
+    const timer = setInterval(() => (now = Date.now()), TASK_AGE_TICK_MS);
+    return () => clearInterval(timer);
+  });
+  const taskRow = $derived(
+    agent.task == null ? null : taskRowText(agent.task, now),
+  );
 
   // The name is set by hand so that it reads as one sentence in the row's
   // reading order (D11). The last line is visible text, so the name carries
@@ -39,6 +56,7 @@
       ...(isOnHold ? [AGENT_ON_HOLD_TEXT] : []),
       ...(hierarchyLine === "" ? [] : [hierarchyLine]),
       ...(agent.last_line !== null ? [agent.last_line] : []),
+      ...(taskRow !== null ? [taskRow] : []),
     ].join(", "),
   );
 
@@ -69,6 +87,9 @@
     </span>
     {#if agent.last_line !== null}
       <span class="line-clamp-1 text-neutral-700">{agent.last_line}</span>
+    {/if}
+    {#if taskRow !== null}
+      <span class="line-clamp-1 text-neutral-700">{taskRow}</span>
     {/if}
   </button>
 </li>

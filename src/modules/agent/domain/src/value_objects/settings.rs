@@ -23,9 +23,13 @@ const LIMIT_MAX: u32 = 1_000;
 /// The longest stored text of one setting, in bytes (0003 data model).
 const LAST_VIEW_MAX_BYTES: usize = 1_024;
 
+/// The jump key of the Needs you queue (0008 D5), the one reserved key that a
+/// focus shortcut stored before 0008 may still hold.
+const JUMP_SHORTCUT: &str = "Ctrl+Shift+F11";
+
 /// The shortcuts of 0003 A1 that the focus shortcut must not take (D8). The
 /// desktop app shows the same table, so the two stay in step.
-const RESERVED_SHORTCUTS: [(&str, &str); 11] = [
+const RESERVED_SHORTCUTS: [(&str, &str); 12] = [
     ("Ctrl+Shift+F1", "agent 1"),
     ("Ctrl+Shift+F2", "agent 2"),
     ("Ctrl+Shift+F3", "agent 3"),
@@ -36,6 +40,7 @@ const RESERVED_SHORTCUTS: [(&str, &str); 11] = [
     ("Ctrl+Shift+F8", "agent 8"),
     ("Ctrl+Shift+F9", "agent 9"),
     ("Ctrl+Shift+F10", "the agent switcher"),
+    ("Ctrl+Shift+F11", "the jump to the agent that needs you"),
     ("Ctrl+Shift+H", "the office hold"),
 ];
 
@@ -214,6 +219,24 @@ impl Settings {
         }
         Ok(())
     }
+
+    /// Sets one setting from a stored row. A focus shortcut stored before
+    /// 0008 reserved the jump key keeps it, and the jump has no key then
+    /// (0008 D6); every other stored value is read as `set_from_text` does.
+    ///
+    /// # Errors
+    /// As `set_from_text`.
+    pub fn set_from_stored_text(&mut self, key: SettingKey, text: &str) -> Result<(), AgentError> {
+        if key == SettingKey::FocusShortcut && is_jump_shortcut(text) {
+            text.clone_into(&mut self.focus_shortcut);
+            return Ok(());
+        }
+        self.set_from_text(key, text)
+    }
+}
+
+fn is_jump_shortcut(text: &str) -> bool {
+    normalized_shortcut(text) == normalized_shortcut(JUMP_SHORTCUT)
 }
 
 fn parse_positive(key: SettingKey, text: &str) -> Result<u64, AgentError> {

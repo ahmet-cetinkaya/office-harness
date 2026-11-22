@@ -9,12 +9,10 @@
   import { toCoreRequestError, type CoreClient } from "../../../core/api";
   import {
     matchesShortcut,
-    pressedTerminalShortcut,
-  } from "../../../core/shortcuts";
-  import {
-    loadFocusShortcut,
+    pressedAppShortcut,
+    sharedFocusShortcut,
     type FocusShortcut,
-  } from "../services/focus-shortcut";
+  } from "../../../core/shortcuts";
   import { createInputQueue } from "../services/input-queue";
   import {
     binaryBytes,
@@ -140,7 +138,7 @@
         }
         return false;
       }
-      if (pressedTerminalShortcut(event) !== null) {
+      if (pressedAppShortcut(event) !== null) {
         if (event.type === "keydown") {
           // The webview would otherwise run its own action for an F-key,
           // and xterm.js would send the key's sequence to the CLI.
@@ -188,7 +186,7 @@
     }
 
     async function attach(): Promise<void> {
-      focusShortcut = await loadFocusShortcut(client);
+      focusShortcut = await sharedFocusShortcut(client);
       const release = await terminalFeedFor(client).subscribe(
         agentId,
         showFrame,
@@ -245,11 +243,12 @@
   });
 </script>
 
-<section aria-labelledby="terminal-heading" class="flex flex-col gap-2">
+<section aria-label="Terminal" class="flex flex-col gap-2">
   <h3
     id="terminal-heading"
     bind:this={heading}
     tabindex="-1"
+    aria-label="Terminal, {agentName}"
     class="text-lg font-semibold text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
   >
     Terminal
@@ -260,7 +259,10 @@
     {:else if focusShortcut !== null}
       Every key goes to the agent, except
       <kbd class="font-mono font-medium">{focusShortcut.label}</kbd>, which
-      moves focus out of the terminal back to the app.
+      moves focus out of the terminal back to the app, and the app shortcuts
+      <kbd class="font-mono font-medium">Ctrl+Shift+F1</kbd> to
+      <kbd class="font-mono font-medium">Ctrl+Shift+F11</kbd> and
+      <kbd class="font-mono font-medium">Ctrl+Shift+H</kbd>.
     {:else}
       Opening the terminal.
     {/if}

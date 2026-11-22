@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { EnvironmentEntry } from "../models/agent";
+import { visibleText } from "../models/task-text";
 
 const ENV_SEPARATOR = "=";
+
+/** What the app shows for an environment variable without a value (FR-011). */
+const NO_VALUE_TEXT = "no value";
 
 export type EnvParse =
   { ok: true; entries: EnvironmentEntry[] } | { ok: false; message: string };
@@ -57,4 +61,12 @@ export function formatEnvironment(entries: EnvironmentEntry[]): string {
 /** An empty prompt means no prompt. */
 export function parseStartupPrompt(text: string): string | null {
   return text.trim() === "" ? null : text;
+}
+
+/** A variable as one line: its name, then its value or "no value". */
+export function environmentLineText(entry: EnvironmentEntry): string {
+  const name = visibleText(entry.name);
+  return entry.value === null
+    ? `${name}: ${NO_VALUE_TEXT}`
+    : `${name}${ENV_SEPARATOR}${visibleText(entry.value)}`;
 }

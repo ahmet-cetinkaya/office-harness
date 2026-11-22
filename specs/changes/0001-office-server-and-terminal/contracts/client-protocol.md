@@ -46,6 +46,7 @@ Every request is a JSON text frame `{"id":<u32>,"type":"<name>",...}`. The respo
 | `agent.stop` | agent_id | none | FR-012, A3 |
 | `agent.new_task` | agent_id | session (ends a running session first; the client confirms with the user before it sends this) | FR-024 |
 | `agent.additions.get` / `.set` | agent_id, additions | additions plus `applies_next_session: bool` | FR-022, FR-023 |
+| `agent.task.set` | agent_id, text (empty or only whitespace clears; more than 8,192 characters is `invalid`). User clients only | agent (with `task`). Writes nothing to the terminal. Shapes: [the task protocol](../../0011-task-line/contracts/task-protocol.md) | 0011/FR-003 |
 | `server.restart` | none. Interrupts running agents, so the client confirms with the user first | none | Server upgrade (plan D13) |
 | `agent.actions` | agent_id | action record entries | FR-011 |
 | `session.list` | agent_id | sessions, each with `can_continue: bool` and, when false, `reason` | FR-025 |
@@ -63,11 +64,14 @@ Every request is a JSON text frame `{"id":<u32>,"type":"<name>",...}`. The respo
 |---|---|---|
 | `agent.status` | agent_id, status, detail? | FR-014 |
 | `agent.changed` | agent | FR-012 |
+| `agent.task` | agent_id, task (`{text, set_at, source}` or `null`; no `last_line` and no `status`, so a client patches only the task). Sent after a directive is entered, after `agent.task.set`, and after `agent.new_task` with `null` | 0011/FR-002, FR-004 |
 | `agent.deleted` | agent_id (an attached client closes its terminal) | Edge cases |
 | `project.changed` | cause (`created` or `deleted`), project_id. Sent after a successful `project.create` or `project.delete`, to every client including the sender; a client reads `project.list` again (a project that another client made shows without a restart) | ACF-166 |
 | `action.recorded` | entry | FR-011 |
 | `agent.additions.changed` | agent_id, additions (another client's open editor refreshes) | Edge cases |
 | `storage.error` | message (for example, disk full) | Edge cases |
+
+The agent JSON in `agent.list`, `agent.create`, `agent.changed`, and the result of `agent.task.set` carries `task`: `{text, set_at, source}` (`set_at` in Unix ms, `source` `"directive"` or `"user"`), or `null` when the agent has no task text (0011).
 
 ## Terminal data frames
 

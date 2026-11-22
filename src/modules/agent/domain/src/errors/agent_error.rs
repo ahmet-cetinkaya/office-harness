@@ -42,6 +42,10 @@ pub enum AgentError {
     ContainsControlCharacter { field: String },
     #[error("unknown exit result: {0}")]
     UnknownExitResult(String),
+    #[error("a task text has at most 8,192 characters")]
+    TaskTextTooLong,
+    #[error("unknown task source: {0}")]
+    UnknownTaskSource(String),
     #[error("unknown agent status: {0}")]
     UnknownStatus(String),
     #[error("unknown setting: {0}")]

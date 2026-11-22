@@ -9,6 +9,7 @@ mod agent_line_bridge;
 mod agent_status_bridge;
 mod directive_bridges;
 mod hold_bridges;
+mod needs_you_bridge;
 mod notification_bridge;
 mod rate_limit_source;
 mod role_requests;
@@ -27,8 +28,12 @@ pub use action_recorder::{ActionRecorderBridge, take_recorded_events};
 pub use agent_definition_bridge::AgentDefinitionBridge;
 pub use agent_line_bridge::AgentLineBridge;
 pub use agent_status_bridge::{AgentStatusBridge, StatusOrder, StoppingFlag};
-pub use directive_bridges::{DirectiveJournalBridge, DirectiveTargetBridge, DirectiveWriterBridge};
+pub use directive_bridges::{
+    DirectiveJournalBridge, DirectiveReceiptBridge, DirectiveTargetBridge, DirectiveWriterBridge,
+    TaskOrder,
+};
 pub use hold_bridges::{HoldJournalBridge, HoldNotifierBridge};
+pub use needs_you_bridge::{AgentNames, NeedsYouBridge};
 pub use notification_bridge::NotificationBridge;
 pub use rate_limit_source::SettingsRateLimits;
 pub use role_requests::{AgentCreatorBridge, RoleRequestsBridge};

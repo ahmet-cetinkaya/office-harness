@@ -12,6 +12,7 @@ use agent_application::commands::end_session::EndSessionHandler;
 use agent_application::commands::interrupt_agents::InterruptAgentsHandler;
 use agent_application::commands::set_office_additions::SetOfficeAdditionsHandler;
 use agent_application::commands::set_setting::SetSettingHandler;
+use agent_application::commands::set_task_text::SetTaskTextHandler;
 use agent_application::commands::start_agent::StartAgentHandler;
 use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
@@ -44,7 +45,7 @@ use audit_presentation::AuditHandlers;
 use super::{ServerLog, StorageAlerts, TerminalServices};
 use crate::bridges::{
     ActionRecorderBridge, AgentCalls, SavedOutputs, StatusOrder, StoppingFlag, SystemClock,
-    TerminalHostBridge,
+    TaskOrder, TerminalHostBridge,
 };
 
 /// The agent and audit modules, wired: the use cases behind their handlers,
@@ -62,6 +63,8 @@ pub struct AgentServices {
     pub saved_outputs: SavedOutputs,
     /// Orders `agent.start` before the statuses its terminal causes.
     pub status_order: StatusOrder,
+    /// Orders the storing and the publishing of every task text change.
+    pub task_order: TaskOrder,
     /// Set by the interrupt at stop, so no start follows it.
     pub stopping: StoppingFlag,
     /// The action record the agent use cases write. The hierarchy's
@@ -148,6 +151,7 @@ pub fn build_agent_services(
         ),
         saved_outputs: SavedOutputs::new(wiring.sessions),
         status_order: StatusOrder::default(),
+        task_order: TaskOrder::default(),
         stopping: StoppingFlag::default(),
         journal: wiring.journal.clone(),
     }
@@ -217,6 +221,11 @@ fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
             Arc::clone(&wiring.agents),
             Arc::clone(&wiring.additions),
             Arc::clone(&wiring.clock),
+        ),
+        set_task_text: SetTaskTextHandler::new(
+            Arc::clone(&wiring.agents),
+            Arc::clone(&wiring.clock),
+            journal.clone(),
         ),
         get_office_additions: GetOfficeAdditionsHandler::new(
             Arc::clone(&wiring.agents),

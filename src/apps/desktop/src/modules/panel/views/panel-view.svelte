@@ -7,6 +7,7 @@
     AgentDetails,
     AgentFormDialog,
     ConfirmDialog,
+    isActive,
     ProjectFormDialog,
     ProjectList,
     type Project,
@@ -29,13 +30,26 @@
     unreadCount,
     type NotificationSnapshot,
   } from "../../notification";
-  import { pressedAppShortcut } from "../../../core/shortcuts";
+  import {
+    focusHeadingUnlessRunning,
+    INITIAL_NEEDS_YOU,
+    NeedsYouSection,
+    rowOf,
+    type NeedsYouSnapshot,
+  } from "../../needs-you";
+  import { SaveAsTemplateDialog, TemplatesView } from "../../template";
+  import {
+    isJumpUnbound,
+    pressedAppShortcut,
+    sharedFocusShortcut,
+  } from "../../../core/shortcuts";
   import type { PanelStore } from "../state/panel-store.svelte";
   import AgentRow from "../components/agent-row.svelte";
   import AgentSwitcherDialog from "../components/agent-switcher-dialog.svelte";
   import ProjectSwitcher from "../components/project-switcher.svelte";
   import {
     agentHierarchy,
+    ALL_PROJECTS,
     effectiveChoice,
     isEmptyProject,
     projectNameOf,
@@ -79,13 +93,29 @@
    * does not show on the details of another agent. */
   let agentHoldFailure = $state<{ agentId: string; text: string } | null>(null);
 
-  // One live region speaks for both sources; the newest change replaces the
+  // Needs you is a plain value too, so it subscribes the same way. The tick
+  // moves its clock, and the effect's cleanup stops it with the view.
+  let needsYouSnapshot = $state<NeedsYouSnapshot>(INITIAL_NEEDS_YOU);
+  $effect(() => store.needsYou.subscribe((next) => (needsYouSnapshot = next)));
+  $effect(() => store.needsYou.startTicking());
+  // The shared focus shortcut loads once for the app; the collision line
+  // shows when it holds the jump key (0008 D6).
+  let isJumpOff = $state(false);
+  $effect(() => {
+    void sharedFocusShortcut(client).then(() => (isJumpOff = isJumpUnbound()));
+  });
+
+  // One live region speaks for the sources; the newest change replaces the
   // text. Each source publishes a new snapshot for reasons that are not a new
   // announcement (a read, a pending flag), and its old announcement stays in
   // it, so a source speaks only when its own announcement changed.
   let liveAnnouncement = $state<string | null>(null);
   let lastHoldAnnouncement: string | null = null;
   let lastNotificationAnnouncement: string | null = null;
+  let lastNeedsYouAnnouncement: string | null = null;
+  // The first run sees an announcement that stood before this view mounted
+  // (the other view spoke it), so it only records it.
+  let isNeedsYouAnnouncementSeen = false;
   $effect(() => {
     const next = holdSnapshot.announcement;
     if (next === lastHoldAnnouncement) return;
@@ -98,6 +128,14 @@
     lastNotificationAnnouncement = next;
     if (next !== null) liveAnnouncement = `Notification: ${next}`;
   });
+  $effect(() => {
+    const next = needsYouSnapshot.announcement;
+    const isFirstRun = !isNeedsYouAnnouncementSeen;
+    isNeedsYouAnnouncementSeen = true;
+    if (next === lastNeedsYouAnnouncement) return;
+    lastNeedsYouAnnouncement = next;
+    if (next !== null && !isFirstRun) liveAnnouncement = next;
+  });
 
   const choice = $derived(
     effectiveChoice(office.projects, store.projectChoice),
@@ -106,6 +144,15 @@
   const emptyProject = $derived(isEmptyProject(office.projects, shown, choice));
   const notifications = $derived(notificationSnapshot);
   const unread = $derived(unreadCount(notifications.rows));
+
+  const needsYouRows = $derived(
+    needsYouSnapshot.items.flatMap((item) => {
+      const agent = office.agents.find((known) => known.id === item.agent_id);
+      if (agent === undefined) return [];
+      const project = projectNameOf(agent, office.projects);
+      return [rowOf(item, agent.name, project, needsYouSnapshot.now)];
+    }),
+  );
 
   const AGENTS_HEADING_ID = "panel-agents-heading";
   const EMPTY_HEADING_ID = "panel-empty-heading";
@@ -116,6 +163,10 @@
   let isCreatingProject = $state(false);
   let isSwitchingAgent = $state(false);
   let isShowingNotifications = $state(false);
+  let isShowingTemplates = $state(false);
+  /** The agent that the "save as template" dialog reads, or null when closed. */
+  let templateSourceAgentId = $state<string | null>(null);
+  let templatesButton = $state<HTMLButtonElement | null>(null);
   let projectToDelete = $state<Project | null>(null);
   let detailArea = $state<HTMLElement | null>(null);
 
@@ -127,6 +178,22 @@
     const headingId =
       office.agents.length > 0 ? AGENTS_HEADING_ID : EMPTY_HEADING_ID;
     document.getElementById(headingId)?.focus();
+  }
+
+  const TEMPLATES_HEADING_ID = "templates-heading";
+
+  // The view swaps the panel's content, so focus follows the swap: to the
+  // new heading on the way in, and back to the button that opened it.
+  async function showTemplates(): Promise<void> {
+    isShowingTemplates = true;
+    await tick();
+    document.getElementById(TEMPLATES_HEADING_ID)?.focus();
+  }
+
+  async function leaveTemplates(): Promise<void> {
+    isShowingTemplates = false;
+    await tick();
+    templatesButton?.focus();
   }
 
   function deleteProject(): void {
@@ -165,6 +232,34 @@
     if (office.agents.some((agent) => agent.id === row.agent_id)) {
       openAgent(row.agent_id);
     }
+  }
+
+  /**
+   * The jump opens the top item's agent through the same path as the
+   * switcher, so a project that the choice hides does not matter (0008 D5).
+   * An empty project shows no detail area, so the view shows all projects
+   * first and the terminal has a place to render.
+   */
+  async function jumpToTopAgent(): Promise<void> {
+    const agentId = store.needsYou.takeTop((id) =>
+      office.agents.some((agent) => agent.id === id),
+    );
+    if (agentId === null) return;
+    if (emptyProject) {
+      store.setProjectChoice(ALL_PROJECTS);
+      await tick();
+    }
+    openAgent(agentId);
+    await focusHeadingUnlessRunning(detailArea, isAgentActive(agentId));
+  }
+
+  function nameOfAgent(agentId: string): string {
+    return office.agents.find((agent) => agent.id === agentId)?.name ?? "agent";
+  }
+
+  function isAgentActive(agentId: string): boolean {
+    const agent = office.agents.find((known) => known.id === agentId);
+    return agent !== undefined && isActive(agent.status);
   }
 
   async function toggleOfficeHold(): Promise<void> {
@@ -207,6 +302,11 @@
       isSwitchingAgent = true;
       return;
     }
+    if (pressed.kind === "jump") {
+      event.preventDefault();
+      void jumpToTopAgent();
+      return;
+    }
     if (pressed.position === null) return;
     const agent = shown[pressed.position - 1];
     if (agent !== undefined) openAgent(agent.id);
@@ -237,6 +337,17 @@
   }
 </script>
 
+<!-- Needs you covers every project (FR-009), so each view that the project
+  choice can show renders it. -->
+{#snippet needsYouSection()}
+  <NeedsYouSection
+    rows={needsYouRows}
+    count={needsYouRows.length}
+    isJumpUnbound={isJumpOff}
+    ondismiss={store.needsYou.dismiss}
+  />
+{/snippet}
+
 <div class="mx-auto flex max-w-6xl flex-col gap-6 p-6">
   <header class="flex flex-wrap items-center justify-between gap-3">
     <h1 class="text-2xl font-semibold text-neutral-900">office-harness</h1>
@@ -248,6 +359,13 @@
         />
         <Button variant="secondary" onclick={() => (isCreatingProject = true)}>
           New project
+        </Button>
+        <Button
+          variant="secondary"
+          onclick={() => void showTemplates()}
+          bind:element={templatesButton}
+        >
+          Templates
         </Button>
         <Button onclick={() => offerAgentForm(null)}>New agent</Button>
       </div>
@@ -269,7 +387,12 @@
 
   <NotificationLiveRegion announcement={liveAnnouncement} />
 
-  {#if office.phase === "loading"}
+  {#if isShowingTemplates && office.phase === "ready"}
+    <TemplatesView
+      controller={store.templates}
+      onback={() => void leaveTemplates()}
+    />
+  {:else if office.phase === "loading"}
     <p role="status" class="text-neutral-700">Loading the office.</p>
   {:else if office.phase === "failed"}
     <FailureMessage
@@ -316,6 +439,7 @@
         </Button>
       </section>
     {:else if emptyProject}
+      {@render needsYouSection()}
       <section
         aria-labelledby="panel-empty-project-heading"
         class="flex flex-col items-start gap-3"
@@ -336,35 +460,38 @@
       </section>
     {:else}
       <div class="grid gap-6 md:grid-cols-[20rem_1fr]">
-        <section
-          aria-labelledby={AGENTS_HEADING_ID}
-          class="flex flex-col gap-2"
-        >
-          {#if side}
-            {@render side()}
-          {/if}
-          <h2
-            id={AGENTS_HEADING_ID}
-            tabindex="-1"
-            class="text-lg font-semibold text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+        <div class="flex flex-col gap-6">
+          {@render needsYouSection()}
+          <section
+            aria-labelledby={AGENTS_HEADING_ID}
+            class="flex flex-col gap-2"
           >
-            Agents
-          </h2>
-          <ul class="flex flex-col gap-2">
-            {#each shown as agent (agent.id)}
-              {@const isStopping = office.stoppingAgentIds.has(agent.id)}
-              <AgentRow
-                {agent}
-                projectName={projectNameOf(agent, office.projects)}
-                hierarchy={agentHierarchy(treeSnapshot.tree, agent.id)}
-                {isStopping}
-                isSelected={agent.id === office.selectedAgentId}
-                isOnHold={holdOfAgent(holds, agent.id) !== null}
-                onopen={openAgent}
-              />
-            {/each}
-          </ul>
-        </section>
+            {#if side}
+              {@render side()}
+            {/if}
+            <h2
+              id={AGENTS_HEADING_ID}
+              tabindex="-1"
+              class="text-lg font-semibold text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+            >
+              Agents
+            </h2>
+            <ul class="flex flex-col gap-2">
+              {#each shown as agent (agent.id)}
+                {@const isStopping = office.stoppingAgentIds.has(agent.id)}
+                <AgentRow
+                  {agent}
+                  projectName={projectNameOf(agent, office.projects)}
+                  hierarchy={agentHierarchy(treeSnapshot.tree, agent.id)}
+                  {isStopping}
+                  isSelected={agent.id === office.selectedAgentId}
+                  isOnHold={holdOfAgent(holds, agent.id) !== null}
+                  onopen={openAgent}
+                />
+              {/each}
+            </ul>
+          </section>
+        </div>
         <div bind:this={detailArea}>
           {#if office.selectedAgentId !== null && office.details !== null}
             {@const selected = office.agents.find(
@@ -404,6 +531,8 @@
                   ondelete={() => void deleteAgent(agentId)}
                   onsaveadditions={(additions) =>
                     controller.saveAdditions(agentId, additions)}
+                  onsavetask={(text) => controller.saveTask(agentId, text)}
+                  onsaveastemplate={() => (templateSourceAgentId = agentId)}
                   onretry={controller.retryDetails}
                 />
               {/key}
@@ -444,6 +573,15 @@
     initialProjectId={createAgentInProject}
     onsubmit={controller.createAgent}
     onclose={closeAgentForm}
+  />
+{/if}
+{#if templateSourceAgentId !== null}
+  {@const sourceId = templateSourceAgentId}
+  <SaveAsTemplateDialog
+    controller={store.templates}
+    agentId={sourceId}
+    agentName={nameOfAgent(sourceId)}
+    onclose={() => (templateSourceAgentId = null)}
   />
 {/if}
 {#if isSwitchingAgent}

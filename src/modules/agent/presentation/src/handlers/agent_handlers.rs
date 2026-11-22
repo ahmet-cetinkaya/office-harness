@@ -14,6 +14,7 @@ use agent_application::commands::delete_agent::DeleteAgentHandler;
 use agent_application::commands::delete_project::DeleteProjectHandler;
 use agent_application::commands::set_office_additions::SetOfficeAdditionsHandler;
 use agent_application::commands::set_setting::SetSettingHandler;
+use agent_application::commands::set_task_text::SetTaskTextHandler;
 use agent_application::commands::start_agent::{StartAgentHandler, StartOutcome};
 use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
@@ -34,11 +35,12 @@ use super::role_requests::{RoleRequests, RoleResult};
 use super::subtree_requests::{SubtreeRequests, SubtreeResult};
 use crate::contracts::{
     AdditionsRequest, AgentIdRequest, CreateAgentRequest, CreateProjectRequest, ProjectIdRequest,
-    RolePlacement, SessionIdRequest, SettingKeyRequest, SettingRequest,
+    RolePlacement, SessionIdRequest, SettingKeyRequest, SettingRequest, TaskTextRequest,
 };
 use crate::mappings::{
     additions_changed_event, additions_json, agent_changed_event, agent_deleted_event, agent_json,
-    agent_status_event, project_changed_event, project_json, session_json, setting_json,
+    agent_status_event, agent_task_event, project_changed_event, project_json, session_json,
+    setting_json,
 };
 
 const PROJECT_CREATED: &str = "created";
@@ -49,6 +51,7 @@ const PROJECT_DELETED: &str = "deleted";
 pub const REQUEST_PREFIXES: [&str; 4] = ["agent.", "project.", "session.", "settings."];
 
 /// The use cases that the handlers call.
+#[derive(Clone)]
 pub struct AgentUseCases {
     pub create_agent: CreateAgentHandler,
     pub delete_agent: DeleteAgentHandler,
@@ -57,6 +60,7 @@ pub struct AgentUseCases {
     pub start_new_task: StartNewTaskHandler,
     pub continue_session: ContinueSessionHandler,
     pub set_office_additions: SetOfficeAdditionsHandler,
+    pub set_task_text: SetTaskTextHandler,
     pub get_office_additions: GetOfficeAdditionsHandler,
     pub list_sessions: ListSessionsHandler,
     pub list_agents: ListAgentsHandler,
@@ -188,6 +192,7 @@ impl AgentHandlers {
             "agent.new_task" => self.start_new_task(request),
             "agent.additions.get" => self.get_additions(request),
             "agent.additions.set" => self.set_additions(request),
+            "agent.task.set" => self.set_task_text(request),
             "session.list" => self.list_sessions(request),
             "session.continue" => self.continue_session(request),
             "settings.get" => self.get_setting(request),
@@ -305,7 +310,18 @@ impl AgentHandlers {
     fn start_new_task(&self, request: &Request) -> Result<Success, HandlerError> {
         let agent_id = parse_agent_id(request)?;
         let outcome = self.use_cases.start_new_task.handle(agent_id)?;
-        Ok(started_session(outcome))
+        // The new task clears the task text; the list learns it from its own
+        // event, not from the status event (0011 D3).
+        let task_event = agent_task_event(agent_id, outcome.agent.task.as_ref());
+        Ok(started_session(outcome).with_event(task_event))
+    }
+
+    fn set_task_text(&self, request: &Request) -> Result<Success, HandlerError> {
+        let body = TaskTextRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        let agent_id: AgentId = parse_id("agent_id", &body.agent_id)?;
+        let agent = self.use_cases.set_task_text.handle(agent_id, &body.text)?;
+        Ok(Success::result(agent_json(&agent))
+            .with_event(agent_task_event(agent_id, agent.task.as_ref())))
     }
 
     fn continue_session(&self, request: &Request) -> Result<Success, HandlerError> {

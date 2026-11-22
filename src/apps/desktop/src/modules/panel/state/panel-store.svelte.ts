@@ -13,23 +13,29 @@ import {
   LAST_AGENT_GONE_MESSAGE,
 } from "../../agent";
 import { createHoldController } from "../../hold";
+import { createNeedsYouController } from "../../needs-you";
+import { createTemplateController } from "../../template";
 
 export type OpenView = "panel" | "scene";
 
 /**
  * The panel's stores over one client: the office, the project choice, the
- * notification list with its OS notifications, the holds (0007), and the
- * last view (0003).
+ * notification list with its OS notifications, the holds (0007), Needs you
+ * (0008), the templates (0009), and the last view (0003).
  */
 export function createPanelStore(client: CoreClient) {
   const office = createOfficeStore(client, () => void notifications.load());
+  const needsYou = createNeedsYouController(client);
   const notifications = createNotificationController(
     client,
     createOsNotificationService(),
     () =>
       openView === "panel" ? office.snapshot.selectedAgentId : sceneOpenAgentId,
     () => document.hasFocus(),
+    needsYou.hideOrigin,
+    needsYou.showOrigin,
   );
+  const templates = createTemplateController(client);
   const hold = createHoldController(
     client,
     (agentId) =>
@@ -159,7 +165,9 @@ export function createPanelStore(client: CoreClient) {
       client,
     },
     notifications,
+    needsYou,
     hold,
+    templates,
     lastView,
     client,
   };

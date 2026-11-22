@@ -1,0 +1,161 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+use std::sync::{MutexGuard, PoisonError};
+
+use kernel::{AgentId, Timestamp};
+use notification_application::common::errors::NotificationApplicationError;
+use notification_application::common::interfaces::NeedsYouStore;
+use notification_domain::{AttentionEvent, AttentionKind, NeedsYouItem, NotificationId};
+use rusqlite::{Connection, OptionalExtension, Row, params};
+
+use super::notification_repository::{SharedHandle, corrupt, storage_failure};
+
+const SELECT_ITEM: &str = "SELECT agent_id, first_event_at, latest_kind, latest_detail, \
+                           latest_at, origin FROM notification_needs_you";
+
+struct NeedsYouRow {
+    agent_id: String,
+    first_event_at: i64,
+    latest_kind: String,
+    latest_detail: Option<String>,
+    latest_at: i64,
+    origin: Option<String>,
+}
+
+impl NeedsYouRow {
+    fn read(row: &Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            agent_id: row.get(0)?,
+            first_event_at: row.get(1)?,
+            latest_kind: row.get(2)?,
+            latest_detail: row.get(3)?,
+            latest_at: row.get(4)?,
+            origin: row.get(5)?,
+        })
+    }
+
+    fn into_item(self) -> Result<NeedsYouItem, NotificationApplicationError> {
+        let agent_id = self
+            .agent_id
+            .parse::<AgentId>()
+            .map_err(|error| corrupt("agent id", &error.to_string()))?;
+        let kind = self
+            .latest_kind
+            .parse::<AttentionKind>()
+            .map_err(|error| corrupt("attention kind", &error.to_string()))?;
+        let origin = self
+            .origin
+            .map(|text| {
+                text.parse::<NotificationId>()
+                    .map_err(|error| corrupt("origin notification id", &error.to_string()))
+            })
+            .transpose()?;
+        Ok(NeedsYouItem {
+            agent_id,
+            first_event_at: Timestamp::from_unix_millis(self.first_event_at),
+            latest: AttentionEvent {
+                kind,
+                detail: self.latest_detail,
+                at: Timestamp::from_unix_millis(self.latest_at),
+            },
+            origin,
+        })
+    }
+}
+
+/// The items in the `notification_needs_you` table.
+#[derive(Clone)]
+pub struct NeedsYouRepository {
+    connection: SharedHandle,
+}
+
+impl NeedsYouRepository {
+    #[must_use]
+    pub fn new(connection: SharedHandle) -> Self {
+        Self { connection }
+    }
+
+    fn connection(&self) -> MutexGuard<'_, Connection> {
+        // A panic in another call leaves SQLite consistent, so a poisoned
+        // lock is safe to reuse.
+        self.connection
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn delete_where(
+        &self,
+        column: &'static str,
+        value: String,
+    ) -> Result<bool, NotificationApplicationError> {
+        let deleted = self
+            .connection()
+            .execute(
+                &format!("DELETE FROM notification_needs_you WHERE {column} = ?1"),
+                [value],
+            )
+            .map_err(|error| storage_failure(&error))?;
+        Ok(deleted > 0)
+    }
+}
+
+impl NeedsYouStore for NeedsYouRepository {
+    fn find(
+        &self,
+        agent_id: AgentId,
+    ) -> Result<Option<NeedsYouItem>, NotificationApplicationError> {
+        let row = self
+            .connection()
+            .query_row(
+                &format!("{SELECT_ITEM} WHERE agent_id = ?1"),
+                [agent_id.to_string()],
+                NeedsYouRow::read,
+            )
+            .optional()
+            .map_err(|error| storage_failure(&error))?;
+        row.map(NeedsYouRow::into_item).transpose()
+    }
+
+    fn save(&self, item: &NeedsYouItem) -> Result<(), NotificationApplicationError> {
+        self.connection()
+            .execute(
+                "INSERT OR REPLACE INTO notification_needs_you \
+                 (agent_id, first_event_at, latest_kind, latest_detail, latest_at, origin) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    item.agent_id.to_string(),
+                    item.first_event_at.as_unix_millis(),
+                    item.latest.kind.as_str(),
+                    item.latest.detail,
+                    item.latest.at.as_unix_millis(),
+                    item.origin.map(|origin| origin.as_uuid_text()),
+                ],
+            )
+            .map_err(|error| storage_failure(&error))?;
+        Ok(())
+    }
+
+    fn list(&self) -> Result<Vec<NeedsYouItem>, NotificationApplicationError> {
+        let connection = self.connection();
+        let mut statement = connection
+            .prepare(SELECT_ITEM)
+            .map_err(|error| storage_failure(&error))?;
+        let rows = statement
+            .query_map([], NeedsYouRow::read)
+            .map_err(|error| storage_failure(&error))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|error| storage_failure(&error))?;
+        rows.into_iter().map(NeedsYouRow::into_item).collect()
+    }
+
+    fn remove(&self, agent_id: AgentId) -> Result<bool, NotificationApplicationError> {
+        self.delete_where("agent_id", agent_id.to_string())
+    }
+
+    fn remove_by_origin(
+        &self,
+        notification_id: NotificationId,
+    ) -> Result<bool, NotificationApplicationError> {
+        self.delete_where("origin", notification_id.as_uuid_text())
+    }
+}
