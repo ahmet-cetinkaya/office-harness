@@ -3,10 +3,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use agent_application::common::interfaces::WorktreeManager;
+use agent_application::common::interfaces::{FileView, WorktreeManager};
 use agent_domain::value_objects::Settings;
 use agent_infrastructure::services::{
-    AttributionTiming, Environment, GitWorktrees, LoginEnvironment,
+    AttributionTiming, Environment, GitWorktrees, LazyGitRunner, LocalFileView, LoginEnvironment,
 };
 use terminal_application::common::interfaces::{TerminalEventSink, TerminalRuntime};
 use terminal_domain::errors::TerminalError;
@@ -28,6 +28,9 @@ pub struct TerminalServices {
     /// The agents' own git worktrees (0010). It runs git with the same login
     /// environment the agents start with.
     pub worktrees: Arc<dyn WorktreeManager>,
+    /// The read-only view of an agent's folder (0016). It shares the git
+    /// runner of the worktrees.
+    pub file_view: Arc<dyn FileView>,
 }
 
 /// The environment a launched agent starts from: the server's own, and the
@@ -78,16 +81,21 @@ pub fn build_terminal_services(
         },
         Arc::new(events.clone()) as Arc<dyn TerminalEventSink>,
     ));
-    let worktrees = Arc::new(GitWorktrees::new(
+    let git = Arc::new(LazyGitRunner::login(
         config.worktrees_folder_path(),
         Arc::clone(&login_environment),
         server_environment.clone(),
+    ));
+    let worktrees = Arc::new(GitWorktrees::new(
+        config.worktrees_folder_path(),
+        Arc::clone(&git),
         Arc::new(alerts.clone()),
     ));
     Ok(TerminalServices {
         handlers: Arc::new(TerminalHandlers::new(&runtime)),
         launcher: TerminalLauncher::new(runtime.clone(), login_environment, server_environment),
         worktrees,
+        file_view: Arc::new(LocalFileView::new(git)),
         runtime,
         events,
     })

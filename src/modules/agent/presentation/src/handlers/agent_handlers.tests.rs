@@ -16,14 +16,17 @@ use agent_application::commands::stop_agent::StopAgentHandler;
 use agent_application::common::action_journal::ActionJournal;
 use agent_application::common::errors::{PortError, TerminalHostError};
 use agent_application::common::interfaces::{
-    ActionRecorder, AdditionsStore, AgentStore, CliAdapter, CliAdapters, Clock, FailureReporter,
-    ProjectStore, SessionStore, SettingsStore, TerminalHost,
+    ActionRecorder, AdditionsStore, AgentStore, CliAdapter, CliAdapters, Clock, DiffRequest,
+    FailureReporter, FileView, FileViewError, ProjectStore, SessionStore, SettingsStore,
+    TerminalHost,
 };
 use agent_application::common::models::{
-    AgentActionEntry, PrepareLaunch, PreparedLaunch, StartTerminal,
+    AgentActionEntry, ChangeList, CommitDetail, CommitPage, FileContent, FileDiff, FolderListing,
+    PrepareLaunch, PreparedLaunch, StartTerminal,
 };
 use agent_application::common::session_ender::SessionEnder;
 use agent_application::common::session_launcher::{LauncherServices, SessionLauncher};
+use agent_application::queries::file_view::FileViewHandler;
 use agent_application::queries::get_office_additions::GetOfficeAdditionsHandler;
 use agent_application::queries::get_settings::GetSettingsHandler;
 use agent_application::queries::list_agents::ListAgentsHandler;
@@ -31,6 +34,7 @@ use agent_application::queries::list_projects::ListProjectsHandler;
 use agent_application::queries::list_sessions::ListSessionsHandler;
 use agent_domain::entities::{AdditionsRecord, Agent};
 use agent_domain::enums::AgentStatus;
+use agent_domain::services::RelativePath;
 use agent_domain::value_objects::{
     AgentCommand, DisplayName, ExitResult, MachineId, ProjectId, SessionId, Settings,
 };
@@ -456,6 +460,58 @@ fn use_cases(stores: &FakeStores) -> AgentUseCases {
         get_settings: GetSettingsHandler::new(Arc::clone(&stores.settings)),
         worktree_info: WorktreeInfoHandler::new(Arc::clone(&stores.projects), None),
         worktree_status: WorktreeStatusHandler::new(Arc::clone(&stores.agents_trait), None),
+        file_view: FileViewHandler::new(
+            Arc::clone(&stores.agents_trait),
+            Arc::clone(&stores.projects),
+            Arc::new(FakeFileView),
+        ),
+    }
+}
+
+/// Lists an empty folder, refuses the path `escape`, and reads nothing else.
+struct FakeFileView;
+
+impl FileView for FakeFileView {
+    fn list(
+        &self,
+        root: &std::path::Path,
+        path: &RelativePath,
+    ) -> Result<FolderListing, FileViewError> {
+        if path.name() == Some("escape") {
+            return Err(FileViewError::Refused("outside".to_owned()));
+        }
+        Ok(FolderListing {
+            root: root.display().to_string(),
+            path: path.to_text(),
+            entries: Vec::new(),
+            more: 0,
+            read_at: Timestamp::from_unix_millis(5),
+        })
+    }
+
+    fn read(
+        &self,
+        _: &std::path::Path,
+        _: &RelativePath,
+        _: bool,
+    ) -> Result<FileContent, FileViewError> {
+        never_called()
+    }
+
+    fn changes(&self, _: &std::path::Path) -> Result<ChangeList, FileViewError> {
+        never_called()
+    }
+
+    fn diff(&self, _: &std::path::Path, _: &DiffRequest) -> Result<FileDiff, FileViewError> {
+        never_called()
+    }
+
+    fn history(&self, _: &std::path::Path, _: u32) -> Result<CommitPage, FileViewError> {
+        never_called()
+    }
+
+    fn commit(&self, _: &std::path::Path, _: &str) -> Result<CommitDetail, FileViewError> {
+        Err(FileViewError::Failed("git is not available".to_owned()))
     }
 }
 
@@ -659,5 +715,108 @@ fn a_task_text_request_without_text_names_the_field() {
     assert_eq!(
         failure_of(&handled),
         ("invalid", "text is required".to_owned())
+    );
+}
+
+fn agent_with_folder(agents: &FakeAgents, folder: &str) -> AgentId {
+    let agent = Agent::new(
+        AgentId::generate(),
+        DisplayName::parse("agent name", "Ana").expect("name"),
+        AgentCommand::parse("claude").expect("command"),
+        Some(folder.into()),
+        None,
+        MachineId::generate(),
+        Timestamp::from_unix_millis(0),
+    )
+    .expect("agent");
+    let agent_id = agent.id;
+    agents.insert(&agent).expect("insert");
+    agent_id
+}
+
+#[test]
+fn a_files_request_answers_with_the_contract_fields_and_publishes_nothing() {
+    let (agents, handlers) = single_agent_office();
+    let agent_id = agent_with_folder(&agents, "/work");
+
+    let handled = handlers.handle(&request(
+        "agent.files.list",
+        &json!({"agent_id": agent_id.as_uuid_text(), "path": "src"}),
+    ));
+
+    let Response::Success { result, .. } = &handled.response else {
+        panic!("expected success, got {:?}", handled.response);
+    };
+    assert_eq!(result["root"], "/work");
+    assert_eq!(result["path"], "src");
+    assert_eq!(result["entries"], json!([]));
+    assert_eq!(result["read_at"], 5);
+    assert_eq!(handled.events.len(), 0);
+}
+
+#[test]
+fn a_files_request_names_the_field_at_fault() {
+    let (agents, handlers) = single_agent_office();
+    let agent_id = agent_with_folder(&agents, "/work");
+    let id = agent_id.as_uuid_text();
+
+    let cases = [
+        (
+            "agent.files.read",
+            json!({"agent_id": id}),
+            "path is required",
+        ),
+        (
+            "agent.files.read",
+            json!({"agent_id": id, "path": "a", "reveal": "yes"}),
+            "reveal must be true or false",
+        ),
+        (
+            "agent.files.history",
+            json!({"agent_id": id, "skip": -1}),
+            "skip must be a whole number of at least 0",
+        ),
+        (
+            "agent.files.commit",
+            json!({"agent_id": id}),
+            "commit is required",
+        ),
+        (
+            "agent.files.list",
+            json!({"agent_id": id, "path": "a/../b"}),
+            "path must not have a . or .. part",
+        ),
+    ];
+
+    for (kind, fields, message) in cases {
+        let (code, text) = failure_of(&handlers.handle(&request(kind, &fields)));
+        assert_eq!((code, text.as_str()), ("invalid", message), "{kind}");
+    }
+}
+
+#[test]
+fn a_files_request_maps_the_failures_to_the_contract_codes() {
+    let (agents, handlers) = single_agent_office();
+    let agent_id = agent_with_folder(&agents, "/work");
+    let id = agent_id.as_uuid_text();
+
+    let unknown = handlers.handle(&request(
+        "agent.files.list",
+        &json!({"agent_id": AgentId::generate().as_uuid_text(), "path": ""}),
+    ));
+    let refused = handlers.handle(&request(
+        "agent.files.list",
+        &json!({"agent_id": id, "path": "escape"}),
+    ));
+    let internal = handlers.handle(&request(
+        "agent.files.commit",
+        &json!({"agent_id": id, "commit": "a".repeat(40)}),
+    ));
+
+    assert_eq!(failure_of(&unknown).0, "not_found");
+    assert_eq!(failure_of(&refused).0, "refused");
+    assert_eq!(
+        failure_of(&internal),
+        ("internal", "git is not available".to_owned())
     );
 }

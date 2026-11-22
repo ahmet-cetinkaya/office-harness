@@ -18,11 +18,12 @@ use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
 use agent_application::common::action_journal::ActionJournal;
 use agent_application::common::interfaces::{
-    AdditionsStore, AgentStore, CliAdapters, Clock, ProjectStore, SessionStore, SettingsStore,
-    TerminalHost, WorktreeManager,
+    AdditionsStore, AgentStore, CliAdapters, Clock, FileView, ProjectStore, SessionStore,
+    SettingsStore, TerminalHost, WorktreeManager,
 };
 use agent_application::common::session_ender::SessionEnder;
 use agent_application::common::session_launcher::{LauncherServices, SessionLauncher};
+use agent_application::queries::file_view::FileViewHandler;
 use agent_application::queries::get_office_additions::GetOfficeAdditionsHandler;
 use agent_application::queries::get_settings::GetSettingsHandler;
 use agent_application::queries::list_agents::ListAgentsHandler;
@@ -94,6 +95,7 @@ struct Wiring {
     journal: ActionJournal,
     alerts: StorageAlerts,
     worktrees: Arc<dyn WorktreeManager>,
+    file_view: Arc<dyn FileView>,
 }
 
 /// Joins the agent use cases to the SQLite stores, the terminal, the clock,
@@ -133,6 +135,7 @@ pub fn build_agent_services(
         alerts: alerts.clone(),
         clock,
         worktrees: Arc::clone(&terminal.worktrees),
+        file_view: Arc::clone(&terminal.file_view),
     };
     AgentServices {
         handlers: Arc::new(AgentHandlers::new(use_cases(&wiring, machine_id))),
@@ -254,6 +257,11 @@ fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
         worktree_status: WorktreeStatusHandler::new(
             Arc::clone(&wiring.agents),
             Some(Arc::clone(&wiring.worktrees)),
+        ),
+        file_view: FileViewHandler::new(
+            Arc::clone(&wiring.agents),
+            Arc::clone(&wiring.projects),
+            Arc::clone(&wiring.file_view),
         ),
     }
 }
