@@ -228,8 +228,9 @@ impl DeleteAgentHandler {
         if worktrees.remove(worktree, force).is_err() {
             return WorktreeOutcome::kept(worktree);
         }
-        let branch_deleted =
-            status.branch_is_deletable() && worktrees.delete_branch(worktree).is_ok();
+        let branch_deleted = status
+            .deletable_branch_commit()
+            .is_some_and(|commit| worktrees.delete_branch(worktree, commit).is_ok());
         if branch_deleted {
             WorktreeOutcome {
                 deleted_branches: vec![worktree.branch.clone()],

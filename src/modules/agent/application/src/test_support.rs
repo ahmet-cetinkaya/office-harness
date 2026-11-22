@@ -745,6 +745,7 @@ pub fn clean_status(hash: &str) -> WorktreeStatus {
         status_hash: hash.to_owned(),
         own_commits: Some(0),
         base_exists: true,
+        branch_commit: Some("c0".to_owned()),
     }
 }
 
@@ -838,7 +839,7 @@ impl WorktreeManager for FakeWorktrees {
         Ok(())
     }
 
-    fn delete_branch(&self, _worktree: &AgentWorktree) -> Result<(), WorktreeError> {
+    fn delete_branch(&self, _worktree: &AgentWorktree, _commit: &str) -> Result<(), WorktreeError> {
         self.record("branch -D");
         Ok(())
     }

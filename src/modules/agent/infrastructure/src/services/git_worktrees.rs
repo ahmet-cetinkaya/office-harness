@@ -24,6 +24,7 @@ const GIT_PROGRAM: &str = "git";
 const BRANCH_REF_PREFIX: &str = "refs/heads/";
 const WORKTREE_RECORD_PREFIX: &str = "worktree ";
 const BARE_RECORD: &str = "bare";
+const BRANCH_RECORD_PREFIX: &str = "branch ";
 const SHOW_UNTRACKED_FILES: &str = "status.showUntrackedFiles=normal";
 const SHORT_ID_CHARS: usize = 8;
 const REPOSITORY_HASH_CHARS: usize = 8;
@@ -155,6 +156,17 @@ impl GitWorktrees {
         })
     }
 
+    /// The undo of a create deletes the branch it just made, whatever it
+    /// points at. Best effort, as the whole undo.
+    fn undo_branch(&self, worktree: &AgentWorktree) {
+        if let Some(runner) = self.runner() {
+            let _ = runner.write(
+                &worktree.repository,
+                &["branch", "-D", "--", &worktree.branch],
+            );
+        }
+    }
+
     /// `worktree remove` with `force` times `--force`, after the check that
     /// the folder is the office's own.
     fn remove_record(&self, worktree: &AgentWorktree, force: usize) -> Result<(), WorktreeError> {
@@ -216,7 +228,7 @@ impl GitWorktrees {
             // A refused branch was never made, and the name may be the
             // user's own; only a branch step ended mid-way is undone.
             if failure == GitFailure::Timeout {
-                let _ = self.delete_branch(&worktree);
+                self.undo_branch(&worktree);
             }
             return Err(create_failure(&failure));
         }
@@ -325,6 +337,7 @@ impl WorktreeManager for GitWorktrees {
             status_hash: hex_hash(&[]),
             own_commits: None,
             base_exists: false,
+            branch_commit: None,
         };
         let Some(runner) = self.runner() else {
             return unreachable;
@@ -361,12 +374,29 @@ impl WorktreeManager for GitWorktrees {
                 &["rev-parse", "--verify", "--quiet", &base],
             )
             .is_ok();
-        let own_commits = base_exists
-            .then(|| {
-                let range = format!("{}..{}", worktree.base_ref(), worktree.branch_ref());
-                runner.read(&worktree.repository, &["rev-list", "--count", &range, "--"])
+        let branch_commit = runner
+            .read(
+                &worktree.repository,
+                &[
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    &format!("{}^{{commit}}", worktree.branch_ref()),
+                ],
+            )
+            .ok()
+            .map(|commit| commit.trim().to_owned())
+            .filter(|commit| is_commit_id(commit));
+        // Counted at that commit, so the delete can require it unchanged.
+        let own_commits = branch_commit
+            .as_deref()
+            .filter(|_| base_exists)
+            .and_then(|commit| {
+                let range = format!("{}..{commit}", worktree.base_ref());
+                runner
+                    .read(&worktree.repository, &["rev-list", "--count", &range, "--"])
+                    .ok()
             })
-            .and_then(Result::ok)
             .and_then(|count| count.trim().parse().ok());
         let changed = changed_paths(&status);
         WorktreeStatus {
@@ -376,6 +406,7 @@ impl WorktreeManager for GitWorktrees {
             status_hash: status_hash(&worktree.folder, &status, &changed),
             own_commits,
             base_exists,
+            branch_commit,
         }
     }
 
@@ -383,12 +414,24 @@ impl WorktreeManager for GitWorktrees {
         self.remove_record(worktree, usize::from(force))
     }
 
-    fn delete_branch(&self, worktree: &AgentWorktree) -> Result<(), WorktreeError> {
+    fn delete_branch(&self, worktree: &AgentWorktree, commit: &str) -> Result<(), WorktreeError> {
         let runner = self.require_runner()?;
+        let records = runner
+            .read(&worktree.repository, &["worktree", "list", "--porcelain"])
+            .map_err(|failure| WorktreeError::Failed(failure.reason()))?;
+        let checked_out = format!("{BRANCH_RECORD_PREFIX}{}", worktree.branch_ref());
+        if records.lines().any(|line| line == checked_out) {
+            return Err(WorktreeError::Failed(format!(
+                "the branch {} is checked out in another folder",
+                worktree.branch
+            )));
+        }
+        // One step that deletes the ref only while it still points at the
+        // counted commit, so a commit made since is never lost.
         runner
             .write(
                 &worktree.repository,
-                &["branch", "-D", "--", &worktree.branch],
+                &["update-ref", "-d", &worktree.branch_ref(), commit],
             )
             .map(|_| ())
             .map_err(|failure| WorktreeError::Failed(failure.reason()))
@@ -406,7 +449,7 @@ impl WorktreeManager for GitWorktrees {
             // now gone; the forced remove clears that one record.
             let _ = self.remove_record(worktree, DISCARD_FORCE);
         }
-        let _ = self.delete_branch(worktree);
+        self.undo_branch(worktree);
     }
 }
 

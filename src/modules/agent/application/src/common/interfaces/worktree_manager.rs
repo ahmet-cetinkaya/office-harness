@@ -59,6 +59,9 @@ pub struct WorktreeStatus {
     /// Commits of the branch that the base lacks; `None` when unknown.
     pub own_commits: Option<usize>,
     pub base_exists: bool,
+    /// The commit the branch pointed at when `own_commits` was counted; a
+    /// branch delete happens only while it still points there.
+    pub branch_commit: Option<String>,
 }
 
 impl WorktreeStatus {
@@ -72,14 +75,17 @@ impl WorktreeStatus {
             status_hash: String::new(),
             own_commits: None,
             base_exists: false,
+            branch_commit: None,
         }
     }
 
-    /// The branch holds nothing the base lacks, so deleting it loses no
-    /// commit (FR-007).
+    /// The commit to delete the branch at, when the branch held nothing the
+    /// base lacks at that commit, so deleting it loses no commit (FR-007).
     #[must_use]
-    pub fn branch_is_deletable(&self) -> bool {
-        self.base_exists && self.own_commits == Some(0)
+    pub fn deletable_branch_commit(&self) -> Option<&str> {
+        self.branch_commit
+            .as_deref()
+            .filter(|_| self.base_exists && self.own_commits == Some(0))
     }
 }
 
@@ -134,10 +140,13 @@ pub trait WorktreeManager: Send + Sync {
     /// `Failed` with git's reason.
     fn remove(&self, worktree: &AgentWorktree, force: bool) -> Result<(), WorktreeError>;
 
+    /// Deletes the agent's branch only while it still points at `commit`,
+    /// the commit its status counted, and no worktree has it checked out.
+    ///
     /// # Errors
-    /// `Failed` with git's reason, for example a branch checked out
-    /// elsewhere.
-    fn delete_branch(&self, worktree: &AgentWorktree) -> Result<(), WorktreeError>;
+    /// `Failed` with the reason, for example a branch checked out
+    /// elsewhere or moved since the count.
+    fn delete_branch(&self, worktree: &AgentWorktree, commit: &str) -> Result<(), WorktreeError>;
 
     /// The undo of a create: removes the worktree, its folder, and its
     /// branch without asking. Best effort; nothing to report.
