@@ -254,6 +254,22 @@ fn descendants_go_deepest_first_and_exclude_the_agent() {
 }
 
 #[test]
+fn descendants_in_tree_order_put_each_one_after_its_parent_and_exclude_the_agent() {
+    let ids = fixed_ids();
+    let rows = tree();
+    let ids_of = |agent_id| {
+        descendants_in_tree_order(&rows, agent_id)
+            .iter()
+            .map(|row| row.agent_id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ids_of(ids.ceo), vec![ids.lead_a, ids.member, ids.lead_b]);
+    assert_eq!(ids_of(ids.lead_a), vec![ids.member]);
+    assert_eq!(ids_of(ids.lead_b), Vec::<AgentId>::new());
+    assert_eq!(ids_of(ids.plain), Vec::<AgentId>::new());
+}
+
+#[test]
 fn descendant_checks_follow_the_parent_chain() {
     let ids = fixed_ids();
     assert!(is_descendant_of(&tree(), ids.member, ids.ceo));
@@ -356,6 +372,11 @@ fn a_looped_tree_terminates_instead_of_hanging() {
     // extending the walk forever.
     assert_eq!(descendants_of(&looped, a), vec![b]);
     assert_eq!(descendants_of(&looped, b), vec![a]);
+    let in_order = descendants_in_tree_order(&looped, a);
+    assert_eq!(
+        in_order.iter().map(|row| row.agent_id).collect::<Vec<_>>(),
+        vec![b]
+    );
     assert!(is_descendant_of(&looped, a, b));
     assert!(is_descendant_of(&looped, b, a));
     // The negative query starts inside the cycle and chases a target that

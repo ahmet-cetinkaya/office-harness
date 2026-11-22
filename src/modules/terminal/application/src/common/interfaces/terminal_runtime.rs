@@ -69,4 +69,9 @@ pub trait TerminalRuntime: Send + Sync {
     /// The run of the agent's latest start, also after its child exited, or
     /// `None` when it never started.
     fn current_run(&self, agent_id: AgentId) -> Option<RunId>;
+
+    /// How long the running child has written nothing: since its last output,
+    /// or since its start when it wrote nothing yet. `None` when it does not
+    /// run. Only the time leaves the terminal, never the output (0014).
+    fn quiet_for(&self, agent_id: AgentId) -> Option<Duration>;
 }
