@@ -64,7 +64,7 @@ Every request is a JSON text frame `{"id":<u32>,"type":"<name>",...}`. The respo
 
 | Event | Fields | FR |
 |---|---|---|
-| `agent.status` | agent_id, status, detail? | FR-014 |
+| `agent.status` | agent_id, status, detail? The status wire values are `starting`, `working`, `waiting_for_input`, `exited`, `failed`, `stopped`, and `interrupted` (an underscore, not spaces). The text `waiting for input` in the SPEC is the display text. | FR-014 |
 | `agent.changed` | agent | FR-012 |
 | `agent.task` | agent_id, task (`{text, set_at, source}` or `null`; no `last_line` and no `status`, so a client patches only the task). Sent after a directive is entered, after `agent.task.set`, and after `agent.new_task` with `null` | 0011/FR-002, FR-004 |
 | `agent.deleted` | agent_id (an attached client closes its terminal) | Edge cases |

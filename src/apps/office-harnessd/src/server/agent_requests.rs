@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, PoisonError};
 
+use agent_application::common::interfaces::Clock;
 use agent_presentation::{AgentHandlers, Handled, REQUEST_PREFIXES};
 use audit_presentation::{ACTIONS_REQUEST, AuditHandlers};
 use hierarchy_application::TreeQuery;
 use hierarchy_application::queries::tree::RowPlace;
+use hierarchy_domain::Hold;
 use hierarchy_presentation::{
     CAUSE_AGENT_PLACED, CAUSE_AGENT_UNPLACED, CAUSE_SUBTREE_DELETED, CAUSE_SUBTREE_STOPPED,
     tree_event,
 };
 use kernel::AgentId;
+use notification_presentation::NeedsYouUseCases;
 use serde_json::Value;
 use terminal_application::common::interfaces::TerminalRuntime;
 use tokio::task::spawn_blocking;
@@ -21,9 +24,11 @@ use wire::{ErrorCode, Request, Response};
 
 use super::event_hub::EventHub;
 use super::hold_requests::HoldGateway;
+use super::subtree_status::{SubtreeState, subtree_entries, time_before};
 use crate::bootstrap::StorageAlerts;
 use crate::bridges::{
-    NeedsYouBridge, StatusOrder, StoppingFlag, TaskOrder, TerminalEvents, take_recorded_events,
+    NeedsYouBridge, StatusOrder, StoppingFlag, SystemClock, TaskOrder, TerminalEvents,
+    take_recorded_events,
 };
 
 /// The requests that change an agent's status or its terminal. They run one
@@ -262,6 +267,56 @@ impl AgentGateway {
             HashMap::new()
         });
         fill_places(result, &places);
+    }
+
+    /// The state of the caller's descendants for `agent.subtree` (0014). It
+    /// reads stored state and each running session's quiet time, and takes
+    /// neither the status order, nor the task order, nor the tree exclusion,
+    /// so a read blocks no change of the office (spec A11, plan D10).
+    ///
+    /// # Errors
+    /// The text of a failed read of the tree, the agents, or Needs you; the
+    /// failure also raises the storage alert, as the other reads here do.
+    pub(crate) fn subtree_status(&self, caller: AgentId, holds: &[Hold]) -> Result<Value, String> {
+        let read_failed = |error: &dyn std::fmt::Display| {
+            let message = error.to_string();
+            self.raise(Some(&message));
+            message
+        };
+        let rows = self
+            .hierarchy
+            .store_snapshot()
+            .map_err(|error| read_failed(&error))?;
+        let agents = self
+            .agents
+            .use_cases()
+            .list_agents
+            .handle()
+            .map_err(|error| read_failed(&error))?;
+        let waiting: HashSet<AgentId> = self
+            .needs_you
+            .list()
+            .map_err(|error| read_failed(&error))?
+            .iter()
+            .map(|item| item.agent_id)
+            .collect();
+        let state = SubtreeState {
+            rows: &rows,
+            agents: &agents,
+            waiting: &waiting,
+            holds,
+        };
+        let now = SystemClock.now();
+        let last_output_at = |agent_id| {
+            self.runtime
+                .quiet_for(agent_id)
+                .map(|quiet| time_before(now, quiet))
+        };
+        Ok(Value::Array(subtree_entries(
+            &state,
+            caller,
+            &last_output_at,
+        )))
     }
 
     fn raise(&self, disk_failure: Option<&str>) {
