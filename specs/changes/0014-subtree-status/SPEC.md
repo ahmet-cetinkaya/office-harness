@@ -143,6 +143,7 @@ None: this change adds no screen to the desktop app. The reading agent gets the 
 | The request names an actor or a caller. | Unauthorized | The office refuses it and records the refusal, as for every agent request (0002). |
 | A descendant is placed, moved out, or deleted during or between reads. | Concurrent | Each answer shows the tree of one moment; the next read shows the change (FR-002). |
 | Two agents read at the same time. | Concurrent | Each gets its own subtree. |
+| A team lead was placed before the office had a CEO. | Boundary | The read follows the parent the office stored. Until the known gap of 0002 A5 is fixed (such a lead is not moved under the CEO created later), the CEO's read does not list that lead or its members (A10). |
 | The reading agent's session has ended, so its call credential is gone. | Unauthorized | The office refuses the connection, as for every agent request (0002). |
 | An agent reads in a tight loop. | Boundary | Each read is answered; reads change nothing, so no hold or limit applies (FR-004, A2). The user stops or holds the agent as for any loop. |
 | The office cannot read the tree, the agents, or Needs you (for example disk failure). | Failure | The agent gets an error that says so, the refusal is recorded, and nothing changes. |
@@ -157,8 +158,9 @@ None: this change adds no screen to the desktop app. The reading agent gets the 
 - **A5:** "Has an item in Needs you" says only whether the item exists, not its event or its wait time.
 - **A6:** The answer shows the state at the moment of the read. The office sends no update to the agent when a state changes; the agent reads again.
 - **A7:** The task line of a task text set by the user (0011/FR-003) is readable by the agent's ancestors. Hiding task text is out of scope, as in 0011.
-- **A9:** The task line counts characters as the text stores them, so a character built from several parts can count as more than one. The reader is an agent, not a person, so the line does not need the on-screen count of 0011 A3.
 - **A8:** Like the 0002 descendant rule, the read rule prevents mistakes. It is not a security boundary against a hostile agent that runs as the same OS user (0002 A8, 0001 A7).
+- **A9:** The task line counts characters as the text stores them, so a character built from several parts can count as more than one. The reader is an agent, not a person, so the line does not need the on-screen count of 0011 A3.
+- **A10:** The read uses the descendant rule as the office applies it today (0002/FR-008). A known gap: 0002 A5 says that existing team leads move under a CEO created later, but the office does not yet store that move, so the CEO cannot act on those leads and does not see them in a read. A separate change fixes the gap; this change does not.
 
 ## Clarifications
 

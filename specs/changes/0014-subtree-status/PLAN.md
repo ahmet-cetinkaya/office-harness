@@ -85,7 +85,7 @@ SPEC.md, `checklists/requirements.md`, `contracts/subtree-protocol.md`, this pla
 ### T4: Integration tests (SC-001 to SC-007, FR-004, FR-005, PB-3)
 
 New `H/tests/agent_subtree_status.rs` with the real server and helper:
-- SC-001: CEO, 2 leads, 6 members, all running; each of the 9 reads; each answer equals its descendant set exactly.
+- SC-001: CEO, 2 leads, 6 members, all running, placed parent first (the CEO before its leads, so every lead stores the CEO as parent; spec A10); each of the 9 reads; each answer equals its descendant set exactly.
 - SC-002: every member prints `marker-7Q`; no answer contains it, and no entry has a key outside the contract.
 - SC-003: a member goes `working`, then `waiting for input` (short quiet period), then `stopped`; the lead's read after each shows it.
 - SC-004 and FR-004: under an office hold 10 reads answer; released, 30 reads, then `directive.send` is accepted and `hold.list` shows no hold.
