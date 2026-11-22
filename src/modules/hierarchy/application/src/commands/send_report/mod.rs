@@ -2,4 +2,4 @@
 
 mod send_report_handler;
 
-pub use send_report_handler::{Report, ReportDelivery, SendReportHandler};
+pub use send_report_handler::{Report, ReportDelivery, ReportPorts, SendReportHandler};

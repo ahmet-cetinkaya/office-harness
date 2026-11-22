@@ -307,10 +307,18 @@ async fn answer_report(state: &ServerState, grant: &AgentGrant, request: &Reques
     }
 }
 
-/// The answer of an accepted report (0015 contract, `report.send` result).
+/// The answer of an accepted report (0015 contract, `report.send` result):
+/// the receiver, and the 0012 outcome for a report to a parent.
 fn report_answer(delivery: ReportDelivery) -> Value {
     match delivery {
         ReportDelivery::NeedsYou => json!({"receiver": "person", "delivery": "needs_you"}),
+        ReportDelivery::Parent(outcome) => {
+            let mut answer = delivery_json(outcome);
+            if let Value::Object(fields) = &mut answer {
+                fields.insert("receiver".to_owned(), json!("parent"));
+            }
+            answer
+        }
     }
 }
 

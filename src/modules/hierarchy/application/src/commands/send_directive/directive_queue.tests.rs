@@ -19,6 +19,17 @@ fn waiting(text: &str, accepted_at: Timestamp) -> WaitingDirective {
         target: target(),
         text: text.to_owned(),
         accepted_at,
+        report: None,
+    }
+}
+
+fn report_from(sender: u128, text: &str, accepted_at: Timestamp) -> WaitingDirective {
+    WaitingDirective {
+        sender: AgentId::from_u128(sender),
+        target: target(),
+        text: text.to_owned(),
+        accepted_at,
+        report: Some(text.to_owned()),
     }
 }
 
@@ -128,5 +139,79 @@ fn a_closed_queue_takes_in_and_hands_out_nothing() {
             .claim_head(target(), at(Duration::ZERO))
             .head
             .is_none()
+    );
+}
+
+#[test]
+fn a_second_report_of_a_sender_replaces_its_waiting_one_in_place_with_its_own_time() {
+    let queue = DirectiveQueue::default();
+    queue.push(waiting("directive", at(Duration::ZERO)));
+    queue.push_report(report_from(2, "first", at(Duration::ZERO)));
+    queue.push(waiting("after", at(Duration::ZERO)));
+
+    let pushed = queue.push_report(report_from(2, "second", at(Duration::from_secs(5))));
+
+    assert_eq!(
+        pushed,
+        ReportPush::Replaced {
+            position: 2,
+            replaced: report_from(2, "first", at(Duration::ZERO)),
+        }
+    );
+    assert_eq!(queue.waiting_count(target()), 3);
+    let claim = queue.claim_head(target(), at(WAIT_LIMIT));
+    let expired: Vec<&str> = claim
+        .expired
+        .iter()
+        .map(|gone| gone.text.as_str())
+        .collect();
+    assert_eq!(expired, ["directive"]);
+    assert_eq!(claim.head.map(|head| head.text), Some("second".to_owned()));
+}
+
+#[test]
+fn a_report_never_replaces_the_claimed_head_and_joins_the_end_instead() {
+    let queue = DirectiveQueue::default();
+    queue.push_report(report_from(2, "first", at(Duration::ZERO)));
+    let claim = queue.claim_head(target(), at(Duration::ZERO));
+    let claimed = claim.head.expect("claimed head");
+    assert_eq!(claimed.text, "first");
+
+    let pushed = queue.push_report(report_from(2, "second", at(Duration::ZERO)));
+
+    assert_eq!(pushed, ReportPush::Added { position: 2 });
+    assert!(queue.take_head(&claimed));
+}
+
+#[test]
+fn reports_take_at_most_their_share_and_directives_keep_the_rest() {
+    let queue = DirectiveQueue::default();
+    for sender in 0..u128::try_from(REPORT_SHARE).expect("small share") {
+        let pushed = queue.push_report(report_from(100 + sender, "done", at(Duration::ZERO)));
+        assert!(matches!(pushed, ReportPush::Added { .. }));
+    }
+
+    let refused = queue.push_report(report_from(999, "late", at(Duration::ZERO)));
+    let directive_place = queue.push(waiting("from above", at(Duration::ZERO)));
+
+    assert_eq!(refused, ReportPush::Refused(ReportRoom::NoRoomForReports));
+    assert_eq!(directive_place, Some(REPORT_SHARE + 1));
+}
+
+#[test]
+fn a_full_queue_refuses_a_new_report_but_a_replacement_still_fits() {
+    let queue = DirectiveQueue::default();
+    queue.push_report(report_from(2, "first", at(Duration::ZERO)));
+    for _ in 1..QUEUE_LIMIT {
+        queue.push(waiting("directive", at(Duration::ZERO)));
+    }
+
+    assert_eq!(
+        queue.report_room(target(), AgentId::from_u128(3)),
+        ReportRoom::Full
+    );
+    assert_eq!(
+        queue.report_room(target(), AgentId::from_u128(2)),
+        ReportRoom::Replace
     );
 }
