@@ -144,6 +144,7 @@ describe("hold controller", () => {
       action: "hold",
       result: "ok",
       at: 5,
+      detail: null,
     };
     const good = observe(fakeClient(() => [entry]).client);
     expect(await good.controller.officeActions()).toEqual([entry]);

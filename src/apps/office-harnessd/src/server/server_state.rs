@@ -18,6 +18,7 @@ use super::hierarchy_requests::HierarchyGateway;
 use super::hold_requests::HoldGateway;
 use super::notification_requests::NotificationGateway;
 use super::restart_signal::RestartSignal;
+use super::resume_requests::ResumeGateway;
 use super::server_options::ServerOptions;
 use super::template_requests::TemplateGateway;
 use super::terminal_requests::TerminalGateway;
@@ -53,6 +54,9 @@ pub struct ServerState {
     /// The user's `template.*` requests. Only the user connection routes to
     /// it; the agent connection never does (0009).
     pub templates: TemplateGateway,
+    /// The user's `resume.*` requests (0013). Only the user connection routes
+    /// to it; the agent connection never does (A10).
+    pub resume: ResumeGateway,
     pub events: EventHub,
     /// Raised by `server.restart`.
     pub restart: RestartSignal,

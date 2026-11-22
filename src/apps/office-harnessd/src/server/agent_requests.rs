@@ -43,16 +43,22 @@ const STOP_REQUEST: &str = "agent.stop";
 /// they store; they hold the task order from the store to the publish.
 const TASK_REQUESTS: [&str; 2] = ["agent.task.set", "agent.new_task"];
 
-const ORDERED_REQUESTS: [&str; 5] = [
+const ORDERED_REQUESTS: [&str; 6] = [
     "agent.start",
     "agent.stop",
     DELETE_REQUEST,
     "agent.new_task",
     "session.continue",
+    "agent.resume",
 ];
 
 /// The requests that start a child, which the server refuses once it stops.
-const STARTING_REQUESTS: [&str; 3] = ["agent.start", "agent.new_task", "session.continue"];
+const STARTING_REQUESTS: [&str; 4] = [
+    "agent.start",
+    "agent.new_task",
+    "session.continue",
+    "agent.resume",
+];
 
 const STOPPING_MESSAGE: &str = "the server is stopping and starts no agent";
 

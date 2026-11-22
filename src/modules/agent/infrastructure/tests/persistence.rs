@@ -415,7 +415,7 @@ fn a_cli_session_id_is_set_later_and_an_unknown_session_is_not_found() {
 }
 
 #[test]
-fn sessions_still_running_at_the_next_start_become_interrupted() {
+fn sessions_still_open_at_the_next_start_become_lost() {
     let folder = TempDir::new().expect("folder");
     let office = open_office(&database_in(&folder));
     let agent = agent_named(&office, "Ana", None);
@@ -429,6 +429,37 @@ fn sessions_still_running_at_the_next_start_become_interrupted() {
         .expect("interrupt");
 
     assert_eq!(changed, 1);
+    let stored = office
+        .sessions
+        .find(session.id)
+        .expect("find")
+        .expect("stored");
+    assert_eq!(stored.exit_result, Some(ExitResult::Lost));
+}
+
+#[test]
+fn a_clean_stop_ends_the_session_as_interrupted_and_leaves_nothing_for_the_next_start() {
+    let folder = TempDir::new().expect("folder");
+    let office = open_office(&database_in(&folder));
+    let agent = agent_named(&office, "Ana", None);
+    office.agents.insert(&agent).expect("agent");
+    let session = session_of(&agent, 10, OfficeAdditions::default());
+    office.sessions.insert(&session).expect("session");
+    office
+        .sessions
+        .end_running(
+            agent.id,
+            &ExitResult::Interrupted,
+            Timestamp::from_unix_millis(50),
+        )
+        .expect("clean stop");
+
+    let changed = office
+        .sessions
+        .mark_running_as_interrupted(Timestamp::from_unix_millis(99))
+        .expect("start-up mark");
+
+    assert_eq!(changed, 0);
     let stored = office
         .sessions
         .find(session.id)
