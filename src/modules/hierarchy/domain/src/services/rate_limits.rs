@@ -10,6 +10,7 @@ pub const DEFAULT_DIRECTIVE_LIMIT: u32 = 10;
 pub const DEFAULT_DIRECTIVE_TARGET_LIMIT: u32 = 3;
 pub const DEFAULT_CREATE_LIMIT: u32 = 5;
 pub const DEFAULT_LIFECYCLE_LIMIT: u32 = 10;
+pub const DEFAULT_REPORT_LIMIT: u32 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LimitKind {
@@ -17,6 +18,7 @@ pub enum LimitKind {
     DirectiveTarget,
     Create,
     Lifecycle,
+    Report,
 }
 
 impl LimitKind {
@@ -28,6 +30,7 @@ impl LimitKind {
             Self::DirectiveTarget => "directives sent to one target agent",
             Self::Create => "agents created by one agent",
             Self::Lifecycle => "starts, stops, and new tasks by one agent",
+            Self::Report => "reports sent by one agent",
         }
     }
 }
@@ -39,6 +42,7 @@ pub struct RateLimits {
     pub directive_target: u32,
     pub create: u32,
     pub lifecycle: u32,
+    pub report: u32,
 }
 
 impl Default for RateLimits {
@@ -48,6 +52,7 @@ impl Default for RateLimits {
             directive_target: DEFAULT_DIRECTIVE_TARGET_LIMIT,
             create: DEFAULT_CREATE_LIMIT,
             lifecycle: DEFAULT_LIFECYCLE_LIMIT,
+            report: DEFAULT_REPORT_LIMIT,
         }
     }
 }
@@ -60,6 +65,7 @@ impl RateLimits {
             LimitKind::DirectiveTarget => self.directive_target,
             LimitKind::Create => self.create,
             LimitKind::Lifecycle => self.lifecycle,
+            LimitKind::Report => self.report,
         }
     }
 }
