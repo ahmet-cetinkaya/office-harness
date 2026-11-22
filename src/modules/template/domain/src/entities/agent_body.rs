@@ -43,6 +43,10 @@ pub struct AgentBody {
     pub working_folder: Option<String>,
     pub additions: AdditionsBody,
     pub role: Option<TemplateRole>,
+    /// The agent gets its own git branch and worktree when it is created
+    /// (0010 FR-009). Only the choice is saved; the base is read from the
+    /// chosen folder at creation (0010 A2).
+    pub own_worktree: bool,
 }
 
 impl AgentBody {

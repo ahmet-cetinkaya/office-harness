@@ -101,6 +101,7 @@ impl TemplateService {
             working_folder: definition.working_folder,
             additions: definition.additions,
             role: definition.role,
+            own_worktree: definition.own_worktree,
         })
     }
 

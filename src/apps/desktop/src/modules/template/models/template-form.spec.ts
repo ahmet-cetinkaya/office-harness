@@ -23,6 +23,7 @@ const BODY: AgentBody = {
     startup_prompt: "go",
   },
   role: "member",
+  own_worktree: true,
 };
 
 describe("template form", () => {
@@ -30,6 +31,17 @@ describe("template form", () => {
     const result = agentBodyOfDraft(draftOfAgentBody(BODY), "body");
 
     expect(result).toEqual({ ok: true, body: BODY });
+  });
+
+  test("the own worktree choice defaults to off and survives the editor text", () => {
+    const empty = agentBodyOfDraft(emptyAgentDraft("a-{n}"), "body");
+    const chosen = agentBodyOfDraft(
+      { ...emptyAgentDraft("a-{n}"), isOwnWorktree: true },
+      "body",
+    );
+
+    expect(empty.ok && empty.body.own_worktree).toBe(false);
+    expect(chosen.ok && chosen.body.own_worktree).toBe(true);
   });
 
   test("an empty folder and an empty prompt mean none", () => {

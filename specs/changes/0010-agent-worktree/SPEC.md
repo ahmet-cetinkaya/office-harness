@@ -195,9 +195,8 @@ When the user deletes an agent that has an own worktree, he chooses whether to k
 
 ## Deviations
 
-Implementation notes. Only the first item defers requirements; the others do not change them.
+Implementation notes. None of them defers or changes a requirement.
 
-- **Deferred: FR-009, MODIFIED 0009/FR-001 and 0009/FR-003.** Templates carrying the own worktree choice (plan T6) need the 0009 template module, which is not on `main` yet. Decided 2026-11-22 under the owner's delegation: this change ships without them, and a follow-up change adds them after 0009 merges. The create undo that a template batch needs is already in place: `AgentCreator::remove` discards the agent's new worktree and branch without asking.
 - **Branch name (A3).** As the plan records (D3): `office-harness/<slug>`, then `-2`, `-3`, and so on, with no short id, because the form shows the name before the agent exists.
 - **Delete answer.** `agent.delete` now answers `{deleted_branches, kept_branches, kept_folders}` for every delete, also for an agent without a worktree (empty lists), instead of `null`.
 - **Delete refusal text.** A subtree delete passes the agent module's refusal through without a `conflict: ` prefix, so a changed worktree reads `the worktree of <name> changed; confirm again` on a single and on a subtree delete.
@@ -205,4 +204,6 @@ Implementation notes. Only the first item defers requirements; the others do not
 - **Hooks off (D1).** The plan named an empty `.no-hooks` folder in the data folder as `core.hooksPath`. An agent can write into that folder, so every command now uses the null device instead, and also switches off hooks that git's configuration names (`hook.<event>.enabled=false`).
 - **Stale subtree member (D6).** The plan kept a member whose worktree changed and deleted the others. A subtree delete now refuses as a whole and deletes nobody, so one confirmation still covers one known set; members already stopped stay stopped. The worktree protocol states this.
 - **Partial delete.** A delete that fails after some agents went names, in its error text, the branches it deleted and the branches and folders it kept for them. A single delete removes the agent's row before git touches its worktree. The branch is deleted with `update-ref -d` and the commit its own commits were counted at, so a commit made after the count keeps the branch.
+- **Template from an agent with its own worktree (FR-009).** `template.from_agent` copies the choice and writes the repository folder, with the agent's subfolder, as the working folder of the body, not the worktree folder that the office owns, because the base and the worktree are made again at each creation (A2).
+- **Empty repository folder after an undo.** A discard removes the agent's worktree folder and its branch. The empty per-repository folder in the worktrees folder stays, as it does after any discard.
 - **Repository of a linked worktree.** When the chosen folder is inside a linked worktree (for example another agent's), the stored repository is the main worktree, so the agent stays reachable after that linked worktree is removed.

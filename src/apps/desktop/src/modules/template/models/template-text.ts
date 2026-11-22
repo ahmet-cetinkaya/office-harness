@@ -30,7 +30,7 @@ function listText(lines: string[], emptyText: string): string {
 
 /**
  * The rows of one agent definition in the reading order of the spec: name
- * pattern, role, command, folder, flags, environment variable names, startup
+ * pattern, role, command, own worktree, folder, flags, environment variable names, startup
  * prompt. Every text goes through `visibleText`, so a control character from an
  * imported file is shown as a symbol and never applied (FR-008).
  */
@@ -39,6 +39,7 @@ export function agentRows(body: AgentBody): TextRow[] {
     { label: "Name pattern", value: visibleText(body.name_pattern) },
     { label: "Role", value: roleText(body.role) },
     { label: "Command", value: visibleText(body.command) },
+    { label: "Own worktree", value: body.own_worktree ? "yes" : "no" },
     {
       label: "Working folder",
       value:

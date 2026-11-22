@@ -616,3 +616,158 @@ async fn a_refused_role_create_with_an_own_worktree_leaves_nothing() {
     assert_eq!(fixture.worktree_count(), 1);
     fixture.office.serving.stop().await;
 }
+
+const TEMPLATE_MEMBER_COUNT: usize = 6;
+
+impl Fixture {
+    async fn ok(&mut self, kind: &str, fields: Value) -> Value {
+        let answer = self.client.ask(kind, fields).await;
+        assert_eq!(answer["ok"], true, "{kind}: {answer}");
+        answer["result"].clone()
+    }
+
+    /// Saves a team template whose members choose an own worktree, in the
+    /// folder `folder`, and a CEO to put the team under. Returns both ids.
+    async fn team_template_with_member_worktrees(&mut self, folder: &Path) -> (String, String) {
+        let entry = |pattern: &str, own_worktree: bool| {
+            json!({
+                "name_pattern": pattern,
+                "command": "waiting-cli",
+                "working_folder": folder,
+                "own_worktree": own_worktree,
+            })
+        };
+        let template = self
+            .ok(
+                "template.save",
+                json!({
+                    "name": "Squad",
+                    "kind": "team",
+                    "body": {
+                        "body_version": 1,
+                        "lead": entry("{team}-lead", false),
+                        "members": [{
+                            "entry": entry("{team}-member-{n}", true),
+                            "count": TEMPLATE_MEMBER_COUNT,
+                        }],
+                    },
+                }),
+            )
+            .await;
+        let ceo = self
+            .ok(
+                "agent.create",
+                json!({
+                    "name": "Chief",
+                    "command": "waiting-cli",
+                    "working_folder": self.office.work_path(),
+                    "role": {"kind": "ceo"},
+                }),
+            )
+            .await;
+        (
+            template["template"]["id"].as_str().expect("id").to_owned(),
+            id_of(&ceo),
+        )
+    }
+}
+
+#[tokio::test]
+async fn a_team_template_with_the_choice_on_the_members_makes_one_worktree_per_member() {
+    let mut fixture = Fixture::open().await;
+    let repository = fixture.repository();
+    let (template_id, ceo) = fixture
+        .team_template_with_member_worktrees(&repository)
+        .await;
+
+    let created = fixture
+        .ok(
+            "template.create_team",
+            json!({"template_id": template_id, "team_name": "Alpha", "parent_agent_id": ceo}),
+        )
+        .await;
+
+    let agents = created["agents"].as_array().expect("agents");
+    assert_eq!(agents.len(), 1 + TEMPLATE_MEMBER_COUNT);
+    assert_eq!(agents[0]["worktree"], Value::Null, "the lead has none");
+    let mut folders = std::collections::HashSet::new();
+    for (position, member) in agents[1..].iter().enumerate() {
+        assert_eq!(
+            member["worktree"]["branch"],
+            format!("office-harness/alpha-member-{}", position + 1)
+        );
+        assert_eq!(member["worktree"]["base"], "main");
+        assert!(folder_of(member).is_dir());
+        assert!(folders.insert(folder_of(member)), "one folder per member");
+    }
+    assert_eq!(fixture.worktree_count(), 1 + TEMPLATE_MEMBER_COUNT);
+    fixture.office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_team_template_with_the_choice_outside_a_repository_creates_nothing() {
+    let mut fixture = Fixture::open().await;
+    let outside = PathBuf::from(fixture.office.work_path());
+    let (template_id, ceo) = fixture.team_template_with_member_worktrees(&outside).await;
+
+    let answer = fixture
+        .client
+        .ask(
+            "template.create_team",
+            json!({"template_id": template_id, "team_name": "Alpha", "parent_agent_id": ceo}),
+        )
+        .await;
+
+    let (code, message) = error_text(&answer);
+    assert_eq!(code, "invalid");
+    assert!(
+        message.contains("own worktree needs a git repository"),
+        "{message}"
+    );
+    let listed = fixture.ok("agent.list", json!({})).await;
+    assert_eq!(listed.as_array().expect("agents").len(), 1, "only the CEO");
+    let tree = fixture.ok("hierarchy.tree", json!({})).await;
+    assert_eq!(tree["teams"], json!([]));
+    assert_eq!(fixture.worktree_count(), 1);
+    fixture.office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_template_made_from_an_agent_with_its_own_worktree_keeps_the_choice_and_the_repository_folder()
+ {
+    let mut fixture = Fixture::open().await;
+    let subfolder = fixture.repository().join("sub");
+    let answer = fixture
+        .client
+        .ask(
+            "agent.create",
+            json!({
+                "name": "Ana",
+                "command": "waiting-cli",
+                "working_folder": subfolder,
+                "own_worktree": true,
+            }),
+        )
+        .await;
+    assert_eq!(answer["ok"], true, "{answer}");
+
+    let copied = fixture
+        .ok(
+            "template.from_agent",
+            json!({"agent_id": answer["result"]["id"]}),
+        )
+        .await;
+
+    assert_eq!(copied["body"]["own_worktree"], true);
+    // The office keeps the repository canonical, and a temporary folder can
+    // sit behind a link (macOS /var is /private/var), so both sides are
+    // compared canonical.
+    let copied_folder = copied["body"]["working_folder"]
+        .as_str()
+        .expect("working folder");
+    assert_eq!(
+        fs::canonicalize(copied_folder).expect("copied folder"),
+        fs::canonicalize(&subfolder).expect("subfolder"),
+    );
+    fixture.office.serving.stop().await;
+}

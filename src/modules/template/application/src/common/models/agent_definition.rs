@@ -10,4 +10,6 @@ pub struct AgentDefinition {
     pub working_folder: Option<String>,
     pub additions: AdditionsBody,
     pub role: Option<TemplateRole>,
+    /// The agent has its own git worktree (0010 FR-009).
+    pub own_worktree: bool,
 }

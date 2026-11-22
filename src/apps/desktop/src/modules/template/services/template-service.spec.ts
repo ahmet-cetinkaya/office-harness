@@ -11,6 +11,7 @@ const BODY: AgentBody = {
   working_folder: null,
   additions: { flags: [], env: [], startup_prompt: null },
   role: null,
+  own_worktree: false,
 };
 
 function fakeClient(answer: unknown = {}) {

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use agent_application::common::interfaces::ProjectStore;
+use agent_application::commands::create_agent::NEEDS_REPOSITORY;
+use agent_application::common::interfaces::{ProjectStore, WorktreeManager};
 use agent_domain::entities::Project;
-use hierarchy_application::common::ports::{AgentCreator, AgentSeed, SeedAdditions};
+use hierarchy_application::common::ports::{AgentCreator, AgentSeed, SeedAdditions, SeedWorktree};
 use kernel::ProjectId;
 use template_domain::{AdditionsBody, AgentBody};
 
@@ -18,6 +19,7 @@ const NO_FOLDER_REASON: &str =
 /// the first one (FR-005). Nothing is written.
 pub(super) struct Planner<'a> {
     creator: &'a dyn AgentCreator,
+    worktrees: &'a dyn WorktreeManager,
     /// Lower-cased names of the office's agents and of the agents planned so
     /// far in this creation, so no two get the same name (D4).
     taken_names: HashSet<String>,
@@ -30,10 +32,12 @@ pub(super) struct Planner<'a> {
 impl<'a> Planner<'a> {
     pub(super) fn new(
         creator: &'a dyn AgentCreator,
+        worktrees: &'a dyn WorktreeManager,
         existing_names: impl IntoIterator<Item = String>,
     ) -> Self {
         Self {
             creator,
+            worktrees,
             taken_names: existing_names
                 .into_iter()
                 .map(|name| name.to_lowercase())
@@ -94,8 +98,11 @@ impl<'a> Planner<'a> {
                 .map(PathBuf::from),
             project_id: self.project_id,
             additions: Some(seed_additions(&body.additions)),
-            // A template holds no own worktree choice (0009 scope).
-            worktree: None,
+            // The base and the branch name stay open: the create reads the
+            // base from the chosen folder and takes the next free branch
+            // name, one agent after the other under the tree exclusion
+            // (0010 D8, A2).
+            worktree: body.own_worktree.then(SeedWorktree::default),
         };
         for reason in self.creator.check(&seed) {
             self.add_reason(format!("{}: {reason}", seed.name));
@@ -141,14 +148,28 @@ impl<'a> Planner<'a> {
         let folder = seed
             .working_folder
             .as_deref()
-            .or(self.project_folder.as_deref());
+            .or(self.project_folder.as_deref())
+            .map(Path::to_path_buf);
         match folder {
             Some(folder) if !folder.is_dir() => self.add_reason(format!(
                 "the working folder \"{}\" is not a folder that exists",
                 folder.display()
             )),
+            Some(folder) if seed.worktree.is_some() => self.check_repository(&seed.name, &folder),
             None if !self.project_requested => self.add_reason(NO_FOLDER_REASON.to_owned()),
             _ => {}
+        }
+    }
+}
+
+impl Planner<'_> {
+    /// An own worktree needs the folder to lie inside a git repository, so
+    /// no agent of the creation is made when it does not (0010 FR-009).
+    fn check_repository(&mut self, agent_name: &str, folder: &Path) {
+        match self.worktrees.info(folder, agent_name) {
+            Ok(Some(_)) => {}
+            Ok(None) => self.add_reason(format!("{agent_name}: {NEEDS_REPOSITORY}")),
+            Err(error) => self.add_reason(format!("{agent_name}: {error}")),
         }
     }
 }
