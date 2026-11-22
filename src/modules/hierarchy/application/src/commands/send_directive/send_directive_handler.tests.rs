@@ -36,16 +36,18 @@ impl HierarchyStore for FixedRows {
         panic!("not used in these tests")
     }
 
-    fn save_team_and_place_lead(
+    fn save_team_and_place_lead_held(
         &self,
+        _exclusion: &TreeExclusion<'_>,
         _team: &hierarchy_domain::Team,
         _parent_agent_id: Option<AgentId>,
     ) -> Result<(), HierarchyApplicationError> {
         panic!("not used in these tests")
     }
 
-    fn delete_team_and_unplace(
+    fn delete_team_and_unplace_held(
         &self,
+        _exclusion: &TreeExclusion<'_>,
         _team_id: hierarchy_domain::TeamId,
     ) -> Result<(), HierarchyApplicationError> {
         panic!("not used in these tests")

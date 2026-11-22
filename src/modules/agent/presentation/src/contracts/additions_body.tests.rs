@@ -18,11 +18,26 @@ fn a_full_body_is_read_in_order() {
     assert_eq!(
         input.env,
         [
-            ("Z".to_owned(), "1".to_owned()),
-            ("A".to_owned(), "2".to_owned())
+            ("Z".to_owned(), Some("1".to_owned())),
+            ("A".to_owned(), Some("2".to_owned()))
         ]
     );
     assert_eq!(input.startup_prompt.as_deref(), Some("go"));
+}
+
+#[test]
+fn a_null_value_is_no_value_and_an_empty_text_is_a_value() {
+    let body = json!({"env": [{"name": "A", "value": null}, {"name": "B", "value": ""}]});
+
+    let input = read_additions(&body).expect("read");
+
+    assert_eq!(
+        input.env,
+        [
+            ("A".to_owned(), None),
+            ("B".to_owned(), Some(String::new()))
+        ]
+    );
 }
 
 #[test]

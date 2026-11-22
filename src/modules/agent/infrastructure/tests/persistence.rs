@@ -251,7 +251,7 @@ fn the_first_start_creates_the_one_machine_and_later_starts_reuse_it() {
 fn additions_of(flag: &str, prompt: &str) -> OfficeAdditions {
     OfficeAdditions::new(
         vec![flag.to_owned()],
-        vec![EnvEntry::parse("KEY", "value").expect("entry")],
+        vec![EnvEntry::parse("KEY", Some("value")).expect("entry")],
         Some(prompt.to_owned()),
     )
     .expect("additions")

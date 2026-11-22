@@ -6,6 +6,6 @@ pub mod handlers;
 
 pub use handlers::hierarchy_handlers::{
     CAUSE_AGENT_PLACED, CAUSE_AGENT_UNPLACED, CAUSE_SUBTREE_DELETED, CAUSE_SUBTREE_STOPPED,
-    HierarchyHandlers, HierarchyUseCases, REQUEST_PREFIXES, TREE_EVENT, subtree_request,
-    tree_event,
+    CAUSE_TEAM_CREATED, HierarchyHandlers, HierarchyUseCases, REQUEST_PREFIXES, TREE_EVENT,
+    subtree_request, tree_event,
 };

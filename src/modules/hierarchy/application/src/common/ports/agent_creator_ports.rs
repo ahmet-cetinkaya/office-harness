@@ -13,7 +13,7 @@ use crate::common::errors::HierarchyApplicationError;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SeedAdditions {
     pub flags: Vec<String>,
-    pub env: Vec<(String, String)>,
+    pub env: Vec<(String, Option<String>)>,
     pub startup_prompt: Option<String>,
 }
 
@@ -57,10 +57,20 @@ pub struct CreatorError {
 /// Creates one agent, as `agent.create` does, and removes it again when the
 /// hierarchy cannot give it a place.
 pub trait AgentCreator: Send + Sync {
+    /// Every reason the agent module would refuse `seed`, without writing
+    /// anything: the name, the command, and the additions rules. Empty when
+    /// it would accept. A creator with no rules of its own accepts all.
+    fn check(&self, _seed: &AgentSeed) -> Vec<String> {
+        Vec::new()
+    }
+
     /// # Errors
     /// The agent module's failure when the agent cannot be created.
     fn create(&self, seed: AgentSeed) -> Result<AgentId, CreatorError>;
 
+    /// The undo of a create, used only for that: it discards the agent and
+    /// everything the create made for it, without asking.
+    ///
     /// # Errors
     /// The agent module's failure when the agent cannot be removed.
     fn remove(&self, agent_id: AgentId) -> Result<(), CreatorError>;

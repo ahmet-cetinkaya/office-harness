@@ -55,15 +55,20 @@ impl HierarchyStore for FixedRows {
         never_called()
     }
 
-    fn save_team_and_place_lead(
+    fn save_team_and_place_lead_held(
         &self,
+        _exclusion: &TreeExclusion<'_>,
         _team: &Team,
         _parent_agent_id: Option<AgentId>,
     ) -> Result<(), HierarchyApplicationError> {
         never_called()
     }
 
-    fn delete_team_and_unplace(&self, _team_id: TeamId) -> Result<(), HierarchyApplicationError> {
+    fn delete_team_and_unplace_held(
+        &self,
+        _exclusion: &TreeExclusion<'_>,
+        _team_id: TeamId,
+    ) -> Result<(), HierarchyApplicationError> {
         never_called()
     }
 

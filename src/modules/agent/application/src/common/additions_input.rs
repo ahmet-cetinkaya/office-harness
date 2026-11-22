@@ -8,7 +8,7 @@ use crate::common::errors::ApplicationError;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AdditionsInput {
     pub flags: Vec<String>,
-    pub env: Vec<(String, String)>,
+    pub env: Vec<(String, Option<String>)>,
     pub startup_prompt: Option<String>,
 }
 
@@ -19,7 +19,7 @@ impl AdditionsInput {
         let env = self
             .env
             .iter()
-            .map(|(name, value)| EnvEntry::parse(name, value))
+            .map(|(name, value)| EnvEntry::parse(name, value.as_deref()))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(OfficeAdditions::new(self.flags, env, self.startup_prompt)?)
     }

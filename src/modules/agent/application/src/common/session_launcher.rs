@@ -213,7 +213,11 @@ impl SessionLauncher {
                 environment_additions: additions
                     .env()
                     .iter()
-                    .map(|entry| (entry.name().to_owned(), entry.value().to_owned()))
+                    .filter_map(|entry| {
+                        entry
+                            .value()
+                            .map(|value| (entry.name().to_owned(), value.to_owned()))
+                    })
                     .collect(),
                 agent_id: agent.id,
                 session_id,

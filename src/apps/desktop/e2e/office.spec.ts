@@ -183,11 +183,11 @@ test("a malformed environment line is named and not sent", async ({ page }) => {
   await page.getByRole("button", { name: "Ada, stopped" }).click();
   await page
     .getByLabel("Environment variables", { exact: true })
-    .fill("BROKEN");
+    .fill("=BROKEN");
   await page.getByRole("button", { name: "Save additions" }).click();
 
   await expect(page.getByRole("alert")).toContainText(
-    '"BROKEN" needs the form NAME=value.',
+    '"=BROKEN" has no name before the =.',
   );
   expect(await requestKinds(page)).not.toContain("agent.additions.set");
 });

@@ -97,6 +97,7 @@ async fn an_agent_may_not_ask_for_a_type_outside_the_allowlist() {
         ("tree", "hierarchy.tree"),
         ("restart", "server.restart"),
         ("settings", "settings.set"),
+        ("templates", "template.list"),
     ];
     office
         .clis
