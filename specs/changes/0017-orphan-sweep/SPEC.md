@@ -30,11 +30,13 @@ When the background server stops uncleanly (SIGKILL, a crash, or a power loss of
 | Unclean stop, `lost` session | As defined in 0013: the server ended without ending its sessions, and the next start ends each session that is still open as `lost`. |
 | Grace period | The time between the request to end and the forced end of a stop (0001 A3: 10 seconds by default; the user can change it). |
 | Session process | The CLI process of a session, or a process that the office saw descend from that CLI process while the session ran (a helper). A helper stays a session process after it leaves the CLI's process tree, for example when it moves to a session of its own or to a new parent. |
-| Process identity | The three values that the OS reports for a running process: its process id, its start time, and its command line (program and arguments). |
-| Match | A running process matches a stored process identity when all three values are equal. A process from an earlier boot of the machine never matches. |
+| Process identity | The three values that the OS reports for a running process: its process id, its start time, and its command line (program and arguments). The office also keeps the machine run (boot) in which it saw them. |
+| Match | A running process matches a stored process identity when all three values are equal (the whole command line is compared, not the shortened text) and the machine run is the same. A stored identity from another run of the machine never matches. Where the OS gives no exact machine run (macOS and Windows), a boot time that differs by more than 2 seconds does not prove a restart: the office then does not end the process and keeps the warning. |
+| Command line in visible form | The command line with each control, escape, and bidirectional-control character shown as an escape sequence (as 0014 and 0015/FR-003 show text), cut to 1,000 characters. A longer line ends with an ellipsis and the first 8 characters of a hash of the whole line. |
 | Leftover | A session process of a `lost` session that still runs and matches at the next server start. |
 | Sweep | The check, at a server start, of every stored process identity of every `lost` session, and the end of every leftover. |
 | Sweep result | What the sweep did with one stored process identity: ended, ended by force, could not end (with the reason), or left (with the reason). |
+| Helper limit | The most open helper identities that the office stores for one session: 200. |
 
 ## User stories
 
@@ -90,21 +92,23 @@ The "Resume interrupted" list marks each agent of a `lost` session with what the
 
 ### ADDED
 
-- **FR-001** (US1): WHEN the office starts a session, THE SYSTEM SHALL store the process identity of the session's CLI process before the session shows as started, and SHALL make it readable only by the OS user who owns the office (as 0001/FR-009).
+- **FR-001** (US1): WHEN the office starts a session, THE SYSTEM SHALL store the process identity of the session's CLI process before the session shows as started, and SHALL make it readable only by the OS user who owns the office (as 0001/FR-009). THE SYSTEM SHALL store the command line as a hash of the whole line, for the match, and as a display text of at most 1,000 characters.
 - **FR-002** (US1): WHILE a session runs, THE SYSTEM SHALL store the process identity of each process that descends from the session's CLI process within 10 seconds after that process starts, SHALL keep it while that process runs, also after it leaves the CLI's process tree, and SHALL drop it when that process ends.
-- **FR-003** (US1, US2): WHEN the server starts and finds `lost` sessions, THE SYSTEM SHALL run the sweep before it shows the list of the "Resume interrupted" action and before it starts any agent, SHALL ask each leftover to end and end by force each leftover that still runs after the grace period, and SHALL check the match again just before each end request.
-- **FR-004** (US1): WHEN the sweep ends a leftover, THE SYSTEM SHALL add an entry to the agent's action record with the office as actor, the session, the process id, the command line, and the result "ended" or "ended by force".
-- **FR-005** (US2): IF a stored process identity of a `lost` session does not match a running process, THEN THE SYSTEM SHALL NOT end any process for it and SHALL add a "left" entry to the agent's action record with the office as actor, the session, the process id, the command line, and the reason: not running, machine restarted, other start time, other command line, or not readable.
-- **FR-006** (US1): IF a leftover still runs after the forced end, or the OS refuses to end it, THEN THE SYSTEM SHALL add a "could not end" entry with the reason to the agent's action record and SHALL notify the user once per server start, naming each agent with such a leftover.
+- **FR-003** (US1, US2): WHEN the server starts and finds `lost` sessions, THE SYSTEM SHALL run the sweep before it shows the list of the "Resume interrupted" action and before it starts any agent, SHALL ask each leftover to end and end by force each leftover that still runs after the grace period, and SHALL check the match again just before each end request. Where the OS lets the office hold a process (Linux 5.3 and later, and Windows), THE SYSTEM SHALL send each end request only to the process that it just checked, so that a process that gets the same process id later is never ended. On macOS, and on a Linux kernel without this, the time between the check and the end request is a known risk (A10).
+- **FR-004** (US1): WHEN the sweep ends a leftover, THE SYSTEM SHALL add an entry to the agent's action record with the office as actor, the session, the process id, the command line in visible form, and the result "ended" or "ended by force".
+- **FR-005** (US2): IF a stored process identity of a `lost` session does not match a running process, THEN THE SYSTEM SHALL NOT end any process for it and SHALL add a "left" entry to the agent's action record with the office as actor, the session, the process id, the command line in visible form, and the reason: not running, machine restarted, boot time changed, other start time, other command line, or not readable.
+- **FR-006** (US1): IF a leftover still runs after the forced end, or the OS refuses to end it, THEN THE SYSTEM SHALL add a "could not end" entry with the reason and the command line in visible form to the agent's action record and SHALL notify the user once per server start, naming each agent with such a leftover.
 - **FR-007** (US1): WHILE the sweep runs, THE SYSTEM SHALL show, in the panel and in the "Resume interrupted" dialog, that the office ends processes left from the last run, and SHALL keep each start, new task, and continue request of the user waiting until the sweep ends, then run it.
 - **FR-008** (US2): WHEN a session ends while the server runs (a stop, an end of its CLI, or a clean server stop), THE SYSTEM SHALL mark every stored process identity of that session as ended, so that no later sweep ends a process for it or records anything for it.
 - **FR-009** (US1, US2): WHEN the sweep records the sweep result of a stored process identity, THE SYSTEM SHALL mark that identity as ended in the same step, so that a later sweep, also after the server is killed during this sweep, neither ends a process for it nor records a second sweep result for it.
+- **FR-010** (US1): WHILE a session runs, THE SYSTEM SHALL store at most 200 open helper identities for it (the helper limit). WHEN a new helper would pass the limit, THE SYSTEM SHALL stop storing helpers of that session, SHALL add one entry to the agent's action record that names the limit, and the session SHALL count as having no complete stored process identities.
+- **FR-011** (US1): WHILE a session runs and a stored session process keeps its process id and start time but runs another command line (it replaced itself with another program), THE SYSTEM SHALL replace the stored command line with the new one within 10 seconds, and SHALL NOT mark that identity as ended.
 
 ### MODIFIED
 
 - **0013/FR-008** (US3): WHERE the last session of a listed agent was still open when the server stopped uncleanly, THE SYSTEM SHALL mark that agent in the list with what the sweep (0017/FR-003) found for it:
   - every leftover ended (ended or ended by force): a note with the number of processes from before the stop that the office ended, and no warning;
-  - a leftover that could not be ended, a stored process identity that was not readable, or no complete stored process identities for the session (a session from before 0017, a failed store, or a sweep that could not run): the warning, shown before the user confirms, that a CLI process of that agent from before the stop may still run and that resuming can start a second copy of a CLI next to it;
+  - a leftover that could not be ended, a stored process identity that was not readable, a process that matched except for a boot time that changed, or no complete stored process identities for the session (a session from before 0017, a failed store, a session over the helper limit, or a sweep that could not run): the warning, shown before the user confirms, that a CLI process of that agent from before the stop may still run and that resuming can start a second copy of a CLI next to it;
   - no leftover found: no mark and no warning.
 
   THE SYSTEM SHALL keep Confirm unavailable while an agent with the warning is checked, until the user acknowledges the warning.
@@ -127,7 +131,7 @@ The "Resume interrupted" list marks each agent of a `lost` session with what the
 3. If the user starts an agent, starts a new task, or continues a session during the sweep, the request waits and runs when the sweep ends.
 4. If a leftover could not be ended, the user gets one notification that names each such agent.
 5. The list of "Resume interrupted" marks each agent of a `lost` session with the sweep's finding: a note that leftovers were ended, the second-copy warning, or nothing.
-6. In an agent's details, the action record shows one entry for each stored process identity of the `lost` session: ended, ended by force, could not end, or left, with the reason, the session, the process id, and the command line.
+6. In an agent's details, the action record shows one entry for each stored process identity of the `lost` session: ended, ended by force, could not end, or left, with the reason, the session, the process id, and the command line in visible form.
 
 **Visible states:**
 
@@ -140,7 +144,7 @@ The "Resume interrupted" list marks each agent of a `lost` session with what the
 | Leftover could not be ended, or not readable, or no stored identity | In the list, the 0013 mark and warning, and the acknowledgement that Confirm waits for. | 0013/FR-008 (modified), US3 scenarios 2 and 4 |
 | No leftover found | In the list, no mark and no warning. | 0013/FR-008 (modified), US3 scenario 3 |
 | Could not end | One notification naming the agents. | FR-006, US1 scenario 6 |
-| Agent details | The action record entries of the sweep, with actor, session, process id, command line, and result or reason. | FR-004, FR-005, FR-006 |
+| Agent details | The action record entries of the sweep, with actor, session, process id, command line in visible form, and result or reason. | FR-004, FR-005, FR-006 |
 | Desktop app cannot reach the server or its token is rejected | The 0001 states. | Edge cases |
 
 **Design:** no fixed design exists. The plan must not add visuals beyond this flow without a design that the owner approves. The note and the warning use the mark and the warning area of the 0013 dialog.
@@ -156,20 +160,22 @@ The "Resume interrupted" list marks each agent of a `lost` session with what the
 
 | Entity | Represents | Key attributes | Identity and relationships |
 |---|---|---|---|
-| Stored process identity | One session process that the office knows. | process id, start time, command line, kind (CLI or helper), state (open or ended) | Belongs to one session of one agent. Readable only by the office owner (FR-001). |
+| Stored process identity | One session process that the office knows. | process id, start time, hash of the whole command line, display text of the command line (at most 1,000 characters), machine run, kind (CLI or helper), state (open or ended). At most 200 open helpers per session (FR-010). | Belongs to one session of one agent. Readable only by the office owner (FR-001). |
 | Sweep result | What one sweep did with one stored process identity. | result (ended, ended by force, could not end, left), reason | Exactly one per stored process identity of a `lost` session (FR-009). Kept as an action record entry. |
 | Session (extends 0013) | One run of an agent CLI. | sweep finding of a `lost` session: leftovers ended (with the number), may still run, or none found | Drives the mark of 0013/FR-008 (modified). |
-| Action record entry (extends 0001, 0007) | One recorded action. | action now also "end leftover"; result ended, ended by force, could not end, or left; process id; command line; session | Actor is the office. Shows in the details of the agent that owns the session. |
+| Action record entry (extends 0001, 0007) | One recorded action. | action now also "end leftover"; result ended, ended by force, could not end, or left; process id; command line in visible form; session | Actor is the office. Shows in the details of the agent that owns the session. |
 
 ## Success criteria
 
 - **SC-001:** In a test where 30 stand-in CLIs, each with one helper in a session of its own, outlive a forced kill of the server, 100% of the 60 processes have ended before the "Resume interrupted" list shows, on Linux, macOS, and Windows in CI.
 - **SC-002:** In the same test, 0 unrelated processes end: a process with a stored command line and another start time, a process that got a stored process id with another command line, and a process that the office did not start all still run after the sweep, and each stored identity that they meet has exactly 1 "left" entry with its reason.
 - **SC-003:** With 30 `lost` sessions and the default grace period, the "Resume interrupted" list shows within 30 seconds after the server start.
-- **SC-004:** 100% of ended leftovers have exactly 1 action record entry with the office as actor, the agent, the session, the process id, and the command line. A stand-in that ignores the request to end is ended by force after the grace period and has the result "ended by force".
+- **SC-004:** 100% of ended leftovers have exactly 1 action record entry with the office as actor, the agent, the session, the process id, and the command line in visible form (control characters shown as escapes, at most 1,000 characters, then an ellipsis and the hash start). A stand-in that ignores the request to end is ended by force after the grace period and has the result "ended by force".
 - **SC-005:** With 4 agents after a forced kill of the server (one leftover that ends, one that cannot be ended, one CLI that ended on the hang-up, and one session from before this change), the list shows the note for exactly 1 agent, the warning for exactly 2 agents, and no mark for exactly 1 agent.
 - **SC-006:** After 10 clean server stops and 10 normal agent stops, each followed by a server start, the sweep ends 0 processes and 0 agents start without an action of the user.
 - **SC-007:** When the server gets a forced kill during a sweep and started again, 100% of the leftovers have ended after the second start, and each stored process identity of the `lost` sessions has exactly 1 sweep result in the action record.
+- **SC-008:** With a session whose CLI starts 500 helper processes that stay alive, the office stores at most 200 open helper identities for it, adds exactly 1 limit entry to the action record, and after a forced kill of the server the agent shows the 0013 warning.
+- **SC-009:** With a stand-in CLI that replaces itself with another program while the session runs, after a forced kill of the server 100% of such processes end at the next start with the new command line in the action record.
 
 ## Edge cases
 
@@ -180,7 +186,8 @@ The "Resume interrupted" list marks each agent of a `lost` session with what the
 | The process id of a stored identity belongs to another process now (process id reused). | Invalid | Not ended; "left" with "other start time" or "other command line" (FR-005). |
 | A process runs the same command line as a stored identity but started at another time. | Invalid | Not ended; "left" with "other start time" (FR-005). |
 | The CLI changed its own command line after the office stored it. | Invalid | Not ended; "left" with "other command line" (FR-005, A4). The agent shows no warning, because the office cannot tell it apart from an unrelated process. |
-| The machine restarted since the unclean stop. | Boundary | No stored identity matches; each is "left" with "machine restarted" (FR-005). No warning shows, because no process can survive a restart. |
+| The machine restarted since the unclean stop, and the OS gives an exact machine run (Linux). | Boundary | No stored identity matches; each is "left" with "machine restarted" (FR-005). No warning shows, because no process can survive a restart. |
+| The boot time differs by more than 2 seconds, but the process id, start time, and command line all match (macOS, Windows; a clock correction can cause this). | Boundary | Not ended; "left" with "boot time changed" (FR-005). The agent keeps the warning, because a restart is not proven (0013/FR-008, modified). When the process id is not running or has another start time, the usual reason applies and no warning shows. |
 | A leftover ends by itself during the sweep. | Concurrent | Recorded as "ended". Before each end request the office checks the match again, so a process id that is reused in the meantime is not ended (FR-003, US2 scenario 4). |
 | The OS does not let the office read a process (permission denied). | Unauthorized | Not ended; "left" with "not readable" (FR-005). The agent keeps the warning (0013/FR-008, modified). |
 | The OS does not let the office end a leftover (permission denied). | Unauthorized | "could not end" with the reason, one notification, and the warning in the list (FR-006). |
@@ -193,20 +200,26 @@ The "Resume interrupted" list marks each agent of a `lost` session with what the
 | The user starts an agent or opens the resume list during the sweep. | Concurrent | The request waits and runs after the sweep; the list shows after the sweep (FR-007). |
 | A helper that the user's own CLI started to use after the unclean stop (a shared service). | Boundary | It still matches as a session process and is ended (A6). |
 | The office is on hold (0007). | Boundary | The sweep runs; it is an action of the office, not an agent-made action. |
+| A session process replaces itself with another program while the session runs (for example `sh -c 'exec node ...'`, or an npm wrapper). | Concurrent | The stored command line is replaced and the identity stays open (FR-011). After an unclean stop the process matches and is ended. |
+| A session starts more than 200 helpers. | Boundary | The office stops storing helpers of that session, adds one entry, and the agent keeps the warning (FR-010, SC-008). Helpers already stored are still swept. |
+| A command line is very long, or holds control, escape, or bidirectional-control characters (the agent chooses it). | Invalid | The match uses the whole line. The action record and the desktop show it in visible form, cut to 1,000 characters with an ellipsis and the hash start (FR-004, FR-005). The full line is not stored. |
+| A leftover ends and its process id goes to another process between the last check and the end request (macOS, or a Linux kernel before 5.3). | Concurrent | A residual risk with no exception made for it (A10). Windows and Linux 5.3 and later end through a held process, so they do not have it. |
 | A command line holds a secret, for example a token in an argument. | Boundary | It is stored readable only by the office owner (FR-001) and shown only in the owner's action record. It never leaves the machine (0001/FR-005). |
 | The desktop app cannot reach the background server or its token is rejected. | Unauthorized | The 0001 states show (0001/FR-026, 0001/FR-027). The sweep runs without the app. |
 
 ## Assumptions
 
 - **A1:** The sweep runs only for sessions that the server finds still open at its start, that is after an unclean stop (0013 `lost`). A clean stop and a normal session end use the stop of 0001 and need no sweep (FR-008).
-- **A2:** The office sees a new descendant of the CLI within 10 seconds after it starts (FR-002). A helper that starts and leaves the tree in the last 10 seconds before an unclean stop can be missed. The office does not end processes that it has no stored identity for, also when their parent is a leftover, so that the rule "all three values match" has no exception.
+- **A2:** The office sees a new descendant of the CLI, and a change of a stored command line, within 10 seconds (FR-002, FR-011). A helper that starts and leaves the tree, or a process that replaces itself, in the last 10 seconds before an unclean stop can be missed. The office does not end processes that it has no stored identity for, also when their parent is a leftover, so that the rule "all three values match" has no exception.
 - **A3:** The grace period of the sweep is the grace period of a stop (0001 A3), so the user has one setting for both.
-- **A4:** The command line is the one that the OS reports when the office stores the identity, not the one that the office used to start the CLI. A process that rewrites its own command line later no longer matches and is left.
+- **A4:** The command line is the one that the OS reports when the office stores the identity, not the one that the office used to start the CLI. A process that rewrites its own command line after the unclean stop no longer matches and is left. While the session runs, a changed command line of the same process is stored again (FR-011).
 - **A5:** The sweep ends all leftovers in parallel, so its time depends on the grace period and not on the number of agents.
 - **A6:** A helper that a session started, such as the `opencode` background service, belongs to that session even when another program uses it after the unclean stop. The sweep ends it when it matches; the CLI that needs it starts a new one.
 - **A7:** The sweep writes one action record entry for each stored process identity of a `lost` session, also for "not running", so that the agent's details show what the office checked.
 - **A8:** The notification of FR-006 comes once per server start and names all agents with a leftover that could not be ended. It is a notification of the office, like the automatic hold of 0013/FR-005.
 - **A9:** One background server runs one office on one machine (0001 A8). Agents on other machines (0006, deferred) are not swept.
+- **A10:** macOS has no handle to a process, and Linux before 5.3 has none either. There the office checks the match and then sends the end request to the process id. A process that exits and whose id is reused in that short time can be ended wrongly. The office accepts this risk only on these systems; the research records it.
+- **A11:** The helper limit of 200 is fixed. A setting for it is out of scope.
 
 ## Out of scope
 
@@ -214,5 +227,5 @@ The "Resume interrupted" list marks each agent of a `lost` session with what the
 - Ending a process that has no stored identity, also when it descends from a leftover (A2).
 - Sweeping without a `lost` session, for example on a timer or by a user action.
 - Agents on other machines (A9).
-- A setting for the 10 seconds of FR-002.
+- A setting for the 10 seconds of FR-002 or for the helper limit (A11).
 - Reading CLI output or CLI files to find out whether a session is busy.
