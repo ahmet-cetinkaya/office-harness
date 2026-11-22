@@ -10,7 +10,10 @@
   import { tick } from "svelte";
   import { shownStatusText, isActive, type OfficeStore } from "../../agent";
   import { INITIAL_HIERARCHY, type HierarchyController } from "../../hierarchy";
-  import type { NeedsYouController } from "../../needs-you";
+  import {
+    focusHeadingUnlessRunning,
+    type NeedsYouController,
+  } from "../../needs-you";
   import { pressedAppShortcut } from "../../../core/shortcuts";
   import { TerminalView } from "../../terminal";
   import { ALL_PROJECTS, ProjectSwitcher } from "../../panel";
@@ -297,7 +300,13 @@
     const agentId = needsYou.takeTop((id) =>
       office.agents.some((agent) => agent.id === id),
     );
-    if (agentId !== null) openDesk(agentId);
+    if (agentId === null) return;
+    openDesk(agentId);
+    const agent = office.agents.find((known) => known.id === agentId);
+    void focusHeadingUnlessRunning(
+      sceneRoot,
+      agent !== undefined && isActive(agent.status),
+    );
   }
 
   $effect(() => {

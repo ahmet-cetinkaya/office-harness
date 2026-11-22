@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { Agent } from "../src/modules/agent/models/agent";
 import type {
   NeedsYouItem,
@@ -75,9 +75,15 @@ function fiveItems(): NeedsYouItem[] {
   ];
 }
 const FIVE_NAMES = ["Cy", "Ada", "Bo", "Di", "Ed"];
-/** Ed has exited: its terminal is read-only and does not take focus
- * (0001 terminal view), so the jump shows it without focusing it. */
+/** Ed has exited: its read-only terminal cannot take focus (0001), so the
+ * jump puts focus on the terminal view's heading, which names the agent
+ * (0008 FR-007, Efe's decision of 2026-11-22). */
 const NOT_RUNNING_NAMES = new Set(["Ed"]);
+
+/** The opened terminal view's focusable heading (terminal-view.svelte). */
+function terminalHeading(page: Page): Locator {
+  return page.locator("#terminal-heading");
+}
 
 async function openPanel(page: Page, office: OfficeSeed = {}): Promise<void> {
   await installMockCore(page, {
@@ -263,6 +269,10 @@ test.describe("the jump shortcut", () => {
       const timeout = index === 0 ? FIRST_JUMP_BUDGET_MS : undefined;
       if (NOT_RUNNING_NAMES.has(name)) {
         await expect(terminalInput(page, name)).toBeAttached({ timeout });
+        await expect(terminalHeading(page)).toBeFocused({ timeout });
+        await expect(terminalHeading(page)).toHaveAccessibleName(
+          `Terminal, ${name}`,
+        );
         continue;
       }
       // SC-001: the top agent's terminal has focus within one second.
@@ -367,7 +377,9 @@ test.describe("the jump shortcut", () => {
     // In a focused terminal it moves focus out, as the focus shortcut does.
     await openTerminalOf(page, "Zed");
     await page.keyboard.press(JUMP_KEY);
-    await expect(page.getByRole("heading", { name: "Terminal" })).toBeFocused();
+    await expect(
+      page.getByRole("heading", { name: "Terminal, Zed" }),
+    ).toBeFocused();
     expect(await readAgentIds(page)).toEqual(["agent-zed"]);
     expect(await sentTerminalInputs(page)).toEqual([]);
   });

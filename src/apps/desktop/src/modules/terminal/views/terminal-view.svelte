@@ -243,11 +243,12 @@
   });
 </script>
 
-<section aria-labelledby="terminal-heading" class="flex flex-col gap-2">
+<section aria-label="Terminal" class="flex flex-col gap-2">
   <h3
     id="terminal-heading"
     bind:this={heading}
     tabindex="-1"
+    aria-label="Terminal, {agentName}"
     class="text-lg font-semibold text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
   >
     Terminal

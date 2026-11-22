@@ -7,6 +7,7 @@
     AgentDetails,
     AgentFormDialog,
     ConfirmDialog,
+    isActive,
     ProjectFormDialog,
     ProjectList,
     type Project,
@@ -30,6 +31,7 @@
     type NotificationSnapshot,
   } from "../../notification";
   import {
+    focusHeadingUnlessRunning,
     INITIAL_NEEDS_YOU,
     NeedsYouSection,
     rowOf,
@@ -213,7 +215,14 @@
     const agentId = store.needsYou.takeTop((id) =>
       office.agents.some((agent) => agent.id === id),
     );
-    if (agentId !== null) openAgent(agentId);
+    if (agentId === null) return;
+    openAgent(agentId);
+    void focusHeadingUnlessRunning(detailArea, isAgentActive(agentId));
+  }
+
+  function isAgentActive(agentId: string): boolean {
+    const agent = office.agents.find((known) => known.id === agentId);
+    return agent !== undefined && isActive(agent.status);
   }
 
   async function toggleOfficeHold(): Promise<void> {
