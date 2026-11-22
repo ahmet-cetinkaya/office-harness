@@ -44,7 +44,7 @@ All run as `git -c core.hooksPath=<no-hooks> -c core.fsmonitor=false -C <folder>
 | Branch name check | `check-ref-format --branch <name>` | 10 s |
 | Create the branch | `branch --no-track -- <branch> <refs/heads/base or commit>` | 10 s |
 | Create the worktree | `worktree add -- <folder> <branch>` | 120 s |
-| Change count | `status --porcelain=v1 --untracked-files=all --ignore-submodules=none` | 10 s |
+| Change count | `status --porcelain=v1 --untracked-files=all --ignore-submodules=none -z` | 10 s |
 | Own commits | `rev-list --count <base ref>..refs/heads/<branch>` | 10 s |
 | Base exists | `rev-parse --verify --quiet <base ref>^{commit}` | 10 s |
 | Remove a clean worktree | `worktree remove -- <folder>` | 10 s |
@@ -58,7 +58,7 @@ A `worktree prune` is never run. The office writes no git configuration.
 | Field | Meaning |
 |---|---|
 | `changed_files` | The line count of the status command above: changed, added, deleted, and every untracked file; ignored files are not counted (A9). |
-| `status_hash` | A hash of the status output, hex. Valid within one server run. |
+| `status_hash` | A hash of the status output plus the size and change time of each changed file, hex. Valid within one server run. |
 | `own_commits` | Commits on the agent's branch that the base lacks; 0 when the base is gone. |
 | `base_exists` | The base branch or commit still exists. |
 | `folder_exists` | The worktree folder exists. |

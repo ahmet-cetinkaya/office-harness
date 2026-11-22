@@ -322,6 +322,7 @@ impl WorktreeManager for GitWorktrees {
                     "--porcelain=v1",
                     "--untracked-files=all",
                     "--ignore-submodules=none",
+                    "-z",
                 ],
             )
         } else {
@@ -347,11 +348,12 @@ impl WorktreeManager for GitWorktrees {
             })
             .and_then(Result::ok)
             .and_then(|count| count.trim().parse().ok());
+        let changed = changed_paths(&status);
         WorktreeStatus {
             folder_exists,
             reachable: true,
-            changed_files: status.lines().filter(|line| !line.is_empty()).count(),
-            status_hash: hex_hash(status.as_bytes()),
+            changed_files: changed.len(),
+            status_hash: status_hash(&worktree.folder, &status, &changed),
             own_commits,
             base_exists,
         }
@@ -490,6 +492,43 @@ fn subfolder_of(worktree: &Path, subfolder: &str) -> PathBuf {
         .split('/')
         .filter(|part| !part.is_empty())
         .fold(worktree.to_path_buf(), |folder, part| folder.join(part))
+}
+
+/// The paths of `status --porcelain=v1 -z`: one per entry. A rename or a
+/// copy carries its old path as one more field, which is skipped.
+fn changed_paths(status: &str) -> Vec<&str> {
+    const CODE_AND_SPACE: usize = 3;
+    let mut fields = status.split('\0').filter(|field| !field.is_empty());
+    let mut paths = Vec::new();
+    while let Some(entry) = fields.next() {
+        let Some(path) = entry.get(CODE_AND_SPACE..) else {
+            continue;
+        };
+        if entry.starts_with(['R', 'C']) {
+            fields.next();
+        }
+        paths.push(path);
+    }
+    paths
+}
+
+/// The status plus the size and change time of each changed file, so an
+/// edit to a file that was already changed also changes the hash (0010 D6).
+fn status_hash(folder: &Path, status: &str, changed: &[&str]) -> String {
+    let mut input = status.as_bytes().to_vec();
+    for path in changed {
+        let Ok(metadata) = std::fs::symlink_metadata(folder.join(path)) else {
+            continue;
+        };
+        let modified = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |since| since.as_nanos());
+        input.extend_from_slice(&metadata.len().to_le_bytes());
+        input.extend_from_slice(&modified.to_le_bytes());
+    }
+    hex_hash(&input)
 }
 
 fn hex_hash(bytes: &[u8]) -> String {

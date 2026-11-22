@@ -135,7 +135,13 @@ impl CreateAgentHandler {
             ));
         }
         self.save_additions_or_undo_insert(&agent, additions)?;
-        self.journal.record(agent.id, AgentAction::Create, None)?;
+        if let Err(recording) = self.journal.record(agent.id, AgentAction::Create, None) {
+            // A create the record cannot hold is undone whole, so the role
+            // route that never learns the id leaves no agent, branch, or
+            // folder behind.
+            self.undo_insert(&agent);
+            return Err(recording);
+        }
         Ok(agent)
     }
 
@@ -241,11 +247,16 @@ impl CreateAgentHandler {
         let Err(saving) = self.additions.save(agent.id, &record) else {
             return Ok(());
         };
-        // The save failure is the one to report; a failed undo adds nothing
-        // the user can act on.
+        self.undo_insert(agent);
+        Err(saving.into())
+    }
+
+    /// Removes a stored agent and its worktree. The failure that caused the
+    /// undo is the one to report; a failed undo adds nothing the user can
+    /// act on.
+    fn undo_insert(&self, agent: &Agent) {
         let _ = self.agents.delete(agent.id);
         self.discard_worktree(agent);
-        Err(saving.into())
     }
 }
 

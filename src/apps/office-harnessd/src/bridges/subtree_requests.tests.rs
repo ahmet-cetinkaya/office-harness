@@ -105,6 +105,22 @@ struct RecordingRemover {
 }
 
 impl SubtreeAgentRemover for RecordingRemover {
+    fn check(
+        &self,
+        _agent_id: AgentId,
+        _worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError> {
+        Ok(())
+    }
+
+    fn prepare(
+        &self,
+        _agent_id: AgentId,
+        _worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError> {
+        Ok(())
+    }
+
     fn delete(
         &self,
         agent_id: AgentId,

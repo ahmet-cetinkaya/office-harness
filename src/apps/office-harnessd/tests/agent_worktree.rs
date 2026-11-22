@@ -544,3 +544,31 @@ async fn each_create_and_delete_is_recorded_with_its_actor() {
     assert!(kinds.contains(&("delete", "user")), "{actions}");
     fixture.office.serving.stop().await;
 }
+
+#[tokio::test]
+async fn a_refused_role_create_with_an_own_worktree_leaves_nothing() {
+    let mut fixture = Fixture::open().await;
+    let answer = fixture
+        .client
+        .ask(
+            "agent.create",
+            json!({
+                "name": "Orphan",
+                "command": "waiting-cli",
+                "working_folder": fixture.repository(),
+                "own_worktree": true,
+                "role": {"kind": "member", "parent_agent_id": "00000000-0000-4000-8000-000000000000"},
+            }),
+        )
+        .await;
+    assert_eq!(answer["ok"], false, "{answer}");
+    let listed = fixture.client.ask("agent.list", json!({})).await;
+    assert_eq!(listed["result"], json!([]));
+    assert!(
+        !fixture.branches().contains("office-harness/"),
+        "{}",
+        fixture.branches()
+    );
+    assert_eq!(fixture.worktree_count(), 1);
+    fixture.office.serving.stop().await;
+}
