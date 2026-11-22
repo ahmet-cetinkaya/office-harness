@@ -96,7 +96,7 @@ Recorded in the spec's Deviations section and in the plan's decisions; none chan
 
 - **Branch name (spec A3):** `office-harness/<slug>`, then `-2`, `-3`, with no short id (PLAN D3, accepted in Efe's plan review r2). This is a planned deviation, not a fail.
 - **Hooks off (PLAN D1):** the null device (`/dev/null`, `NUL`) as `core.hooksPath`, not the `.no-hooks` folder, plus the hooks that git's configuration names.
-- **Status hash (PLAN D6):** the hash includes the size and change time of each changed file.
+- **Status hash (PLAN D6):** the hash includes the size and modification time of each changed file.
 - **Branch delete (PLAN D6):** `git update-ref -d` with the counted commit, not `git branch -D`; `branch -D` stays only in the undo of a create.
 - **Subtree delete (PLAN D6):** one stale member refuses the whole subtree and deletes nobody, not "keep that member, delete the rest".
 - **Delete answer:** `agent.delete` answers `{deleted_branches, kept_branches, kept_folders}` for every delete.
@@ -128,9 +128,10 @@ Recorded in the spec's Deviations section and in the plan's decisions; none chan
 ## Gaps
 
 - The Windows timeout path (`taskkill /T /F`) has no test; the Unix path does. On Windows a helper whose parent already exited can outlive the timeout; only Unix ends the whole process group.
-- Accepted LOW review findings, not changed in this PR: the status read can run the repository's clean filters and submodule configuration; a helper that keeps stderr open after git exits 0 reads as a timeout; a failed undo is not reported; two creates with the same name at once answer `internal` for the second, not `conflict`; the start check does not confirm that the worktree's git folder belongs to the stored repository.
+- Accepted LOW review findings, not changed in this PR: a helper that keeps stderr open after git exits 0 reads as a timeout; a failed undo is not reported; two creates with the same name at once answer `internal` for the second, not `conflict`.
+- Fixed after this report: the status read ran the repository's clean filters and submodule configuration, now off (PLAN D1; PR #104 and #107); the start check did not confirm that the worktree's git folder belongs to the stored repository, now it does (PLAN D7, `worktree_link.rs`).
 - SC-005 has no whole-server restart test (see above).
-- Changed after this report (ACF-183): a single delete now reads a stopped agent's worktree once, and a subtree delete reads each member at most three times (PLAN D6, lock scope); a data folder inside a linked worktree of the repository is refused as one inside the repository. Tests added by ACF-183 (commit 6d93302, read from the repository on 2026-11-22; not run for this file): FR-004, the data folder inside a linked worktree: `GW`, `the_data_folder_inside_a_linked_worktree_is_refused`; FR-005 to FR-007, the delete reads a stopped agent once: `M/agent/application/src/commands/delete_agent/delete_agent_handler.tests.rs`, `stop_and_check_reads_nothing_for_an_agent_that_was_already_stopped`.
+- Changed after this report (ACF-183): a single delete now reads a stopped agent's worktree once, and a subtree delete reads each member at most three times (PLAN D6, lock scope); a data folder inside a linked worktree of the repository is refused as one inside the repository. Tests added by ACF-183 (commit 6d93302, read from the repository on 2026-11-22; not run for this file): FR-004, the data folder inside a linked worktree: `GW`, `the_data_folder_inside_a_linked_worktree_is_refused`. FR-005 to FR-007, in `M/agent/application/src/commands/delete_agent/delete_agent_handler.tests.rs` (as changed by 222ffb1, PR #108, which removed the first test of this change, `stop_and_check_reads_nothing_for_an_agent_that_was_already_stopped`): `stop_and_check_reads_a_stopped_agent_again_and_refuses_a_change` (a stopped member is read again and a change is refused) and `a_clean_confirmed_worktree_is_removed_without_force_with_its_branch` (a single delete reads the worktree once).
 - `session.continue` has no direct test for a missing worktree; it uses the same check as `agent.start`, which is tested.
 - The desktop e2e does not cover the "confirm again" re-ask or the branch-name `conflict` refresh; unit tests cover the first.
 - The Windows path comparisons in the git tests run only in CI.

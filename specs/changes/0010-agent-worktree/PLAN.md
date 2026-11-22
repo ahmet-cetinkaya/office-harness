@@ -112,7 +112,7 @@ Deliver spec 0010. In a git repository the owner can give a new agent its own br
 - **D6 Delete** (FR-005, FR-006, FR-007, A6, A9, US2):
   - `agent.worktree_status {agent_ids}` returns, for each agent with a worktree, `{agent_id, folder, branch, base, folder_exists, reachable, changed_files, status_hash, own_commits, base_exists}`.
     - `changed_files` is the line count of `git status --porcelain=v1 --untracked-files=all --ignore-submodules=dirty`, with every filter off (D1). Every untracked file counts, whatever `status.showUntrackedFiles` says, and ignored files do not count (A9).
-    - `status_hash` is a hash (`std::hash::DefaultHasher`, hex) of that status output plus the size and change time of each changed file, so an edit to a file that was already changed also changes it (`status_hash` in `git_worktrees.rs`). It is valid within one server run; after a restart the confirm fails and the dialog asks again.
+    - `status_hash` is a hash (`std::hash::DefaultHasher`, hex) of that status output plus the size and modification time of each changed file, so an edit to a file that was already changed also changes it (`status_hash` in `git_worktrees.rs`). It is valid within one server run; after a restart the confirm fails and the dialog asks again.
     - `own_commits` is `git rev-list --count <base ref>..refs/heads/<branch>`, when the base exists.
     - `reachable` is false when the repository cannot be reached or `status` fails.
   - `agent.delete` gains `worktrees: "keep" | "remove"` (default `keep`) and, for `remove`, `confirmed_status: {agent_id: status_hash}` for every worktree.

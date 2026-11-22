@@ -40,4 +40,4 @@ Spec: `specs/changes/0008-needs-you-queue/SPEC.md` · Status: approved by the ow
 - **Not a new detector:** the queue reuses the 0003/FR-006 events, so 0001 A1 (no "finished" vs "asks a question") holds. OSC 9/99/777 sequences as new events are out of scope; the bell stays the only in-band signal.
 - **Jump shortcut:** it must work while a terminal has focus, so the spec modifies the 0003 version of 0001/FR-017 to add it to the documented app shortcuts.
 - **Current-task line (MVP item e):** kept out of this change. It changes the agent list (0003/FR-002), not the queue, and folding it in would pass the Size rule's limit of ten FRs. It goes to its own small spec that amends 0003.
-- **Size rule:** 10 ADDED FRs (FR-001 to FR-010) and 1 MODIFIED FR (0001/FR-017).
+- **Size rule:** 10 ADDED FRs (FR-001 to FR-010) and 1 MODIFIED FR (0001/FR-017). The spec has more than ten FR entries; shipped as one feature, split not done, accepted by god 2026-11-23.
