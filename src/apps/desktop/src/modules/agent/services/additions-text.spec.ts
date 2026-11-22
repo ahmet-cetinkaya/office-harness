@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  environmentLineText,
   formatEnvironment,
   formatFlags,
   parseEnvironment,
@@ -10,6 +11,13 @@ import {
 } from "./additions-text";
 
 describe("additions text", () => {
+  test("a variable without a value is shown as no value", () => {
+    expect(environmentLineText({ name: "API_KEY", value: null })).toBe(
+      "API_KEY: no value",
+    );
+    expect(environmentLineText({ name: "MODE", value: "" })).toBe("MODE=");
+  });
+
   test("a flag is one non-empty line", () => {
     expect(parseFlags("--model\n  opus \n\n")).toEqual(["--model", "opus"]);
   });

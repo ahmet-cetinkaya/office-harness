@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { visibleText, type EnvironmentEntry } from "../../agent";
+import { environmentLineText, visibleText } from "../../agent";
 import { roleText } from "../../hierarchy";
 import {
   agentCountOf,
-  NO_VALUE_TEXT,
   type AgentBody,
   type Template,
   type TeamBody,
@@ -23,14 +22,6 @@ export interface TextRow {
 export interface TextGroup {
   title: string;
   rows: TextRow[];
-}
-
-/** A variable as one line: its name, then its value or "no value". */
-export function environmentLineText(entry: EnvironmentEntry): string {
-  const name = visibleText(entry.name);
-  return entry.value === null
-    ? `${name}: ${NO_VALUE_TEXT}`
-    : `${name}=${visibleText(entry.value)}`;
 }
 
 function listText(lines: string[], emptyText: string): string {

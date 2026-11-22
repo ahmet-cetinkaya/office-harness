@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { AgentBody } from "./template";
-import { agentRows, bodyGroups, environmentLineText } from "./template-text";
+import { agentRows, bodyGroups } from "./template-text";
 
 const BODY: AgentBody = {
   name_pattern: "reviewer-{n}",
@@ -21,13 +21,6 @@ function rowValue(label: string): string | undefined {
 }
 
 describe("template text", () => {
-  test("a variable without a value is shown as no value", () => {
-    expect(environmentLineText({ name: "API_KEY", value: null })).toBe(
-      "API_KEY: no value",
-    );
-    expect(environmentLineText({ name: "MODE", value: "" })).toBe("MODE=");
-  });
-
   test("an escape code is shown as a visible symbol", () => {
     expect(rowValue("Startup prompt")).toBe("run ␛[31mred␛[0m");
   });

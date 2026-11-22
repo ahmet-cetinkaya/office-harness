@@ -19,6 +19,7 @@ export type {
 export { isActive, shownStatusText } from "./models/agent";
 export { taskRowText, visibleText } from "./models/task-text";
 export {
+  environmentLineText,
   formatEnvironment,
   formatFlags,
   parseEnvironment,

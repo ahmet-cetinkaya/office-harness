@@ -87,7 +87,7 @@ Result: `{team, agents: [agent]}`, the lead first. The team, its lead under the 
 |---|---|---|
 | `ids` | list of string? | absent exports every template |
 
-Result: `{text}`, the file text of data-model.md with every environment value `null`. The desktop app says before writing that flags and startup prompts are written as they are.
+Result: `{text}`, the file text of data-model.md with every environment value `null`. The desktop app writes exactly this `text` to the file that the user picked, and nothing else. It says before writing that flags and startup prompts are written as they are.
 
 ### `template.import.preview` (FR-008, FR-009)
 

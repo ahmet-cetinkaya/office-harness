@@ -52,7 +52,7 @@ Paths are relative to the repository root. `T` is `src/modules/template`, `H` is
 | FR-008 | PASS (automated) | Nothing saved before confirm: `TS`, `a_preview_names_the_save_names_drops_values_and_saves_nothing`, `a_confirm_saves_every_template_without_values`. Preview: `DE`, `the import preview shows variable names, the values line and an escape symbol, and a cancel saves nothing`, `confirming the import preview saves the templates`. The file text is read by a command that takes no path (see PB-4). |
 | FR-009 | PASS (automated) | Each refusal kind: `TF`, `an_unknown_version_unreadable_text_and_a_large_file_are_refused_with_a_reason`, `a_template_that_breaks_a_save_rule_is_named_with_its_reason`, `an_unknown_field_in_the_file_or_a_template_is_named`, `a_template_without_a_name_is_named_by_its_position`; `TB`, `fifty_agents_are_accepted_and_fifty_one_are_refused`; `TS`, `a_refused_file_saves_nothing_and_names_the_template_and_the_reason`. Size at the server: `HT`, `an_import_text_over_256_kib_is_refused_as_invalid`. Size at the file command: `DF`, `a_file_of_exactly_the_cap_is_read`, `a_file_one_byte_over_the_cap_is_refused`. Desktop: `DE`, `an invalid import shows its reason and saves nothing`, `a file that the core refuses shows the core's reason`. |
 | FR-010 | PASS (automated) | `TB`, `fifty_agents_are_accepted_and_fifty_one_are_refused`; `TF`, `a_file_of_fifty_agents_is_accepted`. Desktop: `DE`, `a team template over the limit is refused with its reason`. |
-| FR-011 | PASS (automated) | Domain: `A/domain/src/value_objects/env_entry.tests.rs`, `no_value_and_an_empty_value_are_different_entries`. Storage: `A/infrastructure/src/persistence/additions_document.tests.rs`, `no_value_and_an_empty_value_stay_different_in_the_stored_text`; `TI`, `no_value_and_an_empty_value_stay_different_after_a_round_trip`; `TJ`, `an_agent_body_round_trips_and_keeps_no_value_apart_from_an_empty_value`. Wire: `A/presentation/src/contracts/additions_body.tests.rs`, `a_null_value_is_no_value_and_an_empty_text_is_a_value`. Creation keeps it: `HB`, `a_value_less_environment_entry_keeps_no_value_in_the_stored_additions`. Import drops values: `HT`, `an_import_of_a_file_with_an_env_value_saves_no_value`. Not passed to the CLI: `A/application/src/commands/start_agent/start_agent_handler.tests.rs`, `a_variable_without_a_value_is_not_passed_and_an_empty_value_is`. Shown: `DE`, `the create dialog shows a variable without a value as no value`. The agent details show it as a bare `NAME` line, not as the words "no value" (see Known gaps 1). |
+| FR-011 | PASS (automated) | Domain: `A/domain/src/value_objects/env_entry.tests.rs`, `no_value_and_an_empty_value_are_different_entries`. Storage: `A/infrastructure/src/persistence/additions_document.tests.rs`, `no_value_and_an_empty_value_stay_different_in_the_stored_text`; `TI`, `no_value_and_an_empty_value_stay_different_after_a_round_trip`; `TJ`, `an_agent_body_round_trips_and_keeps_no_value_apart_from_an_empty_value`. Wire: `A/presentation/src/contracts/additions_body.tests.rs`, `a_null_value_is_no_value_and_an_empty_text_is_a_value`. Creation keeps it: `HB`, `a_value_less_environment_entry_keeps_no_value_in_the_stored_additions`. Import drops values: `HT`, `an_import_of_a_file_with_an_env_value_saves_no_value`. Not passed to the CLI: `A/application/src/commands/start_agent/start_agent_handler.tests.rs`, `a_variable_without_a_value_is_not_passed_and_an_empty_value_is`. Shown: `DE`, `the create dialog shows a variable without a value as no value`. The agent details show it as `NAME: no value`: `DE`, `an agent's details show a variable without a value as no value` (US3 scenario 6). |
 | PB-1 | PASS (automated) | `HB`, `a_second_ceo_is_refused_with_the_tree_rule_text`, `a_place_for_a_template_with_no_role_is_a_reason`. |
 | PB-2 | PASS (automated) | `HB`, `each_created_agent_has_a_create_record_with_the_user_as_actor`, `each_rolled_back_agent_has_a_create_and_a_delete_entry`. |
 | PB-3 | GAP | No test asserts that no CLI configuration path is written. No code path of this change writes one: a template holds only office-harness definitions. |
@@ -64,7 +64,7 @@ Paths are relative to the repository root. `T` is `src/modules/template`, `H` is
 | SC-003 | PASS (automated) | One test for each kind of FR-009: `TF`, `an_unknown_version_unreadable_text_and_a_large_file_are_refused_with_a_reason`, `a_template_that_breaks_a_save_rule_is_named_with_its_reason`, `a_file_of_fifty_agents_is_accepted` (the 50 edge); `TB`, `fifty_agents_are_accepted_and_fifty_one_are_refused`; `TS`, `a_refused_file_saves_nothing_and_names_the_template_and_the_reason`; `TI`, `insert_all_saves_every_template_or_none`; `HT`, `an_import_text_over_256_kib_is_refused_as_invalid`. |
 | SC-004 | PASS (automated) | `HT`, `editing_and_deleting_a_template_change_no_agent_or_team`; `TS`, `a_team_template_keeps_its_copy_when_an_agent_template_is_edited_or_deleted`; `DE`, `a template is edited and deleted by keyboard and the agents stay`. |
 | SC-005 | PASS (automated) | `HB`, `a_team_creation_that_fails_at_any_agent_leaves_nothing_behind` (lead, first member, last member), `a_team_creation_whose_store_step_fails_removes_every_agent_and_the_team`, `a_team_creation_whose_team_save_fails_removes_the_lead`, `a_taken_team_name_alone_is_a_conflict_and_creates_nothing`; `HT`, `a_taken_team_name_creates_nothing`. A failing undo leaves only the agent that could not be removed and names it (`a_removal_that_fails_in_the_undo_leaves_only_that_agent_and_is_named`); that case does not leave 0 agents by design and is reported, not hidden. |
-| US1, US2, US3 | PASS (automated) | The `HT` runs of FR-001, FR-002, FR-004 to FR-009, the `DE` runs, and the rows above. US3 scenario 6 is PARTIAL: see Known gaps 1. |
+| US1, US2, US3 | PASS (automated) | The `HT` runs of FR-001, FR-002, FR-004 to FR-009, the `DE` runs, and the rows above. US3 scenario 6 is proven by `DE`, `an agent's details show a variable without a value as no value`. |
 
 ## Edge cases
 
@@ -73,7 +73,7 @@ Paths are relative to the repository root. `T` is `src/modules/template`, `H` is
 | No template exists (Empty) | PASS (automated) | `DE`, `an empty templates view says so and offers save and import` ("No template exists yet.", "New template", "Import templates"). |
 | An imported template has the name of an existing template (Boundary) | PASS (automated) | `TV`, `a_taken_name_gets_the_lowest_free_number_ignoring_case`; `TS`, `a_preview_names_the_save_names_drops_values_and_saves_nothing`. |
 | A name pattern has no `{n}` and the name exists (Boundary) | PASS (automated) | `TN`, `a_pattern_without_a_number_gets_one_only_when_the_name_is_taken`. |
-| A lead entry has role CEO, or a member entry has role team lead (Invalid) | PARTIAL (automated) | Lead entry with role CEO: `HB`, `a_team_lead_entry_with_the_ceo_role_is_created_as_a_lead`. No test names a member entry with the role team lead. |
+| A lead entry has role CEO, or a member entry has role team lead (Invalid) | PASS (automated) | Lead entry with role CEO: `HB`, `a_team_lead_entry_with_the_ceo_role_is_created_as_a_lead`. Member entry with role team lead, created as a member: `HB`, `a_member_entry_with_the_team_lead_role_is_created_as_a_member`. |
 | An agent template with role CEO is used when a CEO exists (Invalid) | PASS (automated) | `HB`, `a_second_ceo_is_refused_with_the_tree_rule_text`. |
 | The template's working folder, or the project's folder, does not exist (Invalid) | PARTIAL (automated) | Template folder, named before anything is created: `HB`, `a_missing_working_folder_is_named_before_anything_is_created`. No test uses a project whose folder is missing. |
 | No working folder and no project (Invalid) | PASS (automated) | `HB`, `no_folder_and_no_project_needs_a_working_folder`. |
@@ -97,7 +97,7 @@ Every row of the Traceability table in `PLAN.md` has evidence or a recorded gap.
 | A1 to A10 | evidence for A2 to A9; recorded gap for A1 and A10 | Requirements table above. |
 | SC-001 | machine evidence; human run BLOCKED | Requirements table and Manual QA. |
 | SC-002 to SC-005 | evidence | Requirements table above. |
-| US1, US2, US3 | evidence, with Known gaps 1 for US3 scenario 6 | Requirements table above. |
+| US1, US2, US3 | evidence, including US3 scenario 6 | Requirements table above. |
 
 ## Plan deviations
 
@@ -105,13 +105,11 @@ None recorded by T8. The T6 crate facts below are from the T6 worker.
 
 ## Known gaps (open only)
 
-1. **The agent details show a variable without a value as a bare `NAME` line, not as "no value".** SPEC US3 scenario 6 says the details show `API_KEY` as 'no value'. FR-011 asks for 'no value' in the template and in creation from it, and both show it (`DE`, `the create dialog shows a variable without a value as no value`). The additions editor of the agent shows the hint "A bare NAME has no value: the CLI does not get it, so the login environment's value stays." A word in the details is not built.
-2. **A project whose folder is missing has no test of its own.** The template's missing folder is tested.
-3. **A member entry with the role team lead has no test of its own.** The lead entry with role CEO is tested.
-4. **PB-3, A1, and A10 have no test of their own.** They rest on code reading.
-5. **Only `template.list` is tested against the agent connection.** The allowlist refuses every type outside it.
-6. **No hands-on pass** of the rows in Manual QA.
-7. **The umbrella gate, the CI matrix of the Phase 2 PR, `/ac:review`, and `/ac:verify`** are not run in this file.
+1. **A project whose folder is missing has no test of its own.** The template's missing folder is tested.
+2. **PB-3, A1, and A10 have no test of their own.** They rest on code reading.
+3. **Only `template.list` is tested against the agent connection.** The allowlist refuses every type outside it.
+4. **No hands-on pass** of the rows in Manual QA.
+5. **The umbrella gate, the CI matrix of the Phase 2 PR, `/ac:review`, and `/ac:verify`** are not run in this file.
 
 ## Manual QA
 

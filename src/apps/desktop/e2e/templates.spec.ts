@@ -403,6 +403,31 @@ test("the import preview shows variable names, the values line and an escape sym
   expect(await requestKinds(page)).not.toContain("template.import.confirm");
 });
 
+test("the import preview opens with focus on its explanation, and Enter right after opening saves nothing", async ({
+  page,
+}) => {
+  await openOffice(page, { agents: [agent()] }, { importText: IMPORT_FILE });
+  await openTemplates(page);
+  await activateButton(page, "Import templates");
+
+  const dialog = page.getByRole("dialog", { name: "Import preview" });
+  const explanation = dialog.getByText("Nothing is saved yet.", {
+    exact: false,
+  });
+  await expect(explanation).toBeFocused();
+  await expect(
+    dialog.getByRole("button", { name: /^Save (this|these)/ }),
+  ).not.toBeFocused();
+  await expect(
+    dialog.getByRole("list", { name: "Templates in the file" }),
+  ).toHaveAttribute("tabindex", "0");
+
+  await page.keyboard.press("Enter");
+
+  await expect(dialog).toBeVisible();
+  expect(await requestKinds(page)).not.toContain("template.import.confirm");
+});
+
 test("confirming the import preview saves the templates", async ({ page }) => {
   await openOffice(
     page,
@@ -595,4 +620,33 @@ test("SC-001: a 15-agent tree from two templates in three create actions", async
   expect(agentRows).toBe(15);
   expect(createActions).toBeLessThanOrEqual(SC_001_CREATE_ACTIONS);
   expect(elapsedMs).toBeLessThan(SC_001_LIMIT_MS);
+});
+
+test("an agent's details show a variable without a value as no value", async ({
+  page,
+}) => {
+  await openOffice(page, {
+    agents: [agent()],
+    additions: {
+      "agent-ada": {
+        flags: [],
+        env: [
+          { name: "API_KEY", value: null },
+          { name: "MODE", value: "fast" },
+        ],
+        startup_prompt: null,
+        updated_at: 1,
+        applies_next_session: false,
+      },
+    },
+  });
+
+  await page.getByRole("button", { name: "Ada, stopped" }).click();
+
+  const saved = page.getByRole("region", {
+    name: "Saved environment variables",
+  });
+  await expect(saved.getByText("API_KEY: no value")).toBeVisible();
+  await expect(saved.getByText("MODE=fast")).toBeVisible();
+  await expectNoSeriousViolations(page);
 });
