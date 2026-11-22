@@ -182,3 +182,60 @@ fn a_lead_placement_seats_the_lead_in_the_same_write() {
     assert_eq!(seat, lead.as_uuid_text());
     assert_eq!(member, 1);
 }
+
+/// A caller that holds the tree exclusion writes the team through the held
+/// variants; a second take of the same exclusion would never return, so the
+/// finished test is the proof.
+#[test]
+fn the_held_variants_write_and_delete_a_team_under_the_callers_exclusion() {
+    let shared = database();
+    let lead = AgentId::generate();
+    {
+        let connection = shared.lock().expect("database");
+        agent(&connection, &lead, "Bo");
+    }
+    let store = repository(&shared);
+    let team = hierarchy_domain::Team::new(
+        hierarchy_domain::TeamName::parse("Core").expect("name"),
+        None,
+        lead,
+    );
+
+    let held = store.tree_exclusion();
+    store
+        .save_team_and_place_lead_held(&held, &team, None)
+        .expect("saved");
+    let teams_after_save = store.snapshot().expect("snapshot").teams.len();
+    store
+        .delete_team_and_unplace_held(&held, team.id())
+        .expect("deleted");
+    drop(held);
+
+    assert_eq!(teams_after_save, 1);
+    let after = store.snapshot().expect("snapshot");
+    assert_eq!(after.teams.len(), 0);
+    assert_eq!(after.rows.len(), 0, "the lead left the hierarchy");
+}
+
+/// The existing methods still take the exclusion themselves, so their callers
+/// do not change.
+#[test]
+fn the_plain_team_writes_take_the_exclusion_themselves() {
+    let shared = database();
+    let lead = AgentId::generate();
+    {
+        let connection = shared.lock().expect("database");
+        agent(&connection, &lead, "Bo");
+    }
+    let store = repository(&shared);
+    let team = hierarchy_domain::Team::new(
+        hierarchy_domain::TeamName::parse("Core").expect("name"),
+        None,
+        lead,
+    );
+
+    store.save_team_and_place_lead(&team, None).expect("saved");
+    store.delete_team_and_unplace(team.id()).expect("deleted");
+
+    assert_eq!(store.snapshot().expect("snapshot").teams.len(), 0);
+}

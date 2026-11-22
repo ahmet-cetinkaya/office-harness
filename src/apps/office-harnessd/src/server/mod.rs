@@ -17,6 +17,7 @@ mod server_error;
 mod server_file;
 mod server_options;
 mod server_state;
+mod template_requests;
 mod terminal_requests;
 mod upgrade_check;
 
@@ -29,3 +30,4 @@ pub use restart_signal::{RESTART_REQUEST, RestartSignal};
 pub use running_server::Server;
 pub use server_error::ServerError;
 pub use server_options::ServerOptions;
+pub use template_requests::TemplateGateway;

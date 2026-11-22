@@ -24,6 +24,8 @@ function fakeClient(handler: Handler = () => ({ items: [] })) {
     registerLoginStart: async () => {},
     loginStartStatus: async () => false,
     retryConnection: async () => {},
+    exportTemplatesFile: async () => "cancelled",
+    importTemplatesFile: async () => null,
   };
   return { client, requests, push: (event: ServerEvent) => onEvent(event) };
 }

@@ -9,7 +9,7 @@ use crate::test_support::Office;
 fn input(name: &str) -> AdditionsInput {
     AdditionsInput {
         flags: vec!["--x".to_owned()],
-        env: vec![(name.to_owned(), "v".to_owned())],
+        env: vec![(name.to_owned(), Some("v".to_owned()))],
         startup_prompt: None,
     }
 }

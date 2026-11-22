@@ -11,8 +11,23 @@ export { default as WorktreeField } from "./components/worktree-field.svelte";
 export { default as ConfirmDialog } from "./components/confirm-dialog.svelte";
 export { default as ProjectFormDialog } from "./components/project-form-dialog.svelte";
 export { default as ProjectList } from "./components/project-list.svelte";
-export type { Agent, NewAgent, Project } from "./models/agent";
+export type {
+  Additions,
+  Agent,
+  EnvironmentEntry,
+  NewAgent,
+  Project,
+} from "./models/agent";
 export { isActive, shownStatusText } from "./models/agent";
+export { taskRowText, visibleText } from "./models/task-text";
+export {
+  environmentLineText,
+  formatEnvironment,
+  formatFlags,
+  parseEnvironment,
+  parseFlags,
+  parseStartupPrompt,
+} from "./services/additions-text";
 export {
   KEEP_WORKTREES,
   deleteResultText,
@@ -27,7 +42,6 @@ export {
   type WorktreeStatus,
 } from "./models/worktree";
 export { createAgentService } from "./services/agent-service";
-export { taskRowText } from "./models/task-text";
 export {
   LAST_AGENT_GONE_LEAD,
   LAST_AGENT_GONE_MESSAGE,

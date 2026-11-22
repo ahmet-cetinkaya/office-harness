@@ -56,9 +56,10 @@ export interface Project {
   folder: string;
 }
 
+/** A null value is "no value": the CLI does not get the variable (0009/FR-011). */
 export interface EnvironmentEntry {
   name: string;
-  value: string;
+  value: string | null;
 }
 
 /** What office-harness adds when it starts one agent (FR-022). */

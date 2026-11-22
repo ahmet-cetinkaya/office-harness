@@ -18,6 +18,8 @@ function fakeClient(answer: unknown) {
     registerLoginStart: async () => {},
     loginStartStatus: async () => false,
     retryConnection: async () => {},
+    exportTemplatesFile: async () => "cancelled",
+    importTemplatesFile: async () => null,
   };
   return { client, sent };
 }

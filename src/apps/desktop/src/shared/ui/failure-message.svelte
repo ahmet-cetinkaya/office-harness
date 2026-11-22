@@ -14,7 +14,7 @@
 <p
   {id}
   role="alert"
-  class="rounded-md border border-red-700 bg-red-50 p-3 text-sm text-red-900"
+  class="rounded-md border border-red-700 bg-red-50 p-3 text-sm whitespace-pre-line text-red-900"
 >
   <strong>{lead}</strong>
   {message}

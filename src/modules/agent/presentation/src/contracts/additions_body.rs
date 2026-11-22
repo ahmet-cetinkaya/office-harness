@@ -4,7 +4,7 @@ use agent_application::common::additions_input::AdditionsInput;
 use serde_json::Value;
 
 /// Reads the `additions` object of a request: `flags` (a list of text),
-/// `env` (a list of `{name, value}`), and `startup_prompt` (text or null).
+/// `env` (a list of `{name, value}` where a null `value` is "no value"), and `startup_prompt` (text or null).
 /// Every failure names the part at fault. Whether a name or a flag is valid
 /// is the domain's rule, which the use case applies.
 ///
@@ -43,7 +43,7 @@ pub fn read_additions(value: &Value) -> Result<AdditionsInput, String> {
     })
 }
 
-fn read_entry(item: &Value, index: usize) -> Result<(String, String), String> {
+fn read_entry(item: &Value, index: usize) -> Result<(String, Option<String>), String> {
     let Value::Object(entry) = item else {
         return Err(format!("additions.env[{index}] must be an object"));
     };
@@ -52,9 +52,15 @@ fn read_entry(item: &Value, index: usize) -> Result<(String, String), String> {
         entry
             .get(name)
             .ok_or_else(|| format!("{label} is required"))
-            .and_then(|value| text_of(value, &label))
+            .map(|value| (value, label))
     };
-    Ok((field("name")?, field("value")?))
+    let (name, name_label) = field("name")?;
+    let (value, value_label) = field("value")?;
+    let value = match value {
+        Value::Null => None,
+        text => Some(text_of(text, &value_label)?),
+    };
+    Ok((text_of(name, &name_label)?, value))
 }
 
 fn text_of(value: &Value, label: &str) -> Result<String, String> {

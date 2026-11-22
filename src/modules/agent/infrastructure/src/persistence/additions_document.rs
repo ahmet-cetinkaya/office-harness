@@ -10,7 +10,7 @@ use super::PersistenceError;
 #[derive(Serialize, Deserialize)]
 pub struct AdditionsDocument {
     flags: Vec<String>,
-    env: Vec<(String, String)>,
+    env: Vec<(String, Option<String>)>,
     startup_prompt: Option<String>,
 }
 
@@ -22,7 +22,7 @@ impl AdditionsDocument {
             env: additions
                 .env()
                 .iter()
-                .map(|entry| (entry.name().to_owned(), entry.value().to_owned()))
+                .map(|entry| (entry.name().to_owned(), entry.value().map(str::to_owned)))
                 .collect(),
             startup_prompt: additions.startup_prompt().map(str::to_owned),
         }
@@ -38,7 +38,7 @@ impl AdditionsDocument {
         let env = document
             .env
             .iter()
-            .map(|(name, value)| EnvEntry::parse(name, value))
+            .map(|(name, value)| EnvEntry::parse(name, value.as_deref()))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(OfficeAdditions::new(
             document.flags,
