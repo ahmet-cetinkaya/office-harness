@@ -56,6 +56,23 @@ pub struct Services {
     pub agent_bridge_store: Arc<dyn agent_application::common::interfaces::AgentStore>,
 }
 
+/// Runs each module's migrations, every module on its own ledger.
+///
+/// # Errors
+/// The first migration that fails.
+fn migrate_modules(connection: &mut rusqlite::Connection) -> Result<(), StartupError> {
+    run_migrations(connection, LEDGER_TABLE, SCRIPTS, PRE_MIGRATION_CHECKS)?;
+    run_migrations(connection, AUDIT_LEDGER_TABLE, AUDIT_SCRIPTS, &[])?;
+    run_migrations(
+        connection,
+        NOTIFICATION_LEDGER_TABLE,
+        NOTIFICATION_SCRIPTS,
+        &[],
+    )?;
+    run_migrations(connection, TEMPLATE_LEDGER_TABLE, TEMPLATE_SCRIPTS, &[])?;
+    Ok(())
+}
+
 /// Startup steps 3 to 6 with the user's real login shell.
 ///
 /// # Errors
@@ -85,20 +102,7 @@ pub fn start_with(
         ));
     }
     let mut connection = open_database(&config.database_path())?;
-    run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, PRE_MIGRATION_CHECKS)?;
-    run_migrations(&mut connection, AUDIT_LEDGER_TABLE, AUDIT_SCRIPTS, &[])?;
-    run_migrations(
-        &mut connection,
-        NOTIFICATION_LEDGER_TABLE,
-        NOTIFICATION_SCRIPTS,
-        &[],
-    )?;
-    run_migrations(
-        &mut connection,
-        TEMPLATE_LEDGER_TABLE,
-        TEMPLATE_SCRIPTS,
-        &[],
-    )?;
+    migrate_modules(&mut connection)?;
 
     let connection = SharedConnection::new(connection);
     let agents = AgentRepository::new(connection.clone());
