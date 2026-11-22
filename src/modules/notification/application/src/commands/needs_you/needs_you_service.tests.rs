@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use kernel::{AgentId, Timestamp};
-use notification_domain::{AttentionEvent, AttentionKind, NotificationId};
+use notification_domain::{AttentionEvent, AttentionKind, ItemReport, NotificationId};
 
 use super::*;
 use crate::common::errors::NotificationApplicationError;
@@ -105,7 +105,7 @@ fn a_status_change_clears_the_item() {
         .expect("record");
 
     let cleared = needs_you
-        .clear(agent, NeedsYouClearReason::StatusChanged)
+        .clear(agent, NeedsYouClearReason::Stopped)
         .expect("clear");
 
     assert!(cleared);
@@ -132,4 +132,80 @@ fn forgetting_missing_agents_keeps_the_existing_ones() {
         .collect();
     assert!(removed);
     assert_eq!(agents, [kept]);
+}
+
+fn report(at: i64) -> ItemReport {
+    ItemReport {
+        kind: "question".to_owned(),
+        text: "which branch?".to_owned(),
+        at: Timestamp::from_unix_millis(at),
+    }
+}
+
+#[test]
+fn a_report_survives_a_resume_and_a_hold_release_but_not_a_stop() {
+    let needs_you = service();
+    let agent = AgentId::generate();
+    needs_you
+        .record(agent, event(AttentionKind::AutoHold, 5), None)
+        .expect("held");
+    needs_you
+        .record_report(agent, report(10), None)
+        .expect("report");
+    needs_you
+        .record(agent, event(AttentionKind::ResumeHold, 20), None)
+        .expect("resume hold");
+
+    let resumed = needs_you
+        .clear(agent, NeedsYouClearReason::Resumed)
+        .expect("resumed");
+    let released = needs_you
+        .clear(agent, NeedsYouClearReason::HoldReleased)
+        .expect("released");
+    let kept = needs_you.list().expect("list");
+    let stopped = needs_you
+        .clear(agent, NeedsYouClearReason::Stopped)
+        .expect("stopped");
+
+    assert!(!resumed);
+    assert!(!released);
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].report, Some(report(10)));
+    assert_eq!(kept[0].first_event_at, Timestamp::from_unix_millis(5));
+    assert!(stopped);
+}
+
+#[test]
+fn an_item_without_a_report_still_leaves_on_a_resume() {
+    let needs_you = service();
+    let agent = AgentId::generate();
+    needs_you
+        .record(agent, event(AttentionKind::WaitingForInput, 10), None)
+        .expect("record");
+
+    let cleared = needs_you
+        .clear(agent, NeedsYouClearReason::Resumed)
+        .expect("clear");
+
+    assert!(cleared);
+}
+
+#[test]
+fn opening_the_terminal_or_dismissing_clears_a_report_item() {
+    let needs_you = service();
+    let opened = AgentId::generate();
+    let dismissed = AgentId::generate();
+    for agent in [opened, dismissed] {
+        needs_you
+            .record_report(agent, report(10), None)
+            .expect("report");
+    }
+
+    let cleared = needs_you
+        .clear(opened, NeedsYouClearReason::TerminalOpened)
+        .expect("opened");
+    let left = needs_you.dismiss(dismissed).expect("dismiss");
+
+    assert!(cleared);
+    assert_eq!(left, Vec::<notification_domain::NeedsYouItem>::new());
 }
