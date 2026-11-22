@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { CoreClient } from "../../../core/api";
+import type { CoreClient } from "../api";
+import { appShortcutNamed } from "./app-shortcuts";
+import { setCurrentFocusShortcut } from "./focus-shortcut-state";
 import {
   DEFAULT_FOCUS_SHORTCUT,
-  isAppShortcut,
   parseShortcut,
   type Shortcut,
-} from "../../../core/shortcuts";
+} from "./shortcut";
 
 const FOCUS_SHORTCUT_SETTING = "focus_shortcut";
 
@@ -28,6 +29,16 @@ function defaultShortcut(): FocusShortcut {
 }
 
 /**
+ * True when a stored text names a table key that the focus shortcut must
+ * give up. The jump key is the exception: a user may hold it from before
+ * 0008, and the jump has no key then (0008 D6).
+ */
+function takesTableKey(text: string): boolean {
+  const named = appShortcutNamed(text);
+  return named !== null && named.kind !== "jump";
+}
+
+/**
  * Reads the user's shortcut. The terminal must always have a way out, so an
  * unreadable or unparsable setting gives the default.
  */
@@ -42,9 +53,26 @@ export async function loadFocusShortcut(
     // A stored value the server's validator would refuse (an app-table
     // combination) must not eat the table's keys; the terminal keeps its
     // default way out.
-    if (isAppShortcut(text)) return defaultShortcut();
+    if (takesTableKey(text)) return defaultShortcut();
     return fromText(text) ?? defaultShortcut();
   } catch {
     return defaultShortcut();
   }
+}
+
+let shared: Promise<FocusShortcut> | null = null;
+
+/**
+ * The focus shortcut, loaded once for the whole app (0008 D6): the terminal,
+ * the panel, the scene, and the Needs you section all read this one copy. A
+ * change of the setting applies at the next app start.
+ */
+export function sharedFocusShortcut(
+  client: CoreClient,
+): Promise<FocusShortcut> {
+  shared ??= loadFocusShortcut(client).then((focus) => {
+    setCurrentFocusShortcut(focus.shortcut);
+    return focus;
+  });
+  return shared;
 }

@@ -9,12 +9,10 @@
   import { toCoreRequestError, type CoreClient } from "../../../core/api";
   import {
     matchesShortcut,
-    pressedTerminalShortcut,
-  } from "../../../core/shortcuts";
-  import {
-    loadFocusShortcut,
+    pressedAppShortcut,
+    sharedFocusShortcut,
     type FocusShortcut,
-  } from "../services/focus-shortcut";
+  } from "../../../core/shortcuts";
   import { createInputQueue } from "../services/input-queue";
   import {
     binaryBytes,
@@ -140,7 +138,7 @@
         }
         return false;
       }
-      if (pressedTerminalShortcut(event) !== null) {
+      if (pressedAppShortcut(event) !== null) {
         if (event.type === "keydown") {
           // The webview would otherwise run its own action for an F-key,
           // and xterm.js would send the key's sequence to the CLI.
@@ -188,7 +186,7 @@
     }
 
     async function attach(): Promise<void> {
-      focusShortcut = await loadFocusShortcut(client);
+      focusShortcut = await sharedFocusShortcut(client);
       const release = await terminalFeedFor(client).subscribe(
         agentId,
         showFrame,
