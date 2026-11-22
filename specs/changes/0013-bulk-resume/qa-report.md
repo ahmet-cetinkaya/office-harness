@@ -3,7 +3,7 @@
 ## Summary
 
 - **Date:** 2026-11-23.
-- **Build under test:** branch `feat/0013-bulk-resume` on `main` 6e3d197, the tree of the implementation commits (T1 to T5), toolchain 1.100.0 in CI and the local nix clippy 1.99. Every local gate below ran on that tree.
+- **Build under test:** branch `feat/0013-bulk-resume` with `main` c07f21c merged (0014 and the specs archive), the tree of the implementation commits (T1 to T5), toolchain 1.100.0 in CI and the local nix clippy 1.99. Every local gate below ran on that merged tree.
 - **Overall status:** the automated evidence stands for FR-001 to FR-008, PB-1 to PB-5, SC-002, SC-003, SC-005, and SC-006. SC-001 and SC-004 are PARTIAL: the behavior is proven, the stated counts (30 agents in 60 s, 10 restarts) were not run. Rows that need a person or a signed-in real CLI are BLOCKED; nobody ran them.
 - **Status of this file:** the gate numbers come from local runs on 2026-11-23. The CI result is in the PR, not here.
 
@@ -30,10 +30,10 @@
 |---|---|---|
 | `cargo fmt --all --check` | workspace | PASS |
 | `cargo clippy --all-targets -D warnings` | workspace without `office-harness-desktop`; `-A clippy::must_use_candidate` only for a finding that the local clippy 1.99 raises on `main` too (`cli/run.rs`) | PASS (clean) |
-| `cargo test` | workspace without `office-harness-desktop`: 1175 passed, 0 failed | PASS |
-| `tests/bulk_resume.rs` and `tests/server_crash.rs` | 8 and 1 tests, run 6 times | PASS (each run) |
+| `cargo test` | workspace without `office-harness-desktop`: 1196 passed, 0 failed | PASS |
+| `tests/bulk_resume.rs` and `tests/server_crash.rs` | 8 and 1 tests, run 6 times before the merge, once after | PASS (each run) |
 | `scripts/check-boundaries.sh --self-test` and the check | repository | PASS (boundaries ok) |
-| `bun test src` | desktop: 357 passed, 0 failed | PASS |
+| `bun test src` | desktop: 359 passed, 0 failed | PASS |
 | Playwright | desktop, full suite on the mock core, Chromium: 231 passed, 0 failed; `e2e/resume.spec.ts` 10 of them | PASS |
 | `svelte-check`, `eslint`, `prettier --check` | desktop: 497 files, 0 errors, 0 warnings; lint and format clean | PASS |
 | CI | the PR | In the PR |
