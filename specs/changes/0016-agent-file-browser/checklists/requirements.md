@@ -1,6 +1,6 @@
 # Requirements checklist: 0016-agent-file-browser
 
-Spec: `specs/changes/0016-agent-file-browser/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass after three rounds. No `[NEEDS CLARIFICATION]` marker; the size limit (512 KiB) is flagged for the review gate in the Clarifications. Every `0001/`, `0002/`, and `0010/` reference was checked against the specs on `main` at c07f21c.
+Spec: `specs/changes/0016-agent-file-browser/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass after four rounds. No `[NEEDS CLARIFICATION]` marker; the size limit (512 KiB) is flagged for the review gate in the Clarifications. Every `0001/`, `0002/`, and `0010/` reference was checked against the specs on `main` at c07f21c.
 
 ## Content quality
 
@@ -34,6 +34,7 @@ Spec: `specs/changes/0016-agent-file-browser/SPEC.md` · Status: draft · Date: 
 | 1 | Requirements checklist | "Stay inside the folder" had no rule for links, for a root inside a larger repository, or for the git data. | Terms "Root" and "Inside the root"; FR-003 resolves links first; US2 scenario 5 limits changes to the root; the `.git` edge case. |
 | 2 | Hostile reader (secure-engineering contract) | (a) A commit field could carry a git option that writes a file. (b) git can run programs that the repository names during a diff (external diff, text conversion, filters, signature check). (c) Opening a named pipe blocks the reader. (d) Files and commit texts can carry markup or bidirectional characters that mislead the reviewer. (e) A link whose name is harmless can point at a secret-looking file. | (a) Commits are named by full id only (FR-006 edge case). (b) FR-007 lists them; SC-004 tests each. (c) Only regular files are read (edge case). (d) FR-009, SC-008. (e) Contract: the requested and the resolved names are both checked. |
 | 3 | Transport check against the code | A 1 MiB limit plus text escaping can pass the 1 MiB frame limit of 0001; a folder of 5,000 long names can too. | Size limit 512 KiB with base64 transport; 1,000 entries per folder; an answer budget in the contract. |
+| 4 | Spec review r1 (PASS for coding, condition C1) | C1: a `.env` renamed to `notes.txt` showed `.env`'s lines through the rename diff. L1: opening a FIFO blocks before the kind check. L2: the monitor control was not named. L3: more secret names. | FR-004, SC-003, edge case, contract and PLAN D5 apply the rule to the old name; PLAN D3 `O_NONBLOCK`; PLAN D7 names `core.fsmonitor=false`; `kubeconfig`, `.ovpn`, `.asc` added. |
 
 ## Notes
 
