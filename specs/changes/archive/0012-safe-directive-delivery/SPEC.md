@@ -1,11 +1,11 @@
 ---
-status: in_progress
+status: shipped
 capability: office
-plan: specs/changes/0012-safe-directive-delivery/PLAN.md
+plan: specs/changes/archive/0012-safe-directive-delivery/PLAN.md
 supersedes: 0002/FR-010
 ---
 
-<!-- Approved for implementation 2026-11-23 through the review gate (spec review r3 PASS at bb7d334, its one condition met at 4590311), under the owner's spec delegation. -->
+<!-- Approved for implementation 2026-11-23 through the review gate (spec review r3 PASS at bb7d334, its one condition met at 4590311), under the owner's spec delegation; shipped in PR #115. -->
 
 # 0012: Safe directive delivery
 
@@ -168,6 +168,7 @@ The sender's answer says whether the directive was submitted, waits (with its pl
 | The user puts a hold on the office while directives wait. | Concurrent | Each is withdrawn when its turn comes and recorded with the hold as the reason (FR-005). |
 | 20 directives already wait for one target. | Boundary | The next one is refused and recorded (FR-004). |
 | The background server stops normally while directives wait. | Failure | Each is withdrawn and recorded with the reason that the office server stopped (FR-005). |
+| A directive arrives after a normal stop of the server has begun. | Failure | The office refuses it with the reason that the office server is stopping, and records the refusal (FR-004, FR-005, A4). |
 | The background server crashes while directives wait. | Failure | They are lost; their acceptance stays in the record (A4). |
 | The text breaks the directive rules, or the target is not a running descendant. | Invalid | Refused at sending, as before (PB-1). |
 | An agent that is not the sender's ancestor asks about or changes the queue. | Unauthorized | Not possible: there is no request for the queue (A7). |
@@ -231,12 +232,13 @@ What this change does not cover, stated plainly:
 
 ## Deviations
 
-Implementation notes. None of them defers or changes a requirement.
+Implementation notes. None of them defers or changes a requirement. The last note records a gap found after the change shipped; the requirement stays as written.
 
 - **One delivery per target, not one write lock for all.** The plan kept the handler's single write lock. A delivery can wait up to 2 seconds for the input line, so the handler now marks one delivery per target instead; directives to other targets go on meanwhile, and writes and receipts of one target keep their order (0011 D2).
 - **Readiness has three answers.** The plan named the reasons a target is busy. The handler needs only ready, busy, or gone, so the reasons are not carried.
 - **Input-line check by count.** The plan compared the text's end with the end of the line before typing. The check counts how often the text's end, and a paste placeholder, show at the input line before and after typing, so a line that already held the same text elsewhere does not count (A9).
 - **Commits.** The plan named one commit per task. The hierarchy change and the server change do not build apart, so T2 to T4 code and tests are one commit, and the documents are another.
+- **Found after ship (2026-11-23): FR-002 is not met for an unnumbered choice list.** In a hands-on run, the start question of `claude` in a new folder, a choice list with a cursor mark and no numbers, did not hold a directive; the office typed it after the quiet period. FR-003 held: no Enter was sent and the question stayed unanswered. A follow-up change fixes the question check (qa-report, Known gaps).
 
 
 ## Updates
