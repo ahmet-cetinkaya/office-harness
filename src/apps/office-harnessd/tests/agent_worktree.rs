@@ -715,6 +715,15 @@ async fn a_template_made_from_an_agent_with_its_own_worktree_keeps_the_choice_an
         .await;
 
     assert_eq!(copied["body"]["own_worktree"], true);
-    assert_eq!(copied["body"]["working_folder"], json!(subfolder));
+    // The office keeps the repository canonical, and a temporary folder can
+    // sit behind a link (macOS /var is /private/var), so both sides are
+    // compared canonical.
+    let copied_folder = copied["body"]["working_folder"]
+        .as_str()
+        .expect("working folder");
+    assert_eq!(
+        fs::canonicalize(copied_folder).expect("copied folder"),
+        fs::canonicalize(&subfolder).expect("subfolder"),
+    );
     fixture.office.serving.stop().await;
 }
