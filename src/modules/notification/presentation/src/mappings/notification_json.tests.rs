@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use kernel::{AgentId, Timestamp};
-use notification_domain::{Notification, NotificationEvent, NotificationId};
+use notification_domain::{
+    AttentionEvent, AttentionKind, NeedsYouItem, Notification, NotificationEvent, NotificationId,
+};
 use serde_json::Value;
 
 use super::*;
@@ -61,4 +63,34 @@ fn the_created_event_names_the_notification_object() {
     assert_eq!(body["type"], "notification.created");
     assert_eq!(body["notification"]["event"], "waiting_for_input");
     assert_eq!(body["notification"]["agent_name"], "Ana");
+}
+
+fn item_with_origin(origin: Option<NotificationId>) -> NeedsYouItem {
+    let at = Timestamp::from_unix_millis(1_000);
+    NeedsYouItem {
+        agent_id: AgentId::from_u128(2),
+        first_event_at: at,
+        latest: AttentionEvent {
+            kind: AttentionKind::Bell,
+            detail: None,
+            at,
+        },
+        origin,
+    }
+}
+
+#[test]
+fn an_item_names_its_origin_notification_or_sends_null() {
+    let origin =
+        NotificationId::from_uuid_text("00000000-0000-0000-0000-000000000001").expect("fixed id");
+
+    let named = needs_you_item_json(&item_with_origin(Some(origin)));
+    let coalesced = needs_you_item_json(&item_with_origin(None));
+
+    assert_eq!(
+        named["origin_notification_id"],
+        "00000000-0000-0000-0000-000000000001"
+    );
+    assert_eq!(coalesced["origin_notification_id"], Value::Null);
+    assert_eq!(coalesced["detail"], Value::Null);
 }

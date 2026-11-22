@@ -2,6 +2,7 @@
 
 use agent_domain::entities::Agent;
 use agent_domain::enums::AgentStatus;
+use agent_domain::value_objects::TaskText;
 use kernel::AgentId;
 
 use crate::common::errors::PortError;
@@ -23,6 +24,12 @@ pub trait AgentStore: Send + Sync {
     /// # Errors
     /// `NotFound` when the agent does not exist.
     fn update_status(&self, id: AgentId, status: AgentStatus) -> Result<(), PortError>;
+
+    /// Stores the task text, or clears it for `None`.
+    ///
+    /// # Errors
+    /// `NotFound` when the agent does not exist.
+    fn update_task(&self, id: AgentId, task: Option<&TaskText>) -> Result<(), PortError>;
 
     /// # Errors
     /// `NotFound` when the agent does not exist.

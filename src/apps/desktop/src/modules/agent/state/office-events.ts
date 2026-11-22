@@ -2,11 +2,12 @@
 
 import type { ServerEvent } from "../../../core/api";
 import type { ActionEntry } from "../../audit";
-import type { AdditionsView, Agent } from "../models/agent";
+import type { AdditionsView, Agent, AgentTask } from "../models/agent";
 
 export const EVENT_AGENT_STATUS = "agent.status";
 export const EVENT_AGENT_CHANGED = "agent.changed";
 export const EVENT_AGENT_LINE = "agent.line";
+export const EVENT_AGENT_TASK = "agent.task";
 export const EVENT_AGENT_DELETED = "agent.deleted";
 export const EVENT_PROJECT_CHANGED = "project.changed";
 export const EVENT_ADDITIONS_CHANGED = "agent.additions.changed";
@@ -43,6 +44,27 @@ export function withLine(
   return agents.map((agent) =>
     agent.id === agentId ? { ...agent, last_line: line } : agent,
   );
+}
+
+/**
+ * Patches only the task. `agent.changed` replaces the whole agent with a null
+ * last line, so a task change never travels on it.
+ */
+export function withTask(
+  agents: Agent[],
+  agentId: string,
+  task: AgentTask | null,
+): Agent[] {
+  return agents.map((agent) =>
+    agent.id === agentId ? { ...agent, task } : agent,
+  );
+}
+
+export function readTaskEvent(event: ServerEvent) {
+  return {
+    agentId: event.agent_id as string,
+    task: (event.task ?? null) as AgentTask | null,
+  };
 }
 
 export function readLineEvent(event: ServerEvent): string {

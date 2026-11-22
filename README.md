@@ -32,13 +32,25 @@ The exact wording of these OS notices depends on the OS version. The macOS and W
 2. The app connects to the server. A new office shows "The office is empty". Choose "Create the first agent".
 3. Enter a name, a command (the CLI to run, for example `claude`), and a working folder. You can also choose a project.
 4. Select the agent and choose "Start agent".
-5. The terminal of the agent opens in the agent details. Type into it as in a normal terminal. Every key goes to the CLI, except the focus shortcut.
+5. The terminal of the agent opens in the agent details. Type into it as in a normal terminal. Every key goes to the CLI, except the focus shortcut and the app shortcuts (`Ctrl+Shift+F1` to `Ctrl+Shift+F11` and `Ctrl+Shift+H`, described below), which leave the terminal for the app.
 6. To move focus from the terminal back to the rest of the app, press `Ctrl+Shift+F12`.
 7. Close the app when you want. The agents keep running and the server keeps recording their output.
 
-The app has no screen to change the focus shortcut. The server stores it as the setting `focus_shortcut`. The default value is `Ctrl+Shift+F12`. A value is modifiers joined with `+`, then one key, for example `Ctrl+Alt+F11`. A client can change it with the `settings.set` request (see [the client protocol](specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md)). The app reads the setting when you open a terminal.
+The app has no screen to change the focus shortcut. The server stores it as the setting `focus_shortcut`. The default value is `Ctrl+Shift+F12`. A value is modifiers joined with `+`, then one key, for example `Ctrl+Alt+F11`. A client can change it with the `settings.set` request (see [the client protocol](specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md)). The app loads the setting once, when it starts, so a change applies at the next app start.
 
-The agent and switcher shortcuts are fixed: `Ctrl+Shift+F1` to `Ctrl+Shift+F9` open the first nine agents of the list, and `Ctrl+Shift+F10` opens the agent switcher. On most macOS keyboards the F-keys send media commands by default, so the shortcuts work there only while you hold `Fn` (or after you turn on "Use F1, F2, etc. keys as standard function keys"). If you cannot change that setting, a macOS build of a later release can move the shortcuts to the fallback family `Cmd+Alt+1` to `Cmd+Alt+9` (agents) and `Cmd+Alt+0` (switcher), which no webview or macOS default takes; that fallback is not shipped yet. On KDE Plasma the default family is not verified until a hands-on QA pass; if a distribution binds it globally, the same `Cmd`/`Ctrl+Alt` fallback applies. The full fallback table is in [the panel-practicality spec](specs/changes/0003-panel-practicality/SPEC.md).
+The agent and switcher shortcuts are fixed: `Ctrl+Shift+F1` to `Ctrl+Shift+F9` open the first nine agents of the list, `Ctrl+Shift+F10` opens the agent switcher, and `Ctrl+Shift+F11` jumps to the agent at the top of Needs you (see below). On most macOS keyboards the F-keys send media commands by default, so the shortcuts work there only while you hold `Fn` (or after you turn on "Use F1, F2, etc. keys as standard function keys"). If you cannot change that setting, a macOS build of a later release can move the shortcuts to the fallback family `Cmd+Alt+1` to `Cmd+Alt+9` (agents) and `Cmd+Alt+0` (switcher), which no webview or macOS default takes; that fallback is not shipped yet, and the jump key has no entry in it yet, so on macOS it also works only while you hold `Fn`. On KDE Plasma the default family is not verified until a hands-on QA pass; if a distribution binds it globally, the same `Cmd`/`Ctrl+Alt` fallback applies. The full fallback table is in [the panel-practicality spec](specs/changes/0003-panel-practicality/SPEC.md).
+
+## Needs you
+
+The panel has a "Needs you" section with the agents that wait for you. An agent gets one item when it asks for input (it was quiet for the quiet period), rings the terminal bell, fails, exits, or is put on hold by the office after it hit a limit. Each item shows the agent's name, its project, what the office saw, and how long the agent has waited, as text. A deleted agent, an agent that starts working again, and an agent that you stop have no item.
+
+The items are in groups: failed agents first, then agents that wait for input, ring the bell, or were held by the office, then exited agents. Inside a group the longest wait comes first. The number of items shows next to "Needs you" and in the window title, in the panel and in the office scene. The server keeps the items, so events that happened while the app was closed show when it opens.
+
+Press `Ctrl+Shift+F11` to open the terminal of the agent at the top of the list, with keyboard focus, from the panel, from a focused terminal, or from the office scene (there it opens the top agent's desk). The item leaves the list. Press the key again for the next agent. When the list is empty the view stays and the app says "No agent needs you". An exited agent that you will not restart can leave the list with its "Dismiss" button, which changes nothing else. Opening an agent's terminal by any route also removes its item.
+
+If the stored `focus_shortcut` is `Ctrl+Shift+F11`, the focus shortcut keeps the key and the jump has no key. The Needs you section then says: "The jump shortcut is off because the focus shortcut uses Ctrl+Shift+F11. Change the focus_shortcut setting (see the README) and reopen the app to turn the jump on." Change the setting, as described above, and restart the app.
+
+A client reaches the list with the `needs_you.list` and `needs_you.dismiss` requests and the `needs_you.changed` event. The shapes are in [the needs-you protocol](specs/changes/0008-needs-you-queue/contracts/needs-you-protocol.md).
 
 ## The agent hierarchy
 
@@ -54,11 +66,37 @@ Deleting a team removes the team only. Its lead and members keep their agents an
 
 A client reaches the hierarchy over the protocol: the `team.create`, `team.delete`, `hierarchy.tree`, and `hierarchy.descendants` requests, and `agent.stop` and `agent.delete` extended with an `include_descendants` field; deleting an agent that has agents under it also carries `descendant_count`, the number that a confirmation showed. The shapes are in [the hierarchy protocol](specs/changes/0002-agent-hierarchy/contracts/hierarchy-protocol.md).
 
+## Templates
+
+A template is a saved definition that you reuse. An agent template holds a name pattern, a CLI command, an optional working folder, the office additions (flags, environment variables, startup prompt), and an optional role. A team template holds one lead entry and one or more member entries. Each member entry has a count, and a team can have at most 50 agents. Templates are copies. Editing or deleting a template changes no agent or team that was made from it, and a team template keeps its own copy of each entry. The server keeps the templates in the office, so they survive a restart. Only you use templates: agents cannot.
+
+Choose "Templates" in the panel to see them. The view says "No template exists yet." when there is none. It has the buttons "New template", "Import templates", and "Export templates". Every part of the flow works from the keyboard.
+
+**Name patterns.** A pattern is the text that the office makes an agent name from. `{team}` becomes the name of the team, and `{n}` becomes the lowest number that makes the name unique. A pattern without `{n}` gets `-<number>` added only when the name is taken. An agent that you save as a template gets the pattern `<agent name>-{n}`. In a team template, the lead entry creates a team lead and each member entry creates members, whatever role the entry holds. A pattern with `{team}` needs a team: used for a direct creation without one, it is refused and names the pattern.
+
+**Save an agent as a template.** Open the agent details and choose "Save as template". The dialog copies the command, working folder, office additions, and role of the agent. Give the template a name and a pattern, then save. The agent does not change. You can also build an agent template from nothing with "New template" in the templates view.
+
+**Build a team template.** In the templates view, choose "New template" and pick the team kind. Fill in the lead entry and each member entry with its count. The office refuses a team template that would create more than 50 agents and names the limit.
+
+**Create from a template.** Choose "Create from template" beside the create buttons of the hierarchy view, then pick a template.
+- For an agent template, pick the place (a team, when the template has a role) and an optional project. The office creates one agent and does not start it. When the template has no working folder, the folder of the project is the working folder.
+- For a team template, type the team name and pick an optional project. The office creates the team, its lead under the CEO, and each member under the lead in one action. A CEO and two teams of one lead and six members take three create actions.
+
+Creation is all-or-nothing. If the team or any agent cannot be created, the office creates none of them and names each reason, for example a taken name, a role that the place does not allow, or a folder that does not exist. When a working folder is missing and no project gives one, the office says that a working folder is needed. Each created agent is recorded in the action record with you as the actor.
+
+**Export.** Choose "Export templates". The app first says that the file leaves out every environment value, and that flags and startup prompts are written as they are, so you must remove a secret from them first. Then choose "Choose a file and export" and pick the file in the system file dialog. The file is plain text with a format version. Each environment variable keeps its name and has no value. The text of the file is the `text` that the server returns for the `template.export` request, and the app writes exactly that text to the path you picked. If the file cannot be written, the app says that it was not written, and no template changes.
+
+**Import.** Choose "Import templates" and pick a file. The app shows an import preview with every template: its name in the file, the name it will be saved under, its kind, CLI commands, working folders, flags, environment variable names, and startup prompts. Control characters in the text show as visible symbols and are never applied. The preview saves nothing. Choose "Save this template" (or "Save these <n> templates") and the office saves the templates. It creates no agent. Cancel (or press Escape) and the office saves nothing. An imported template never replaces one: a name that exists gets ` (2)`, ` (3)`, and so on. The office refuses the whole file, names the template and the reason, and saves nothing when the format version is unknown, the text cannot be read as a template file, the file is larger than 256 KiB, a team template holds more than 50 agents, or a template breaks a save rule (for example an empty command or a count below 1). Treat a file from another person like a program: the preview shows every command that the office could run later.
+
+**Environment variables without a value.** The values of an imported file are never saved: every imported environment variable is saved with no value. The template and the create dialog show it as `NAME: no value`. The details of an agent list it as `NAME: no value`. In the editor of the additions it is a bare `NAME` line, and a line `NAME=` is an empty value. The office does not pass a variable without a value to the CLI, so the value from your login environment stays in effect. A variable with an empty value is different: the office passes it as empty. Inside the office, templates keep the values that you type, as agents do. Only export and import leave them out.
+
+A template holds only definitions of office-harness. The office never writes the configuration of a CLI because of a template, and an export writes only the file that you pick. The shapes of the requests are in [the template protocol](specs/changes/0009-agent-templates/contracts/template-protocol.md). The behavior is in [the templates spec](specs/changes/0009-agent-templates/SPEC.md), and the QA status is in [the QA report](specs/changes/0009-agent-templates/qa-report.md).
+
 ## Holding the office and limiting agents
 
 An agent can create agents, start and stop them, start new tasks, and send directives without you. If one agent loops, it can flood a terminal or churn agents faster than you can read. A hold stops these agent-made actions. The limits slow an agent that acts too fast.
 
-**Hold the office.** Choose "Hold office" in the panel header. The header then says "Office on hold" as text and offers "Release office". The shortcut is `Ctrl+Shift+H` while the keyboard focus is in the panel. It does not work inside a terminal, because a terminal gets every key. From a terminal, press the focus shortcut first, then `Ctrl+Shift+H`.
+**Hold the office.** Choose "Hold office" in the panel header. The header then says "Office on hold" as text and offers "Release office". The shortcut is `Ctrl+Shift+H` while the keyboard focus is in the panel. It also works inside a focused terminal: every key of the shortcut table leaves a terminal and is not sent to the CLI.
 
 **Hold one agent.** Open the agent details and choose the hold action. The agent and every agent under it are held. The agent's row says "on hold" as text. Choose the release action in the details to end it. Releasing the office does not release agent holds.
 
@@ -84,6 +122,20 @@ A limit is a whole number from 1 to 1000. Choose "Limits" in the panel header to
 **Office record.** The "Office record" list in the panel header, beside the office hold control, shows the entries that have no agent: each office hold and release. A hold or release of one agent shows in that agent's details. The user is the actor of a hold or release that you take. The office is the actor of an automatic hold.
 
 The holds and the limits are a brake against mistakes and loops. They are not a security boundary: an agent CLI runs as your OS user and can act outside the office. The shapes of the requests are in [the hold protocol](specs/changes/0007-hold-and-limits/contracts/hold-protocol.md).
+
+## The task line
+
+Each agent row can show one more line under the last output line: the last task the office gave the agent, with its age, for example `Task given 3 min ago: Fix the login form`. The line shows the first line of the text, at most 80 characters, with an ellipsis when it is cut. The age counts whole minutes ("0 min ago" to "59 min ago") and then hours ("2 h ago").
+
+**Where the text comes from.**
+- A directive that the office entered into the agent's terminal sets the text, from the time it arrived. A directive that the office refused sets nothing.
+- You can set, edit, or clear the text in the agent's details, in the "Task" section: choose "Set task" or "Edit task", type, and choose "Save task"; choose "Clear task" to remove it. The text can have at most 8,192 characters. Empty text clears it. This writes nothing to the terminal.
+- A new task (the "Start new task" action) clears the text. Starting an agent, continuing a session, and a restart of the server keep it.
+- The office never reads the text from terminal output, prompts, or window titles.
+
+**Safe display.** The row and the details show control characters and terminal escape codes as visible symbols (for example ESC shows as the symbol U+241B) and never apply them. The details show the full text. The scene's desks and the "Needs you" list do not show the task text.
+
+The shapes of the request and the event are in [the task protocol](specs/changes/0011-task-line/contracts/task-protocol.md).
 
 ## Start at login
 

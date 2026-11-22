@@ -19,6 +19,7 @@
   } from "../services/confirmations";
   import type { AgentDetails, FailureText } from "../state/office-controller";
   import AdditionsEditor from "./additions-editor.svelte";
+  import TaskEditor from "./task-editor.svelte";
   import ConfirmDialog from "./confirm-dialog.svelte";
   import SessionList from "./session-list.svelte";
 
@@ -46,6 +47,9 @@
     oncontinue: (sessionId: string) => void;
     ondelete: () => void;
     onsaveadditions: (additions: Additions) => Promise<FailureText>;
+    onsavetask: (text: string) => Promise<FailureText>;
+    /** Opens the "save as template" dialog for this agent (0009). */
+    onsaveastemplate: () => void;
     onretry: () => void;
   }
 
@@ -68,6 +72,8 @@
     oncontinue,
     ondelete,
     onsaveadditions,
+    onsavetask,
+    onsaveastemplate,
     onretry,
   }: Props = $props();
 
@@ -120,6 +126,7 @@
         <dd>{projectName}</dd>
       {/if}
     </dl>
+    <TaskEditor task={agent.task ?? null} {isBusy} onsave={onsavetask} />
     {#if statusDetail !== null}
       <p
         class="rounded-md border border-neutral-500 bg-neutral-50 p-3 text-sm text-neutral-900"
@@ -148,6 +155,9 @@
       </Button>
       <Button variant="secondary" onclick={isOnHold ? onrelease : onhold}>
         {isOnHold ? "Release agent" : "Hold agent"}
+      </Button>
+      <Button variant="secondary" onclick={onsaveastemplate}>
+        Save as template
       </Button>
       <Button
         variant="secondary"

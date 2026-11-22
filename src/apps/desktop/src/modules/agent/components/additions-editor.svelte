@@ -5,6 +5,7 @@
   import TextField from "$shared/ui/text-field.svelte";
   import type { Additions, AdditionsView } from "../models/agent";
   import {
+    environmentLineText,
     formatEnvironment,
     formatFlags,
     parseEnvironment,
@@ -82,6 +83,23 @@
     isMultiline
     bind:value={flagsText}
   />
+  {#if additions.env.length > 0}
+    <section aria-labelledby="saved-environment-heading">
+      <h4
+        id="saved-environment-heading"
+        class="text-sm font-medium text-neutral-900"
+      >
+        Saved environment variables
+      </h4>
+      <ul class="text-sm text-neutral-900">
+        {#each additions.env as entry (entry.name)}
+          <li class="break-all whitespace-pre-wrap">
+            {environmentLineText(entry)}
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
   <TextField
     label="Environment variables"
     hint="One NAME=value for each line. A bare NAME has no value: the CLI does not get it, so the login environment's value stays."

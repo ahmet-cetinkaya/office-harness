@@ -56,6 +56,8 @@ function fakeClient(
     registerLoginStart: async () => {},
     loginStartStatus: async () => false,
     retryConnection: async () => {},
+    exportTemplatesFile: async () => "cancelled",
+    importTemplatesFile: async () => null,
     sentFields: (kind) => sent.get(kind),
     sendEvent: (event) => listeners.forEach((listener) => listener(event)),
     holdNextTreeRead: () => {

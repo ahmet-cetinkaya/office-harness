@@ -24,6 +24,7 @@ import {
   EVENT_AGENT_DELETED,
   EVENT_AGENT_LINE,
   EVENT_AGENT_STATUS,
+  EVENT_AGENT_TASK,
   EVENT_CLIENT_RESYNC,
   EVENT_PROJECT_CHANGED,
   EVENT_STORAGE_ERROR,
@@ -33,12 +34,14 @@ import {
   readAgentDeleted,
   readLineEvent,
   readStatusEvent,
+  readTaskEvent,
   readStorageError,
   namesLostNotifications,
   upsertAgent,
   withoutAgent,
   withLine,
   withStatus,
+  withTask,
 } from "./office-events";
 
 export interface Notice {
@@ -280,6 +283,10 @@ export function createOfficeController(
           agents: withLine(snapshot.agents, agentId, readLineEvent(event)),
         });
       }
+      case EVENT_AGENT_TASK: {
+        const { agentId, task } = readTaskEvent(event);
+        return update({ agents: withTask(snapshot.agents, agentId, task) });
+      }
       case EVENT_AGENT_DELETED:
         return handleDeleted(event);
       case EVENT_ADDITIONS_CHANGED: {
@@ -428,6 +435,15 @@ export function createOfficeController(
       submit(async () => {
         const saved = await service.setAdditions(agentId, additions);
         updateDetails(agentId, { additions: saved });
+      }),
+
+    /** Sets the task text; blank text clears it (FR-003). */
+    saveTask: (agentId: string, text: string): Promise<FailureText> =>
+      submit(async () => {
+        const saved = await service.setTask(agentId, text);
+        update({
+          agents: withTask(snapshot.agents, agentId, saved.task ?? null),
+        });
       }),
   };
 }

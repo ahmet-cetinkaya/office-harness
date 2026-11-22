@@ -15,6 +15,8 @@ pub enum AgentAction {
     TeamDelete,
     Directive,
     Refused,
+    /// The user set, edited, or cleared the task text (0011).
+    TaskText,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
