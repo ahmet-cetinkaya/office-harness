@@ -41,8 +41,8 @@ fn a_target_with_a_waiting_directive_is_not_claimed_empty() {
 #[test]
 fn places_count_from_one_in_the_order_of_arrival() {
     let queue = DirectiveQueue::default();
-    assert_eq!(queue.push(waiting("first", at(Duration::ZERO))), 1);
-    assert_eq!(queue.push(waiting("second", at(Duration::ZERO))), 2);
+    assert_eq!(queue.push(waiting("first", at(Duration::ZERO))), Some(1));
+    assert_eq!(queue.push(waiting("second", at(Duration::ZERO))), Some(2));
     assert_eq!(queue.waiting_count(target()), 2);
     let claim = queue.claim_head(target(), at(Duration::ZERO));
     assert_eq!(claim.head.map(|head| head.text).as_deref(), Some("first"));
@@ -103,7 +103,30 @@ fn draining_empties_the_queues() {
     assert_eq!(queue.targets_with_waiting(), [target()]);
     assert_eq!(queue.drain(target()).len(), 2);
     queue.push(waiting("third", at(Duration::ZERO)));
-    assert_eq!(queue.drain_all().len(), 1);
+    assert_eq!(queue.close().len(), 1);
     assert_eq!(queue.waiting_count(target()), 0);
     assert!(!queue.wait_for_work(Duration::from_millis(1)));
+}
+
+#[test]
+fn a_closed_queue_takes_in_and_hands_out_nothing() {
+    let queue = DirectiveQueue::default();
+    queue.push(waiting("claimed", at(Duration::ZERO)));
+    let claimed = queue
+        .claim_head(target(), at(Duration::ZERO))
+        .head
+        .expect("the head is claimed");
+
+    assert_eq!(queue.close(), std::slice::from_ref(&claimed));
+
+    assert!(!queue.take_head(&claimed));
+    queue.release(target());
+    assert_eq!(queue.push(waiting("late", at(Duration::ZERO))), None);
+    assert!(!queue.claim_empty(target(), at(Duration::ZERO)));
+    assert!(
+        queue
+            .claim_head(target(), at(Duration::ZERO))
+            .head
+            .is_none()
+    );
 }

@@ -850,6 +850,52 @@ fn a_server_stop_withdraws_every_waiting_directive() {
     assert!(!harness.handler.wait_for_waiting(std::time::Duration::ZERO));
 }
 
+#[test]
+fn a_directive_sent_after_a_server_stop_is_refused_and_recorded() {
+    let family = family();
+    let harness = ready_harness(&family);
+    harness.handler.withdraw_all("the office server stopped");
+
+    let error = harness
+        .handler
+        .handle(family.lead, family.member, "late task")
+        .expect_err("the server is stopping");
+
+    assert_eq!(
+        error,
+        HierarchyApplicationError::Refused(STOPPING.to_owned())
+    );
+    assert_eq!(harness.failures(), [STOPPING]);
+    assert!(harness.writer.lines().is_empty());
+    assert!(!harness.handler.wait_for_waiting(std::time::Duration::ZERO));
+}
+
+#[test]
+fn a_head_claimed_before_a_server_stop_is_not_typed() {
+    let family = family();
+    let harness = ready_harness(&family);
+    harness.set_readiness(Readiness::Busy);
+    send(&harness, &family, "please deploy");
+    // The delivery thread claims the head, and the stop withdraws it before
+    // the thread types it.
+    let head = harness
+        .handler
+        .queue
+        .claim_head(family.member, harness.clock.steady_now())
+        .head
+        .expect("the head is claimed");
+    harness.handler.withdraw_all("the office server stopped");
+
+    harness.handler.deliver_head(&head);
+
+    assert!(harness.writer.lines().is_empty());
+    assert!(harness.receipt.received().is_empty());
+    assert_eq!(
+        harness.failures(),
+        ["withdrawn before typing: the office server stopped"]
+    );
+}
+
 mod hold_guard {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -1109,7 +1155,8 @@ mod hold_guard {
         assert_eq!(guarded.counting.notifications.load(Ordering::SeqCst), 0);
         assert_eq!(guarded.service.list().agents.len(), 0);
         // The last rate-window slot is still free: the refusals took none.
-        guarded.harness.handler.withdraw_all("emptied for the test");
+        guarded.harness.set_readiness(Readiness::Ready);
+        guarded.harness.deliver_all();
         send("the last slot").expect("one slot is left");
     }
 }

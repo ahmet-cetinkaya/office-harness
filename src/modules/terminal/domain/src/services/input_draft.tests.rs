@@ -54,5 +54,13 @@ fn focus_and_mouse_reports_edit_nothing() {
 #[test]
 fn an_escape_sequence_split_across_inputs_is_read_once() {
     assert!(!after(&[b"\x1b[", b"I"]).is_unsent());
-    assert!(!after(&[b"\x1b", b"[200~x\x1b[2", b"01~\x7f"]).is_unsent());
+    assert!(!after(&[b"\x1b[", b"200~x\x1b[2", b"01~\x7f"]).is_unsent());
+}
+
+#[test]
+fn a_lone_escape_holds_the_line_until_a_later_enter() {
+    assert!(after(&[b"draft", b"\x1b"]).is_unsent());
+    assert!(!after(&[b"draft", b"\x1b", b"\r"]).is_unsent());
+    // An Alt chord comes in one input; its Enter does not send the line.
+    assert!(after(&[b"draft", b"\x1b\r"]).is_unsent());
 }
