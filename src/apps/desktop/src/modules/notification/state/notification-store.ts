@@ -42,6 +42,11 @@ export function createNotificationController(
   selectedAgentId: () => string | null,
   /** Whether the desktop app window holds the focus (D5). */
   isWindowFocused: () => boolean,
+  /**
+   * Called with the id of a notification that is marked read on arrival, so
+   * that the Needs you item it made never shows (0008 D8).
+   */
+  onReadOnArrival: (notificationId: string) => void = () => {},
 ) {
   const service = createNotificationService(client);
   let snapshot: NotificationSnapshot = INITIAL_NOTIFICATIONS;
@@ -103,6 +108,7 @@ export function createNotificationController(
       row.agent_id === selectedAgentId() &&
       isWindowFocused();
     if (isOnScreen) {
+      onReadOnArrival(row.id);
       // The user watches this agent's terminal, so an OS notification adds
       // nothing (FR-006 exception b, A7): the row shows as read at once.
       publish({

@@ -37,3 +37,15 @@ export function createTauriCoreClient(): CoreClient {
     retryConnection: () => call("retry_connection"),
   };
 }
+
+/**
+ * Shows the count in the window title (0008 D7). A failed call is dropped:
+ * the count also shows as text in the panel, and some desktops show no title.
+ */
+export async function setWindowTitleCount(count: number): Promise<void> {
+  try {
+    await call("set_window_title", { count });
+  } catch {
+    // The count stays visible as text beside Needs you.
+  }
+}
