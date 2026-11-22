@@ -497,7 +497,7 @@
         </Button>
       </section>
     {:else}
-      <div class="grid gap-6 md:grid-cols-[20rem_1fr]">
+      <div class="grid gap-6 md:grid-cols-[20rem_minmax(0,1fr)]">
         <div class="flex flex-col gap-6">
           {@render needsYouSection()}
           <section
