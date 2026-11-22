@@ -34,9 +34,10 @@ Spec: `specs/changes/0013-bulk-resume/SPEC.md` · Status: draft · Date: 2026-11
 | 1 | Requirements checklist | "Quickly" had no number. A failing agent could be started on every confirm. | The check period is 20 seconds (A2, Terms). FR-005 holds the agent; FR-002 lists a held agent unchecked. |
 | 2 | Hostile reader | A user stop inside the check period looked like a refusal and would start the agent again. Two clients could resume one agent twice. A plain command that ends with code 0 had no rule. | "Ends by itself" in Terms excludes user actions and a server stop; US2 scenario 4. FR-003 skips agents no longer `interrupted`; edge case for two clients. A3 counts any exit. |
 | 3 | Hostile reader on the fixed text | The hold of FR-005 also covers descendants (0007 A2), which a reader may not expect. A second hold of an agent already on hold had no rule. | A9 states both. |
+| 4 | Review guidance (2026-11-23) | A new session drops the CLI's earlier context; with the dialog closed, the user could not see which agent lost it, or why. | FR-004 and the new FR-007 keep the reason with the start's action record entry; US2 scenarios, UX step 6, a visible state, the entity, SC-002, and A11 follow. |
 
 ## Notes
 
-- **Size rule:** 6 ADDED FRs, one more than the size S guide of 5. FR-006 (the result text) belongs with the flow; a split would leave a change without its feedback. No split.
+- **Size rule:** 7 ADDED FRs, two more than the size S guide of 5. FR-006 (the result text) and FR-007 (the reason in the record) are the feedback of the flow; a split would leave a change that drops context silently. No split.
 - **No MODIFIED requirement:** 0001/FR-004 says no agent starts "without an explicit action"; the confirmed action is one, so FR-004 stays as written (PB-1). 0007/FR-008 (automatic hold after rate-limit refusals) is unchanged; FR-005 adds a second reason for an office hold through the same hold.
 - **Research:** R1 ran and passed; orphan sweep is out of scope with a stated reason.
