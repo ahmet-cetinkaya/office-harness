@@ -39,4 +39,4 @@ Spec: `specs/changes/0010-agent-worktree/SPEC.md` · Status: approved by the own
 
 - **Data safety:** the delete question defaults to keep; uncommitted changes need a second confirmation; branches with own commits are never deleted by the office.
 - **Shared history:** a worktree separates files, not branches and commits; Context and Out of scope say so.
-- **Size rule:** 9 ADDED FRs (FR-001 to FR-009) and two MODIFIED requirements (0009/FR-001, 0009/FR-003); FR-009 came with the template answer.
+- **Size rule:** 9 ADDED FRs (FR-001 to FR-009) and two MODIFIED requirements (0009/FR-001, 0009/FR-003); FR-009 came with the template answer. The spec has more than ten FR entries; shipped as one feature, split not done, accepted by god 2026-11-23.
