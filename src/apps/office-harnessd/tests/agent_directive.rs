@@ -143,7 +143,16 @@ fn answer_of(outcome: &Output) -> Value {
 /// started, and returns the caller's credential. The CEO's CLI is the
 /// environment dumper, so the test holds its live session's credential.
 async fn office_with(office: &Office, member: Option<Role>) -> (String, String, String, String) {
-    office.clis.add("member-cli", "echo ready; sleep 30");
+    office_with_member_cli(office, member, "echo ready; sleep 30").await
+}
+
+/// As `office_with`, with the subordinate's CLI given as a script.
+async fn office_with_member_cli(
+    office: &Office,
+    member: Option<Role>,
+    member_cli: &str,
+) -> (String, String, String, String) {
+    office.clis.add("member-cli", member_cli);
     office.clis.add("lead-cli", &env_cli(office.records_path()));
     let mut client = office.client().await;
     let lead = client.create_agent(office, "Lead", "lead-cli", None).await;
@@ -170,11 +179,13 @@ async fn a_lead_sends_a_directive_and_the_member_takes_it_as_one_input_with_ente
     let office = Office::open().await;
     let typed = office.records_path().join("typed");
     // The member reads exactly the bytes of one directive: the text and the
-    // Enter the server appends.
+    // Enter the server appends. Its terminal echoes, as a CLI's input line
+    // shows typed text, so the server sees the text and presses Enter
+    // (0012/FR-003).
     office.clis.add(
         "member-cli",
         &format!(
-            "echo ready\nstty raw -echo\ndd bs=1 count={DIRECTIVE_BYTES} of={} 2>/dev/null\nsleep 30",
+            "echo ready\nstty raw\ndd bs=1 count={DIRECTIVE_BYTES} of={} 2>/dev/null\nsleep 30",
             typed.display()
         ),
     );
@@ -195,7 +206,11 @@ async fn a_lead_sends_a_directive_and_the_member_takes_it_as_one_input_with_ente
         .ask("agent.start", json!({"agent_id": member_id}))
         .await;
     assert_eq!(member_started["ok"], true, "{member_started}");
-    client.wait_for_status(&member_id, "working").await;
+    // The directive is typed at once only into a member that waits for
+    // input (0012/FR-002).
+    client
+        .wait_for_status(&member_id, "waiting_for_input")
+        .await;
     let lead_started = client.ask("agent.start", json!({"agent_id": lead})).await;
     assert_eq!(lead_started["ok"], true, "{lead_started}");
 
@@ -217,10 +232,16 @@ async fn a_lead_sends_a_directive_and_the_member_takes_it_as_one_input_with_ente
     assert_eq!(code, "0", "{out}");
     let answer: Value = serde_json::from_str(out.trim()).expect("json");
     assert_eq!(answer["ok"], true, "{answer}");
+    assert_eq!(answer["result"]["delivery"], "submitted", "{answer}");
 
     // SC-006: the text arrives as one input followed by Enter, nothing
     // between.
-    let received = fs::read(&typed).expect("typed bytes");
+    let received = wait_for("the typed directive", || {
+        fs::read(&typed)
+            .ok()
+            .filter(|bytes| bytes.len() == DIRECTIVE_BYTES)
+    })
+    .await;
     assert_eq!(received.len(), DIRECTIVE_BYTES, "{received:?}");
     assert_eq!(String::from_utf8_lossy(&received), format!("{DIRECTIVE}\r"));
 
@@ -414,5 +435,202 @@ async fn a_gateway_refusal_of_an_agent_reaches_a_client_that_did_not_send_it() {
 
     let entry = next_recorded(&mut watcher, "refused", &lead).await;
     assert_eq!(entry["actor"], json!(format!("agent:{lead}")), "{entry}");
+    office.serving.stop().await;
+}
+
+/// How many times a test reads the record again while it waits for an
+/// entry the delivery thread writes.
+const RECORD_READS: usize = 600;
+
+/// The agent's directive entry whose result contains `needle`, read back
+/// until the delivery thread has written it.
+async fn failure_containing(client: &mut Client, agent_id: &str, needle: &str) -> Value {
+    for _ in 0..RECORD_READS {
+        let entries = actions_of(client, agent_id).await;
+        let found = entries.into_iter().find(|entry| {
+            entry["action"] == "directive"
+                && entry["result"]
+                    .as_str()
+                    .is_some_and(|result| result.contains(needle))
+        });
+        if let Some(entry) = found {
+            return entry;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("no directive entry of {agent_id} contains {needle:?}");
+}
+
+/// A member that shows a permission question for a while, notes whatever
+/// reached it meanwhile, then clears the question, shows an input line with
+/// echo, and reads one directive.
+fn questioning_cli(records: &Path) -> String {
+    let folder = records.display();
+    format!(
+        "echo 'Do you want to proceed? (y/n)'\nsleep 4\nstty raw -echo min 0 time 1\ndd bs=64 count=1 of={folder}/early 2>/dev/null\nprintf '\\033[2J\\033[H> '\nstty raw echo min 1 time 0\ndd bs=1 count={DIRECTIVE_BYTES} of={folder}/typed 2>/dev/null\nsleep 30\n"
+    )
+}
+
+#[tokio::test]
+async fn a_directive_waits_while_a_question_shows_and_is_typed_after_it() {
+    let office = Office::open().await;
+    let cli = questioning_cli(office.records_path());
+    let (_lead, member, token, server_file) =
+        office_with_member_cli(&office, Some(Role::Lead), &cli).await;
+    let mut client = office.client().await;
+    client.wait_for_status(&member, "waiting_for_input").await;
+
+    let request = json!({"target_agent_id": member, "text": DIRECTIVE});
+    let outcome = send_directive(&token, &server_file, &request).await;
+    assert!(outcome.status.success(), "{outcome:?}");
+    let answer = answer_of(&outcome);
+    assert_eq!(answer["result"]["delivery"], "waiting", "{answer}");
+    assert_eq!(answer["result"]["position"], 1, "{answer}");
+
+    // SC-001: nothing reached the member while the question showed; the
+    // directive came after it, text and Enter.
+    let typed = wait_for("the typed directive", || {
+        fs::read(office.records_path().join("typed"))
+            .ok()
+            .filter(|bytes| bytes.len() == DIRECTIVE_BYTES)
+    })
+    .await;
+    let early = fs::read(office.records_path().join("early")).expect("early read");
+    assert!(early.is_empty(), "{early:?}");
+    assert_eq!(String::from_utf8_lossy(&typed), format!("{DIRECTIVE}\r"));
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_text_that_does_not_show_gets_no_enter_and_holds_the_next_directive() {
+    let office = Office::open().await;
+    let typed = office.records_path().join("typed");
+    // An unknown question that does not echo: the text cannot show.
+    let cli = format!(
+        "echo 'Pick a fruit'\nstty raw -echo\ndd bs=1 count={DIRECTIVE_BYTES} of={} 2>/dev/null\nsleep 30",
+        typed.display()
+    );
+    let (lead, member, token, server_file) =
+        office_with_member_cli(&office, Some(Role::Lead), &cli).await;
+    let mut client = office.client().await;
+    client.wait_for_status(&member, "waiting_for_input").await;
+
+    let request = json!({"target_agent_id": member, "text": DIRECTIVE});
+    let first = answer_of(&send_directive(&token, &server_file, &request).await);
+    assert_eq!(first["result"]["delivery"], "unsubmitted", "{first}");
+    // SC-002: the text, and no Enter.
+    let received = wait_for("the typed text", || {
+        fs::read(&typed)
+            .ok()
+            .filter(|bytes| bytes.len() == DIRECTIVE.len())
+    })
+    .await;
+    assert_eq!(String::from_utf8_lossy(&received), DIRECTIVE);
+
+    // The unsubmitted text holds the queue (0012 A11, SC-007).
+    let second = answer_of(&send_directive(&token, &server_file, &request).await);
+    assert_eq!(second["result"]["delivery"], "waiting", "{second}");
+
+    // SC-005: both records carry the reason.
+    for agent in [&lead, &member] {
+        let entry = failure_containing(&mut client, agent, "not submitted").await;
+        assert_eq!(entry["actor"], json!(format!("agent:{lead}")), "{entry}");
+    }
+    assert_eq!(fs::read(&typed).expect("typed").len(), DIRECTIVE.len());
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_startup_prompt_that_waits_for_the_person_holds_directives() {
+    let office = Office::open().await;
+    let typed = office.records_path().join("typed");
+    let prompt = "review me";
+    let cli = format!(
+        "echo ready\nstty raw\ndd bs=1 count=64 of={} 2>/dev/null\nsleep 30",
+        typed.display()
+    );
+    office.clis.add("member-cli", &cli);
+    office.clis.add("lead-cli", &env_cli(office.records_path()));
+    let mut client = office.client().await;
+    let lead = client.create_agent(&office, "Lead", "lead-cli", None).await;
+    let member = client
+        .create_agent(&office, "Member", "member-cli", None)
+        .await;
+    place(&office, &lead, Role::Ceo, None);
+    place(&office, &member, Role::Lead, Some(&lead));
+    let set = client
+        .ask(
+            "agent.additions.set",
+            json!({"agent_id": member, "additions": {"startup_prompt": prompt}}),
+        )
+        .await;
+    assert_eq!(set["ok"], true, "{set}");
+    client.start(&member).await;
+    wait_for("the pasted startup prompt", || {
+        fs::read_to_string(&typed)
+            .ok()
+            .filter(|text| text.contains(prompt))
+    })
+    .await;
+    client.wait_for_status(&member, "waiting_for_input").await;
+    client.start(&lead).await;
+    let (token, server_file) = live_credential(office.records_path()).await;
+
+    let request = json!({"target_agent_id": member, "text": DIRECTIVE});
+    let answer = answer_of(&send_directive(&token, &server_file, &request).await);
+
+    // SC-007: the directive waits, so no Enter submits the prompt.
+    assert_eq!(answer["result"]["delivery"], "waiting", "{answer}");
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    let received = fs::read_to_string(&typed).expect("typed");
+    assert!(!received.contains(DIRECTIVE), "{received:?}");
+    assert!(!received.contains('\r'), "{received:?}");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_person_typing_in_the_terminal_holds_a_directive() {
+    let office = Office::open().await;
+    let (_lead, member, token, server_file) = office_with(&office, Some(Role::Lead)).await;
+    let mut client = office.client().await;
+    client.wait_for_status(&member, "waiting_for_input").await;
+    // "hi" as a person types it, without Enter.
+    let typed = client
+        .ask(
+            "terminal.input",
+            json!({"agent_id": member, "data": "aGk="}),
+        )
+        .await;
+    assert_eq!(typed["ok"], true, "{typed}");
+
+    let request = json!({"target_agent_id": member, "text": DIRECTIVE});
+    let answer = answer_of(&send_directive(&token, &server_file, &request).await);
+
+    assert_eq!(answer["result"]["delivery"], "waiting", "{answer}");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_waiting_directive_is_withdrawn_and_recorded_when_its_target_stops() {
+    let office = Office::open().await;
+    let cli = "echo 'Do you want to proceed? (y/n)'; sleep 30";
+    let (lead, member, token, server_file) =
+        office_with_member_cli(&office, Some(Role::Lead), cli).await;
+    let mut client = office.client().await;
+    client.wait_for_status(&member, "waiting_for_input").await;
+    let request = json!({"target_agent_id": member, "text": DIRECTIVE});
+    let answer = answer_of(&send_directive(&token, &server_file, &request).await);
+    assert_eq!(answer["result"]["delivery"], "waiting", "{answer}");
+
+    let stopped = client.ask("agent.stop", json!({"agent_id": member})).await;
+    assert_eq!(stopped["ok"], true, "{stopped}");
+
+    // FR-005, SC-005: in both records, with the text and the reason.
+    for agent in [&lead, &member] {
+        let entry = failure_containing(&mut client, agent, "withdrawn before typing").await;
+        let result = entry["result"].as_str().expect("result");
+        assert!(result.contains("no longer running"), "{entry}");
+        assert!(result.contains(DIRECTIVE), "{entry}");
+    }
     office.serving.stop().await;
 }

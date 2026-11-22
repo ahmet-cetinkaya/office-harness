@@ -132,6 +132,7 @@ impl Server {
             terminals: Arc::new(TerminalGateway::new(
                 services.terminal.handlers.clone(),
                 services.agent.saved_outputs.clone(),
+                services.terminal.person_input.clone(),
             )),
             agents,
             hierarchy,

@@ -204,6 +204,15 @@ impl HoldService {
         })
     }
 
+    /// The reason a hold would refuse `caller` acting on `target` now, or
+    /// `None`. It counts nothing, so a directive that waited can be checked
+    /// again before it is typed without using a rate-window slot (0012/FR-005).
+    #[must_use]
+    pub fn refusal(&self, caller: AgentId, target: AgentId, rows: &[TreeRow]) -> Option<String> {
+        hold_refusal(&self.locked().holds, rows, caller, Some(target))
+            .map(|refusal| refusal.to_string())
+    }
+
     fn decide(
         &self,
         caller: AgentId,

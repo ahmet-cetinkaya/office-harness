@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use kernel::AgentId;
+use kernel::{AgentId, Timestamp};
+
+/// Whether the office may type a directive into a target now (0012/FR-002).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Readiness {
+    /// The target waits for input, no person is typing there, no office
+    /// text waits for the person, and no open question shows.
+    Ready,
+    /// The target runs, but one of those conditions does not hold yet.
+    Busy,
+    /// The target's session is no longer running.
+    Gone,
+}
+
+/// What one delivery did (0012/FR-003).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Delivery {
+    /// The text showed at the input line and the Enter followed.
+    Submitted,
+    /// The text was typed, but it did not show at the input line, so no
+    /// Enter followed.
+    Unsubmitted,
+}
 
 /// Whether a target agent's session can take input right now. A store
 /// failure is its own error (Efe r2 LOW): a silent "not running" would
@@ -16,14 +38,29 @@ pub trait DirectiveTarget: Send + Sync {
     /// lookup.
     #[must_use]
     fn name_of(&self, agent_id: AgentId) -> Option<String>;
+
+    /// Whether the office may type into the target now (0012/FR-002).
+    ///
+    /// # Errors
+    /// The store's own failure when the target cannot be read; the caller
+    /// then keeps the directive waiting.
+    fn readiness(&self, agent_id: AgentId) -> Result<Readiness, String>;
 }
 
-/// Delivers one directive to a target agent's session. One call must deliver
-/// the text; the bridge appends the Enter and does one `write_input`.
+/// Delivers one directive to a target agent's session: the text as one
+/// paste, then the Enter only once the text shows at the input line
+/// (0012/FR-003).
 pub trait DirectiveWriter: Send + Sync {
     /// # Errors
     /// The host's message when the text could not be written.
-    fn write(&self, agent_id: AgentId, text: &str) -> Result<(), String>;
+    fn deliver(&self, agent_id: AgentId, text: &str) -> Result<Delivery, String>;
+}
+
+/// The time the queue measures waits and gaps with: one that a step of the
+/// system clock never moves (0012/FR-005, the 10-minute limit).
+pub trait DirectiveClock: Send + Sync {
+    #[must_use]
+    fn steady_now(&self) -> Timestamp;
 }
 
 /// Keeps the directive attempts in the action record (FR-009, FR-011). It is
