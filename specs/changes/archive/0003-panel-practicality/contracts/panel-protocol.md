@@ -85,6 +85,12 @@ See `specs/changes/archive/0007-hold-and-limits/contracts/hold-protocol.md`.
 - The new requests `needs_you.list` and `needs_you.dismiss` and the event `needs_you.changed` are defined in `specs/changes/0008-needs-you-queue/contracts/needs-you-protocol.md`.
 - `notification.read` and `notification.read_agent` now also clear the matching needs-you items, and the server then sends `needs_you.changed`. Their requests and answers keep the shapes above.
 
+## Additive change by 0015
+
+- `event` may also be `"report"`: an agent sent a report for the person. Its `detail` is the report's kind. While an unread `report` notification of the agent exists, a further report adds none.
+
+See `specs/changes/0015-upward-reports/contracts/report-protocol.md`.
+
 ## Changed validation: `settings.set` with key `focus_shortcut`
 
 A value that equals one of the fixed shortcuts (`Ctrl+Shift+F1` to `Ctrl+Shift+F9` for the agents, `Ctrl+Shift+F10` for the switcher) is refused with `conflict`, and the message names the conflicting combination (D8, spec edge case). The agent and switcher shortcuts are fixed by this spec, so the server holds the same table the desktop app shows; the desktop client checks before it sends, and the server is the authority that a stale client cannot talk out of.
