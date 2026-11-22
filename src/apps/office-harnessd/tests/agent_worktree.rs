@@ -17,6 +17,7 @@ use agent_infrastructure::services::find_program;
 use serde_json::{Value, json};
 use support::fake_cli::FakeClis;
 use support::office_client::{Client, Office, error_text};
+use support::running_office::serve_again;
 use tempfile::TempDir;
 
 /// A CLI that keeps running until it is stopped.
@@ -265,6 +266,55 @@ async fn two_agents_change_the_same_file_only_in_their_own_worktrees() {
     assert_eq!(statuses[0]["changed_files"], 1);
     assert_eq!(statuses[0]["own_commits"], 0);
     fixture.office.serving.stop().await;
+}
+
+/// SC-005: after a restart of the whole server, every agent with its own
+/// worktree lists the same branch, base, and folder, and the server still
+/// reads the worktree's state.
+#[tokio::test]
+async fn a_restart_of_the_server_keeps_every_branch_base_and_worktree_folder() {
+    let mut fixture = Fixture::open().await;
+    let mut ids = Vec::new();
+    for name in ["Ana", "Raj", "Eli"] {
+        ids.push(id_of(&fixture.create_with_worktree(name).await));
+    }
+    let plain = fixture
+        .client
+        .create_agent(&fixture.office, "Plain", "waiting-cli", None)
+        .await;
+    let before = agent_records(&mut fixture.client).await;
+    assert!(ids.iter().all(|id| before[id]["worktree"].is_object()));
+
+    let stopped = fixture.office.serving.stop().await;
+    fixture.office.serving = serve_again(stopped, fixture.office.clis.login_setup()).await;
+    fixture.client = fixture.office.client().await;
+
+    let after = agent_records(&mut fixture.client).await;
+    for id in &ids {
+        assert_eq!(after[id]["worktree"], before[id]["worktree"], "{id}");
+        assert_eq!(after[id]["working_folder"], before[id]["working_folder"]);
+    }
+    assert_eq!(after[&plain]["worktree"], Value::Null);
+    let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+    let statuses = fixture.status_of(&id_refs).await;
+    assert_eq!(statuses.len(), ids.len());
+    assert!(
+        statuses.iter().all(|status| status["changed_files"] == 0),
+        "{statuses:?}"
+    );
+    fixture.office.serving.stop().await;
+}
+
+/// The agent records of `agent.list`, by agent id.
+async fn agent_records(client: &mut Client) -> std::collections::HashMap<String, Value> {
+    let answer = client.ask("agent.list", json!({})).await;
+    assert_eq!(answer["ok"], true, "{answer}");
+    answer["result"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .map(|agent| (id_of(agent), agent.clone()))
+        .collect()
 }
 
 #[tokio::test]
