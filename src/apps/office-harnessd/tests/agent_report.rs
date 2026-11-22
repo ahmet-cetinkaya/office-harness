@@ -38,6 +38,9 @@ const REPORT_MAX_CHARS: usize = 1000;
 /// The default reports limit per 60 seconds (spec FR-006).
 const REPORT_LIMIT: usize = 5;
 
+/// The most reports that wait in one parent's queue (spec FR-010).
+const REPORT_SHARE: usize = 10;
+
 /// The characters that must never reach a reader as themselves (SC-004).
 const RAW_CONTROLS: [char; 4] = ['\u{1b}', '\u{9b}', '\u{202e}', '\n'];
 
@@ -409,6 +412,319 @@ async fn a_member_marks_a_question_for_the_person_and_its_lead_gets_nothing() {
     assert!(
         !lead_record.iter().any(|entry| entry["action"] == "report"),
         "{lead_record:?}"
+    );
+    office.serving.stop().await;
+}
+
+/// The report line that the office types into the parent's terminal, with
+/// the Enter that follows it (0015 contract).
+fn report_line(name: &str, sender: &str, kind: &str, text: &str) -> String {
+    format!("[report from {name} ({sender}): {kind}] {text}\r")
+}
+
+/// A CLI tail that prints once, so its agent goes from `working` to
+/// `waiting for input`, then shows an input line with echo and keeps the
+/// first `count` bytes that reach it in `<records>/<name>.typed`.
+fn typed_capture(records: &Path, name: &str, count: usize) -> String {
+    format!(
+        "echo ready\nstty raw echo\ndd bs=1 count={count} of={}/{name}.typed 2>/dev/null",
+        records.display()
+    )
+}
+
+async fn typed_by(records: &Path, name: &str, count: usize) -> String {
+    let path = records.join(format!("{name}.typed"));
+    let bytes = wait_for("the typed line", || {
+        fs::read(&path).ok().filter(|bytes| bytes.len() == count)
+    })
+    .await;
+    String::from_utf8(bytes).expect("utf-8")
+}
+
+fn nothing_typed_into(records: &Path, name: &str) -> bool {
+    fs::read(records.join(format!("{name}.typed"))).map_or(true, |bytes| bytes.is_empty())
+}
+
+/// An agent whose id is known before its CLI is written: the CLI reads the
+/// report line that names its child, so the child comes first.
+async fn create_named(office: &Office, client: &mut Client, name: &str, body: &str) -> String {
+    office.clis.add(name, body);
+    client.create_agent(office, name, name, None).await
+}
+
+#[tokio::test]
+async fn reports_reach_only_the_parent_and_the_parent_answers_with_a_directive() {
+    let office = Office::open().await;
+    let mut client = office.client().await;
+    let records = office.records_path();
+    let reply = "please rebase";
+    let member = create_named(
+        &office,
+        &mut client,
+        "member-1",
+        &sender_body(
+            records,
+            "member-1",
+            &typed_capture(records, "member-1", reply.len() + 1),
+        ),
+    )
+    .await;
+    let member_line = report_line("member-1", &member, "done", "tests pass \u{241b}ok");
+    let lead = create_named(
+        &office,
+        &mut client,
+        "lead-1",
+        &sender_body(
+            records,
+            "lead-1",
+            &typed_capture(records, "lead-1", member_line.len()),
+        ),
+    )
+    .await;
+    let lead_line = report_line("lead-1", &lead, "info", "team done");
+    let ceo = create_named(
+        &office,
+        &mut client,
+        "ceo",
+        &sender_body(
+            records,
+            "ceo",
+            &typed_capture(records, "ceo", lead_line.len()),
+        ),
+    )
+    .await;
+    let other_lead = create_named(
+        &office,
+        &mut client,
+        "lead-2",
+        &sender_body(records, "lead-2", &typed_capture(records, "lead-2", 1)),
+    )
+    .await;
+    let other_member = create_named(
+        &office,
+        &mut client,
+        "member-2",
+        &sender_body(records, "member-2", &typed_capture(records, "member-2", 1)),
+    )
+    .await;
+    place(&office, &ceo, Role::Ceo, None);
+    place(&office, &lead, Role::Lead, Some(&ceo));
+    place(&office, &other_lead, Role::Lead, Some(&ceo));
+    place(&office, &member, Role::Member, Some(&lead));
+    place(&office, &other_member, Role::Member, Some(&other_lead));
+    for agent in [&ceo, &lead, &other_lead, &member, &other_member] {
+        client.start(agent).await;
+    }
+    for agent in [&ceo, &lead, &member] {
+        client.wait_for_status(agent, "waiting_for_input").await;
+    }
+    let member_sender = sender_of(records, "member-1").await;
+    let lead_sender = sender_of(records, "lead-1").await;
+
+    let answer = report(&member_sender, "done", "tests pass \u{1b}ok").await;
+    assert_eq!(answer["result"]["receiver"], "parent", "{answer}");
+    assert_eq!(answer["result"]["delivery"], "submitted", "{answer}");
+    assert_eq!(
+        typed_by(records, "lead-1", member_line.len()).await,
+        member_line
+    );
+    client.wait_for_status(&lead, "waiting_for_input").await;
+
+    let lead_answer = report(&lead_sender, "info", "team done").await;
+    assert_eq!(lead_answer["result"]["receiver"], "parent", "{lead_answer}");
+    assert_eq!(typed_by(records, "ceo", lead_line.len()).await, lead_line);
+    for name in ["lead-2", "member-2"] {
+        assert!(nothing_typed_into(records, name), "{name} got a report");
+    }
+
+    let directive = call(
+        &lead_sender,
+        "directive.send",
+        &json!({"target_agent_id": member, "text": reply}),
+    )
+    .await;
+    assert_eq!(directive["ok"], true, "{directive}");
+    assert_eq!(
+        typed_by(records, "member-1", reply.len() + 1).await,
+        format!("{reply}\r")
+    );
+    let lead_record = actions_of(&mut client, &lead).await;
+    let entry = lead_record
+        .iter()
+        .find(|entry| entry["action"] == "report")
+        .expect("the report is in the lead's record");
+    assert_eq!(entry["actor"], json!(format!("agent:{member}")), "{entry}");
+    office.serving.stop().await;
+}
+
+/// A parent that shows a permission question for a while, notes whatever
+/// reached it meanwhile, then clears the question, shows an input line with
+/// echo, and reads one report line.
+fn questioning_body(records: &Path, name: &str, count: usize) -> String {
+    let folder = records.display();
+    sender_body(
+        records,
+        name,
+        &format!(
+            "echo 'Do you want to proceed? (y/n)'\nsleep 4\nstty raw -echo min 0 time 1\ndd bs=64 count=1 of={folder}/early 2>/dev/null\nprintf '\\033[2J\\033[H> '\nstty raw echo min 1 time 0\ndd bs=1 count={count} of={folder}/{name}.typed 2>/dev/null"
+        ),
+    )
+}
+
+#[tokio::test]
+async fn a_report_waits_while_the_parent_shows_a_question_and_is_typed_after_it() {
+    let office = Office::open().await;
+    let mut client = office.client().await;
+    let records = office.records_path();
+    let member = create_named(
+        &office,
+        &mut client,
+        "member",
+        &sender_body(records, "member", ""),
+    )
+    .await;
+    let line = report_line("member", &member, "blocked", "need a key");
+    let lead = create_named(
+        &office,
+        &mut client,
+        "lead",
+        &questioning_body(records, "lead", line.len()),
+    )
+    .await;
+    place(&office, &lead, Role::Ceo, None);
+    place(&office, &member, Role::Lead, Some(&lead));
+    client.start(&member).await;
+    client.start(&lead).await;
+    client.wait_for_status(&lead, "waiting_for_input").await;
+    let sender = sender_of(records, "member").await;
+
+    let answer = report(&sender, "blocked", "need a key").await;
+
+    assert_eq!(answer["result"]["delivery"], "waiting", "{answer}");
+    assert_eq!(typed_by(records, "lead", line.len()).await, line);
+    let early = fs::read(records.join("early")).expect("early read");
+    assert!(early.is_empty(), "{early:?}");
+    office.serving.stop().await;
+}
+
+/// A CLI tail that keeps writing until `<records>/<flag>` exists, so its
+/// agent stays `working` and takes no report.
+fn busy_until(records: &Path, flag: &str) -> String {
+    format!(
+        "while [ ! -e {}/{flag} ]; do echo tick; sleep 0.1; done",
+        records.display()
+    )
+}
+
+async fn report_failure_containing(client: &mut Client, agent_id: &str, needle: &str) -> Value {
+    for _ in 0..600 {
+        let found = actions_of(client, agent_id)
+            .await
+            .into_iter()
+            .find(|entry| {
+                entry["action"] == "report"
+                    && entry["result"]
+                        .as_str()
+                        .is_some_and(|result| result.contains(needle))
+            });
+        if let Some(entry) = found {
+            return entry;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("no report entry of {agent_id} contains {needle:?}");
+}
+
+#[tokio::test]
+async fn a_waiting_report_is_withdrawn_and_recorded_when_its_parent_stops() {
+    let office = Office::open().await;
+    let mut client = office.client().await;
+    let records = office.records_path();
+    let ceo = running_agent(
+        &office,
+        &mut client,
+        "ceo",
+        Some((Role::Ceo, None)),
+        &busy_until(records, "never"),
+    )
+    .await;
+    let lead = running_agent(
+        &office,
+        &mut client,
+        "lead",
+        Some((Role::Lead, Some(&ceo))),
+        "",
+    )
+    .await;
+    client.wait_for_status(&ceo, "working").await;
+    let sender = sender_of(records, "lead").await;
+
+    let answer = report(&sender, "done", "all green").await;
+    assert_eq!(answer["result"]["delivery"], "waiting", "{answer}");
+    let stopped = client.ask("agent.stop", json!({"agent_id": ceo})).await;
+    assert_eq!(stopped["ok"], true, "{stopped}");
+
+    for agent in [&lead, &ceo] {
+        let entry = report_failure_containing(&mut client, agent, "withdrawn before typing").await;
+        assert_eq!(entry["actor"], json!(format!("agent:{lead}")), "{entry}");
+    }
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn ten_child_reports_leave_room_for_the_ceos_directive_and_refuse_an_eleventh() {
+    let office = Office::open().await;
+    let mut client = office.client().await;
+    let records = office.records_path();
+    let ceo = running_agent(&office, &mut client, "ceo", Some((Role::Ceo, None)), "").await;
+    let lead = running_agent(
+        &office,
+        &mut client,
+        "lead",
+        Some((Role::Lead, Some(&ceo))),
+        &busy_until(records, "never"),
+    )
+    .await;
+    let mut senders = Vec::new();
+    for index in 0..=REPORT_SHARE {
+        let name = format!("member-{index}");
+        running_agent(
+            &office,
+            &mut client,
+            &name,
+            Some((Role::Member, Some(&lead))),
+            "",
+        )
+        .await;
+        senders.push(sender_of(records, &name).await);
+    }
+    client.wait_for_status(&lead, "working").await;
+    let (late, early) = senders.split_last().expect("members");
+
+    for sender in early {
+        let answer = report(sender, "done", "finished").await;
+        assert_eq!(answer["result"]["delivery"], "waiting", "{answer}");
+    }
+    let again = report(&early[0], "done", "finished twice").await;
+    let refused = report(late, "done", "finished late").await;
+    let ceo_sender = sender_of(records, "ceo").await;
+    let directive = call(
+        &ceo_sender,
+        "directive.send",
+        &json!({"target_agent_id": lead, "text": "next task"}),
+    )
+    .await;
+
+    assert_eq!(again["result"]["position"], 1, "{again}");
+    assert!(
+        refusal_message(&refused).contains("no room for reports"),
+        "{refused}"
+    );
+    assert_eq!(directive["result"]["delivery"], "waiting", "{directive}");
+    assert_eq!(
+        directive["result"]["position"],
+        REPORT_SHARE + 1,
+        "{directive}"
     );
     office.serving.stop().await;
 }
