@@ -301,16 +301,19 @@ fn stop_and_check_stops_and_names_the_stop_in_its_refusal() {
 }
 
 #[test]
-fn stop_and_check_reads_nothing_for_an_agent_that_was_already_stopped() {
+fn stop_and_check_reads_a_stopped_agent_again_and_refuses_a_change() {
     let office = Office::new();
     let worktrees = FakeWorktrees::new(&std::env::temp_dir().join("wt"));
     let agent = agent_with_worktree(&office, &worktrees, AgentStatus::Stopped);
+    // The user changed the stopped member's worktree during the stop loop.
+    worktrees.queue_statuses(vec![clean_status("h1")]);
 
-    office
+    let error = office
         .delete_agent_with(&worktrees)
         .stop_and_check(agent.id, &remove_confirming(&agent, "h0"))
-        .expect("checked");
+        .expect_err("changed");
 
-    assert_eq!(worktrees.calls().len(), 0);
-    assert_eq!(office.terminals.stopped().len(), 0);
+    assert!(matches!(error, ApplicationError::Conflict(_)));
+    assert_eq!(worktrees.calls(), ["status"]);
+    assert_eq!(office.agents.all().len(), 1);
 }

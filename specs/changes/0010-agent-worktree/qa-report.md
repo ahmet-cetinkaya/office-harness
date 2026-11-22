@@ -119,8 +119,7 @@ Paths are relative to the repository root. `H` is `src/apps/office-harnessd`, `M
 - The Windows timeout path (`taskkill /T /F`) has no test; the Unix path does. On Windows a helper whose parent already exited can outlive the timeout; only Unix ends the whole process group.
 - Accepted LOW review findings, not changed in this PR: the status read can run the repository's clean filters and submodule configuration; a helper that keeps stderr open after git exits 0 reads as a timeout; a failed undo is not reported; two creates with the same name at once answer `internal` for the second, not `conflict`; the start check does not confirm that the worktree's git folder belongs to the stored repository.
 - SC-005 has no whole-server restart test (see above).
-- Changed after this report (ACF-183): a remove now reads a stopped agent's worktree once and holds the status lock for at most three status reads (PLAN D6, lock scope); a data folder inside a linked worktree of the repository is refused as one inside the repository.
+- Changed after this report (ACF-183): a single delete now reads a stopped agent's worktree once, and a subtree delete reads each member at most three times (PLAN D6, lock scope); a data folder inside a linked worktree of the repository is refused as one inside the repository.
 - `session.continue` has no direct test for a missing worktree; it uses the same check as `agent.start`, which is tested.
 - The desktop e2e does not cover the "confirm again" re-ask or the branch-name `conflict` refresh; unit tests cover the first.
-- With the data folder inside a linked worktree of the chosen repository (not the main one), the inside-repository check does not refuse the create.
 - The Windows path comparisons in the git tests run only in CI.
