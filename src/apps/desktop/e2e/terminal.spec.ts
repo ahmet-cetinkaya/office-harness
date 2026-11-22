@@ -38,6 +38,9 @@ async function openTerminal(
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Ada, working" }).click();
+  // The details have one more action button (0016), which can put the
+  // terminal below the fold, where xterm pauses its rendering.
+  await page.locator(".xterm").scrollIntoViewIfNeeded();
 }
 
 async function terminalRequests(page: Page) {
