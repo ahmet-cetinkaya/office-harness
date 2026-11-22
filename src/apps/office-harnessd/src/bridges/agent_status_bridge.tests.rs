@@ -83,6 +83,14 @@ mod runs {
             Ok(())
         }
 
+        fn update_task(
+            &self,
+            _id: AgentId,
+            _task: Option<&agent_domain::value_objects::TaskText>,
+        ) -> Result<(), PortError> {
+            Ok(())
+        }
+
         fn delete(&self, _id: AgentId) -> Result<(), PortError> {
             Ok(())
         }

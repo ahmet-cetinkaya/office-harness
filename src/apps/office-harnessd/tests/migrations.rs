@@ -288,3 +288,31 @@ fn name_keys_that_differ_outside_ascii_case_migrate_to_version_five() {
     assert_eq!(applied, SCRIPTS.len() - 3);
     assert_eq!(ledger_versions(&connection), all_versions());
 }
+
+#[test]
+fn an_office_at_agent_version_five_upgrades_with_every_agent_and_no_task() {
+    let mut connection = Connection::open_in_memory().expect("database");
+    run_migrations(&mut connection, LEDGER_TABLE, &SCRIPTS[..5], &[]).expect("version 5");
+    connection
+        .execute_batch(
+            "INSERT INTO agent_machines (id, name) VALUES ('m1', 'host');
+             INSERT INTO agent_agents (id, name, name_key, command, working_folder, machine_id, status, created_at)
+             VALUES ('a1', 'Ana', 'ana', 'claude', '/work', 'm1', 'stopped', 1),
+                    ('a2', 'Ben', 'ben', 'claude', '/work', 'm1', 'exited', 2);",
+        )
+        .expect("agents at version 5");
+
+    let applied = run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, &[]).expect("upgrade");
+
+    assert_eq!(applied, SCRIPTS.len() - 5);
+    assert_eq!(ledger_versions(&connection), all_versions());
+    let agents_without_task: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM agent_agents \
+             WHERE task_text IS NULL AND task_set_at IS NULL AND task_source IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count");
+    assert_eq!(agents_without_task, 2);
+}

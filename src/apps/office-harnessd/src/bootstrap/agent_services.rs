@@ -12,6 +12,7 @@ use agent_application::commands::end_session::EndSessionHandler;
 use agent_application::commands::interrupt_agents::InterruptAgentsHandler;
 use agent_application::commands::set_office_additions::SetOfficeAdditionsHandler;
 use agent_application::commands::set_setting::SetSettingHandler;
+use agent_application::commands::set_task_text::SetTaskTextHandler;
 use agent_application::commands::start_agent::StartAgentHandler;
 use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
@@ -217,6 +218,11 @@ fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
             Arc::clone(&wiring.agents),
             Arc::clone(&wiring.additions),
             Arc::clone(&wiring.clock),
+        ),
+        set_task_text: SetTaskTextHandler::new(
+            Arc::clone(&wiring.agents),
+            Arc::clone(&wiring.clock),
+            journal.clone(),
         ),
         get_office_additions: GetOfficeAdditionsHandler::new(
             Arc::clone(&wiring.agents),

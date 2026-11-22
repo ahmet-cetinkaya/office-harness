@@ -10,7 +10,7 @@ use std::time::Duration;
 use agent_domain::entities::{AdditionsRecord, Agent, Project, Session};
 use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{
-    AgentCommand, DisplayName, ExitResult, MachineId, ProjectId, SessionId, Settings,
+    AgentCommand, DisplayName, ExitResult, MachineId, ProjectId, SessionId, Settings, TaskText,
 };
 use kernel::{AgentId, Timestamp};
 
@@ -19,6 +19,7 @@ use crate::commands::create_agent::CreateAgentHandler;
 use crate::commands::delete_agent::DeleteAgentHandler;
 use crate::commands::end_session::EndSessionHandler;
 use crate::commands::set_office_additions::SetOfficeAdditionsHandler;
+use crate::commands::set_task_text::SetTaskTextHandler;
 use crate::commands::start_agent::StartAgentHandler;
 use crate::commands::start_new_task::StartNewTaskHandler;
 use crate::commands::stop_agent::StopAgentHandler;
@@ -125,6 +126,18 @@ impl AgentStore for MemoryAgents {
                 what: format!("agent {id}"),
             })?;
         agent.status = status;
+        Ok(())
+    }
+
+    fn update_task(&self, id: AgentId, task: Option<&TaskText>) -> Result<(), PortError> {
+        let mut agents = locked(&self.0);
+        let agent = agents
+            .iter_mut()
+            .find(|agent| agent.id == id)
+            .ok_or_else(|| PortError::NotFound {
+                what: format!("agent {id}"),
+            })?;
+        agent.task = task.cloned();
         Ok(())
     }
 
@@ -628,6 +641,11 @@ impl Office {
     #[must_use]
     pub fn end_session(&self) -> EndSessionHandler {
         EndSessionHandler::new(self.sessions.clone(), Arc::new(FixedClock))
+    }
+
+    #[must_use]
+    pub fn set_task_text(&self) -> SetTaskTextHandler {
+        SetTaskTextHandler::new(self.agents.clone(), Arc::new(FixedClock), self.journal())
     }
 
     #[must_use]

@@ -22,7 +22,9 @@ mod typed_input;
 pub use action_recorder::{ActionRecorderBridge, take_recorded_events};
 pub use agent_line_bridge::AgentLineBridge;
 pub use agent_status_bridge::{AgentStatusBridge, StatusOrder, StoppingFlag};
-pub use directive_bridges::{DirectiveJournalBridge, DirectiveTargetBridge, DirectiveWriterBridge};
+pub use directive_bridges::{
+    DirectiveJournalBridge, DirectiveReceiptBridge, DirectiveTargetBridge, DirectiveWriterBridge,
+};
 pub use hold_bridges::{HoldJournalBridge, HoldNotifierBridge};
 pub use notification_bridge::NotificationBridge;
 pub use rate_limit_source::SettingsRateLimits;

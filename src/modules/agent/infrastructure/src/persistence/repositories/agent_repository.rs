@@ -4,14 +4,15 @@ use std::path::PathBuf;
 
 use agent_domain::entities::Agent;
 use agent_domain::enums::AgentStatus;
-use agent_domain::value_objects::{AgentCommand, DisplayName};
+use agent_domain::value_objects::{AgentCommand, DisplayName, TaskSource, TaskText};
 use kernel::{AgentId, Timestamp};
 use rusqlite::{OptionalExtension, Row, params};
 
 use crate::persistence::{PersistenceError, SharedConnection};
 
 const SELECT_AGENT: &str = "SELECT id, name, command, working_folder, project_id, machine_id, \
-                            status, created_at FROM agent_agents";
+                            status, created_at, task_text, task_set_at, task_source \
+                            FROM agent_agents";
 
 pub struct AgentRepository {
     connection: SharedConnection,
@@ -26,6 +27,27 @@ struct AgentRow {
     machine_id: String,
     status: String,
     created_at: i64,
+    task: StoredTask,
+}
+
+/// The three task columns as stored; they are all set or all NULL.
+struct StoredTask {
+    text: Option<String>,
+    set_at: Option<i64>,
+    source: Option<String>,
+}
+
+impl StoredTask {
+    fn into_task(self) -> Result<Option<TaskText>, PersistenceError> {
+        let (Some(text), Some(set_at), Some(source)) = (self.text, self.set_at, self.source) else {
+            return Ok(None);
+        };
+        Ok(TaskText::from_input(
+            &text,
+            Timestamp::from_unix_millis(set_at),
+            source.parse::<TaskSource>()?,
+        )?)
+    }
 }
 
 impl AgentRow {
@@ -39,6 +61,11 @@ impl AgentRow {
             machine_id: row.get(5)?,
             status: row.get(6)?,
             created_at: row.get(7)?,
+            task: StoredTask {
+                text: row.get(8)?,
+                set_at: row.get(9)?,
+                source: row.get(10)?,
+            },
         })
     }
 
@@ -53,6 +80,7 @@ impl AgentRow {
             Timestamp::from_unix_millis(self.created_at),
         )?;
         agent.status = self.status.parse()?;
+        agent.task = self.task.into_task()?;
         Ok(agent)
     }
 }
@@ -131,6 +159,30 @@ impl AgentRepository {
             let changed = connection.execute(
                 "UPDATE agent_agents SET status = ?2 WHERE id = ?1",
                 params![id.to_string(), status.as_str()],
+            )?;
+            require_one_row(changed, id)
+        })
+    }
+
+    /// Stores the task text, or clears all three columns for `None`.
+    ///
+    /// # Errors
+    /// `NotFound` when no agent has the id.
+    pub fn update_task(
+        &self,
+        id: AgentId,
+        task: Option<&TaskText>,
+    ) -> Result<(), PersistenceError> {
+        self.connection.with(|connection| {
+            let changed = connection.execute(
+                "UPDATE agent_agents SET task_text = ?2, task_set_at = ?3, task_source = ?4 \
+                 WHERE id = ?1",
+                params![
+                    id.to_string(),
+                    task.map(TaskText::text),
+                    task.map(|task| task.set_at().as_unix_millis()),
+                    task.map(|task| task.source().as_str()),
+                ],
             )?;
             require_one_row(changed, id)
         })
