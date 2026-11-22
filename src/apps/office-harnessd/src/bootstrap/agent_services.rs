@@ -10,6 +10,7 @@ use agent_application::commands::delete_agent::DeleteAgentHandler;
 use agent_application::commands::delete_project::DeleteProjectHandler;
 use agent_application::commands::end_session::EndSessionHandler;
 use agent_application::commands::interrupt_agents::InterruptAgentsHandler;
+use agent_application::commands::resume_agent::ResumeAgentHandler;
 use agent_application::commands::set_office_additions::SetOfficeAdditionsHandler;
 use agent_application::commands::set_setting::SetSettingHandler;
 use agent_application::commands::set_task_text::SetTaskTextHandler;
@@ -160,15 +161,8 @@ pub fn build_agent_services(
     }
 }
 
-fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
-    let ender = SessionEnder::new(
-        Arc::clone(&wiring.agents),
-        Arc::clone(&wiring.settings),
-        Arc::clone(&wiring.sessions),
-        Arc::clone(&wiring.terminals),
-        Arc::clone(&wiring.clock),
-    );
-    let launcher = SessionLauncher::new(
+fn launcher_of(wiring: &Wiring) -> SessionLauncher {
+    SessionLauncher::new(
         Arc::clone(&wiring.agents),
         Arc::clone(&wiring.projects),
         Arc::clone(&wiring.additions),
@@ -179,7 +173,18 @@ fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
             clock: Arc::clone(&wiring.clock),
             failures: Arc::new(wiring.alerts.clone()),
         },
+    )
+}
+
+fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
+    let ender = SessionEnder::new(
+        Arc::clone(&wiring.agents),
+        Arc::clone(&wiring.settings),
+        Arc::clone(&wiring.sessions),
+        Arc::clone(&wiring.terminals),
+        Arc::clone(&wiring.clock),
     );
+    let launcher = launcher_of(wiring);
     let journal = &wiring.journal;
     AgentUseCases {
         create_agent: CreateAgentHandler::new(
@@ -219,6 +224,13 @@ fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
             Arc::clone(&wiring.sessions),
             Arc::clone(&wiring.adapters),
             ender,
+            launcher.clone(),
+            journal.clone(),
+        ),
+        resume_agent: ResumeAgentHandler::new(
+            Arc::clone(&wiring.agents),
+            Arc::clone(&wiring.sessions),
+            Arc::clone(&wiring.adapters),
             launcher,
             journal.clone(),
         ),

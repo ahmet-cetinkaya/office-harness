@@ -617,6 +617,24 @@ fn an_auto_hold_row_carries_the_limit_name_as_its_detail_and_reaches_the_clients
     assert!(published_events(&mut frames)[0].contains("auto_hold"));
 }
 
+#[test]
+fn a_resume_hold_row_carries_the_reason_as_its_detail_and_reaches_the_clients() {
+    let agent = agent_named("Ana");
+    let (bridge, store, _agents, hub) = bridge_for(&agent, None);
+    let mut frames = hub.subscribe();
+
+    bridge.record_resume_hold(agent.id, "the new session ended 2 s after it started");
+
+    let rows = store.all();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].event, NotificationEvent::ResumeHold);
+    assert_eq!(
+        rows[0].detail.as_deref(),
+        Some("the new session ended 2 s after it started")
+    );
+    assert!(published_events(&mut frames)[0].contains("resume_hold"));
+}
+
 mod needs_you_queue {
     use super::*;
 

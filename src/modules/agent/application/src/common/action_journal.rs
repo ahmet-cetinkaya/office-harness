@@ -31,11 +31,27 @@ impl ActionJournal {
         action: AgentAction,
         failure: Option<&str>,
     ) -> Result<(), ApplicationError> {
+        self.record_detailed(agent_id, action, failure, None)
+    }
+
+    /// Like [`Self::record`], with the reason the action happened, for an
+    /// action that its name alone does not explain.
+    ///
+    /// # Errors
+    /// `Storage` when the entry cannot be written.
+    pub fn record_detailed(
+        &self,
+        agent_id: AgentId,
+        action: AgentAction,
+        failure: Option<&str>,
+        detail: Option<&str>,
+    ) -> Result<(), ApplicationError> {
         self.recorder.record(&AgentActionEntry {
             actor: ActorScope::current(),
             agent_id,
             action,
             failure: failure.map(str::to_owned),
+            detail: detail.map(str::to_owned),
             at: self.clock.now(),
         })?;
         Ok(())
