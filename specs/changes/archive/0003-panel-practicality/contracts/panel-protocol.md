@@ -42,8 +42,8 @@ Result: an array of at most 500 notifications, unread first, then newest first (
 
 ```
 notification := { id, agent_id, agent_name, event, detail?, created_at, read_at }
-event := "exited" | "failed" | "waiting_for_input" | "bell" | "auto_hold" | "resume_hold"   // auto_hold and detail added by 0007, resume_hold by 0013
-detail := the limit name for auto_hold; the reason for resume_hold; absent or null otherwise
+event := "exited" | "failed" | "waiting_for_input" | "bell" | "auto_hold"   // auto_hold and detail added by 0007
+detail := the limit name for auto_hold; absent or null otherwise
 created_at, read_at := unix epoch milliseconds; read_at is null while unread
 ```
 

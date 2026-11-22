@@ -42,7 +42,7 @@ No fields. Result: the office-level action record entries (no target agent), new
 ## Changed shapes
 
 - Action entries: `actor` may be `"office"`; `action` may be `"hold"` or `"release"`; `agent_id` may be `null` for office-level entries.
-- `notification` entries and `notification.created`: `event` may be `"auto_hold"`. Amended by 0013: also `"resume_hold"`, when the office held an agent whose resume failed twice; `set_by: "office"` holds then carry that reason (`specs/changes/0013-bulk-resume/contracts/resume-protocol.md`).
+- `notification` entries and `notification.created`: `event` may be `"auto_hold"`.
 - `settings.get` / `settings.set`: the keys `limit_directives_per_agent`, `limit_directives_per_target`, `limit_creates_per_agent`, `limit_lifecycle_per_agent` (whole numbers 1 to 1000, defaults 10, 3, 5, 10).
 - `settings.set` with key `focus_shortcut`: `Ctrl+Shift+H` is refused as reserved for the office hold.
 
