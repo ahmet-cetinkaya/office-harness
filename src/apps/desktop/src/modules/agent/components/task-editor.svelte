@@ -47,6 +47,12 @@
 
   async function clear(): Promise<void> {
     failure = await onsave("");
+    // The Clear button leaves with the task, so focus goes to the button
+    // that now reads "Set task" instead of falling to the page.
+    if (failure === null) {
+      await tick();
+      editButton?.focus();
+    }
   }
 </script>
 

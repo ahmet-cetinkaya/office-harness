@@ -38,15 +38,17 @@ struct StoredTask {
 }
 
 impl StoredTask {
-    fn into_task(self) -> Result<Option<TaskText>, PersistenceError> {
+    /// A row that the domain rejects (too long, or a source this version does
+    /// not know) reads as no task: a task line is not worth failing the read
+    /// of every agent, and the next change to the task overwrites the row.
+    fn into_task(self) -> Option<TaskText> {
         let (Some(text), Some(set_at), Some(source)) = (self.text, self.set_at, self.source) else {
-            return Ok(None);
+            return None;
         };
-        Ok(TaskText::from_input(
-            &text,
-            Timestamp::from_unix_millis(set_at),
-            source.parse::<TaskSource>()?,
-        )?)
+        let source = source.parse::<TaskSource>().ok()?;
+        TaskText::from_input(&text, Timestamp::from_unix_millis(set_at), source)
+            .ok()
+            .flatten()
     }
 }
 
@@ -80,7 +82,7 @@ impl AgentRow {
             Timestamp::from_unix_millis(self.created_at),
         )?;
         agent.status = self.status.parse()?;
-        agent.task = self.task.into_task()?;
+        agent.task = self.task.into_task();
         Ok(agent)
     }
 }

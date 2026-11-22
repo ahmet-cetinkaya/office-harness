@@ -25,6 +25,7 @@ pub use agent_line_bridge::AgentLineBridge;
 pub use agent_status_bridge::{AgentStatusBridge, StatusOrder, StoppingFlag};
 pub use directive_bridges::{
     DirectiveJournalBridge, DirectiveReceiptBridge, DirectiveTargetBridge, DirectiveWriterBridge,
+    TaskOrder,
 };
 pub use hold_bridges::{HoldJournalBridge, HoldNotifierBridge};
 pub use needs_you_bridge::{AgentNames, NeedsYouBridge};

@@ -147,6 +147,7 @@ test.describe("task line", () => {
 
     await pressByKeyboard(page, "Clear task");
     await expect(page.getByText("No task text.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Set task" })).toBeFocused();
     await expect(row(page)).not.toContainText("Task given");
     await expect(row(page)).toContainText("Reading the tests");
     await expectNoSeriousViolations(page);

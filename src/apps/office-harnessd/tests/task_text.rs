@@ -35,6 +35,13 @@ const QUIET_WAIT: Duration = Duration::from_millis(500);
 /// How long the test waits for the member's first output line.
 const LAST_LINE_WAIT: Duration = Duration::from_secs(10);
 const LINE_POLL: Duration = Duration::from_millis(100);
+/// How long the watcher waits for one more `agent.task` while it collects the
+/// events a race caused; they are published before the requests answer.
+const RACE_DRAIN_WAIT: Duration = Duration::from_millis(200);
+/// The limits of 0007 are three directives a minute to one target and ten a
+/// minute from one sender, so nine races fit: three members, three rounds.
+const RACES_PER_MEMBER: usize = 3;
+const RACE_MEMBERS: usize = 3;
 /// How long the member prints output before its task text is read again.
 const OUTPUT_PERIOD: Duration = Duration::from_secs(2);
 
@@ -66,6 +73,7 @@ struct Setup {
     office: Office,
     client: Client,
     watcher: Client,
+    lead: String,
     member: String,
     token: String,
     server_file: String,
@@ -94,11 +102,24 @@ impl Setup {
             office,
             client,
             watcher,
+            lead,
             member,
             token,
             server_file,
             typed,
         }
+    }
+
+    /// A started member of the same lead, with its own directive limit.
+    async fn add_member(&mut self, name: &str) -> String {
+        let member = self
+            .client
+            .create_agent(&self.office, name, "member-cli", None)
+            .await;
+        place(&self.office, &member, Role::Lead, Some(&self.lead));
+        self.client.start(&member).await;
+        self.client.wait_for_status(&member, "working").await;
+        member
     }
 
     async fn new() -> Self {
@@ -368,6 +389,95 @@ async fn a_user_edit_racing_a_directive_leaves_both_in_the_record() {
     assert_eq!(edited["ok"], true, "{edited}");
     assert_eq!(setup.count_actions(&member, "directive").await, 1);
     assert_eq!(setup.count_actions(&member, "task_text").await, 1);
+    setup.stop().await;
+}
+
+/// The task of the last `agent.task` event of `agent_id` that the watcher
+/// receives until it is quiet for a moment; `None` when none arrived.
+async fn last_task_event_of(watcher: &mut Client, agent_id: &str) -> Option<Value> {
+    let mut last = None;
+    while let Ok(event) = tokio::time::timeout(RACE_DRAIN_WAIT, async {
+        loop {
+            let event = watcher.next_event("agent.task").await;
+            if event["agent_id"] == agent_id {
+                return event;
+            }
+        }
+    })
+    .await
+    {
+        last = Some(event["task"].clone());
+    }
+    last
+}
+
+/// The clients must end on the stored task: what the second client saw last
+/// is what `agent.list` shows.
+async fn assert_clients_end_on_the_stored_task(setup: &mut Setup, member: &str, round: &str) {
+    let last_seen = last_task_event_of(&mut setup.watcher, member)
+        .await
+        .expect("a racing change publishes agent.task");
+    assert_eq!(last_seen, setup.task_of(member).await, "{round}");
+}
+
+#[tokio::test]
+async fn the_last_task_event_matches_the_list_after_a_user_edit_races_a_directive() {
+    let mut setup = Setup::new().await;
+    let mut members = vec![setup.member.clone()];
+    for index in 1..RACE_MEMBERS {
+        members.push(setup.add_member(&format!("Racer {index}")).await);
+    }
+    for member in &members {
+        for round in 0..RACES_PER_MEMBER {
+            let edit = json!({"agent_id": member, "text": format!("Edited by the user {round}")});
+            let directive_request = json!({"target_agent_id": member, "text": DIRECTIVE});
+
+            let (directive, edited) = tokio::join!(
+                call_helper(
+                    "directive.send",
+                    &setup.token,
+                    &setup.server_file,
+                    &directive_request,
+                ),
+                setup.client.ask("agent.task.set", edit),
+            );
+
+            assert!(directive.status.success(), "{directive:?}");
+            assert_eq!(edited["ok"], true, "{edited}");
+            let label = format!("{member} round {round}");
+            assert_clients_end_on_the_stored_task(&mut setup, member, &label).await;
+        }
+    }
+    setup.stop().await;
+}
+
+#[tokio::test]
+async fn the_last_task_event_matches_the_list_after_a_new_task_races_a_directive() {
+    let mut setup = Setup::new().await;
+    let mut members = vec![setup.member.clone()];
+    for index in 1..RACE_MEMBERS {
+        members.push(setup.add_member(&format!("Racer {index}")).await);
+    }
+    for member in &members {
+        let seeded = setup.set_task(member, "Before the new task").await;
+        assert_eq!(seeded["ok"], true, "{seeded}");
+        let directive_request = json!({"target_agent_id": member, "text": DIRECTIVE});
+
+        let (_, restarted) = tokio::join!(
+            call_helper(
+                "directive.send",
+                &setup.token,
+                &setup.server_file,
+                &directive_request,
+            ),
+            setup
+                .client
+                .ask("agent.new_task", json!({"agent_id": member})),
+        );
+
+        assert_eq!(restarted["ok"], true, "{restarted}");
+        assert_clients_end_on_the_stored_task(&mut setup, member, member).await;
+    }
     setup.stop().await;
 }
 
