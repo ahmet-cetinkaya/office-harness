@@ -46,7 +46,7 @@ Every request is a JSON text frame `{"id":<u32>,"type":"<name>",...}`. The respo
 | `agent.stop` | agent_id | none | FR-012, A3 |
 | `agent.new_task` | agent_id | session (ends a running session first; the client confirms with the user before it sends this) | FR-024 |
 | `agent.additions.get` / `.set` | agent_id, additions | additions plus `applies_next_session: bool` | FR-022, FR-023 |
-| `agent.task.set` | agent_id, text (empty or only whitespace clears; more than 8,192 characters is `invalid`). User clients only | agent (with `task`). Writes nothing to the terminal. Shapes: [the task protocol](../../0011-task-line/contracts/task-protocol.md) | 0011/FR-003 |
+| `agent.task.set` | agent_id, text (empty or only whitespace clears; more than 8,192 characters is `invalid`). User clients only | agent (with `task`). Writes nothing to the terminal. Shapes: [the task protocol](../../../0011-task-line/contracts/task-protocol.md) | 0011/FR-003 |
 | `server.restart` | none. Interrupts running agents, so the client confirms with the user first | none | Server upgrade (plan D13) |
 | `agent.actions` | agent_id | action record entries | FR-011 |
 | `session.list` | agent_id | sessions, each with `can_continue: bool` and, when false, `reason` | FR-025 |

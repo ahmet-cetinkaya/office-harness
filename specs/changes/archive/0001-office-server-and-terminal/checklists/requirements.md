@@ -1,6 +1,6 @@
 # Requirements checklist: 0001-office-server-and-terminal
 
-Spec: `specs/changes/0001-office-server-and-terminal/SPEC.md` · Status: in progress (the owner decided the scope on 2026-11-15; the spec now has a Deviations section) · Date: 2026-11-15 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker.
+Spec: `specs/changes/archive/0001-office-server-and-terminal/SPEC.md` · Status: shipped (archived 2026-11-23; the owner decided the scope on 2026-11-15; the spec has a Deviations section) · Date: 2026-11-15 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker.
 
 ## Content quality
 

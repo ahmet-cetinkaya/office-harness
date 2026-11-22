@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: shipped
 capability: office
 plan: .agents/work/office-server-and-terminal/plan.md
 supersedes:
