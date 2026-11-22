@@ -9,14 +9,16 @@ use agent_application::common::models::{AgentAction, AgentActionEntry};
 use agent_domain::entities::Agent;
 use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{AgentCommand, DisplayName, MachineId, TaskSource, TaskText};
-use hierarchy_application::common::ports::{DirectiveJournal, DirectiveTarget, DirectiveWriter};
+use hierarchy_application::common::ports::{
+    Delivery, DirectiveJournal, DirectiveTarget, DirectiveWriter, Readiness,
+};
 use kernel::{AgentId, Timestamp};
 use terminal_application::common::errors::TerminalRuntimeError;
 use terminal_application::common::interfaces::TerminalRuntime;
 use terminal_application::common::models::{
     Attachment, RunId, SpawnTerminalRequest, SubscriptionId,
 };
-use terminal_domain::value_objects::{OutputKey, TerminalSize};
+use terminal_domain::value_objects::{OutputKey, ScreenView, TerminalSize};
 
 use super::*;
 use crate::bridges::SystemClock;
@@ -73,10 +75,37 @@ impl AgentStore for OneAgent {
     }
 }
 
-/// A runtime that keeps every `write_input` call and is running for one id.
+/// The run every fake terminal here is in.
+const RUN: RunId = RunId(1);
+
+/// A runtime that keeps every write and paste, is running for one id, and
+/// shows one screen; with `echo` a paste appears at the cursor row, as a CLI
+/// input line shows typed text.
 struct RecordingRuntime {
     written: Mutex<Vec<(AgentId, Vec<u8>)>>,
+    pasted: Mutex<Vec<String>>,
+    screen: Mutex<ScreenView>,
+    echo: bool,
     running_for: AgentId,
+}
+
+impl RecordingRuntime {
+    fn showing(running_for: AgentId, rows: &[&str], echo: bool) -> Self {
+        Self {
+            written: Mutex::new(Vec::new()),
+            pasted: Mutex::new(Vec::new()),
+            screen: Mutex::new(ScreenView {
+                rows: rows.iter().map(|row| (*row).to_owned()).collect(),
+                cursor_row: rows.len().saturating_sub(1),
+            }),
+            echo,
+            running_for,
+        }
+    }
+
+    fn idle(running_for: AgentId) -> Self {
+        Self::showing(running_for, &["ready", "> "], true)
+    }
 }
 
 impl TerminalRuntime for RecordingRuntime {
@@ -101,8 +130,14 @@ impl TerminalRuntime for RecordingRuntime {
         Ok(())
     }
 
-    fn paste(&self, _agent_id: AgentId, _text: &str) -> Result<(), TerminalRuntimeError> {
-        Err(TerminalRuntimeError::NotRunning(self.running_for))
+    fn paste(&self, _agent_id: AgentId, text: &str) -> Result<(), TerminalRuntimeError> {
+        locked(&self.pasted).push(text.to_owned());
+        if self.echo {
+            let mut screen = locked(&self.screen);
+            let cursor_row = screen.cursor_row;
+            screen.rows[cursor_row].push_str(text);
+        }
+        Ok(())
     }
 
     fn resize(
@@ -122,8 +157,17 @@ impl TerminalRuntime for RecordingRuntime {
     }
 
     fn current_run(&self, _agent_id: AgentId) -> Option<RunId> {
-        Some(RunId(1))
+        Some(RUN)
     }
+
+    fn screen(&self, agent_id: AgentId) -> Option<ScreenView> {
+        (agent_id == self.running_for).then(|| locked(&self.screen).clone())
+    }
+}
+
+fn target_bridge(store: Arc<dyn AgentStore>) -> DirectiveTargetBridge {
+    let runtime = Arc::new(RecordingRuntime::idle(AgentId::generate()));
+    DirectiveTargetBridge::new(store, runtime, PersonInput::default())
 }
 
 /// Keeps every entry the journal records.
@@ -161,7 +205,7 @@ fn test_log() -> crate::bootstrap::ServerLog {
 #[test]
 fn is_running_follows_the_stored_status() {
     let agent_id = AgentId::generate();
-    let bridge = DirectiveTargetBridge::new(Arc::new(OneAgent(agent_with_status(
+    let bridge = target_bridge(Arc::new(OneAgent(agent_with_status(
         agent_id,
         "Ana",
         AgentStatus::WaitingForInput,
@@ -174,7 +218,7 @@ fn is_running_follows_the_stored_status() {
 #[test]
 fn a_stopped_or_exited_member_is_not_running() {
     let agent_id = AgentId::generate();
-    let bridge = DirectiveTargetBridge::new(Arc::new(OneAgent(agent_with_status(
+    let bridge = target_bridge(Arc::new(OneAgent(agent_with_status(
         agent_id,
         "Ana",
         AgentStatus::Stopped,
@@ -228,7 +272,7 @@ impl AgentStore for BrokenStore {
 
 #[test]
 fn a_store_failure_in_is_running_is_the_error_not_a_no() {
-    let bridge = DirectiveTargetBridge::new(Arc::new(BrokenStore));
+    let bridge = target_bridge(Arc::new(BrokenStore));
 
     let running = bridge.is_running(AgentId::generate());
     assert_eq!(
@@ -241,7 +285,7 @@ fn a_store_failure_in_is_running_is_the_error_not_a_no() {
 #[test]
 fn name_of_names_the_agent_and_none_for_an_unknown_store() {
     let agent_id = AgentId::generate();
-    let bridge = DirectiveTargetBridge::new(Arc::new(OneAgent(agent_with_status(
+    let bridge = target_bridge(Arc::new(OneAgent(agent_with_status(
         agent_id,
         "Ana",
         AgentStatus::Working,
@@ -251,20 +295,130 @@ fn name_of_names_the_agent_and_none_for_an_unknown_store() {
     assert_eq!(bridge.name_of(AgentId::generate()), None);
 }
 
+/// A target bridge over one stored agent and the given screen.
+fn readiness_of(status: AgentStatus, runtime: RecordingRuntime, input: &PersonInput) -> Readiness {
+    let agent_id = runtime.running_for;
+    let store = Arc::new(OneAgent(agent_with_status(agent_id, "Ana", status)));
+    DirectiveTargetBridge::new(store, Arc::new(runtime), input.clone())
+        .readiness(agent_id)
+        .expect("readable store")
+}
+
 #[test]
-fn the_writer_delivers_text_and_enter_in_one_write() {
+fn an_idle_member_with_a_clear_screen_is_ready() {
+    let runtime = RecordingRuntime::idle(AgentId::generate());
+    let readiness = readiness_of(
+        AgentStatus::WaitingForInput,
+        runtime,
+        &PersonInput::default(),
+    );
+    assert_eq!(readiness, Readiness::Ready);
+}
+
+#[test]
+fn a_working_or_starting_member_is_busy() {
+    for status in [AgentStatus::Working, AgentStatus::Starting] {
+        let runtime = RecordingRuntime::idle(AgentId::generate());
+        assert_eq!(
+            readiness_of(status, runtime, &PersonInput::default()),
+            Readiness::Busy
+        );
+    }
+}
+
+#[test]
+fn a_member_that_stopped_or_is_unknown_is_gone() {
+    let runtime = RecordingRuntime::idle(AgentId::generate());
+    assert_eq!(
+        readiness_of(AgentStatus::Exited, runtime, &PersonInput::default()),
+        Readiness::Gone
+    );
+    let bridge = target_bridge(Arc::new(OneAgent(agent_with_status(
+        AgentId::generate(),
+        "Ana",
+        AgentStatus::WaitingForInput,
+    ))));
+    assert_eq!(bridge.readiness(AgentId::generate()), Ok(Readiness::Gone));
+}
+
+#[test]
+fn an_open_question_on_the_screen_keeps_the_member_busy() {
+    let runtime = RecordingRuntime::showing(
+        AgentId::generate(),
+        &["Run this command?", "❯ 1. Yes", "  2. No"],
+        false,
+    );
+    let readiness = readiness_of(
+        AgentStatus::WaitingForInput,
+        runtime,
+        &PersonInput::default(),
+    );
+    assert_eq!(readiness, Readiness::Busy);
+}
+
+#[test]
+fn a_person_who_typed_keeps_the_member_busy() {
+    let runtime = RecordingRuntime::idle(AgentId::generate());
+    let input = PersonInput::default();
+    input.stamp(runtime.running_for);
+    assert_eq!(
+        readiness_of(AgentStatus::WaitingForInput, runtime, &input),
+        Readiness::Busy
+    );
+}
+
+#[test]
+fn office_text_that_waits_for_the_person_keeps_the_member_busy() {
+    let runtime = RecordingRuntime::idle(AgentId::generate());
+    let input = PersonInput::default();
+    input.office_text_left(runtime.running_for, RUN);
+    assert_eq!(
+        readiness_of(AgentStatus::WaitingForInput, runtime, &input),
+        Readiness::Busy
+    );
+}
+
+#[test]
+fn a_store_failure_in_readiness_is_the_error() {
+    let bridge = target_bridge(Arc::new(BrokenStore));
+    assert!(bridge.readiness(AgentId::generate()).is_err());
+}
+
+#[test]
+fn the_writer_pastes_the_text_and_presses_enter_once_it_shows() {
     let agent_id = AgentId::generate();
-    let runtime = Arc::new(RecordingRuntime {
-        written: Mutex::new(Vec::new()),
-        running_for: agent_id,
-    });
-    let writer = DirectiveWriterBridge::new(runtime.clone());
+    let runtime = Arc::new(RecordingRuntime::idle(agent_id));
+    let writer = DirectiveWriterBridge::new(runtime.clone(), PersonInput::default());
 
-    writer.write(agent_id, "ship it").expect("write");
+    assert_eq!(writer.deliver(agent_id, "ship it"), Ok(Delivery::Submitted));
 
-    let written = locked(&runtime.written);
-    assert_eq!(written.len(), 1);
-    assert_eq!(written[0], (agent_id, b"ship it\r".to_vec()));
+    assert_eq!(*locked(&runtime.pasted), ["ship it"]);
+    assert_eq!(*locked(&runtime.written), [(agent_id, b"\r".to_vec())]);
+}
+
+#[test]
+fn a_text_that_does_not_show_gets_no_enter_and_holds_the_next_directives() {
+    let agent_id = AgentId::generate();
+    let runtime = Arc::new(RecordingRuntime::showing(
+        agent_id,
+        &["Pick one", "  Apples", "  Pears"],
+        false,
+    ));
+    let input = PersonInput::default();
+    let writer = DirectiveWriterBridge {
+        runtime: runtime.clone(),
+        person_input: input.clone(),
+        input_line_wait: Duration::from_millis(60),
+    };
+
+    assert_eq!(
+        writer.deliver(agent_id, "ship it"),
+        Ok(Delivery::Unsubmitted)
+    );
+
+    assert_eq!(*locked(&runtime.pasted), ["ship it"]);
+    assert!(locked(&runtime.written).is_empty());
+    assert!(input.holds_directives(agent_id, Some(RUN)));
 }
 
 #[test]

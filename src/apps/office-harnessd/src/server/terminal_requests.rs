@@ -14,7 +14,7 @@ use tokio::task::spawn_blocking;
 use wire::{ErrorCode, Request, Response};
 
 use super::channel_subscriber::ChannelSubscriber;
-use crate::bridges::SavedOutputs;
+use crate::bridges::{PersonInput, SavedOutputs};
 
 /// The host sends every request whose type starts with this to the module.
 pub const TERMINAL_PREFIX: &str = "terminal.";
@@ -75,14 +75,22 @@ impl TerminalAnswer {
 pub struct TerminalGateway {
     handlers: Arc<TerminalHandlers>,
     saved_outputs: SavedOutputs,
+    /// Stamped by every person input, so directives wait while a person
+    /// types (0012/FR-002).
+    person_input: PersonInput,
 }
 
 impl TerminalGateway {
     #[must_use]
-    pub fn new(handlers: Arc<TerminalHandlers>, saved_outputs: SavedOutputs) -> Self {
+    pub fn new(
+        handlers: Arc<TerminalHandlers>,
+        saved_outputs: SavedOutputs,
+        person_input: PersonInput,
+    ) -> Self {
         Self {
             handlers,
             saved_outputs,
+            person_input,
         }
     }
 
@@ -170,6 +178,12 @@ impl TerminalGateway {
 
     async fn input(&self, request: &Request) -> Result<Response, HandlerError> {
         let body: InputRequest = parse_body(request)?;
+        // Before the bytes go in, so a directive gate never reads a terminal
+        // as untouched while a person's keys are on their way. The handler
+        // refuses an id that does not parse.
+        if let Ok(agent_id) = body.agent_id.parse::<AgentId>() {
+            self.person_input.stamp(agent_id);
+        }
         let handlers = Arc::clone(&self.handlers);
         run_blocking(move || handlers.input(&body)).await?;
         Ok(Response::success(request.id, Value::Null))

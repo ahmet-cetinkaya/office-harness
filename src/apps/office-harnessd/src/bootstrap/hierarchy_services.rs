@@ -9,7 +9,7 @@ use agent_application::common::interfaces::AgentStore;
 use agent_infrastructure::persistence::{AgentRepository, SharedConnection};
 use hierarchy_application::commands::create_role_agent::CreateRoleAgentHandler;
 use hierarchy_application::commands::hold::HoldService;
-use hierarchy_application::commands::send_directive::SendDirectiveHandler;
+use hierarchy_application::commands::send_directive::{DirectivePorts, SendDirectiveHandler};
 use hierarchy_application::commands::subtree::SubtreeHandler;
 use hierarchy_application::common::interfaces::{HierarchyStore, HoldStore};
 use hierarchy_application::common::ports::{
@@ -24,6 +24,7 @@ use hierarchy_infrastructure::services::agent_places::AgentPlaces;
 use hierarchy_presentation::{HierarchyHandlers, HierarchyUseCases};
 use kernel::AgentId;
 
+use super::directive_delivery::spawn_directive_delivery;
 use super::{
     AgentServices, ServerLog, StartupError, StorageAlerts, TerminalServices, run_migrations,
 };
@@ -142,20 +143,29 @@ pub fn build_hierarchy_services(
     )?;
     prune_holds(&holds, agents.as_ref(), log);
     let send_directive = Arc::new(
-        SendDirectiveHandler::new(
-            Arc::clone(&store),
-            Arc::new(DirectiveTargetBridge::new(Arc::clone(&agents))),
-            Arc::new(DirectiveWriterBridge::new(Arc::clone(&terminal.runtime))),
-            Arc::clone(&directive_journal) as Arc<dyn DirectiveJournal>,
-            Arc::new(DirectiveReceiptBridge::new(
+        SendDirectiveHandler::new(DirectivePorts {
+            store: Arc::clone(&store),
+            targets: Arc::new(DirectiveTargetBridge::new(
+                Arc::clone(&agents),
+                Arc::clone(&terminal.runtime),
+                terminal.person_input.clone(),
+            )),
+            writer: Arc::new(DirectiveWriterBridge::new(
+                Arc::clone(&terminal.runtime),
+                terminal.person_input.clone(),
+            )),
+            journal: Arc::clone(&directive_journal) as Arc<dyn DirectiveJournal>,
+            receipt: Arc::new(DirectiveReceiptBridge::new(
                 agents,
                 events.clone(),
                 alerts.clone(),
                 Arc::clone(&agent.task_order),
             )),
-        )
+            clock: Arc::new(SteadyClock::default()),
+        })
         .with_hold_guard(Arc::clone(&holds)),
     );
+    spawn_directive_delivery(&send_directive, events.clone());
     Ok(HierarchyServices {
         handlers,
         tree,

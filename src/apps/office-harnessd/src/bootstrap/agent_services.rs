@@ -122,13 +122,16 @@ pub fn build_agent_services(
         additions: Arc::new(AdditionsRepository::new(connection.clone())),
         sessions: Arc::new(SessionRepository::new(connection.clone())),
         adapters: Arc::new(CliAdapterRegistry::new(attribution)),
-        terminals: Arc::new(TerminalHostBridge::new(
-            terminal.launcher.clone(),
-            Arc::clone(&terminal.runtime),
-            terminal.events.clone(),
-            log.clone(),
-            agent_calls,
-        )),
+        terminals: Arc::new(
+            TerminalHostBridge::new(
+                terminal.launcher.clone(),
+                Arc::clone(&terminal.runtime),
+                terminal.events.clone(),
+                log.clone(),
+                agent_calls,
+            )
+            .with_person_input(terminal.person_input.clone()),
+        ),
         journal: ActionJournal::new(recorder, Arc::clone(&clock)),
         alerts: alerts.clone(),
         clock,

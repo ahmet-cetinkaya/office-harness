@@ -36,6 +36,8 @@ const QUIET_WAIT: Duration = Duration::from_millis(500);
 /// How long the test waits for the member's first output line.
 const LAST_LINE_WAIT: Duration = Duration::from_secs(10);
 const LINE_POLL: Duration = Duration::from_millis(100);
+/// How many times a test reads a task text again while a receipt lands.
+const TASK_READS: usize = 50;
 /// How long the watcher waits for one more `agent.task` while it collects the
 /// events a race caused; they are published before the requests answer.
 const RACE_DRAIN_WAIT: Duration = Duration::from_millis(200);
@@ -51,9 +53,10 @@ const TASK_LIMIT_MESSAGE: &str = "a task text has at most 8,192 characters";
 const TASK_LIMIT_CHARS: usize = 8192;
 
 /// A member that records what its terminal typed, byte by byte, and keeps
-/// running.
+/// running. Its terminal echoes, as a CLI's input line shows typed text, so
+/// the office sees a directive and presses Enter (0012/FR-003).
 fn typing_member(typed: &Path) -> String {
-    format!("echo ready\nstty raw -echo\ncat >> {}\n", typed.display())
+    format!("echo ready\nstty raw\ncat >> {}\n", typed.display())
 }
 
 /// A member that prints output until the test ends.
@@ -87,7 +90,7 @@ struct Setup {
 }
 
 impl Setup {
-    async fn with_member(member_body: impl Fn(&Path) -> String) -> Self {
+    async fn with_member(member_body: impl Fn(&Path) -> String, wait_for_input: bool) -> Self {
         let office = Office::open().await;
         let typed = office.records_path().join("typed");
         office.clis.add("member-cli", &member_body(&typed));
@@ -100,7 +103,13 @@ impl Setup {
         place(&office, &lead, Role::Ceo, None);
         place(&office, &member, Role::Lead, Some(&lead));
         client.start(&member).await;
+        // A directive is typed at once only into a member that waits for
+        // input (0012/FR-002); a member that never stops printing never
+        // gets there.
         client.wait_for_status(&member, "working").await;
+        if wait_for_input {
+            client.wait_for_status(&member, "waiting_for_input").await;
+        }
         client.start(&lead).await;
         let (token, server_file) = live_credential(office.records_path()).await;
         let watcher = office.client().await;
@@ -124,12 +133,14 @@ impl Setup {
             .await;
         place(&self.office, &member, Role::Lead, Some(&self.lead));
         self.client.start(&member).await;
-        self.client.wait_for_status(&member, "working").await;
+        self.client
+            .wait_for_status(&member, "waiting_for_input")
+            .await;
         member
     }
 
     async fn new() -> Self {
-        Self::with_member(typing_member).await
+        Self::with_member(typing_member, true).await
     }
 
     async fn directive(&self, text: &str) -> Output {
@@ -364,13 +375,26 @@ async fn directives_at_once_leave_the_text_that_was_written_last() {
     for outcome in [&first, &second, &third] {
         assert!(outcome.status.success(), "{outcome:?}");
     }
+    // The queue types them one after another (0012/FR-001), and each Enter
+    // follows its text: three texts and a final Enter mean all three were
+    // submitted.
     let written = wait_for("the three directives", || {
-        Some(typed_texts(&setup.typed_bytes())).filter(|texts| texts.len() == 3)
+        let typed = setup.typed_bytes();
+        Some(typed_texts(&typed)).filter(|texts| texts.len() == 3 && typed.ends_with(b"\r"))
     })
     .await;
     let member = setup.member.clone();
-    let task = setup.task_of(&member).await;
-    assert_eq!(task["text"], written.last().expect("last").as_str());
+    let last = written.last().expect("last").as_str();
+    let mut task = setup.task_of(&member).await;
+    // The receipt follows the Enter, so the stored text may trail it.
+    for _ in 0..TASK_READS {
+        if task["text"] == last {
+            break;
+        }
+        tokio::time::sleep(LINE_POLL).await;
+        task = setup.task_of(&member).await;
+    }
+    assert_eq!(task["text"], last);
     setup.stop().await;
 }
 
@@ -489,9 +513,12 @@ async fn the_last_task_event_matches_the_list_after_a_new_task_races_a_directive
 
 #[tokio::test]
 async fn a_member_that_prints_output_keeps_its_task_text() {
-    let mut setup = Setup::with_member(|_| PRINTING_MEMBER.to_owned()).await;
+    let mut setup = Setup::with_member(|_| PRINTING_MEMBER.to_owned(), false).await;
     let member = setup.member.clone();
-    setup.directive(DIRECTIVE).await;
+    // A member that never stops printing never waits for input, so a
+    // directive would wait in its queue (0012/FR-002); the user's own text
+    // gives it a task instead.
+    setup.set_task(&member, DIRECTIVE).await;
     let event = next_task_event(&mut setup.watcher, &member).await;
 
     wait_for_last_line(&mut setup.client, &member).await;
@@ -507,7 +534,7 @@ async fn a_member_that_prints_output_keeps_its_task_text() {
 /// project folder.
 #[tokio::test]
 async fn the_task_text_neither_reads_a_cli_title_nor_writes_a_cli_configuration() {
-    let mut setup = Setup::with_member(|_| TITLE_SETTING_MEMBER.to_owned()).await;
+    let mut setup = Setup::with_member(|_| TITLE_SETTING_MEMBER.to_owned(), false).await;
     let member = setup.member.clone();
     let fake_folders = setup
         .office

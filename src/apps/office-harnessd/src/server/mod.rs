@@ -21,6 +21,7 @@ mod template_requests;
 mod terminal_requests;
 mod upgrade_check;
 
+pub use agent_call::recorded_and_published;
 pub use agent_requests::AgentGateway;
 pub use event_hub::EventHub;
 pub use hierarchy_requests::HierarchyGateway;

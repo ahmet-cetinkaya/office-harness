@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::sync::atomic::{AtomicI64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 
 use super::*;
 use hierarchy_domain::{Role, TreeRow};
+use kernel::Timestamp;
+
+use crate::commands::send_directive::{QUEUE_LIMIT, SETTLE_AFTER_TYPING, WAIT_LIMIT};
 
 use crate::common::interfaces::{TreeExclusion, TreeSnapshot};
 use crate::common::ports::DirectiveReceipt;
@@ -16,7 +20,7 @@ fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 /// The store reads are the only calls these tests make beyond the ports.
 struct FixedRows {
-    rows: Vec<TreeRow>,
+    rows: Mutex<Vec<TreeRow>>,
     /// Never contended here; the exclusion exists so the trait stays whole.
     tree_writes: Mutex<()>,
 }
@@ -24,7 +28,7 @@ struct FixedRows {
 impl HierarchyStore for FixedRows {
     fn snapshot(&self) -> Result<TreeSnapshot, HierarchyApplicationError> {
         Ok(TreeSnapshot {
-            rows: self.rows.clone(),
+            rows: locked(&self.rows).clone(),
             teams: Vec::new(),
         })
     }
@@ -93,6 +97,7 @@ struct Journaled {
 struct ToggledTargets {
     stopped: Mutex<Option<AgentId>>,
     names: Vec<(AgentId, &'static str)>,
+    readiness: Mutex<Readiness>,
 }
 
 impl ToggledTargets {
@@ -108,6 +113,7 @@ impl ToggledTargets {
         Self {
             stopped: Mutex::new(None),
             names,
+            readiness: Mutex::new(Readiness::Ready),
         }
     }
 
@@ -115,6 +121,7 @@ impl ToggledTargets {
         Self {
             stopped: Mutex::new(Some(agent_id)),
             names,
+            readiness: Mutex::new(Readiness::Ready),
         }
     }
 }
@@ -130,12 +137,17 @@ impl DirectiveTarget for ToggledTargets {
             .find(|(known, _)| *known == agent_id)
             .map(|(_, name)| (*name).to_owned())
     }
+
+    fn readiness(&self, _agent_id: AgentId) -> Result<Readiness, String> {
+        Ok(*locked(&self.readiness))
+    }
 }
 
 /// Records every write; fails once told which agent cannot take text.
 struct RecordingWriter {
     written: Mutex<Vec<Written>>,
     failing: Mutex<Option<AgentId>>,
+    delivery: Mutex<Delivery>,
 }
 
 impl RecordingWriter {
@@ -143,6 +155,7 @@ impl RecordingWriter {
         Self {
             written: Mutex::new(Vec::new()),
             failing: Mutex::new(failing),
+            delivery: Mutex::new(Delivery::Submitted),
         }
     }
 
@@ -152,7 +165,7 @@ impl RecordingWriter {
 }
 
 impl DirectiveWriter for RecordingWriter {
-    fn write(&self, agent_id: AgentId, text: &str) -> Result<(), String> {
+    fn deliver(&self, agent_id: AgentId, text: &str) -> Result<Delivery, String> {
         if *locked(&self.failing) == Some(agent_id) {
             return Err("the session pipe is closed".to_owned());
         }
@@ -160,7 +173,31 @@ impl DirectiveWriter for RecordingWriter {
             agent_id,
             text: text.to_owned(),
         });
-        Ok(())
+        Ok(*locked(&self.delivery))
+    }
+}
+
+/// A steady clock the test moves by hand.
+struct ManualClock {
+    millis: AtomicI64,
+}
+
+impl ManualClock {
+    fn new() -> Self {
+        Self {
+            millis: AtomicI64::new(1_700_000_000_000),
+        }
+    }
+
+    fn advance(&self, span: std::time::Duration) {
+        let millis = i64::try_from(span.as_millis()).expect("small span");
+        self.millis.fetch_add(millis, AtomicOrdering::SeqCst);
+    }
+}
+
+impl DirectiveClock for ManualClock {
+    fn steady_now(&self) -> Timestamp {
+        Timestamp::from_unix_millis(self.millis.load(AtomicOrdering::SeqCst))
     }
 }
 
@@ -245,30 +282,70 @@ fn family() -> Family {
 
 struct Harness {
     handler: SendDirectiveHandler,
+    store: Arc<FixedRows>,
+    targets: Arc<ToggledTargets>,
     writer: Arc<RecordingWriter>,
     journal: Arc<RecordingJournal>,
     receipt: Arc<RecordingReceipt>,
+    clock: Arc<ManualClock>,
+}
+
+impl Harness {
+    fn set_readiness(&self, readiness: Readiness) {
+        *locked(&self.targets.readiness) = readiness;
+    }
+
+    /// Runs delivery rounds, a settle gap apart, until nothing waits.
+    fn deliver_all(&self) {
+        for _ in 0..=QUEUE_LIMIT {
+            self.clock.advance(SETTLE_AFTER_TYPING);
+            self.handler.deliver_waiting();
+        }
+    }
+
+    fn texts_written(&self) -> Vec<String> {
+        self.writer
+            .lines()
+            .into_iter()
+            .map(|line| line.text)
+            .collect()
+    }
+
+    fn failures(&self) -> Vec<String> {
+        self.journal
+            .attempts()
+            .into_iter()
+            .filter_map(|attempt| attempt.failure)
+            .collect()
+    }
 }
 
 fn harness_for(family: &Family, targets: ToggledTargets, writer: RecordingWriter) -> Harness {
+    let store = Arc::new(FixedRows {
+        rows: Mutex::new(family.rows.clone()),
+        tree_writes: Mutex::new(()),
+    });
+    let targets = Arc::new(targets);
     let writer = Arc::new(writer);
     let journal = Arc::new(RecordingJournal::default());
     let receipt = Arc::new(RecordingReceipt::default());
-    let handler = SendDirectiveHandler::new(
-        Arc::new(FixedRows {
-            rows: family.rows.clone(),
-            tree_writes: Mutex::new(()),
-        }),
-        Arc::new(targets),
-        writer.clone(),
-        journal.clone(),
-        receipt.clone(),
-    );
+    let clock = Arc::new(ManualClock::new());
+    let handler = SendDirectiveHandler::new(DirectivePorts {
+        store: store.clone(),
+        targets: targets.clone(),
+        writer: writer.clone(),
+        journal: journal.clone(),
+        receipt: receipt.clone(),
+        clock: clock.clone(),
+    });
     Harness {
         handler,
+        store,
+        targets,
         writer,
         journal,
         receipt,
+        clock,
     }
 }
 
@@ -280,10 +357,11 @@ fn a_directive_to_a_running_descendant_is_written_and_journaled_clean() {
         ToggledTargets::all_running(),
         RecordingWriter::new(None),
     );
-    harness
+    let outcome = harness
         .handler
         .handle(family.lead, family.member, "please deploy")
         .expect("descendant write ok");
+    assert_eq!(outcome, DirectiveOutcome::Submitted);
     let lines = harness.writer.lines();
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0].agent_id, family.member);
@@ -530,12 +608,246 @@ fn directives_sent_at_once_are_received_in_the_order_they_were_written() {
         }
     });
 
+    // The first takes the empty target; the others wait and follow.
+    harness.deliver_all();
     let texts = |lines: Vec<Written>| lines.into_iter().map(|line| line.text).collect::<Vec<_>>();
     assert_eq!(texts(harness.receipt.received()).len(), SENDERS);
     assert_eq!(
         texts(harness.receipt.received()),
         texts(harness.writer.lines())
     );
+}
+
+fn ready_harness(family: &Family) -> Harness {
+    harness_for(
+        family,
+        ToggledTargets::with_names(vec![(family.member, "Member")]),
+        RecordingWriter::new(None),
+    )
+}
+
+fn send(harness: &Harness, family: &Family, text: &str) -> DirectiveOutcome {
+    harness
+        .handler
+        .handle(family.lead, family.member, text)
+        .expect("accepted")
+}
+
+#[test]
+fn a_busy_target_queues_the_directive_and_types_nothing() {
+    let family = family();
+    let harness = ready_harness(&family);
+    harness.set_readiness(Readiness::Busy);
+
+    assert_eq!(
+        send(&harness, &family, "please deploy"),
+        DirectiveOutcome::Waiting { position: 1 }
+    );
+    assert_eq!(
+        send(&harness, &family, "then test"),
+        DirectiveOutcome::Waiting { position: 2 }
+    );
+
+    assert!(harness.writer.lines().is_empty());
+    assert!(harness.receipt.received().is_empty());
+    // The acceptance is the one entry of each directive (PB-2).
+    let attempts = harness.journal.attempts();
+    assert_eq!(attempts.len(), 2);
+    assert!(attempts.iter().all(|attempt| attempt.failure.is_none()));
+}
+
+#[test]
+fn a_waiting_directive_is_typed_once_the_target_is_ready() {
+    let family = family();
+    let harness = ready_harness(&family);
+    harness.set_readiness(Readiness::Busy);
+    send(&harness, &family, "please deploy");
+    harness.handler.deliver_waiting();
+    assert!(harness.writer.lines().is_empty());
+
+    harness.set_readiness(Readiness::Ready);
+    harness.handler.deliver_waiting();
+
+    assert_eq!(harness.texts_written(), ["please deploy"]);
+    assert_eq!(harness.receipt.received().len(), 1);
+    assert_eq!(harness.journal.attempts().len(), 1);
+}
+
+#[test]
+fn ten_waiting_directives_are_typed_once_each_in_the_order_sent() {
+    let family = family();
+    let harness = ready_harness(&family);
+    harness.set_readiness(Readiness::Busy);
+    let sent: Vec<String> = (0..10).map(|number| format!("task {number}")).collect();
+    for text in &sent {
+        send(&harness, &family, text);
+    }
+
+    harness.set_readiness(Readiness::Ready);
+    harness.deliver_all();
+
+    assert_eq!(harness.texts_written(), sent);
+}
+
+#[test]
+fn the_next_directive_waits_the_settle_gap_after_one_was_typed() {
+    let family = family();
+    let harness = ready_harness(&family);
+    assert_eq!(
+        send(&harness, &family, "first"),
+        DirectiveOutcome::Submitted
+    );
+    assert_eq!(
+        send(&harness, &family, "second"),
+        DirectiveOutcome::Waiting { position: 1 }
+    );
+    harness.handler.deliver_waiting();
+    assert_eq!(harness.texts_written(), ["first"]);
+
+    harness.clock.advance(SETTLE_AFTER_TYPING);
+    harness.handler.deliver_waiting();
+
+    assert_eq!(harness.texts_written(), ["first", "second"]);
+}
+
+#[test]
+fn a_full_queue_refuses_the_next_directive_and_records_it() {
+    let family = family();
+    let harness = ready_harness(&family);
+    harness.set_readiness(Readiness::Busy);
+    for number in 0..QUEUE_LIMIT {
+        send(&harness, &family, &format!("task {number}"));
+    }
+
+    let error = harness
+        .handler
+        .handle(family.lead, family.member, "one more")
+        .expect_err("the queue is full");
+
+    let reason = format!("the queue of Member is full: {QUEUE_LIMIT} directives wait");
+    assert_eq!(error, HierarchyApplicationError::Refused(reason.clone()));
+    assert_eq!(harness.failures(), [reason]);
+}
+
+#[test]
+fn a_directive_that_waits_ten_minutes_is_withdrawn_untyped() {
+    let family = family();
+    let harness = ready_harness(&family);
+    harness.set_readiness(Readiness::Busy);
+    send(&harness, &family, "please deploy");
+
+    harness.clock.advance(WAIT_LIMIT);
+    harness.handler.deliver_waiting();
+    harness.set_readiness(Readiness::Ready);
+    harness.deliver_all();
+
+    assert!(harness.writer.lines().is_empty());
+    assert_eq!(
+        harness.failures(),
+        ["withdrawn before typing: not typed within 10 minutes"]
+    );
+    let withdrawal = harness.journal.attempts().pop().expect("withdrawal");
+    assert_eq!(withdrawal.sender, family.lead);
+    assert_eq!(withdrawal.target, family.member);
+    assert_eq!(withdrawal.text, "please deploy");
+}
+
+#[test]
+fn a_target_that_stopped_withdraws_every_waiting_directive() {
+    let family = family();
+    let harness = ready_harness(&family);
+    harness.set_readiness(Readiness::Busy);
+    send(&harness, &family, "first");
+    send(&harness, &family, "second");
+
+    harness.set_readiness(Readiness::Gone);
+    harness.handler.deliver_waiting();
+
+    assert!(harness.writer.lines().is_empty());
+    assert_eq!(
+        harness.failures(),
+        [
+            "withdrawn before typing: Member is no longer running",
+            "withdrawn before typing: Member is no longer running",
+        ]
+    );
+}
+
+#[test]
+fn a_target_moved_out_of_the_subtree_withdraws_the_waiting_directive() {
+    let family = family();
+    let harness = ready_harness(&family);
+    harness.set_readiness(Readiness::Busy);
+    send(&harness, &family, "please deploy");
+    for row in locked(&harness.store.rows).iter_mut() {
+        if row.agent_id == family.member {
+            row.parent_agent_id = Some(family.other_lead);
+        }
+    }
+
+    harness.set_readiness(Readiness::Ready);
+    harness.handler.deliver_waiting();
+
+    assert!(harness.writer.lines().is_empty());
+    let failures = harness.failures();
+    assert_eq!(failures.len(), 1);
+    assert!(
+        failures[0].starts_with("withdrawn before typing: "),
+        "{failures:?}"
+    );
+}
+
+#[test]
+fn a_directive_whose_text_does_not_show_is_left_unsubmitted() {
+    let family = family();
+    let harness = ready_harness(&family);
+    *locked(&harness.writer.delivery) = Delivery::Unsubmitted;
+
+    assert_eq!(
+        send(&harness, &family, "please deploy"),
+        DirectiveOutcome::Unsubmitted
+    );
+
+    assert!(harness.receipt.received().is_empty());
+    let attempts = harness.journal.attempts();
+    assert_eq!(attempts.len(), 2);
+    assert_eq!(attempts[0].failure, None);
+    assert_eq!(attempts[1].failure.as_deref(), Some(UNSUBMITTED));
+}
+
+#[test]
+fn a_waiting_directive_whose_text_does_not_show_is_recorded_unsubmitted() {
+    let family = family();
+    let harness = ready_harness(&family);
+    harness.set_readiness(Readiness::Busy);
+    send(&harness, &family, "please deploy");
+    *locked(&harness.writer.delivery) = Delivery::Unsubmitted;
+
+    harness.set_readiness(Readiness::Ready);
+    harness.handler.deliver_waiting();
+
+    assert!(harness.receipt.received().is_empty());
+    assert_eq!(harness.failures(), [UNSUBMITTED]);
+}
+
+#[test]
+fn a_server_stop_withdraws_every_waiting_directive() {
+    let family = family();
+    let harness = ready_harness(&family);
+    harness.set_readiness(Readiness::Busy);
+    send(&harness, &family, "first");
+    send(&harness, &family, "second");
+
+    harness.handler.withdraw_all("the office server stopped");
+
+    assert_eq!(
+        harness.failures(),
+        [
+            "withdrawn before typing: the office server stopped",
+            "withdrawn before typing: the office server stopped",
+        ]
+    );
+    assert!(!harness.handler.wait_for_waiting(std::time::Duration::ZERO));
 }
 
 mod hold_guard {
@@ -574,11 +886,11 @@ mod hold_guard {
         }
     }
 
-    struct DefaultLimits;
+    struct FixedLimits(RateLimits);
 
-    impl RateLimitSource for DefaultLimits {
+    impl RateLimitSource for FixedLimits {
         fn limits(&self) -> RateLimits {
-            RateLimits::default()
+            self.0
         }
     }
 
@@ -622,11 +934,15 @@ mod hold_guard {
     }
 
     fn guarded(family: &Family, targets: ToggledTargets) -> Guarded {
+        guarded_with(family, targets, RateLimits::default())
+    }
+
+    fn guarded_with(family: &Family, targets: ToggledTargets, limits: RateLimits) -> Guarded {
         let counting = Arc::new(Counting::default());
         let service = Arc::new(
             HoldService::new(
                 Arc::new(NoStore),
-                Arc::new(DefaultLimits),
+                Arc::new(FixedLimits(limits)),
                 counting.clone(),
                 counting.clone(),
                 Arc::new(FixedClock),
@@ -738,5 +1054,60 @@ mod hold_guard {
                 .iter()
                 .all(|attempt| attempt.text == "please deploy")
         );
+    }
+
+    #[test]
+    fn a_hold_set_while_a_directive_waits_withdraws_it_and_counts_nothing() {
+        let family = family();
+        let guarded = guarded(&family, ToggledTargets::all_running());
+        guarded.harness.set_readiness(Readiness::Busy);
+        guarded
+            .harness
+            .handler
+            .handle(family.lead, family.member, "please deploy")
+            .expect("queued");
+        guarded.service.set_hold(HoldScope::Office).expect("hold");
+
+        guarded.harness.set_readiness(Readiness::Ready);
+        guarded.harness.handler.deliver_waiting();
+
+        assert!(guarded.harness.writer.lines().is_empty());
+        assert_eq!(
+            guarded.harness.failures(),
+            ["withdrawn before typing: the office is on hold"]
+        );
+        assert_eq!(guarded.counting.notifications.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn a_full_queue_refusal_never_counts_toward_a_rate_limit() {
+        let family = family();
+        let one_slot_over_the_queue = u32::try_from(QUEUE_LIMIT).expect("small") + 1;
+        let limits = RateLimits {
+            directive: one_slot_over_the_queue,
+            directive_target: one_slot_over_the_queue,
+            ..RateLimits::default()
+        };
+        let guarded = guarded_with(&family, ToggledTargets::all_running(), limits);
+        guarded.harness.set_readiness(Readiness::Busy);
+        let send = |text: &str| {
+            guarded
+                .harness
+                .handler
+                .handle(family.lead, family.member, text)
+        };
+        for number in 0..QUEUE_LIMIT {
+            send(&format!("task {number}")).expect("within the queue and the limit");
+        }
+        for _ in 0..AUTO_HOLD_REFUSAL_COUNT {
+            let refusal = send("one more").expect_err("the queue is full");
+            assert!(refusal.to_string().contains("is full"), "{refusal}");
+        }
+
+        assert_eq!(guarded.counting.notifications.load(Ordering::SeqCst), 0);
+        assert_eq!(guarded.service.list().agents.len(), 0);
+        // The last rate-window slot is still free: the refusals took none.
+        guarded.harness.handler.withdraw_all("emptied for the test");
+        send("the last slot").expect("one slot is left");
     }
 }

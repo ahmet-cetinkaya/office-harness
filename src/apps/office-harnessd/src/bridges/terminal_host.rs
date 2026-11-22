@@ -16,6 +16,7 @@ use terminal_domain::services::{
 };
 use terminal_domain::value_objects::{OutputKey, TerminalSize};
 
+use super::person_input::PersonInput;
 use super::terminal_events::TerminalEvents;
 use super::terminal_launcher::{LaunchError, PrepareRequest, SpawnRequest, TerminalLauncher};
 use super::typed_input::type_after_first_output;
@@ -37,6 +38,8 @@ pub struct TerminalHostBridge {
     /// The two values that tell an agent how to call the office back: the
     /// server binary and the file that names its port.
     call_helper: CallHelper,
+    /// Told when a startup prompt waits for the person (0012 A11).
+    person_input: PersonInput,
 }
 
 /// What an agent session needs to call the office back: the store that
@@ -74,7 +77,16 @@ impl TerminalHostBridge {
             log,
             calls: agent_calls.store,
             call_helper: agent_calls.helper,
+            person_input: PersonInput::default(),
         }
+    }
+
+    /// Shares the record that a pasted startup prompt waits for the person,
+    /// so directives hold back until the person types (0012 A11).
+    #[must_use]
+    pub fn with_person_input(mut self, person_input: PersonInput) -> Self {
+        self.person_input = person_input;
+        self
     }
 }
 
@@ -181,6 +193,7 @@ impl TerminalHost for TerminalHostBridge {
                 request.agent_id,
                 text,
                 self.log.clone(),
+                self.person_input.clone(),
             );
         }
         Ok(())
