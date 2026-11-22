@@ -6,6 +6,7 @@ fn screen(rows: &[&str]) -> ScreenView {
     ScreenView {
         rows: rows.iter().map(|row| (*row).to_owned()).collect(),
         cursor_row: rows.len().saturating_sub(1),
+        cursor_column: 0,
     }
 }
 
@@ -145,10 +146,11 @@ fn a_blank_row_ends_a_choice_list() {
     assert!(!shows_open_question(&screen(&idle)));
 }
 
-/// A screen whose cursor sits on the row at `cursor_row`.
-fn screen_with_cursor(rows: &[&str], cursor_row: usize) -> ScreenView {
+/// A screen whose cursor sits at `cursor_row` and `cursor_column`.
+fn screen_with_cursor(rows: &[&str], cursor_row: usize, cursor_column: usize) -> ScreenView {
     ScreenView {
         cursor_row,
+        cursor_column,
         ..screen(rows)
     }
 }
@@ -156,17 +158,32 @@ fn screen_with_cursor(rows: &[&str], cursor_row: usize) -> ScreenView {
 #[test]
 fn an_idle_prompt_below_wrapped_output_is_not_a_question() {
     let idle = ["● The answer wraps", "  onto a second row.", "› "];
-    assert!(!shows_open_question(&screen_with_cursor(&idle, 2)));
+    assert!(!shows_open_question(&screen_with_cursor(&idle, 2, 2)));
 }
 
 #[test]
 fn an_idle_prompt_with_a_hint_at_its_text_column_is_not_a_question() {
     let idle = ["Done.", "", "> draft text", "  ? for shortcuts"];
-    assert!(!shows_open_question(&screen_with_cursor(&idle, 2)));
+    assert!(!shows_open_question(&screen_with_cursor(&idle, 2, 12)));
 }
 
 #[test]
 fn a_choice_list_with_the_cursor_below_it_is_still_a_question() {
     let dialog = [" ❯ Leave", "   Stay and work here", "", " Enter to confirm"];
-    assert!(shows_open_question(&screen_with_cursor(&dialog, 3)));
+    assert!(shows_open_question(&screen_with_cursor(&dialog, 3, 1)));
+}
+
+/// The folder trust question of `claude`, read from a real run: the cursor
+/// is hidden and parked on the mark of the selected entry.
+#[test]
+fn a_choice_list_with_the_cursor_on_its_mark_is_still_a_question() {
+    let dialog = [
+        " Quick safety check: Is this a project you created or one you trust?",
+        "",
+        " \u{276f} No, exit",
+        "   Yes, I trust this folder",
+        "",
+        " Enter to confirm \u{b7} Esc to cancel",
+    ];
+    assert!(shows_open_question(&screen_with_cursor(&dialog, 2, 1)));
 }
