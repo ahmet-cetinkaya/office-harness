@@ -3,6 +3,7 @@
 mod agent_creator_ports;
 mod directive_ports;
 mod hold_ports;
+mod report_ports;
 mod subtree_ports;
 
 pub use agent_creator_ports::{
@@ -10,6 +11,7 @@ pub use agent_creator_ports::{
 };
 pub use directive_ports::{DirectiveJournal, DirectiveReceipt, DirectiveTarget, DirectiveWriter};
 pub use hold_ports::{HoldClock, HoldJournal, HoldNotifier, RateLimitSource};
+pub use report_ports::{PersonReports, ReportJournal};
 pub use subtree_ports::{
     SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover, SubtreeWorktrees, WorktreeReport,
 };

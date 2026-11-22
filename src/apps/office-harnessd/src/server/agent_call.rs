@@ -5,9 +5,11 @@ use std::sync::Arc;
 use access_application::commands::authenticate_agent_call::AgentGrant;
 use agent_application::common::actor_scope::ActorScope;
 use axum::extract::ws::{Message, WebSocket};
+use hierarchy_application::commands::send_report::{Report, ReportDelivery};
 use hierarchy_application::common::errors::HierarchyApplicationError;
 use hierarchy_domain::{
-    AgentAction, HierarchyError, Hold, Role, TeamId, TreeRow, check_descendant, is_descendant_of,
+    AgentAction, HierarchyError, Hold, ReportKind, Role, TeamId, TreeRow, check_descendant,
+    is_descendant_of,
 };
 use kernel::{Actor, AgentId};
 use serde_json::{Value, json};
@@ -24,7 +26,7 @@ use crate::bridges::take_recorded_events;
 /// other type is refused, so no agent reaches `terminal.*`, `agent.delete`,
 /// `team.*`, `hierarchy.*`, `server.*`, `settings.*`, `project.*`,
 /// `template.*`, or the additions of an agent.
-const ALLOWED_REQUESTS: [&str; 7] = [
+const ALLOWED_REQUESTS: [&str; 8] = [
     "agent.whoami",
     "agent.subtree",
     "agent.create",
@@ -32,10 +34,11 @@ const ALLOWED_REQUESTS: [&str; 7] = [
     "agent.new_task",
     "agent.stop",
     "directive.send",
+    "report.send",
 ];
 
 /// What the connection of an agent says about a request it will not run.
-const NOT_ALLOWED: &str = "an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants";
+const NOT_ALLOWED: &str = "an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants, and send reports to its parent or the person";
 
 /// The longest client text a refusal reason keeps: the type and a field key
 /// travel into the log and the record, so the limit keeps one hostile frame
@@ -49,6 +52,11 @@ const FORBIDDEN_FIELDS: [&str; 2] = ["actor", "caller"];
 
 /// The fields `directive.send` takes, and no others.
 const DIRECTIVE_FIELDS: [&str; 2] = ["target_agent_id", "text"];
+
+/// The fields `report.send` takes, and no others: none of them names an
+/// agent, so a report can reach only the sender's parent or the person
+/// (0015/FR-002).
+const REPORT_FIELDS: [&str; 3] = ["kind", "text", "for_person"];
 
 /// Why the gateway refused a frame, as the action record keeps it.
 enum Refusal {
@@ -107,6 +115,7 @@ async fn answer_request(state: &ServerState, grant: &AgentGrant, frame: &str) ->
                 }
                 "agent.subtree" => return answer_subtree(state, grant, &request).await,
                 "directive.send" => return answer_directive(state, grant, &request).await,
+                "report.send" => return answer_report(state, grant, &request).await,
                 "agent.create" | "agent.start" | "agent.new_task" | "agent.stop" => {
                     return answer_office_request(state, grant, &request).await;
                 }
@@ -249,6 +258,85 @@ async fn answer_directive(state: &ServerState, grant: &AgentGrant, request: &Req
             Response::failure(request.id, ErrorCode::Internal, message)
         }
     }
+}
+
+/// Runs `report.send` from the caller's actor (0015): the parse failures
+/// answer `invalid` and journal the refusal; the use case journals its own
+/// refusals and every accepted report.
+async fn answer_report(state: &ServerState, grant: &AgentGrant, request: &Request) -> Response {
+    let sender = grant.agent_id;
+    let report = match parse_report(sender, &request.fields) {
+        Ok(report) => report,
+        Err(message) => {
+            journal_refusal(state, sender, &message);
+            return Response::failure(request.id, ErrorCode::Invalid, message);
+        }
+    };
+    let handler = Arc::clone(&state.send_report);
+    let events = state.events.clone();
+    let sent = spawn_blocking(move || {
+        let _actor = ActorScope::enter(Actor::Agent(sender));
+        recorded_and_published(&events, || {
+            handler
+                .handle(&report)
+                .map_err(|error| (error.to_string(), wire_code(&error)))
+        })
+    })
+    .await;
+    match sent {
+        Ok(Ok(delivery)) => Response::success(request.id, report_answer(delivery)),
+        Ok(Err((message, code))) => Response::failure(request.id, code, message),
+        Err(error) => {
+            let message = format!("the request task failed: {error}");
+            journal_refusal(state, sender, &message);
+            Response::failure(request.id, ErrorCode::Internal, message)
+        }
+    }
+}
+
+/// The answer of an accepted report (0015 contract, `report.send` result).
+fn report_answer(delivery: ReportDelivery) -> Value {
+    match delivery {
+        ReportDelivery::NeedsYou => json!({"receiver": "person", "delivery": "needs_you"}),
+    }
+}
+
+/// Reads `{kind, text, for_person?}` and nothing else: a field the type does
+/// not take, such as one that names an agent, or a field of the wrong shape,
+/// is `invalid` (0015/FR-002, the closed allowlist of the contract).
+fn parse_report(
+    sender: AgentId,
+    fields: &serde_json::Map<String, Value>,
+) -> Result<Report, String> {
+    for key in fields.keys() {
+        if !REPORT_FIELDS.contains(&key.as_str()) {
+            return Err(format!(
+                "report.send does not take the field {:?}",
+                truncated(key, MAX_REFUSAL_TEXT_CHARS)
+            ));
+        }
+    }
+    let kind = fields
+        .get("kind")
+        .and_then(Value::as_str)
+        .ok_or("kind is not one of done, question, blocked, info")?;
+    let kind = ReportKind::from_wire(kind).map_err(|error| error.to_string())?;
+    let text = fields
+        .get("text")
+        .and_then(Value::as_str)
+        .ok_or("text is not a text")?
+        .to_owned();
+    let for_person = match fields.get("for_person") {
+        None => false,
+        Some(Value::Bool(for_person)) => *for_person,
+        Some(_) => return Err("for_person is not true or false".to_owned()),
+    };
+    Ok(Report {
+        sender,
+        kind,
+        text,
+        for_person,
+    })
 }
 
 /// Reads `{target_agent_id, text}` and nothing else: a field the type does

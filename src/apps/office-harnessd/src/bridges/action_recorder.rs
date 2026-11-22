@@ -79,5 +79,6 @@ fn action_kind(action: AgentAction) -> ActionKind {
         AgentAction::Directive => ActionKind::Directive,
         AgentAction::Refused => ActionKind::Refused,
         AgentAction::TaskText => ActionKind::TaskText,
+        AgentAction::Report => ActionKind::Report,
     }
 }

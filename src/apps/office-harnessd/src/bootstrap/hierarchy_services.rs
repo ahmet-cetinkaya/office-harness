@@ -10,11 +10,13 @@ use agent_infrastructure::persistence::{AgentRepository, SharedConnection};
 use hierarchy_application::commands::create_role_agent::CreateRoleAgentHandler;
 use hierarchy_application::commands::hold::HoldService;
 use hierarchy_application::commands::send_directive::SendDirectiveHandler;
+use hierarchy_application::commands::send_report::SendReportHandler;
 use hierarchy_application::commands::subtree::SubtreeHandler;
 use hierarchy_application::common::interfaces::{HierarchyStore, HoldStore};
 use hierarchy_application::common::ports::{
     AgentCreator, DirectiveJournal, HoldClock, HoldJournal, HoldNotifier, RateLimitSource,
-    SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover, SubtreeWorktrees, WorktreeReport,
+    ReportJournal, SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover, SubtreeWorktrees,
+    WorktreeReport,
 };
 use hierarchy_application::{CreateTeamHandler, DeleteTeamHandler, PlaceAgentHandler, TreeQuery};
 use hierarchy_infrastructure::persistence::migrations::{LEDGER_TABLE, SCRIPTS};
@@ -30,7 +32,8 @@ use super::{
 use crate::bridges::{
     AgentCreatorBridge, DirectiveJournalBridge, DirectiveReceiptBridge, DirectiveTargetBridge,
     DirectiveWriterBridge, HoldJournalBridge, HoldNotifierBridge, NeedsYouBridge,
-    NotificationBridge, RoleRequestsBridge, SettingsRateLimits, SteadyClock, SubtreeRequestsBridge,
+    NotificationBridge, PersonReportsBridge, RoleRequestsBridge, SettingsRateLimits, SteadyClock,
+    SubtreeRequestsBridge,
 };
 use crate::server::EventHub;
 
@@ -43,6 +46,9 @@ pub struct HierarchyServices {
     /// Sends one directive from a running agent to its member (FR-009). The
     /// agent-call server answers `directive.send` with it.
     pub send_directive: Arc<SendDirectiveHandler>,
+    /// Sends one report from a running agent to its parent or to the person
+    /// (0015). The agent-call server answers `report.send` with it.
+    pub send_report: Arc<SendReportHandler>,
     /// Journals the directive attempts and the gateway's own refusals into
     /// the shared action record (FR-011).
     pub directive_journal: Arc<DirectiveJournalBridge>,
@@ -149,7 +155,7 @@ pub fn build_hierarchy_services(
             Arc::new(DirectiveWriterBridge::new(Arc::clone(&terminal.runtime))),
             Arc::clone(&directive_journal) as Arc<dyn DirectiveJournal>,
             Arc::new(DirectiveReceiptBridge::new(
-                agents,
+                Arc::clone(&agents),
                 events.clone(),
                 alerts.clone(),
                 Arc::clone(&agent.task_order),
@@ -157,10 +163,20 @@ pub fn build_hierarchy_services(
         )
         .with_hold_guard(Arc::clone(&holds)),
     );
+    let send_report = Arc::new(
+        SendReportHandler::new(
+            Arc::clone(&store),
+            Arc::new(DirectiveTargetBridge::new(agents)),
+            Arc::clone(&directive_journal) as Arc<dyn ReportJournal>,
+            Arc::new(PersonReportsBridge::new(notifications.clone())),
+        )
+        .with_hold_guard(Arc::clone(&holds)),
+    );
     Ok(HierarchyServices {
         handlers,
         tree,
         send_directive,
+        send_report,
         directive_journal,
         holds,
         store,

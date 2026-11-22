@@ -164,6 +164,7 @@ impl Server {
             holds,
             hold_service: Arc::clone(&services.hierarchy.holds),
             send_directive: Arc::clone(&services.hierarchy.send_directive),
+            send_report: Arc::clone(&services.hierarchy.send_report),
             hierarchy_tree: Arc::clone(&services.hierarchy.tree),
             directive_journal: Arc::clone(&services.hierarchy.directive_journal),
             notification,
