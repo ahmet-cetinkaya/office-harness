@@ -7,7 +7,7 @@ import {
 } from "../../../core/api";
 import {
   announcementText,
-  EVENT_AUTO_HOLD,
+  isNeverReadOnArrival,
   sortRows,
   type NotificationRow,
 } from "../models/notification";
@@ -106,10 +106,10 @@ export function createNotificationController(
   async function handleCreated(event: ServerEvent): Promise<void> {
     const row = rowOf(event);
     if (row === null) return;
-    // An automatic hold is never on screen: the owner must see it even while
-    // watching that agent's terminal (0007, MODIFIED 0003/FR-006).
+    // A hold is never on screen: the owner must see it even while watching
+    // that agent's terminal (0007, MODIFIED 0003/FR-006; 0013/PB-6).
     const isOnScreen =
-      row.event !== EVENT_AUTO_HOLD &&
+      !isNeverReadOnArrival(row.event) &&
       row.agent_id === selectedAgentId() &&
       isWindowFocused();
     if (isOnScreen) {
