@@ -1,6 +1,6 @@
 # Requirements checklist: 0011-task-line
 
-Spec: `specs/changes/0011-task-line/SPEC.md` · Status: draft · Date: 2026-11-19 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, and `0003/` reference was checked against the approved specs on `main` at 2df9f59.
+Spec: `specs/changes/0011-task-line/SPEC.md` · Status: approved by the owner on 2026-11-19 · Date: 2026-11-19 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, and `0003/` reference was checked against the approved specs on `main` at 2df9f59.
 
 ## Content quality
 
@@ -40,5 +40,5 @@ Spec: `specs/changes/0011-task-line/SPEC.md` · Status: draft · Date: 2026-11-1
 ## Notes
 
 - **Item (e) of the MVP additions:** kept as its own change, not folded into 0008, because it changes the agent list (0003/FR-002), not the needs-you queue.
-- **Size rule:** 7 ADDED FRs and 1 MODIFIED FR.
+- **Size rule:** 7 ADDED FRs (FR-001 to FR-007) and 1 MODIFIED FR (0003/FR-002).
 

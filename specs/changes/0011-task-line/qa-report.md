@@ -30,7 +30,8 @@
 |---|---|---|
 | `cargo clippy -D warnings` | `agent-domain`, `agent-application`, `agent-infrastructure`, `agent-presentation`, `audit-domain`, `hierarchy-application`, `office-harnessd`, at 8910f6d | PASS (clean) |
 | `cargo test` | at 8910f6d: `agent-domain` 55, `agent-application` 102, `agent-infrastructure` 58 + 15 persistence, `agent-presentation` 23, `audit-domain` 5, `hierarchy-application` 58, `office-harnessd` lib 130, and every integration binary green | PASS |
-| `tests/task_text.rs` | 11 tests, run 4 times, at 8910f6d | PASS (11 passed each time) |
+| `tests/task_text.rs` | 11 tests, run 4 times, at 8910f6d | PASS (11 passed each time). The file now holds 13 tests (counted in the source at b56d2ad): `the_last_task_event_matches_the_list_after_a_user_edit_races_a_directive` and `the_last_task_event_matches_the_list_after_a_new_task_races_a_directive` came after this run and have no run recorded here. |
+| `tests/task_order.rs` | 1 test, `a_receipt_waits_for_a_user_edit_that_holds_the_task_order` (commit 6aca675, after this report); not run for this file | read in the source only |
 | `scripts/check-boundaries.sh` | at 8910f6d | PASS (boundaries ok) |
 | `bun test src` | desktop, T4 working tree: 238 pass, 0 fail (13 are the new `task-text.spec.ts` tests) | PASS |
 | Playwright | desktop, full suite, T4 working tree: 169 passed | PASS |
@@ -102,6 +103,8 @@ Paths are relative to the repository root. `H` is `src/apps/office-harnessd`, `D
 4. One more `AgentStore` fake needed `update_task`: the agent presentation handler tests.
 5. T4: the action record label for `task_text` is "Changed the task text" (the plan said "task text"), in the style of the other labels. The helper adds `taskRowText` (age and line in one function) beside `visibleText`, `taskLine`, and `taskAge`. The `\p{Cc}` property class replaces three hand-written ranges for C0, DEL, and C1 in `visibleText`, because the linter refuses control characters in a regular expression.
 6. T4: the line feed is kept by `visibleText` (it only breaks the line); `taskLine` cuts at it, and the details wrap it.
+
+7. After this report (commit 6aca675): a shared `TaskOrder` that `DirectiveReceiptBridge` and the agent gateway both take orders a directive's stored text and event against a user edit (the handler's `write_order` stays), and `tests/task_order.rs` proves it. A row runs its age clock only while it has a task, and an open task editor warns when the text changes under it (`D/e2e/task-line.spec.ts`). The plan's D5a records this.
 
 ## Manual QA
 
