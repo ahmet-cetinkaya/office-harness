@@ -227,7 +227,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 
 ### T7: Docs and QA (all criteria)
 
-- **Files:** `README.md` (Needs you, the jump shortcut, the collision note; update line 39, which says the app reads the focus shortcut when a terminal opens (with the shared state of D6 a change applies at the next app start); correct line 61, which still says `Ctrl+Shift+H` does not work in a terminal (stale since #80); add the jump key to line 41's list and to its fallback note), `specs/changes/0003-panel-practicality/contracts/panel-protocol.md` (a cross-reference to the new requests), `specs/changes/0008-needs-you-queue/qa-report.md`.
+- **Files:** `README.md` (Needs you, the jump shortcut, the collision note; update line 39, which says the app reads the focus shortcut when a terminal opens (with the shared state of D6 a change applies at the next app start); correct line 61, which still says `Ctrl+Shift+H` does not work in a terminal (stale since #80); add the jump key to line 41's list and to its fallback note), `specs/changes/archive/0003-panel-practicality/contracts/panel-protocol.md` (a cross-reference to the new requests), `specs/changes/0008-needs-you-queue/qa-report.md`.
 - **Work:** document the flow; record the QA rows for SC-001 to SC-005 and the edge cases with evidence. Hands-on rows (screen reader pass, 200 percent zoom, the window title on KDE, macOS, and Windows, the jump key on KDE and macOS with Fn) are recorded as BLOCKED until a person or an agent-run pass runs them, never PASS.
 - **Depends on:** T6.
 - **Acceptance:** every Traceability row has evidence or a recorded gap; `rg` finds no other project's name.
@@ -252,7 +252,7 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 | 4 | T4 | `M/notification/presentation/`, `H/server/`, `src/apps/office-harnessd/tests/` | `feat(server): answer needs_you requests and publish changes` |
 | 5 | T5 | `M/agent/`, `D/core/shortcuts/`, `D/modules/terminal/`, `src/apps/desktop/e2e/panel.spec.ts` | `feat(desktop): reserve the jump shortcut and drop the terminal flag` |
 | 6 | T6 | `D/`, `src/apps/desktop/src-tauri/` (including `build.rs`), `src/apps/desktop/e2e/` | `feat(desktop): show Needs you and jump to the top agent` |
-| 7 | T7 | `README.md`, `specs/changes/0003-panel-practicality/contracts/panel-protocol.md`, `specs/changes/0008-needs-you-queue/qa-report.md` | `docs(spec-0008): document Needs you and record QA` |
+| 7 | T7 | `README.md`, `specs/changes/archive/0003-panel-practicality/contracts/panel-protocol.md`, `specs/changes/0008-needs-you-queue/qa-report.md` | `docs(spec-0008): document Needs you and record QA` |
 
 ## QA and evidence
 

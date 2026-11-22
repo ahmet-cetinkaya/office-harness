@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 capability: office
 plan:
 supersedes:
@@ -187,3 +187,10 @@ A parent agent creates child agents and sends directives to them, as a CEO gives
 - The one-list overview, the project switcher, and notifications: change 0003.
 - R5 distributed machines, R7 office scene, and R8 meeting room.
 - **Split:** done by owner decision on 2026-11-15 (see Clarifications).
+
+## Deviations
+
+- **A5 is not shipped: leads do not move under a CEO that the user creates later.** Requirement (A5): when the user creates a CEO later, the existing team leads move under it. Shipped: a lead takes the CEO as its parent only when it is placed, and only if a CEO exists then (`resolved_parent` in `src/modules/hierarchy/domain/src/services/tree_rules.rs:128`). No code rewrites `parent_agent_id` of the leads when a CEO is placed; the only write of the place is for the one agent that is placed (`src/modules/hierarchy/infrastructure/src/services/agent_places.rs:55`). A lead that was placed before the CEO keeps no parent, so the descendant rule (`is_descendant_of`, `tree_rules.rs:171`) does not make it a descendant of the CEO. The tree view still shows the team. Reason: not recorded. This is a gap in the code, tracked as a code bug (see the QA report), not a decision to drop A5. Recorded 2026-11-23 (ACF-106 archive).
+- **`team.delete` has no requirement.** The contract has the request `team.delete`, and no FR of this spec names it. It is an extra request that serves the team part of FR-002 (a team the user can create, the user can also remove). It removes only the team record. Recorded 2026-11-23 (ACF-106 archive).
+- **0007 changed FR-009.** Change 0007 (hold switch and agent action limits) supersedes this FR-009 in part: a hold or a rate limit also refuses an agent action, and the refusal is recorded. See `supersedes:` in `specs/changes/archive/0007-hold-and-limits/SPEC.md` and the amendment note in the contract. Recorded 2026-11-23 (ACF-106 archive).
+- **The `plan:` front matter is empty.** The plan of this change is `.agents/work/0002-agent-hierarchy/plan.md` in the owner's checkout. The folder `.agents/` is git-ignored, so the file is not in the repository. The contract names decision D6 of that plan. Recorded 2026-11-23 (ACF-106 archive).

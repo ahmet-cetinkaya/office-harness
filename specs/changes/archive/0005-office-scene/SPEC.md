@@ -1,5 +1,5 @@
 ---
-status: approved (in the MVP, built after 0003)
+status: shipped
 capability: office
 plan:
 supersedes: 0003/FR-008 (in part)

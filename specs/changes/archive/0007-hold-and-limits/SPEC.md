@@ -1,7 +1,7 @@
 ---
-status: approved
+status: shipped
 capability: office
-plan:
+plan: specs/changes/archive/0007-hold-and-limits/PLAN.md
 supersedes: 0002/FR-009, 0003/FR-006 (in part)
 ---
 
@@ -154,7 +154,7 @@ An agent that sends directives or creates agents faster than a set limit gets it
 - **SC-002:** After the user presses the office hold action, 100% of agent-made actions are refused, measured from the first request after the action, while 100% of the user's typed keys still reach the terminals.
 - **SC-003:** After a server restart with the office on hold, 0 agent-made actions succeed until the user releases the hold.
 - **SC-004:** A looping agent that hits a limit 3 times within 60 seconds causes exactly 1 notification to the user and is on hold after the third refusal.
-- **SC-005:** The user holds the office from the keyboard in 1 key press from any panel view whose keyboard focus is outside a terminal (A9).
+- **SC-005:** The user holds the office from the keyboard in 1 key press from any panel view, a focused terminal included (A9, as changed by Deviations, D9 = b). The first approved text said "whose keyboard focus is outside a terminal".
 
 ## Edge cases
 
@@ -190,7 +190,7 @@ An agent that sends directives or creates agents faster than a set limit gets it
 - **A6:** The user releases an automatic hold the same way as a hold he set. A hold never ends on a timer.
 - **A7:** The notification of FR-008 uses the notification channel of 0003 and follows its settings.
 - **A8:** No loop detector is promised. The office promises the limits and the holds, not that it recognizes every loop.
-- **A9:** While a terminal has keyboard focus, every key goes to the CLI except the documented app shortcuts (0001/FR-017 as modified by 0003). The hold shortcut is not one of them in this change, so from a focused terminal the user presses the focus shortcut first. Adding the hold key to the terminal's app shortcuts needs an amendment of 0003.
+- **A9:** While a terminal has keyboard focus, every key goes to the CLI except the documented app shortcuts (0001/FR-017 as modified by 0003). The hold shortcut `Ctrl+Shift+H` is one of them: the owner decided D9 = b on 2026-11-19, so the hold key works while a terminal has focus (see Deviations, "Hold shortcut from a terminal"). The first approved text said the user presses the focus shortcut first.
 - **A10:** When more than one reason applies to one request, the office names the first in this order: the rules of 0002, the office hold, an agent hold, a rate limit. Only a refusal whose reason is a rate limit counts toward the automatic hold (A5).
 - **A11:** An office hold or release has no target agent. Its action record entry shows in an office record beside the office hold control, not in an agent's details.
 - **A12:** The holds and the limits are a brake against mistakes and loops, not a security boundary: an agent CLI runs as the user's OS user and can act outside the office (0002 A8, 0001 A7). A change of a limit is a settings change and is not recorded in the action record.
