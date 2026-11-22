@@ -16,7 +16,7 @@ When the background server stops while agents run (a crash, a logout, a machine 
 - Source of truth: `docs/PRD.md`. References such as `0001/FR-025` point to requirements of the approved changes.
 - This change depends on 0001 (statuses, sessions, continuing a session, the action record), 0002 (the tree of CEO, leads, and members), 0003 (notifications), and 0007 (the agent hold and the office as an actor).
 - The office still starts no agent by itself: the user opens the action and confirms it. 0001/FR-004 and the 0001 out-of-scope entry "Automatic restart of interrupted agents" stay as they are.
-- Research R1 (`research.md`) killed the server with SIGKILL while agents ran. A CLI that ends on the terminal hang-up was gone; a CLI that ignores the hang-up kept running as an orphan, and the next server start did not see it. Continuing a session after the restart worked. Sweeping such orphans is out of scope here (see Out of scope).
+- Research R1 (`research.md`) killed the server with SIGKILL while agents ran. A CLI that ends on the terminal hang-up was gone; a CLI that ignores the hang-up kept running as an orphan, and the next server start did not see it. Continuing a session after the restart worked. Research R3 found that `claude`, `codex`, and `gemini` end on the hang-up at their first screen, and that the background service of `opencode` keeps running. Sweeping such leftovers is out of scope here (see Out of scope); this change warns about them (FR-008).
 - The idea comes from an MIT-licensed reference office app; the pull request names it. No code is taken from it; this spec describes behavior only.
 - The requirements below describe behavior only. The plan decides how to build them.
 
@@ -32,6 +32,7 @@ When the background server stops while agents run (a crash, a logout, a machine 
 | Resume | Start an interrupted agent again: continue its last session where the CLI supports it, otherwise start a new session. |
 | Check period | The 20 seconds after a start in which the office watches whether the session ends by itself (A2). |
 | Ends by itself | The CLI's process ends without a stop, a new task, or a continue from the user, and without a server stop. |
+| Unclean stop | The server ended without ending its sessions, for example on SIGKILL, a crash, or a power loss. The next server start finds those sessions still open. |
 
 ## User stories
 
@@ -51,6 +52,8 @@ After a restart, the user sees how many agents are interrupted, opens one list, 
 4. Given the user unchecks one agent and confirms, When the office resumes, Then the unchecked agent stays `interrupted`.
 5. Given a CEO, a lead, and two members of that lead are interrupted, When the user confirms, Then both members start before the lead and the lead starts before the CEO.
 6. Given the user started one listed agent by hand after the list opened, When the user confirms, Then the office skips that agent and says that it is no longer interrupted.
+7. Given the server stopped uncleanly while two agents ran, When the user opens the action, Then the list marks those two agents and warns, before Confirm, that their CLI processes from before may still run and that resuming can start a second copy next to them.
+8. Given the server stopped cleanly, When the user opens the action, Then no agent is marked and no warning shows.
 
 ### US2: Start a new session when the CLI refuses to continue (Priority: P1)
 
@@ -91,6 +94,7 @@ When the new session also ends at once, the office stops trying, puts the agent 
 - **FR-005** (US3): IF a new session that this action started ends by itself within the check period, or does not start, THEN THE SYSTEM SHALL NOT start the agent again, SHALL put the agent on hold (0007/FR-003) with the office as actor and the reason, and SHALL notify the user once, naming the agent.
 - **FR-006** (US1, US2, US3): THE SYSTEM SHALL show the result of each checked agent as text as soon as it is known: checking (during the check period), continued, new session (with the reason), on hold (with the reason), or skipped (with the reason).
 - **FR-007** (US2): WHEN this action starts a new session instead of continuing the last one, for any reason, THE SYSTEM SHALL keep the reason with that start's entry in the agent's action record, so the user sees in the agent's details that the CLI's earlier context was not carried over.
+- **FR-008** (US1): WHERE the last session of a listed agent was still open when the server stopped uncleanly, THE SYSTEM SHALL mark that agent in the list and SHALL show, before the user confirms, a warning that the CLI processes of those agents from before the stop may still run and that resuming can start a second copy of a CLI next to them.
 
 ### PRESERVED
 
@@ -105,7 +109,7 @@ When the new session also ends at once, the office stops trying, puts the agent 
 **Flow:**
 
 1. After a server start, the panel header offers "Resume interrupted (N)".
-2. The user opens it. A dialog lists the interrupted agents in start order: name, role, what will happen, and "on hold" where it applies, each with a check box.
+2. The user opens it. A dialog lists the interrupted agents in start order: name, role, what will happen, and "on hold" where it applies, each with a check box. After an unclean stop, the agents whose last session was open are marked, and a warning above Confirm says that their CLI processes from before may still run.
 3. The user unchecks agents to leave out and confirms.
 4. The dialog shows each checked agent's result and updates it: checking, then continued, new session with the reason, on hold with the reason, or skipped with the reason.
 5. The user closes the dialog at any time. The office finishes the check periods without it, and the action record and the hold list keep what happened.
@@ -120,6 +124,7 @@ When the new session also ends at once, the office stops trying, puts the agent 
 | Loading the list | A loading text in the dialog. | FR-002 |
 | List | Each agent with its check box, what will happen, and "on hold" where it applies. | FR-002 |
 | Nothing checked | Confirm is unavailable, with the text that at least one agent must be checked. | Edge cases |
+| After an unclean stop | The affected agents are marked; a warning above Confirm says their CLI processes from before may still run and resuming can start a second copy. | FR-008 |
 | Results | Each checked agent with its result text, updated live. | FR-006 |
 | Request failed | The reason in the dialog; nothing started. | Edge cases |
 | Agent details after a new session | The action record entry of that start, with its actor (user or office) and the reason. | FR-004, FR-007 |
@@ -130,6 +135,7 @@ When the new session also ends at once, the office stops trying, puts the agent 
 
 - The action, the check boxes, confirm, and close work from the keyboard (0001/FR-028), focus is always visible, and Escape closes the dialog.
 - Each result is text, never color alone; a change of a result is announced to assistive technology.
+- The warning of FR-008 is text, is read with Confirm by assistive technology, and its agent marks are text, not color alone.
 - Text meets WCAG 2.2 AA contrast (4.5:1 for normal text, 3:1 for large text).
 
 ## Key entities
@@ -138,6 +144,7 @@ When the new session also ends at once, the office stops trying, puts the agent 
 |---|---|---|---|
 | Resume result | What the action did to one checked agent. | agent, result (checking, continued, new session, on hold, skipped), reason | Shown while the dialog is open; not stored. What happened stays in the action record and the hold list. |
 | Hold (extends 0007) | An agent hold. | reason, which can now also be a failed resume | Set by the office (FR-005). |
+| Session (extends 0001) | One run of an agent CLI. | end result: also "lost", when the session was still open at an unclean stop | As in 0001. |
 | Action record entry (extends 0001) | One recorded action. | reason (optional): why a start began a new session instead of a continue | Belongs to the agent it names (0001/FR-011). |
 
 ## Success criteria
@@ -147,6 +154,7 @@ When the new session also ends at once, the office stops trying, puts the agent 
 - **SC-003:** An agent whose CLI ends within 1 second of every start is started at most 2 times by one bulk action, is on hold after it, and causes exactly 1 notification.
 - **SC-004:** After 10 server starts that follow a SIGKILL of the server, 0 agents start without an action of the user.
 - **SC-005:** In a tree of 1 CEO, 2 leads, and 4 members, all interrupted, 100% of the members start before their lead and both leads start before the CEO.
+- **SC-006:** After a SIGKILL of the server while agents run, the warning of FR-008 shows and marks 100% of those agents; after a clean stop, it shows 0 times.
 
 ## Edge cases
 
@@ -165,7 +173,8 @@ When the new session also ends at once, the office stops trying, puts the agent 
 | The office is on hold. | Boundary | The action works (a user action); the resumed agents' agent-made actions stay refused (0007/FR-002). |
 | The hold of FR-005 cannot be stored. | Failure | The agent is not started again; the result says the hold failed and the storage failure shows (0001 storage alert). |
 | A CLI refuses the session but keeps running, showing an error. | Boundary | Not detected; the result is "continued" (A4). |
-| A CLI process from before a SIGKILL of the server still runs (R1). | Failure | Not detected. If it blocks the continue and the CLI ends, the new session of FR-004 follows (A5). |
+| A CLI process from before a SIGKILL of the server still runs (R1, R3). | Failure | Not found or ended by the office. The list marks the agents whose last session was open at the unclean stop and warns before Confirm (FR-008, A5). |
+| The server stopped cleanly. | Boundary | No agent is marked and no warning shows (US1 scenario 8). |
 | The desktop app cannot reach the background server or its token is rejected. | Unauthorized | The 0001 states show (0001/FR-026, 0001/FR-027). |
 
 ## Assumptions
@@ -174,7 +183,7 @@ When the new session also ends at once, the office stops trying, puts the agent 
 - **A2:** The check period is 20 seconds from each start. It is not a setting in this change.
 - **A3:** Any end of the CLI's process within the check period counts as ending by itself, whatever the exit code, because an interactive agent CLI that continues a session does not end on its own within seconds. A one-shot command that ends quickly is therefore started a second time and then put on hold; the user can uncheck it.
 - **A4:** The office does not read the CLI's output to find a refusal; it watches only whether the process ends. A refusal that leaves the CLI running shows in the agent's terminal.
-- **A5:** The office does not find or end CLI processes left over from an earlier server run (research R1). This change does not depend on it: a leftover that blocks a continue makes the continue fail, and FR-004 applies.
+- **A5:** The office does not find or end CLI processes left over from an earlier server run (research R1, R3). Nothing shows that a CLI refuses to continue a session that a leftover still runs, so a resume can run a second copy of a CLI next to the leftover, on the same session and in the same folder. The office does not prevent that; it warns before Confirm (FR-008) and leaves the choice to the user. Ending leftovers is a later change.
 - **A6:** Members start before their lead and leads before the CEO, so that a directive that a resumed lead or CEO sends at once finds its targets running (0002 edge case: a directive to an agent that is not running is refused). Agents outside the tree start with the members. Within one level, the order is the order of the agent list.
 - **A7:** The office starts the agents one after another without a pause between them.
 - **A8:** The fallback of FR-004 happens at most once per agent per action. The office does not try a second continue or a second new session.

@@ -15,6 +15,7 @@ After a server restart, the panel header offers "Resume interrupted (N)". A dial
 - `resume.plan`, `resume.start`, and the `resume.result` event in a new host gateway, which orders the agents, watches each start, and runs the fallback and the hold.
 - `HoldService::hold_by_office` and a `resume_hold` notification event.
 - An optional `detail` on action record entries, so each new session that replaces a continue keeps its reason in the agent's record (FR-007).
+- A session end result `lost` for sessions that an unclean stop left open, so the dialog can warn before Confirm that CLI processes from before may still run (FR-008).
 - The header action, the dialog, and its results in the desktop app.
 
 **Why this approach:**
@@ -75,10 +76,11 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - **D10 Reason in the action record** (FR-004, FR-007). Migration `0003_detail.sql` in `M/audit/infrastructure/src/persistence/migrations/` adds a nullable `detail TEXT` column to `audit_actions` (forward only, as the earlier audit migrations). `AgentActionEntry` gains `detail: Option<String>`. `ActionJournal::record_detailed(agent, action, failure, detail)` writes it, and `record` passes `None`. The audit presentation writes `detail` (null when absent) into entries and `action.recorded`.
   - `ResumeAgentHandler` builds the text itself from the sessions, so the host passes no free text. A new session that the CLI's lack of support caused reads "new session: <the continue refusal text>". A fallback reads "new session: the CLI ended <n> s after continuing the session of <start time>, exit code <c>", or "... did not start: <failure>".
   - Desktop: `action-record.svelte` shows the detail after the result text.
+- **D11 Unclean stop mark** (FR-008, research R1 and R3). `ExitResult::Lost`, stored as `lost`, means the session was still open when the server stopped uncleanly. `SessionRepository::mark_running_as_interrupted`, which runs only at server start (FR-004), writes `lost` instead of `interrupted`. A clean stop keeps writing `interrupted` through `InterruptAgentsHandler`. `continuation_of` treats `lost` like `interrupted`, since it special-cases only a spawn error. `resume.plan` sets `after_unclean_stop: true` on an agent whose last session is `lost`. The session list in the agent details shows `lost` as "lost: the server stopped uncleanly".
 - **D9 Desktop.**
   - `D/modules/resume/`: service (`resume.plan`, `resume.start`), model (result text), and a controller that keeps the results from `resume.result`.
   - Header button "Resume interrupted (N)" from the agent list, shown only for N > 0 (FR-001).
-  - `resume-dialog.svelte`: loading, the check list in plan order (name, role, plan text, "on hold"), Confirm disabled with "Check at least one agent" when nothing is checked, then the results list in a `role="status"` region. Escape and Close keep the server running. It reuses the existing dialog primitive and button styles; no new visuals.
+  - `resume-dialog.svelte`: loading, the check list in plan order (name, role, plan text, "on hold", "was running at an unclean stop"), a warning above Confirm when any listed agent has `after_unclean_stop` (linked to Confirm with `aria-describedby`), Confirm disabled with "Check at least one agent" when nothing is checked, then the results list in a `role="status"` region. Escape and Close keep the server running. It reuses the existing dialog primitive and button styles; no new visuals.
 
 ## Scope
 
@@ -92,10 +94,12 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 
 - `ResumeAgentHandler` with `resume(agent_id)` and `fall_back(agent_id, after_session)`; presentation parsing for `agent_id` and the optional `after_session`; wiring in `H/bootstrap/agent_services.rs`; `ORDERED_REQUESTS` and `STARTING_REQUESTS`.
 - The audit `detail` column, entry field, journal method, and JSON field (D10).
+- `ExitResult::Lost` and the start-up recovery change (D11).
 - **Acceptance:**
   - Unit tests prove each D1 branch: continue, new session when the CLI cannot continue, `conflict` when not interrupted, fallback only after an end by itself, `conflict` after a stop or a newer session, and the actor of the record.
   - Each new session of D1 has its D10 detail; a continue and every other action have none.
   - The migration test counts are updated.
+  - A session open at server start ends as `lost`; a clean stop ends it as `interrupted`; a `lost` session can be continued.
   - `cargo test -p agent-application -p agent-presentation -p audit-infrastructure -p audit-presentation` passes.
 
 ### T2 Office hold and `resume_hold` notification (D6, D7)
@@ -111,6 +115,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
   - a CLI that ends at once on `--resume` gets one new session recorded with actor `office` (SC-002);
   - a CLI that ends at once every time is started twice, held, and notified once (SC-003);
   - start order in a CEO, lead, and members tree (SC-005);
+  - `resume.plan` marks `after_unclean_stop` after a SIGKILL of the server and not after a clean `server.restart`, using the binary as `server_crash.rs` does (SC-006);
   - `skipped` for an agent no longer interrupted;
   - no fallback after a user stop inside the period;
   - agent callers get `resume.*` refused.
@@ -121,7 +126,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - Module, header button, dialog, wiring in `panel-view.svelte`, the action record detail (D10), and the mock-core requests and event.
 - **Acceptance:**
   - Vitest covers the model and the controller.
-  - Playwright `e2e/resume.spec.ts` covers: the button count and its absence; uncheck and confirm; live results, including `new_session` and `held`; the reason in the agent's action record; Confirm disabled with nothing checked; keyboard only, with Escape; an axe scan of the dialog with no violation.
+  - Playwright `e2e/resume.spec.ts` covers: the button count and its absence; uncheck and confirm; live results, including `new_session` and `held`; the reason in the agent's action record; the unclean-stop marks and the warning, and no warning without them; Confirm disabled with nothing checked; keyboard only, with Escape; an axe scan of the dialog with no violation.
   - `bun run check`, `lint`, `format:check`, `test`, and the Playwright suite pass.
 
 ### T5 Docs and evidence — depends on T1 to T4
