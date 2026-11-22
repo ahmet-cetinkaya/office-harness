@@ -14,7 +14,7 @@ use terminal_application::common::models::{
     Attachment, DeliveryStatus, LiveOutput, RunId, SubscriptionId,
 };
 use terminal_domain::events::TerminalEvent;
-use terminal_domain::value_objects::TerminalSize;
+use terminal_domain::value_objects::{ScreenView, TerminalSize};
 
 use crate::services::batch_confirmation::answer_after_interrupt;
 use crate::services::output_store::OutputStore;
@@ -249,6 +249,11 @@ impl TerminalSession {
     ///
     /// # Errors
     /// `NotRunning` when the child is gone, or `Io` when the resize fails.
+    #[must_use]
+    pub fn screen(&self) -> ScreenView {
+        locked(&self.core).emulator.screen_view()
+    }
+
     pub fn resize(&self, size: TerminalSize) -> Result<bool, TerminalRuntimeError> {
         let mut core = locked(&self.core);
         self.resize_locked(&mut core, size)

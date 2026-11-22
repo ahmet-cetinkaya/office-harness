@@ -28,7 +28,7 @@ Result: the agent (`agent_json`, with `task`). Errors: `invalid` for a missing o
 
 `{type:"agent.task", agent_id, task}` with `task` as above or `null`. It carries no `last_line` and no `status`, so a client patches only the task. It is published to every client after:
 
-- a directive is entered into the target's terminal (also when the directive came over an agent connection),
+- a directive is entered into the target's terminal (also when the directive came over an agent connection); amended by 0012: when it is submitted, text and Enter, not when it waits or is left unsubmitted,
 - a successful `agent.task.set`,
 - a successful `agent.new_task`, with `task: null`.
 

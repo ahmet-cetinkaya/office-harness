@@ -15,7 +15,7 @@ use terminal_infrastructure::services::{PortableTerminalRuntime, RuntimeSettings
 use terminal_presentation::handlers::TerminalHandlers;
 
 use super::StorageAlerts;
-use crate::bridges::{TerminalEvents, TerminalLauncher};
+use crate::bridges::{PersonInput, TerminalEvents, TerminalLauncher};
 use crate::config::Config;
 
 /// The terminal module, wired: the PTY runtime, the `terminal.*` handlers,
@@ -28,6 +28,8 @@ pub struct TerminalServices {
     /// The agents' own git worktrees (0010). It runs git with the same login
     /// environment the agents start with.
     pub worktrees: Arc<dyn WorktreeManager>,
+    /// What people type into each terminal, for the directive gate (0012).
+    pub person_input: PersonInput,
 }
 
 /// The environment a launched agent starts from: the server's own, and the
@@ -90,6 +92,7 @@ pub fn build_terminal_services(
         worktrees,
         runtime,
         events,
+        person_input: PersonInput::default(),
     })
 }
 
