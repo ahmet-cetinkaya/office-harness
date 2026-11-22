@@ -10,13 +10,13 @@ use agent_infrastructure::persistence::{AgentRepository, SharedConnection};
 use hierarchy_application::commands::create_role_agent::CreateRoleAgentHandler;
 use hierarchy_application::commands::hold::HoldService;
 use hierarchy_application::commands::send_directive::{DirectivePorts, SendDirectiveHandler};
-use hierarchy_application::commands::send_report::SendReportHandler;
+use hierarchy_application::commands::send_report::{ReportPorts, SendReportHandler};
 use hierarchy_application::commands::subtree::SubtreeHandler;
 use hierarchy_application::common::interfaces::{HierarchyStore, HoldStore};
 use hierarchy_application::common::ports::{
-    AgentCreator, DirectiveJournal, HoldClock, HoldJournal, HoldNotifier, RateLimitSource,
-    ReportJournal, SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover, SubtreeWorktrees,
-    WorktreeReport,
+    AgentCreator, DirectiveJournal, DirectiveTarget, HoldClock, HoldJournal, HoldNotifier,
+    RateLimitSource, ReportJournal, SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover,
+    SubtreeWorktrees, WorktreeReport,
 };
 use hierarchy_application::{CreateTeamHandler, DeleteTeamHandler, PlaceAgentHandler, TreeQuery};
 use hierarchy_infrastructure::persistence::migrations::{LEDGER_TABLE, SCRIPTS};
@@ -149,41 +149,42 @@ pub fn build_hierarchy_services(
         needs_you,
     )?;
     prune_holds(&holds, agents.as_ref(), log);
+    // One target bridge for directives and reports: both read whether the
+    // receiver runs and what it is called the same way.
+    let targets: Arc<dyn DirectiveTarget> = Arc::new(DirectiveTargetBridge::new(
+        Arc::clone(&agents),
+        Arc::clone(&terminal.runtime),
+        terminal.person_input.clone(),
+    ));
     let send_directive = Arc::new(
         SendDirectiveHandler::new(DirectivePorts {
             store: Arc::clone(&store),
-            targets: Arc::new(DirectiveTargetBridge::new(
-                Arc::clone(&agents),
-                Arc::clone(&terminal.runtime),
-                terminal.person_input.clone(),
-            )),
+            targets: Arc::clone(&targets),
             writer: Arc::new(DirectiveWriterBridge::new(
                 Arc::clone(&terminal.runtime),
                 terminal.person_input.clone(),
             )),
             journal: Arc::clone(&directive_journal) as Arc<dyn DirectiveJournal>,
             receipt: Arc::new(DirectiveReceiptBridge::new(
-                Arc::clone(&agents),
+                agents,
                 events.clone(),
                 alerts.clone(),
                 Arc::clone(&agent.task_order),
             )),
             clock: Arc::new(SteadyClock::default()),
         })
-        .with_hold_guard(Arc::clone(&holds)),
+        .with_hold_guard(Arc::clone(&holds))
+        .with_report_journal(Arc::clone(&directive_journal) as Arc<dyn ReportJournal>),
     );
     spawn_directive_delivery(&send_directive, events.clone());
     let send_report = Arc::new(
-        SendReportHandler::new(
-            Arc::clone(&store),
-            Arc::new(DirectiveTargetBridge::new(
-                agents,
-                Arc::clone(&terminal.runtime),
-                terminal.person_input.clone(),
-            )),
-            Arc::clone(&directive_journal) as Arc<dyn ReportJournal>,
-            Arc::new(PersonReportsBridge::new(notifications.clone())),
-        )
+        SendReportHandler::new(ReportPorts {
+            store: Arc::clone(&store),
+            targets,
+            journal: Arc::clone(&directive_journal) as Arc<dyn ReportJournal>,
+            person: Arc::new(PersonReportsBridge::new(notifications.clone())),
+            parent_delivery: Arc::clone(&send_directive),
+        })
         .with_hold_guard(Arc::clone(&holds)),
     );
     Ok(HierarchyServices {

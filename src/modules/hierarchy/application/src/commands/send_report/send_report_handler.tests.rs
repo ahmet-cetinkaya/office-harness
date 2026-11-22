@@ -6,12 +6,19 @@ use hierarchy_domain::{Hold, HoldScope, LimitRefusal, RateLimits, Role, TreeRow}
 use kernel::Timestamp;
 
 use super::*;
+use crate::commands::send_directive::{DirectivePorts, REPORT_SHARE};
 use crate::common::interfaces::{HoldStore, TreeExclusion, TreeSnapshot};
-use crate::common::ports::{HoldClock, HoldJournal, HoldNotifier, RateLimitSource};
+use crate::common::ports::{
+    Delivery, DirectiveClock, DirectiveJournal, DirectiveReceipt, DirectiveWriter, HoldClock,
+    HoldJournal, HoldNotifier, RateLimitSource, Readiness,
+};
 
 const CEO: u128 = 1;
 const LEAD: u128 = 2;
 const MEMBER: u128 = 3;
+const OTHER_LEAD: u128 = 4;
+/// The first of the extra members the queue-share test places under LEAD.
+const FIRST_EXTRA_MEMBER: u128 = 100;
 const NOW_MILLIS: i64 = 1_700_000_000_000;
 
 fn id(value: u128) -> AgentId {
@@ -32,15 +39,25 @@ fn row(agent: u128, role: Role, parent: Option<u128>) -> TreeRow {
     }
 }
 
-struct FixedRows {
-    rows: Vec<TreeRow>,
+fn company() -> Vec<TreeRow> {
+    vec![
+        row(CEO, Role::Ceo, None),
+        row(LEAD, Role::Lead, Some(CEO)),
+        row(OTHER_LEAD, Role::Lead, Some(CEO)),
+        row(MEMBER, Role::Member, Some(LEAD)),
+    ]
+}
+
+/// The tree as a test sets it; a test may move an agent between reads.
+struct SettableRows {
+    rows: Mutex<Vec<TreeRow>>,
     tree_writes: Mutex<()>,
 }
 
-impl HierarchyStore for FixedRows {
+impl HierarchyStore for SettableRows {
     fn snapshot(&self) -> Result<TreeSnapshot, HierarchyApplicationError> {
         Ok(TreeSnapshot {
-            rows: self.rows.clone(),
+            rows: locked(&self.rows).clone(),
             teams: Vec::new(),
         })
     }
@@ -88,18 +105,31 @@ impl HierarchyStore for FixedRows {
     }
 }
 
-/// Every agent runs unless it is the one named as stopped.
+/// Every agent runs and is ready unless a test says otherwise.
+#[derive(Default)]
 struct Targets {
-    stopped: Option<AgentId>,
+    stopped: Mutex<Option<AgentId>>,
+    busy: Mutex<bool>,
 }
 
 impl DirectiveTarget for Targets {
     fn is_running(&self, agent_id: AgentId) -> Result<bool, String> {
-        Ok(self.stopped != Some(agent_id))
+        Ok(*locked(&self.stopped) != Some(agent_id))
     }
 
     fn name_of(&self, agent_id: AgentId) -> Option<String> {
-        Some(format!("agent {agent_id}"))
+        Some(format!(
+            "agent-{}",
+            agent_id.to_string().get(..8).unwrap_or("?")
+        ))
+    }
+
+    fn readiness(&self, _agent_id: AgentId) -> Result<Readiness, String> {
+        Ok(if *locked(&self.busy) {
+            Readiness::Busy
+        } else {
+            Readiness::Ready
+        })
     }
 }
 
@@ -117,10 +147,14 @@ enum Entry {
     },
 }
 
+/// Records every port call a test reads back.
 #[derive(Default)]
 struct Recorder {
     entries: Mutex<Vec<Entry>>,
     delivered: Mutex<Vec<(AgentId, ReportKind, String)>>,
+    typed: Mutex<Vec<(AgentId, String)>>,
+    received: Mutex<Vec<AgentId>>,
+    directives: Mutex<Vec<(AgentId, Option<String>)>>,
 }
 
 impl ReportJournal for Recorder {
@@ -144,6 +178,25 @@ impl ReportJournal for Recorder {
 impl PersonReports for Recorder {
     fn deliver(&self, sender: AgentId, kind: ReportKind, text: &str) {
         locked(&self.delivered).push((sender, kind, text.to_owned()));
+    }
+}
+
+impl DirectiveWriter for Recorder {
+    fn deliver(&self, agent_id: AgentId, text: &str) -> Result<Delivery, String> {
+        locked(&self.typed).push((agent_id, text.to_owned()));
+        Ok(Delivery::Submitted)
+    }
+}
+
+impl DirectiveReceipt for Recorder {
+    fn received(&self, target: AgentId, _text: &str) {
+        locked(&self.received).push(target);
+    }
+}
+
+impl DirectiveJournal for Recorder {
+    fn record(&self, sender: AgentId, _target: AgentId, _text: &str, failure: Option<&str>) {
+        locked(&self.directives).push((sender, failure.map(str::to_owned)));
     }
 }
 
@@ -175,6 +228,8 @@ impl RateLimitSource for DefaultLimits {
     }
 }
 
+/// One clock for the holds and the queue; tests do not move it, so the
+/// settle gap after a typing is never over and the queue keeps its order.
 struct FixedClock;
 
 impl HoldClock for FixedClock {
@@ -182,6 +237,12 @@ impl HoldClock for FixedClock {
         Timestamp::from_unix_millis(NOW_MILLIS)
     }
 
+    fn steady_now(&self) -> Timestamp {
+        Timestamp::from_unix_millis(NOW_MILLIS)
+    }
+}
+
+impl DirectiveClock for FixedClock {
     fn steady_now(&self) -> Timestamp {
         Timestamp::from_unix_millis(NOW_MILLIS)
     }
@@ -202,12 +263,20 @@ impl HoldNotifier for Quiet {
 
 struct Harness {
     handler: SendReportHandler,
+    directives: Arc<SendDirectiveHandler>,
     recorder: Arc<Recorder>,
+    targets: Arc<Targets>,
+    store: Arc<SettableRows>,
     holds: Arc<HoldService>,
 }
 
-fn harness(stopped: Option<u128>) -> Harness {
+fn harness_with(rows: Vec<TreeRow>) -> Harness {
     let recorder = Arc::new(Recorder::default());
+    let targets = Arc::new(Targets::default());
+    let store = Arc::new(SettableRows {
+        rows: Mutex::new(rows),
+        tree_writes: Mutex::new(()),
+    });
     let holds = Arc::new(
         HoldService::new(
             Arc::new(NoHoldStore),
@@ -218,28 +287,38 @@ fn harness(stopped: Option<u128>) -> Harness {
         )
         .expect("hold service"),
     );
-    let store = Arc::new(FixedRows {
-        rows: vec![
-            row(CEO, Role::Ceo, None),
-            row(LEAD, Role::Lead, Some(CEO)),
-            row(MEMBER, Role::Member, Some(LEAD)),
-        ],
-        tree_writes: Mutex::new(()),
-    });
-    let handler = SendReportHandler::new(
-        store,
-        Arc::new(Targets {
-            stopped: stopped.map(id),
-        }),
-        recorder.clone(),
-        recorder.clone(),
-    )
+    let directives = Arc::new(
+        SendDirectiveHandler::new(DirectivePorts {
+            store: store.clone(),
+            targets: targets.clone(),
+            writer: recorder.clone(),
+            journal: recorder.clone(),
+            receipt: recorder.clone(),
+            clock: Arc::new(FixedClock),
+        })
+        .with_hold_guard(Arc::clone(&holds))
+        .with_report_journal(recorder.clone()),
+    );
+    let handler = SendReportHandler::new(ReportPorts {
+        store: store.clone(),
+        targets: targets.clone(),
+        journal: recorder.clone(),
+        person: recorder.clone(),
+        parent_delivery: Arc::clone(&directives),
+    })
     .with_hold_guard(Arc::clone(&holds));
     Harness {
         handler,
+        directives,
         recorder,
+        targets,
+        store,
         holds,
     }
+}
+
+fn harness() -> Harness {
+    harness_with(company())
 }
 
 fn report(sender: u128, text: &str, for_person: bool) -> Report {
@@ -251,9 +330,19 @@ fn report(sender: u128, text: &str, for_person: bool) -> Report {
     }
 }
 
+fn refusal_reasons(recorder: &Recorder) -> Vec<String> {
+    locked(&recorder.entries)
+        .iter()
+        .filter_map(|entry| match entry {
+            Entry::Refused { reason, .. } => Some(reason.clone()),
+            Entry::Accepted { .. } => None,
+        })
+        .collect()
+}
+
 #[test]
 fn the_ceo_reaches_the_person_with_the_text_in_visible_form() {
-    let harness = harness(None);
+    let harness = harness();
 
     let delivery = harness
         .handler
@@ -277,17 +366,175 @@ fn the_ceo_reaches_the_person_with_the_text_in_visible_form() {
 
 #[test]
 fn a_member_reaches_the_person_when_it_asks_for_the_person() {
-    let harness = harness(None);
+    let harness = harness();
 
     let delivery = harness.handler.handle(&report(MEMBER, "a key?", true));
 
     assert_eq!(delivery, Ok(ReportDelivery::NeedsYou));
     assert_eq!(locked(&harness.recorder.delivered).len(), 1);
+    assert!(locked(&harness.recorder.typed).is_empty());
+}
+
+#[test]
+fn a_report_to_a_ready_parent_is_typed_as_one_line_and_sets_no_task_text() {
+    let harness = harness();
+
+    let delivery = harness.handler.handle(&report(MEMBER, "done?\nyes", false));
+
+    assert_eq!(
+        delivery,
+        Ok(ReportDelivery::Parent(DirectiveOutcome::Submitted))
+    );
+    let typed = locked(&harness.recorder.typed).clone();
+    assert_eq!(typed.len(), 1);
+    assert_eq!(typed[0].0, id(LEAD));
+    assert!(
+        typed[0].1.starts_with("[report from agent-"),
+        "{}",
+        typed[0].1
+    );
+    assert!(
+        typed[0]
+            .1
+            .ends_with(&format!("({}): question] done?␊yes", id(MEMBER))),
+        "{}",
+        typed[0].1
+    );
+    assert!(locked(&harness.recorder.received).is_empty());
+    assert!(
+        locked(&harness.recorder.entries).contains(&Entry::Accepted {
+            sender: id(MEMBER),
+            receiver: id(LEAD),
+            text: "question: done?␊yes".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn a_report_to_a_busy_parent_waits_and_a_second_one_replaces_it_in_place() {
+    let harness = harness();
+    *locked(&harness.targets.busy) = true;
+
+    let first = harness.handler.handle(&report(MEMBER, "first", false));
+    let second = harness.handler.handle(&report(MEMBER, "second", false));
+
+    let waiting_first = Ok(ReportDelivery::Parent(DirectiveOutcome::Waiting {
+        position: 1,
+    }));
+    assert_eq!(first, waiting_first);
+    assert_eq!(second, waiting_first);
+    assert!(locked(&harness.recorder.typed).is_empty());
+    assert!(
+        refusal_reasons(&harness.recorder)
+            .contains(&"withdrawn before typing: replaced by a newer report".to_owned())
+    );
+
+    *locked(&harness.targets.busy) = false;
+    harness.directives.deliver_waiting();
+
+    let typed = locked(&harness.recorder.typed).clone();
+    assert_eq!(typed.len(), 1);
+    assert!(typed[0].1.ends_with("question] second"), "{}", typed[0].1);
+    assert!(locked(&harness.recorder.received).is_empty());
+}
+
+#[test]
+fn ten_waiting_reports_leave_room_for_a_directive_from_above_and_refuse_an_eleventh() {
+    let extra_members = u128::try_from(REPORT_SHARE).expect("small share") + 1;
+    let mut rows = company();
+    rows.extend(
+        (0..extra_members).map(|index| row(FIRST_EXTRA_MEMBER + index, Role::Member, Some(LEAD))),
+    );
+    let harness = harness_with(rows);
+    *locked(&harness.targets.busy) = true;
+    for index in 0..extra_members - 1 {
+        let accepted = harness
+            .handler
+            .handle(&report(FIRST_EXTRA_MEMBER + index, "done", false));
+        assert!(
+            matches!(accepted, Ok(ReportDelivery::Parent(_))),
+            "{accepted:?}"
+        );
+    }
+    let last_member = FIRST_EXTRA_MEMBER + extra_members - 1;
+
+    let refused = harness.handler.handle(&report(last_member, "late", false));
+    let directive = harness.directives.handle(id(CEO), id(LEAD), "next task");
+
+    let Err(HierarchyApplicationError::Refused(reason)) = refused else {
+        panic!("expected a no-room refusal, got {refused:?}");
+    };
+    assert!(reason.contains("no room for reports"), "{reason}");
+    assert_eq!(
+        directive,
+        Ok(DirectiveOutcome::Waiting {
+            position: REPORT_SHARE + 1
+        })
+    );
+}
+
+#[test]
+fn a_no_room_refusal_takes_no_slot_of_the_reports_limit() {
+    let extra_members = u128::try_from(REPORT_SHARE).expect("small share") + 1;
+    let mut rows = company();
+    rows.extend(
+        (0..extra_members).map(|index| row(FIRST_EXTRA_MEMBER + index, Role::Member, Some(LEAD))),
+    );
+    let harness = harness_with(rows);
+    *locked(&harness.targets.busy) = true;
+    for index in 0..extra_members - 1 {
+        harness
+            .handler
+            .handle(&report(FIRST_EXTRA_MEMBER + index, "done", false))
+            .expect("room");
+    }
+    let last_member = FIRST_EXTRA_MEMBER + extra_members - 1;
+    for _ in 0..=RateLimits::default().report {
+        assert!(
+            harness
+                .handler
+                .handle(&report(last_member, "late", false))
+                .is_err()
+        );
+    }
+
+    let for_person = harness.handler.handle(&report(last_member, "help", true));
+
+    assert_eq!(for_person, Ok(ReportDelivery::NeedsYou));
+}
+
+#[test]
+fn a_waiting_report_of_a_moved_sender_is_withdrawn_untyped() {
+    let harness = harness();
+    *locked(&harness.targets.busy) = true;
+    harness
+        .handler
+        .handle(&report(MEMBER, "status", false))
+        .expect("waits");
+    for row in locked(&harness.store.rows).iter_mut() {
+        if row.agent_id == id(MEMBER) {
+            row.parent_agent_id = Some(id(OTHER_LEAD));
+        }
+    }
+
+    *locked(&harness.targets.busy) = false;
+    harness.directives.deliver_waiting();
+
+    assert!(locked(&harness.recorder.typed).is_empty());
+    assert!(
+        refusal_reasons(&harness.recorder)
+            .iter()
+            .any(|reason| reason
+                .starts_with("withdrawn before typing: the sender is no longer a child")),
+        "{:?}",
+        refusal_reasons(&harness.recorder)
+    );
 }
 
 #[test]
 fn a_report_to_a_stopped_parent_is_refused_in_both_records() {
-    let harness = harness(Some(LEAD));
+    let harness = harness();
+    *locked(&harness.targets.stopped) = Some(id(LEAD));
 
     let refused = harness.handler.handle(&report(MEMBER, "done", false));
 
@@ -299,14 +546,14 @@ fn a_report_to_a_stopped_parent_is_refused_in_both_records() {
     ));
     assert!(matches!(
         locked(&harness.recorder.entries).as_slice(),
-        [Entry::Refused { sender, parent: Some(parent), .. }] if *sender == id(MEMBER) && *parent == id(LEAD)
+        [Entry::Refused { sender, parent: Some(parent), .. }]
+            if *sender == id(MEMBER) && *parent == id(LEAD)
     ));
-    assert!(locked(&harness.recorder.delivered).is_empty());
 }
 
 #[test]
 fn a_blank_or_long_report_is_refused_and_takes_no_limit_slot() {
-    let harness = harness(None);
+    let harness = harness();
     let long = "x".repeat(hierarchy_domain::REPORT_MAX_CHARS + 1);
 
     let blank = harness.handler.handle(&report(CEO, "  ", false));
@@ -334,15 +581,15 @@ fn a_blank_or_long_report_is_refused_and_takes_no_limit_slot() {
 
 #[test]
 fn the_report_past_the_limit_is_refused_with_the_limit_name() {
-    let harness = harness(None);
+    let harness = harness();
     for _ in 0..RateLimits::default().report {
         harness
             .handler
-            .handle(&report(CEO, "step", false))
+            .handle(&report(MEMBER, "step", false))
             .expect("within the limit");
     }
 
-    let refused = harness.handler.handle(&report(CEO, "one more", false));
+    let refused = harness.handler.handle(&report(MEMBER, "one more", true));
 
     let Err(HierarchyApplicationError::Refused(reason)) = refused else {
         panic!("expected a limit refusal, got {refused:?}");
@@ -351,25 +598,31 @@ fn the_report_past_the_limit_is_refused_with_the_limit_name() {
 }
 
 #[test]
-fn an_office_hold_refuses_a_report_for_the_person() {
-    let harness = harness(None);
+fn an_office_hold_refuses_a_report_to_the_person_and_to_a_parent() {
+    let harness = harness();
     harness
         .holds
         .set_hold(HoldScope::Office)
         .expect("office hold");
 
-    let refused = harness.handler.handle(&report(CEO, "status", false));
+    let to_person = harness.handler.handle(&report(CEO, "status", false));
+    let to_parent = harness.handler.handle(&report(MEMBER, "status", false));
 
     assert!(matches!(
-        refused,
+        to_person,
+        Err(HierarchyApplicationError::Refused(_))
+    ));
+    assert!(matches!(
+        to_parent,
         Err(HierarchyApplicationError::Refused(_))
     ));
     assert!(locked(&harness.recorder.delivered).is_empty());
+    assert!(locked(&harness.recorder.typed).is_empty());
 }
 
 #[test]
 fn a_hold_on_the_parent_refuses_its_childs_report() {
-    let harness = harness(None);
+    let harness = harness();
     harness
         .holds
         .set_hold(HoldScope::Agent(id(LEAD)))

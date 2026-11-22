@@ -3,19 +3,18 @@
 use std::sync::Arc;
 
 use hierarchy_domain::{
-    AgentAction, HierarchyError, ReportKind, ReportReceiver, TreeRow, report_receiver,
+    AgentAction, HierarchyError, ReportKind, ReportReceiver, TreeRow, report_line, report_receiver,
     report_record_text, validate_report_text, visible_text,
 };
 use kernel::AgentId;
 
 use crate::commands::hold::HoldService;
+use crate::commands::send_directive::{
+    DirectiveOutcome, ParentReport, SendDirectiveHandler, UNSUBMITTED,
+};
 use crate::common::errors::HierarchyApplicationError;
 use crate::common::interfaces::HierarchyStore;
 use crate::common::ports::{DirectiveTarget, PersonReports, ReportJournal};
-
-/// Why a report to a parent is refused until its delivery through the
-/// directive queue of 0012 is built (0015 PLAN T5).
-const PARENT_DELIVERY_NOT_BUILT: &str = "reports to a parent are not delivered yet";
 
 /// One report as the sender sent it: the text is the raw text, before its
 /// visible form.
@@ -32,6 +31,9 @@ pub struct Report {
 pub enum ReportDelivery {
     /// The report is on the sender's Needs you item.
     NeedsYou,
+    /// The report went to the parent's terminal, or waits in its queue, as
+    /// a directive does (0012/FR-004).
+    Parent(DirectiveOutcome),
 }
 
 /// Sends one report upward (0015): to the sender's parent, or to the person
@@ -45,28 +47,45 @@ pub struct SendReportHandler {
     targets: Arc<dyn DirectiveTarget>,
     journal: Arc<dyn ReportJournal>,
     person: Arc<dyn PersonReports>,
+    parent_delivery: Arc<SendDirectiveHandler>,
     hold_guard: Option<Arc<HoldService>>,
+}
+
+/// The ports a `SendReportHandler` talks to.
+pub struct ReportPorts {
+    pub store: Arc<dyn HierarchyStore>,
+    pub targets: Arc<dyn DirectiveTarget>,
+    pub journal: Arc<dyn ReportJournal>,
+    pub person: Arc<dyn PersonReports>,
+    /// The directive handler, whose queue a report to a parent shares
+    /// (0015/FR-004, PB-2).
+    pub parent_delivery: Arc<SendDirectiveHandler>,
 }
 
 impl SendReportHandler {
     #[must_use]
-    pub fn new(
-        store: Arc<dyn HierarchyStore>,
-        targets: Arc<dyn DirectiveTarget>,
-        journal: Arc<dyn ReportJournal>,
-        person: Arc<dyn PersonReports>,
-    ) -> Self {
+    pub fn new(ports: ReportPorts) -> Self {
+        let ReportPorts {
+            store,
+            targets,
+            journal,
+            person,
+            parent_delivery,
+        } = ports;
         Self {
             store,
             targets,
             journal,
             person,
+            parent_delivery,
             hold_guard: None,
         }
     }
 
-    /// Puts the hold and rate-limit gate in front of the delivery. The gate
-    /// journals no refusal; this handler journals each one (0007).
+    /// Puts the hold and rate-limit gate in front of a report for the
+    /// person. The gate journals no refusal; this handler journals each one
+    /// (0007). A report to a parent passes the gate of the directive handler
+    /// that owns the parent's queue.
     #[must_use]
     pub fn with_hold_guard(mut self, hold_guard: Arc<HoldService>) -> Self {
         self.hold_guard = Some(hold_guard);
@@ -76,8 +95,9 @@ impl SendReportHandler {
     /// # Errors
     /// `Storage` when the tree cannot be read or the parent's state cannot
     /// be read; `Invalid` naming the rule when the text breaks the report
-    /// rules or the parent is not running; `Refused` with the reason when a
-    /// hold or the reports limit stops it.
+    /// rules or the parent is not running; `Refused` with the reason when
+    /// the parent's queue has no room, or a hold or the reports limit stops
+    /// it; `Conflict` when the line cannot be typed.
     pub fn handle(&self, report: &Report) -> Result<ReportDelivery, HierarchyApplicationError> {
         let snapshot = self
             .store
@@ -90,27 +110,61 @@ impl SendReportHandler {
         if let Err(error) = validate_report_text(&report.text) {
             return Err(self.refused(report, parent, error.into()));
         }
-        if let Some(parent) = parent {
-            self.check_running(report, parent)?;
-        }
-        self.check_holds(report, parent, &snapshot.rows)?;
         let text = visible_text(&report.text);
         match parent {
-            None => {
-                self.person.deliver(report.sender, report.kind, &text);
-                self.journal.accepted(
-                    report.sender,
-                    report.sender,
-                    &report_record_text(report.kind, &text),
-                );
-                Ok(ReportDelivery::NeedsYou)
-            }
-            Some(parent) => Err(self.refused(
-                report,
-                Some(parent),
-                HierarchyApplicationError::Refused(PARENT_DELIVERY_NOT_BUILT.to_owned()),
-            )),
+            None => self.send_to_person(report, &text, &snapshot.rows),
+            Some(parent) => self.send_to_parent(report, parent, &text, &snapshot.rows),
         }
+    }
+
+    fn send_to_person(
+        &self,
+        report: &Report,
+        text: &str,
+        rows: &[TreeRow],
+    ) -> Result<ReportDelivery, HierarchyApplicationError> {
+        self.check_holds(report, rows)?;
+        self.person.deliver(report.sender, report.kind, text);
+        self.journal.accepted(
+            report.sender,
+            report.sender,
+            &report_record_text(report.kind, text),
+        );
+        Ok(ReportDelivery::NeedsYou)
+    }
+
+    /// Hands the report to the parent's queue as one line with the office's
+    /// heading (0015/FR-004, A4), and records it under the parent; a typed
+    /// report that got no Enter is recorded as unsubmitted too (0012/FR-003).
+    fn send_to_parent(
+        &self,
+        report: &Report,
+        parent: AgentId,
+        text: &str,
+        rows: &[TreeRow],
+    ) -> Result<ReportDelivery, HierarchyApplicationError> {
+        self.check_running(report, parent)?;
+        let name = self
+            .targets
+            .name_of(report.sender)
+            .unwrap_or_else(|| report.sender.to_string());
+        let record_text = report_record_text(report.kind, text);
+        let queued = ParentReport {
+            sender: report.sender,
+            parent,
+            line: report_line(&visible_text(&name), report.sender, report.kind, text),
+            record_text: record_text.clone(),
+        };
+        let outcome = self
+            .parent_delivery
+            .send_report(&queued, rows)
+            .map_err(|error| self.refused(report, Some(parent), error))?;
+        self.journal.accepted(report.sender, parent, &record_text);
+        if outcome == DirectiveOutcome::Unsubmitted {
+            self.journal
+                .refused(report.sender, Some(parent), &record_text, UNSUBMITTED);
+        }
+        Ok(ReportDelivery::Parent(outcome))
     }
 
     /// A report goes only to a running parent (FR-005). A store failure
@@ -142,25 +196,24 @@ impl SendReportHandler {
         ))
     }
 
-    /// The holds and the reports limit, after every report rule, so a report
-    /// the rules refuse never counts toward the limit (0007 A10). The target
-    /// is the parent, so a hold on it refuses too; a report for the person
-    /// has no target, and a hold on the sender or an ancestor refuses it.
+    /// The holds and the reports limit for a report for the person, after
+    /// every report rule, so a report the rules refuse never counts toward
+    /// the limit (0007 A10). It has no target: a hold on the sender or one of
+    /// its ancestors refuses it.
     fn check_holds(
         &self,
         report: &Report,
-        parent: Option<AgentId>,
         rows: &[TreeRow],
     ) -> Result<(), HierarchyApplicationError> {
         let Some(hold_guard) = &self.hold_guard else {
             return Ok(());
         };
         hold_guard
-            .guard(report.sender, AgentAction::Report, parent, rows)
+            .guard(report.sender, AgentAction::Report, None, rows)
             .map_err(|refusal| {
                 self.refused(
                     report,
-                    parent,
+                    None,
                     HierarchyApplicationError::Refused(refusal.reason),
                 )
             })
