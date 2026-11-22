@@ -143,6 +143,9 @@ impl DeleteAgentHandler {
         let (Some(worktree), DeleteWorktrees::Remove(confirmed)) = (&agent.worktree, choice) else {
             return Ok(());
         };
+        // Read again even for an agent that was already stopped: the user
+        // or a running member may have changed its worktree during the stop
+        // loop, and a refusal here comes before the first delete.
         self.stop_if_running(&agent)?;
         require_confirmed_after_stop(&agent, &self.status(worktree), confirmed)
     }
@@ -193,8 +196,12 @@ impl DeleteAgentHandler {
                 WorktreeStep::Keep(worktree)
             });
         };
-        require_confirmed(agent, &self.status(worktree), confirmed)?;
-        self.stop_if_running(agent)?;
+        let status = self.status(worktree);
+        require_confirmed(agent, &status, confirmed)?;
+        if !self.stop_if_running(agent)? {
+            // Nothing wrote between the read and now, so it is the last one.
+            return Ok(WorktreeStep::Remove(worktree, status));
+        }
         let status = self.status(worktree);
         require_confirmed_after_stop(agent, &status, confirmed)?;
         Ok(WorktreeStep::Remove(worktree, status))
@@ -257,14 +264,16 @@ impl DeleteAgentHandler {
         }
     }
 
-    fn stop_if_running(&self, agent: &Agent) -> Result<(), ApplicationError> {
+    /// Answers whether the agent was running, so a caller knows whether
+    /// its worktree may have changed since an earlier read.
+    fn stop_if_running(&self, agent: &Agent) -> Result<bool, ApplicationError> {
         if !agent.status.is_running() {
-            return Ok(());
+            return Ok(false);
         }
         let grace = Duration::from_millis(self.settings.load()?.stop_grace_ms);
         match self.terminals.stop(agent.id, grace) {
             // The child ended on its own a moment ago.
-            Ok(()) | Err(TerminalHostError::NotRunning) => Ok(()),
+            Ok(()) | Err(TerminalHostError::NotRunning) => Ok(true),
             Err(error) => Err(ApplicationError::Internal(error.to_string())),
         }
     }
