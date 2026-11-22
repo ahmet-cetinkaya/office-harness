@@ -9,13 +9,11 @@
 
 mod support;
 
-use std::collections::BTreeMap;
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
+use support::entries_under;
 use support::office_client::{Client, Office, error_text};
 use tokio::time::timeout;
 
@@ -577,26 +575,6 @@ async fn a_template_name_that_is_taken_is_a_conflict_and_an_unknown_id_is_not_fo
 
     assert_eq!(error_text(&taken).0, "conflict");
     assert_eq!(error_text(&missing).0, "not_found");
-}
-
-/// Every folder and file under `folders`, a file with its contents, so a
-/// test can tell that nothing there was created, changed, or deleted.
-fn entries_under(folders: &[&Path]) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
-    let mut entries = BTreeMap::new();
-    let mut pending: Vec<PathBuf> = folders.iter().map(|folder| folder.to_path_buf()).collect();
-    while let Some(folder) = pending.pop() {
-        for entry in fs::read_dir(&folder).expect("a readable folder") {
-            let path = entry.expect("a folder entry").path();
-            if path.is_dir() {
-                entries.insert(path.clone(), None);
-                pending.push(path);
-            } else {
-                let contents = fs::read(&path).expect("a readable file");
-                entries.insert(path, Some(contents));
-            }
-        }
-    }
-    entries
 }
 
 /// A1 and PB-3: agents made from templates are created, not started, and

@@ -5,7 +5,7 @@
 - **Date:** 2026-11-22.
 - **Build under test:** branch `feat/0010-agent-worktree`, the commit that adds the PR review fixes (T1 to T5 merged with `main` 2405c5a), toolchain 1.100.0. Every gate below ran on that tree.
 - **Overall status:** the automated evidence stands for FR-001 to FR-008, PB-1 to PB-5, and SC-001 to SC-005. FR-009 and the two modified 0009 requirements are covered by the template tests listed below. Rows that need a person, a real CLI, or a real app are BLOCKED. Nobody ran them.
-- **Status of this file:** the gate numbers come from runs on 2026-11-22. The CI result of the PR is not in this file.
+- **Status of this file:** the gate numbers come from runs on 2026-11-22. The CI result of the PR is not in this file. The test gaps of PR #109 were closed on 2026-11-23 (SC-005).
 
 ### Verdict words
 
@@ -69,7 +69,7 @@ Paths are relative to the repository root. `H` is `src/apps/office-harnessd`, `M
 | SC-002 | PASS (automated) | `ten_clean_worktrees_removed_leave_no_folder_record_or_branch`. |
 | SC-003 | PASS (automated) | `changes_are_removed_only_with_the_hash_the_user_confirmed`; `a_file_the_running_agent_writes_at_its_stop_refuses_the_removal`. |
 | SC-004 | PASS (automated) | `the_choice_is_offered_only_inside_a_repository`; `outside_a_repository_the_create_is_refused_and_makes_nothing`. |
-| SC-005 | PARTIAL (automated) | `a_worktree_survives_a_reopen` proves the columns survive a close and reopen of the database. No test restarts the whole server and reads the details. |
+| SC-005 | PASS (automated) | `a_worktree_survives_a_reopen` proves the columns survive a close and reopen of the database. `a_restart_of_the_server_keeps_every_branch_base_and_worktree_folder` (`H/tests/agent_worktree.rs`) stops the whole server and starts a new one on the same data folder: three agents with own worktrees list the same branch, base, folder, and working folder, an agent without one still lists none, and `agent.worktree_status` still reads each worktree. |
 
 ## Edge cases
 
@@ -130,8 +130,6 @@ Recorded in the spec's Deviations section and in the plan's decisions; none chan
 - The Windows timeout path (`taskkill /T /F`) has no test; the Unix path does. On Windows a helper whose parent already exited can outlive the timeout; only Unix ends the whole process group.
 - Accepted LOW review findings, not changed in this PR: a helper that keeps stderr open after git exits 0 reads as a timeout; a failed undo is not reported; two creates with the same name at once answer `internal` for the second, not `conflict`.
 - Fixed after this report: the status read ran the repository's clean filters and submodule configuration, now off (PLAN D1; PR #104 and #107); the start check did not confirm that the worktree's git folder belongs to the stored repository, now it does (PLAN D7, `worktree_link.rs`).
-- SC-005 has no whole-server restart test (see above).
 - Changed after this report (ACF-183): a single delete now reads a stopped agent's worktree once, and a subtree delete reads each member at most three times (PLAN D6, lock scope); a data folder inside a linked worktree of the repository is refused as one inside the repository. Tests added by ACF-183 (commit 6d93302, read from the repository on 2026-11-22; not run for this file): FR-004, the data folder inside a linked worktree: `GW`, `the_data_folder_inside_a_linked_worktree_is_refused`. FR-005 to FR-007, in `M/agent/application/src/commands/delete_agent/delete_agent_handler.tests.rs` (as changed by 222ffb1, PR #108, which removed the first test of this change, `stop_and_check_reads_nothing_for_an_agent_that_was_already_stopped`): `stop_and_check_reads_a_stopped_agent_again_and_refuses_a_change` (a stopped member is read again and a change is refused) and `a_clean_confirmed_worktree_is_removed_without_force_with_its_branch` (a single delete reads the worktree once).
-- `session.continue` has no direct test for a missing worktree; it uses the same check as `agent.start`, which is tested.
 - The desktop e2e does not cover the "confirm again" re-ask or the branch-name `conflict` refresh; unit tests cover the first.
 - The Windows path comparisons in the git tests run only in CI.

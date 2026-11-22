@@ -17,6 +17,7 @@ use agent_presentation::agent_status_event;
 use office_harnessd::bootstrap;
 use office_harnessd::server::{Server, ServerOptions};
 use serde_json::{Value, json};
+use support::entries_under;
 use support::office_client::{Client, Office, error_text};
 use support::wire_client::WireClient;
 
@@ -516,4 +517,41 @@ async fn items_survive_a_server_restart_and_the_interrupted_mark() {
     let after = list_items(&mut again).await;
     assert_eq!(after, before);
     assert_eq!(again.status_of(&waiting).await, "interrupted");
+}
+
+/// PB-2: the items come from the status and bell events that exist already;
+/// listing, dismissing, and reading them writes nothing in the home folders
+/// the CLIs read or in the project folder.
+#[tokio::test]
+async fn needs_you_writes_nothing_in_a_cli_configuration_or_the_project_folder() {
+    let office = Office::open().await;
+    office
+        .clis
+        .add("bell-cli", "echo hi; sleep 0.1; printf '\\a'; sleep 30");
+    office.clis.add("failing-cli", "exit 2");
+    let fake_folders = office.clis.tool_folder().parent().expect("fake folders");
+    let watched = [fake_folders, office.work_folder.path()];
+    let mut client = office.client().await;
+    let bell = client.create_agent(&office, "Ana", "bell-cli", None).await;
+    let failing = client
+        .create_agent(&office, "Raj", "failing-cli", None)
+        .await;
+    let before = entries_under(&watched);
+
+    client.start(&bell).await;
+    client.start(&failing).await;
+    let items = wait_for_items(&mut client, 2).await;
+    assert_eq!(kinds_of(&items).len(), 2);
+    let dismissed = client
+        .ask("needs_you.dismiss", json!({"agent_id": bell}))
+        .await;
+    assert_eq!(dismissed["ok"], true, "{dismissed}");
+    let read = client
+        .ask("notification.read_agent", json!({"agent_id": failing}))
+        .await;
+    assert_eq!(read["ok"], true, "{read}");
+    wait_for_items(&mut client, 0).await;
+
+    assert_eq!(entries_under(&watched), before);
+    office.serving.stop().await;
 }
