@@ -14,6 +14,7 @@ fn entry() -> ActionEntry {
             action: ActionKind::Start,
             result: ActionResult::Failed("no such folder".to_owned()),
             at: Timestamp::from_unix_millis(1_700_000_000_000),
+            detail: None,
         },
     }
 }
@@ -32,6 +33,7 @@ fn an_entry_has_the_actor_target_action_result_and_time() {
     );
     assert_eq!(json["action"], "start");
     assert_eq!(json["result"], "no such folder");
+    assert!(json["detail"].is_null());
     assert_eq!(json["at"], 1_700_000_000_000_i64);
 }
 
@@ -57,4 +59,15 @@ fn an_office_level_entry_has_the_office_actor_and_a_null_agent() {
     assert_eq!(json["actor"], "office");
     assert!(json["agent_id"].is_null());
     assert_eq!(json["action"], "hold");
+}
+
+#[test]
+fn a_detail_is_written_as_text() {
+    let mut entry = entry();
+    entry.record.detail = Some("new session: no earlier session".to_owned());
+
+    assert_eq!(
+        action_entry_json(&entry)["detail"],
+        "new session: no earlier session"
+    );
 }

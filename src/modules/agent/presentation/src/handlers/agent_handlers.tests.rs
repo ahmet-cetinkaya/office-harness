@@ -7,6 +7,7 @@ use agent_application::commands::create_agent::CreateAgentHandler;
 use agent_application::commands::create_project::CreateProjectHandler;
 use agent_application::commands::delete_agent::DeleteAgentHandler;
 use agent_application::commands::delete_project::DeleteProjectHandler;
+use agent_application::commands::resume_agent::ResumeAgentHandler;
 use agent_application::commands::set_office_additions::SetOfficeAdditionsHandler;
 use agent_application::commands::set_setting::SetSettingHandler;
 use agent_application::commands::set_task_text::SetTaskTextHandler;
@@ -426,6 +427,13 @@ fn use_cases(stores: &FakeStores) -> AgentUseCases {
             Arc::clone(&stores.sessions),
             Arc::clone(&stores.adapters),
             ender,
+            launcher.clone(),
+            journal.clone(),
+        ),
+        resume_agent: ResumeAgentHandler::new(
+            Arc::clone(&stores.agents_trait),
+            Arc::clone(&stores.sessions),
+            Arc::clone(&stores.adapters),
             launcher,
             journal.clone(),
         ),
@@ -660,4 +668,52 @@ fn a_task_text_request_without_text_names_the_field() {
         failure_of(&handled),
         ("invalid", "text is required".to_owned())
     );
+}
+
+#[test]
+fn a_resume_request_with_another_field_is_refused_by_name() {
+    let (_agents, handlers) = single_agent_office();
+
+    let handled = handlers.handle(&request(
+        "agent.resume",
+        &json!({ "agent_id": AgentId::generate().as_uuid_text(), "session_id": "x" }),
+    ));
+
+    assert_eq!(
+        failure_of(&handled),
+        (
+            "invalid",
+            "session_id is not a field of agent.resume".to_owned()
+        )
+    );
+}
+
+#[test]
+fn a_resume_of_an_agent_that_is_not_interrupted_is_a_conflict_without_events() {
+    let agent_id = AgentId::generate();
+    let (agents, handlers) = single_agent_office();
+    agents.insert_new(agent_id, AgentStatus::Stopped);
+
+    let handled = handlers.handle(&request(
+        "agent.resume",
+        &json!({ "agent_id": agent_id.as_uuid_text() }),
+    ));
+
+    assert_eq!(
+        failure_of(&handled),
+        ("conflict", "the agent is no longer interrupted".to_owned())
+    );
+    assert_eq!(handled.events.len(), 0);
+}
+
+#[test]
+fn a_resume_of_an_unknown_agent_is_not_found() {
+    let (_agents, handlers) = single_agent_office();
+
+    let handled = handlers.handle(&request(
+        "agent.resume",
+        &json!({ "agent_id": AgentId::generate().as_uuid_text() }),
+    ));
+
+    assert_eq!(failure_of(&handled).0, "not_found");
 }

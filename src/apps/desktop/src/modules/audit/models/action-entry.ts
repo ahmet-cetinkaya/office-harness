@@ -9,6 +9,8 @@ export interface ActionEntry {
   action: string;
   result: string;
   at: number;
+  /** Why a start began a new session instead of a continue; null otherwise. */
+  detail: string | null;
 }
 
 export const ACTION_OK = "ok";

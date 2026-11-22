@@ -7,6 +7,7 @@ use crate::errors::AgentError;
 
 const SIGNAL: &str = "signal";
 const INTERRUPTED: &str = "interrupted";
+const LOST: &str = "lost";
 const SPAWN_ERROR_PREFIX: &str = "spawn-error: ";
 
 /// How a session ended.
@@ -19,6 +20,9 @@ pub enum ExitResult {
     SpawnError(String),
     /// The server stopped while the session ran (FR-004).
     Interrupted,
+    /// The session was still open when the server stopped without a clean
+    /// stop; its CLI may still run (spec 0013 FR-008).
+    Lost,
 }
 
 impl fmt::Display for ExitResult {
@@ -28,6 +32,7 @@ impl fmt::Display for ExitResult {
             Self::Signal => formatter.write_str(SIGNAL),
             Self::SpawnError(text) => write!(formatter, "{SPAWN_ERROR_PREFIX}{text}"),
             Self::Interrupted => formatter.write_str(INTERRUPTED),
+            Self::Lost => formatter.write_str(LOST),
         }
     }
 }
@@ -41,6 +46,9 @@ impl FromStr for ExitResult {
         }
         if text == INTERRUPTED {
             return Ok(Self::Interrupted);
+        }
+        if text == LOST {
+            return Ok(Self::Lost);
         }
         if let Some(reason) = text.strip_prefix(SPAWN_ERROR_PREFIX) {
             return Ok(Self::SpawnError(reason.to_owned()));

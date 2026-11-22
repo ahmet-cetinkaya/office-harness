@@ -39,12 +39,11 @@ impl Office {
     }
 
     pub async fn open_with(clis: FakeClis) -> Self {
-        let serving = serve_office_with(
-            ServerOptions::default(),
-            clis.login_setup(),
-            Some(QUIET_PERIOD_MS),
-        )
-        .await;
+        Self::open_with_options(clis, ServerOptions::default()).await
+    }
+
+    pub async fn open_with_options(clis: FakeClis, options: ServerOptions) -> Self {
+        let serving = serve_office_with(options, clis.login_setup(), Some(QUIET_PERIOD_MS)).await;
         Self {
             serving,
             clis,

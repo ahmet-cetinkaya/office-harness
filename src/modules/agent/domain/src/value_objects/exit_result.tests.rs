@@ -9,6 +9,7 @@ fn every_result_survives_its_text() {
         ExitResult::Code(137),
         ExitResult::Signal,
         ExitResult::Interrupted,
+        ExitResult::Lost,
         ExitResult::SpawnError("not found".to_owned()),
     ];
     for result in results {
@@ -22,4 +23,11 @@ fn an_unknown_text_is_refused() {
         "later".parse::<ExitResult>(),
         Err(AgentError::UnknownExitResult("later".to_owned()))
     );
+}
+
+#[test]
+fn lost_is_stored_as_lost_and_differs_from_interrupted() {
+    assert_eq!(ExitResult::Lost.to_string(), "lost");
+    assert_eq!("lost".parse(), Ok(ExitResult::Lost));
+    assert_ne!(ExitResult::Lost, ExitResult::Interrupted);
 }

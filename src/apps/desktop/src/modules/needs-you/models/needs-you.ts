@@ -2,7 +2,12 @@
 
 /** The event kinds of an item (contract `needs_you.list`). */
 export type NeedsYouKind =
-  "failed" | "waiting_for_input" | "bell" | "auto_hold" | "exited";
+  | "failed"
+  | "waiting_for_input"
+  | "bell"
+  | "auto_hold"
+  | "resume_hold"
+  | "exited";
 
 /** One item of the list, as the server sends it (contract `needs_you.list`). */
 export interface NeedsYouItem {
@@ -33,6 +38,7 @@ const KINDS: readonly string[] = [
   "waiting_for_input",
   "bell",
   "auto_hold",
+  "resume_hold",
   "exited",
 ];
 const MS_PER_SECOND = 1_000;
@@ -99,6 +105,10 @@ export function eventText(item: NeedsYouItem): string {
       return item.detail === null
         ? "put on hold by the office"
         : `put on hold by the office, limit: ${item.detail}`;
+    case "resume_hold":
+      return item.detail === null
+        ? "was put on hold after its resume failed"
+        : `was put on hold after its resume failed: ${item.detail}`;
     case "bell":
       return "bell";
     case "exited":

@@ -16,7 +16,7 @@ No fields. Result:
 { items: [item] }
 item := {
   agent_id: string,
-  kind: "failed"|"waiting_for_input"|"bell"|"auto_hold"|"exited",
+  kind: "failed"|"waiting_for_input"|"bell"|"auto_hold"|"resume_hold"|"exited",   // resume_hold amended by 0013
   detail: string?,                  // null when the kind has none
   first_event_at: integer,          // Unix ms; the wait time counts from it
   latest_at: integer,               // Unix ms
@@ -24,7 +24,7 @@ item := {
 }
 ```
 
-The items come in the FR-003 order: group (`failed`; then `waiting_for_input`, `bell`, `auto_hold`; then `exited`), then `first_event_at` ascending, then agent name. The list holds at most one item per agent. The list is empty when no agent waits (FR-008).
+The items come in the FR-003 order: group (`failed`; then `waiting_for_input`, `bell`, `auto_hold`, `resume_hold`; then `exited`), then `first_event_at` ascending, then agent name. The list holds at most one item per agent. The list is empty when no agent waits (FR-008).
 
 `detail` per `kind` (data model, D3): `waiting_for_input` the quiet period in ms that the terminal runtime started with; `failed` the `agent.status` frame's `detail` exactly as the server writes it, for example "the command ended with exit code 2", or the launcher's error text for a start failure; `exited` null, because an exit with code 0 carries no detail; `auto_hold` the limit name; `bell` null. The desktop shows `kind` and `detail` together and does not parse `detail`. It computes the wait time from `first_event_at` (FR-002).
 

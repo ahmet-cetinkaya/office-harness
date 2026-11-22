@@ -10,6 +10,8 @@
     variant?: "primary" | "secondary" | "danger";
     type?: "button" | "submit";
     element?: HTMLButtonElement | null;
+    /** The id of the text that explains the button, for assistive tech. */
+    describedby?: string;
   }
 
   let {
@@ -19,6 +21,7 @@
     variant = "primary",
     type = "button",
     element = $bindable(null),
+    describedby,
   }: Props = $props();
 
   // One accent (blue-700, 6.7:1 against white) marks the main action and
@@ -39,6 +42,7 @@
   {type}
   {onclick}
   {disabled}
+  aria-describedby={describedby}
   class={cn(base, variants[variant])}
 >
   {@render children()}

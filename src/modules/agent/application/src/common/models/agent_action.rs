@@ -26,5 +26,7 @@ pub struct AgentActionEntry {
     pub action: AgentAction,
     /// The error text, or `None` when the action worked.
     pub failure: Option<String>,
+    /// Why the action happened, when the action alone does not say it.
+    pub detail: Option<String>,
     pub at: Timestamp,
 }
