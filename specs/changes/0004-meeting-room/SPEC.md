@@ -1,7 +1,7 @@
 ---
 status: approved (post-MVP, built after the MVP)
 capability: office
-plan:
+plan: specs/changes/0004-meeting-room/PLAN.md
 supersedes: 0003/FR-006 (in part)
 ---
 
@@ -16,7 +16,7 @@ The owner liked meeting rooms in other agent offices: he calls chosen agents tog
 ## Context
 
 - Source of truth: `docs/PRD.md`. The IDs `R1` to `R9` refer to its section 4. R8 is post-MVP; this change is built after the MVP.
-- This change depends on 0001 (agents, statuses, terminals, the desktop app) and on 0003 (the panel, from which the meeting room opens and in which the user opens an agent's terminal). It does not depend on 0002. It changes one behavior of 0003 (see MODIFIED). References such as `0001/FR-014` and `0003/FR-004` point to requirements in those specs.
+- This change depends on 0001 (agents, statuses, terminals, the desktop app) and on 0003 (the panel, from which the meeting room opens and in which the user opens an agent's terminal). It does not depend on 0002. It changes one behavior of 0003, in the form that 0007 restated (see MODIFIED). References such as `0001/FR-014` and `0003/FR-004` point to requirements in those specs.
 - Stack decision, made by the owner on 2026-11-15. It is a recorded decision, not a requirement of this spec: a separate Rust background server, `office-harnessd`, runs as an always-on user service, owns the terminals through portable-pty, keeps its state in SQLite, and accepts clients over a loopback WebSocket with a token. A thin Tauri v2 desktop app with an xterm.js terminal connects to it.
 - The requirements below describe behavior only. The plan decides how to build them.
 - The owner approved this spec on 2026-11-17. The decisions in Clarifications are approved as written and settle D-11; the owner may amend them.
@@ -111,7 +111,7 @@ The outcome is `completed` when every participant answered and the facilitator r
 
 ### MODIFIED
 
-- **0003/FR-006** (US2): WHILE an agent is a participant of a running meeting, THE SYSTEM SHALL NOT notify the user when its status changes to `waiting for input`; exits, failures, and bells still notify as in 0003.
+- **0003/FR-006** (US2), as restated by 0007: WHILE an agent is a participant of a running meeting, THE SYSTEM SHALL NOT notify the user when its status changes to `waiting for input`; exits, failures, bells, and the automatic hold of 0007/FR-008 still notify as 0003/FR-006 and 0007 state.
 
 ### PRESERVED
 
@@ -217,7 +217,7 @@ The owner approved these decisions on 2026-11-17. They settle D-11 in `docs/PRD.
 - Q: Can agents with the status `working` join? → A: No (FR-003). Their terminals take the user's or the CLI's work, and a brief would mix into it.
 - Q: How many rounds? → A: One (A2).
 - Q: Are presets user-defined? → A: No (A4).
-- Q: Does a meeting notify the user? → A: Not for the participants' return to `waiting for input` (MODIFIED); a meeting with 8 agents would send about 9 notifications otherwise. The user started the meeting and watches its view, and the record is saved at the end.
+- Q: Does a meeting notify the user? → A: Not for the participants' return to `waiting for input` (MODIFIED); exits, failures, bells, and the automatic hold of 0007 still notify; a meeting with 8 agents would send about 9 notifications otherwise. The user started the meeting and watches its view, and the record is saved at the end.
 - Q: Does a meeting need agents of one project? → A: No (Edge cases).
 - Q: Is a clean answer promised for every CLI? → A: No. A1 narrows the promise; SC-007 measures it per CLI.
 
@@ -227,7 +227,7 @@ The owner approved these decisions on 2026-11-17. They settle D-11 in `docs/PRD.
 - User-defined presets and changing the time limit.
 - Search across meeting records, and export to a file.
 - A built-in facilitator that is not one of the user's agents.
-- The R7 office scene, R5 distributed machines, and the agent hierarchy of 0002 (for example, inviting a whole team in one action).
+- The R7 office scene, R5 distributed machines, and the agent hierarchy of 0002 (for example, inviting a whole team in one action, or sending the brief as a 0002 directive: the brief goes to each terminal directly).
 - Scheduling meetings in advance or repeating them.
 - Turning the redraws of a full-screen CLI into a clean answer.
 - A notification when a meeting ends: the meeting view and the record show it (reversible: a later change can add one).
