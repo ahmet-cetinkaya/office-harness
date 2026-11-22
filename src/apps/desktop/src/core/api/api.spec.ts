@@ -94,4 +94,47 @@ describe("createTauriCoreClient", () => {
 
     expect(received).toEqual([{ status: "loading" }, { status: "connected" }]);
   });
+
+  test("hands each server event to every listener in arrival order over one channel", async () => {
+    const { invocations, callbacks } = installTauri(() => undefined);
+    const client = createTauriCoreClient();
+    const seen: string[] = [];
+
+    await client.watchEvents((event) => seen.push(`first:${event.type}`));
+    await client.watchEvents((event) => seen.push(`second:${event.type}`));
+    const watches = invocations.filter(
+      (invocation) => invocation.command === "watch_events",
+    );
+    const channelId = (watches[0].arguments_.onEvent as { id: number }).id;
+    callbacks.get(channelId)?.({
+      index: 0,
+      message: { type: "notification.created" },
+    });
+    callbacks.get(channelId)?.({
+      index: 1,
+      message: { type: "needs_you.changed" },
+    });
+
+    expect(watches).toHaveLength(1);
+    expect(seen).toEqual([
+      "first:notification.created",
+      "second:notification.created",
+      "first:needs_you.changed",
+      "second:needs_you.changed",
+    ]);
+  });
+
+  test("opens the event channel again after a failed open", async () => {
+    let isFailing = true;
+    const { invocations } = installTauri(() => {
+      if (isFailing) throw { code: "core_unavailable", message: "down" };
+    });
+    const client = createTauriCoreClient();
+
+    await expect(client.watchEvents(() => {})).rejects.toBeDefined();
+    isFailing = false;
+    await client.watchEvents(() => {});
+
+    expect(invocations).toHaveLength(2);
+  });
 });
