@@ -44,7 +44,7 @@ pub fn shows_open_question(screen: &ScreenView) -> bool {
         .bottom_rows(QUESTION_ROWS)
         .into_iter()
         .any(row_asks_a_question)
-        || ends_with_a_choice_list(&screen.rows)
+        || (!cursor_is_on_a_prompt(screen) && ends_with_a_choice_list(&screen.rows))
 }
 
 fn row_asks_a_question(row: &str) -> bool {
@@ -68,6 +68,17 @@ fn starts_a_selected_choice(row: &str) -> bool {
 /// The row's text after a leading selection mark, as `Yes` in `❯ Yes`.
 fn text_after_selection_mark(row: &str) -> Option<&str> {
     Some(row.trim_start().strip_prefix(SELECTION_MARKS)?.trim_start())
+}
+
+/// An input prompt has the terminal cursor behind a mark such as `›` or
+/// `>`; a dialog does not. A list that shows beside such a prompt, as a
+/// `● answer` row with a `  more` row above the prompt, or a hint row under
+/// it, is output or a hint, and does not hold a directive back.
+fn cursor_is_on_a_prompt(screen: &ScreenView) -> bool {
+    screen
+        .rows
+        .get(screen.cursor_row)
+        .is_some_and(|row| text_after_selection_mark(row).is_some())
 }
 
 /// A choice list without numbers ends the screen, as `❯ No` over `  Yes`:
