@@ -11,16 +11,16 @@ Result: an array with one entry per descendant of the caller, in tree order: eac
 | Field | Type | Meaning |
 |---|---|---|
 | `agent_id` | string | The descendant. |
-| `name` | string | Its name. |
+| `name` | string | Its name, in visible form (below). |
 | `parent_agent_id` | string | Its parent; the caller for a child of the caller. |
 | `role` | `"lead"` or `"member"` | Its role. A descendant is always placed, so the role is never null. |
 | `status` | string | One of the 0001 statuses: `starting`, `working`, `waiting for input`, `exited`, `failed`, `stopped`, `interrupted`. |
 | `last_output_at` | number or null | Unix ms of the last write of its CLI to the terminal in the current session; the session's start when the CLI wrote nothing yet; `null` when the CLI does not run (A1). |
 | `needs_you` | boolean | Whether it has an item in Needs you (0008). |
 | `held` | boolean | Whether the office hold or an agent hold on it or on one of its ancestors covers it (0007/FR-004, A4). |
-| `task` | object or null | `{line, set_at}`, or `null` when the agent has no task text. `line` is the task line: the first line of the task text (cut at the first CR or LF), at most 80 characters (Unicode scalar values) followed by `…` when shortened (A9). `set_at` is the Unix ms of the task text (0011). The full text and its `source` are not sent (FR-003). |
+| `task` | object or null | `{line, set_at}`, or `null` when the agent has no task text. `line` is the task line: the first line of the task text (cut at the first CR or LF), at most 80 characters (Unicode scalar values) followed by `…` when anything of the text is left out (A9), in visible form (below). `set_at` is the Unix ms of the task text (0011). The full text and its `source` are not sent (FR-003). |
 
-Every text travels JSON-encoded, so a control character in a name or a task line reaches the caller as an escape (for example `\u001b`), never as a raw byte (SC-007). No other field is sent. In particular the entry never carries `last_line`, `command`, `working_folder`, `machine_id`, `worktree`, `additions`, or any terminal bytes (FR-003). The server builds each entry field by field, so a field that a later change adds to the agent object does not reach this answer by accident.
+**Visible form.** `name` and `task.line` never carry a control or bidirectional format character as itself; the server replaces each one, after the cut, the same way the desktop's task line does (0011/FR-006): a C0 character U+0000 to U+001F becomes its control picture U+2400 to U+241F, DEL U+007F becomes `␡`, and a C1 character U+0080 to U+009F or a bidirectional format character U+202A to U+202E or U+2066 to U+2069 becomes the six-character text `\uXXXX` (upper-case hex). So U+001B arrives as `␛`, U+009B as `\u009B`, and U+202E as `\u202E` (SC-007). No other field is sent. In particular the entry never carries `last_line`, `command`, `working_folder`, `machine_id`, `worktree`, `additions`, or any terminal bytes (FR-003). The server builds each entry field by field, so a field that a later change adds to the agent object does not reach this answer by accident.
 
 Errors:
 

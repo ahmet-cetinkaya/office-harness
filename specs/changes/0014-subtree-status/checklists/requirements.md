@@ -1,6 +1,6 @@
 # Requirements checklist: 0014-subtree-status
 
-Spec: `specs/changes/0014-subtree-status/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass after four rounds. No `[NEEDS CLARIFICATION]` marker; the one judgment call (holds and rate limits do not apply to the read, A2) is flagged for the review gate in the Clarifications. Every `0001/`, `0002/`, `0007/`, `0008/`, and `0011/` reference was checked against the approved specs on `main` at 6e3d197.
+Spec: `specs/changes/0014-subtree-status/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass after five rounds. No `[NEEDS CLARIFICATION]` marker; the one judgment call (holds and rate limits do not apply to the read, A2) is flagged for the review gate in the Clarifications. Every `0001/`, `0002/`, `0007/`, `0008/`, and `0011/` reference was checked against the approved specs on `main` at 6e3d197.
 
 ## Content quality
 
@@ -35,6 +35,7 @@ Spec: `specs/changes/0014-subtree-status/SPEC.md` · Status: draft · Date: 2026
 | 2 | Hostile reader | (a) A read that names an agent could point outside the subtree. (b) A polling lead could put itself on hold through the rate limits. (c) Recording every read would bury the action record. (d) An agent field added later could leak terminal content into the answer. (e) Escape codes in a user task text could reach the reader's terminal. | (a) The read takes no input; any input is refused and recorded (Edge cases). (b) FR-004 and A2. (c) FR-005 and A3. (d) FR-003 lists what never leaves; the contract builds each entry field by field. (e) Edge case: the text travels as data, encoded. |
 | 3 | Hostile reader on the fixed text | "Covered by a hold" was unclear for a hold on the reader itself. | A4: the reader's own hold covers its descendants, the same coverage as 0007/FR-004. |
 | 4 | Review guidance (secure-engineering contract) | Terminal output shown to another agent is a prompt-injection path and a possible secret leak; the data flow was not named; the full task text could carry a descendant lead's long text upward; no criterion tested a refused read of another branch. | Data flow and trust boundary section; task line only (FR-001, FR-003, A9); SC-006 and SC-007. |
+| 5 | Spec review r1 (CHANGES, small) | M1: no cost bound for a looping reader. L1: JSON escapes only C0, so DEL, C1, and bidirectional format characters passed as themselves. L2: assumption order. | A11 and PLAN D10; visible form for `name` and `task.line` (Edge cases, contract, PLAN D5), SC-007 adds U+009B and U+202E; assumptions sorted. |
 
 ## Notes
 
