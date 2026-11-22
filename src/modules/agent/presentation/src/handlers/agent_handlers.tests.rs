@@ -9,6 +9,7 @@ use agent_application::commands::delete_agent::DeleteAgentHandler;
 use agent_application::commands::delete_project::DeleteProjectHandler;
 use agent_application::commands::set_office_additions::SetOfficeAdditionsHandler;
 use agent_application::commands::set_setting::SetSettingHandler;
+use agent_application::commands::set_task_text::SetTaskTextHandler;
 use agent_application::commands::start_agent::StartAgentHandler;
 use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
@@ -108,6 +109,22 @@ impl AgentStore for FakeAgents {
                 what: "agent".to_owned(),
             })?;
         stored.status = status;
+        Ok(())
+    }
+
+    fn update_task(
+        &self,
+        agent_id: AgentId,
+        task: Option<&agent_domain::value_objects::TaskText>,
+    ) -> Result<(), PortError> {
+        let mut agents = locked(&self.agents);
+        let stored = agents
+            .iter_mut()
+            .find(|agent| agent.id == agent_id)
+            .ok_or_else(|| PortError::NotFound {
+                what: "agent".to_owned(),
+            })?;
+        stored.task = task.cloned();
         Ok(())
     }
 
@@ -408,6 +425,11 @@ fn use_cases(stores: &FakeStores) -> AgentUseCases {
             Arc::clone(&stores.additions),
             Arc::clone(&stores.clock),
         ),
+        set_task_text: SetTaskTextHandler::new(
+            Arc::clone(&stores.agents_trait),
+            Arc::clone(&stores.clock),
+            journal.clone(),
+        ),
         get_office_additions: GetOfficeAdditionsHandler::new(
             Arc::clone(&stores.agents_trait),
             Arc::clone(&stores.additions),
@@ -566,4 +588,65 @@ fn a_second_bridge_attach_is_refused_and_the_first_stays_in_place() {
     assert!(matches!(handled.response, Response::Success { .. }));
     assert_eq!(*locked(&first.deleted), [deleted_agent]);
     assert_eq!(*locked(&second.deleted), []);
+}
+
+#[test]
+fn a_task_text_request_sets_the_task_and_publishes_one_task_event() {
+    let agent_id = AgentId::generate();
+    let (agents, handlers) = single_agent_office();
+    agents.insert_new(agent_id, AgentStatus::Stopped);
+
+    let handled = handlers.handle(&request(
+        "agent.task.set",
+        &json!({ "agent_id": agent_id.as_uuid_text(), "text": "Review PR 12" }),
+    ));
+
+    let Response::Success { result, .. } = &handled.response else {
+        panic!("expected success, got {:?}", handled.response);
+    };
+    assert_eq!(result["task"]["text"], "Review PR 12");
+    assert_eq!(result["task"]["source"], "user");
+    let events = event_jsons(&handled);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["type"], "agent.task");
+    assert_eq!(events[0]["agent_id"], agent_id.as_uuid_text());
+    assert_eq!(events[0]["task"]["text"], "Review PR 12");
+    assert_eq!(events[0].get("status"), None);
+    assert_eq!(events[0].get("last_line"), None);
+}
+
+#[test]
+fn a_task_text_past_the_limit_is_invalid_and_names_the_limit() {
+    let agent_id = AgentId::generate();
+    let (agents, handlers) = single_agent_office();
+    agents.insert_new(agent_id, AgentStatus::Stopped);
+
+    let handled = handlers.handle(&request(
+        "agent.task.set",
+        &json!({ "agent_id": agent_id.as_uuid_text(), "text": "x".repeat(8193) }),
+    ));
+
+    assert_eq!(
+        failure_of(&handled),
+        (
+            "invalid",
+            "a task text has at most 8,192 characters".to_owned()
+        )
+    );
+    assert_eq!(handled.events.len(), 0);
+}
+
+#[test]
+fn a_task_text_request_without_text_names_the_field() {
+    let (_agents, handlers) = single_agent_office();
+
+    let handled = handlers.handle(&request(
+        "agent.task.set",
+        &json!({ "agent_id": AgentId::generate().as_uuid_text() }),
+    ));
+
+    assert_eq!(
+        failure_of(&handled),
+        ("invalid", "text is required".to_owned())
+    );
 }

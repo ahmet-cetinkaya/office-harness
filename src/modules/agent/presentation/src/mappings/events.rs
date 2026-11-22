@@ -3,12 +3,12 @@
 use agent_application::common::models::AdditionsView;
 use agent_domain::entities::Agent;
 use agent_domain::enums::AgentStatus;
-use agent_domain::value_objects::ProjectId;
+use agent_domain::value_objects::{ProjectId, TaskText};
 use kernel::AgentId;
 use serde_json::{Map, Value};
 use wire::Event;
 
-use super::{additions_json, agent_json};
+use super::{additions_json, agent_json, task_json};
 
 /// `agent.status`. `detail` carries the text of a failure.
 #[must_use]
@@ -38,6 +38,16 @@ pub fn agent_line_event(agent_id: AgentId, line: &str) -> Event {
     fields.insert("agent_id".to_owned(), Value::String(agent_id.to_string()));
     fields.insert("line".to_owned(), Value::String(line.to_owned()));
     Event::new("agent.line", fields)
+}
+
+/// `agent.task`: the agent's task text changed. It carries no `last_line`
+/// and no `status`, so a client patches only the task line (0011).
+#[must_use]
+pub fn agent_task_event(agent_id: AgentId, task: Option<&TaskText>) -> Event {
+    let mut fields = Map::new();
+    fields.insert("agent_id".to_owned(), Value::String(agent_id.to_string()));
+    fields.insert("task".to_owned(), task_json(task));
+    Event::new("agent.task", fields)
 }
 
 #[must_use]

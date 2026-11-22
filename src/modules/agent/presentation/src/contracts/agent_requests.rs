@@ -176,6 +176,25 @@ impl AdditionsRequest {
     }
 }
 
+/// `agent.task.set`. An empty `text` is valid: it clears the task.
+#[derive(Debug)]
+pub struct TaskTextRequest {
+    pub agent_id: String,
+    pub text: String,
+}
+
+impl TaskTextRequest {
+    /// # Errors
+    /// The text names the field at fault.
+    pub fn read(body: &Map<String, Value>) -> Result<Self, String> {
+        let fields = Fields(body);
+        Ok(Self {
+            agent_id: fields.required_text("agent_id")?,
+            text: fields.required_text("text")?,
+        })
+    }
+}
+
 /// `session.continue`.
 #[derive(Debug)]
 pub struct SessionIdRequest {

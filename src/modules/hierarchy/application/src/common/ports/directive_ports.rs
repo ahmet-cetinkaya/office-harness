@@ -37,3 +37,11 @@ pub trait DirectiveJournal: Send + Sync {
     /// for the 0001 actions, and a refusal keeps the rejected text as sent.
     fn record(&self, sender: AgentId, target: AgentId, text: &str, failure: Option<&str>);
 }
+
+/// Tells the office that a target received a directive: the text is in its
+/// terminal. The office keeps it as the target's task text (0011). The
+/// bridge stamps the time and owns any failure, so a failed store never
+/// turns a delivered directive into an error.
+pub trait DirectiveReceipt: Send + Sync {
+    fn received(&self, target: AgentId, text: &str);
+}

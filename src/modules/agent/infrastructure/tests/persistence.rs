@@ -8,7 +8,7 @@ use agent_domain::entities::{AdditionsRecord, Agent, Machine, Project, Session};
 use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{
     AgentCommand, DisplayName, EnvEntry, ExitResult, OfficeAdditions, ProjectId, SessionId,
-    SettingKey, Settings,
+    SettingKey, Settings, TaskSource, TaskText,
 };
 use agent_infrastructure::persistence::{
     AdditionsRepository, AgentRepository, MachineRepository, PersistenceError, ProjectRepository,
@@ -424,4 +424,56 @@ fn deleting_an_agent_deletes_its_additions_and_sessions() {
 
     assert_eq!(office.sessions.find(session.id).expect("find"), None);
     assert_eq!(office.additions.load(agent.id).expect("load"), None);
+}
+
+#[test]
+fn a_task_text_survives_a_reopen_and_a_clear_removes_it() {
+    let folder = TempDir::new().expect("folder");
+    let first = open_office(&database_in(&folder));
+    let agent = agent_named(&first, "Ana", None);
+    first.agents.insert(&agent).expect("agent");
+    let control_text = "Fix \u{1b}[31mit\nthen report";
+    let task = TaskText::from_input(
+        control_text,
+        Timestamp::from_unix_millis(42),
+        TaskSource::Directive,
+    )
+    .expect("valid")
+    .expect("some");
+    first
+        .agents
+        .update_task(agent.id, Some(&task))
+        .expect("set");
+    drop(first);
+
+    let reopened = open_office(&database_in(&folder));
+    let stored = reopened
+        .agents
+        .find(agent.id)
+        .expect("find")
+        .expect("agent");
+    assert_eq!(stored.task, Some(task));
+    reopened.agents.update_task(agent.id, None).expect("clear");
+    let cleared = reopened
+        .agents
+        .find(agent.id)
+        .expect("find")
+        .expect("agent");
+    assert_eq!(cleared.task, None);
+}
+
+#[test]
+fn a_task_text_of_an_unknown_agent_is_not_found() {
+    let folder = TempDir::new().expect("folder");
+    let office = open_office(&database_in(&folder));
+
+    let error = office
+        .agents
+        .update_task(AgentId::generate(), None)
+        .expect_err("unknown");
+
+    assert!(
+        matches!(error, PersistenceError::NotFound { .. }),
+        "{error}"
+    );
 }

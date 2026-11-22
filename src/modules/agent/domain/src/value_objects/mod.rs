@@ -7,6 +7,7 @@ mod env_entry;
 mod exit_result;
 mod office_additions;
 mod settings;
+mod task_text;
 
 pub use agent_command::AgentCommand;
 pub use display_name::DisplayName;
@@ -17,3 +18,4 @@ pub use exit_result::ExitResult;
 pub use kernel::ProjectId;
 pub use office_additions::OfficeAdditions;
 pub use settings::{SettingKey, Settings};
+pub use task_text::{TASK_TEXT_MAX_CHARS, TaskSource, TaskText};

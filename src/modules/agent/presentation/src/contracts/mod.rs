@@ -7,6 +7,6 @@ mod fields;
 pub use additions_body::read_additions;
 pub use agent_requests::{
     AdditionsRequest, AgentIdRequest, CreateAgentRequest, CreateProjectRequest, ProjectIdRequest,
-    RolePlacement, SessionIdRequest, SettingKeyRequest, SettingRequest,
+    RolePlacement, SessionIdRequest, SettingKeyRequest, SettingRequest, TaskTextRequest,
 };
 pub use fields::Fields;
