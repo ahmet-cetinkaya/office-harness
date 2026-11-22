@@ -5,12 +5,13 @@
 //! agent, and never its terminal content, reaches the reading agent (FR-003).
 
 use std::collections::{HashMap, HashSet};
-use std::fmt::Write as _;
 use std::time::Duration;
 
 use agent_domain::entities::Agent;
 use agent_domain::value_objects::TaskText;
-use hierarchy_domain::{Hold, Role, TreeRow, descendants_in_tree_order, hold_refusal};
+use hierarchy_domain::{
+    Hold, Role, TreeRow, descendants_in_tree_order, hold_refusal, visible_text,
+};
 use kernel::{AgentId, Timestamp};
 use serde_json::{Value, json};
 
@@ -19,21 +20,6 @@ use serde_json::{Value, json};
 const TASK_LINE_MAX_CHARS: usize = 80;
 
 const ELLIPSIS: char = '…';
-
-/// The last C0 control character; U+0000 to here map to the control pictures.
-const C0_END: u32 = 0x1f;
-const CONTROL_PICTURES_START: u32 = 0x2400;
-const DEL: u32 = 0x7f;
-const DEL_PICTURE: char = '␡';
-const C1_START: u32 = 0x80;
-const C1_END: u32 = 0x9f;
-
-/// Bidirectional format characters: they reorder the text around them, so a
-/// reader could take the words in another order than they were written.
-const BIDI_EMBEDDINGS_START: u32 = 0x202a;
-const BIDI_EMBEDDINGS_END: u32 = 0x202e;
-const BIDI_ISOLATES_START: u32 = 0x2066;
-const BIDI_ISOLATES_END: u32 = 0x2069;
 
 /// What one read sees: the tree, the agents, the agents with an item in
 /// Needs you, and the holds, each taken once.
@@ -107,41 +93,6 @@ pub fn task_line(text: &str) -> String {
         line.push(ELLIPSIS);
     }
     line
-}
-
-/// The text with every control and bidirectional format character shown as
-/// a visible symbol, as the desktop's task line shows it, so nothing in it
-/// acts on the reader's terminal or reorders what it reads (0011/FR-006).
-#[must_use]
-pub fn visible_text(text: &str) -> String {
-    let mut visible = String::with_capacity(text.len());
-    for character in text.chars() {
-        push_visible(&mut visible, character);
-    }
-    visible
-}
-
-fn push_visible(visible: &mut String, character: char) {
-    let code = u32::from(character);
-    if code <= C0_END {
-        let picture = char::from_u32(CONTROL_PICTURES_START + code);
-        visible.push(picture.unwrap_or(char::REPLACEMENT_CHARACTER));
-    } else if code == DEL {
-        visible.push(DEL_PICTURE);
-    } else if is_escaped(code) {
-        // Writing into a String cannot fail.
-        let _ = write!(visible, "\\u{code:04X}");
-    } else {
-        visible.push(character);
-    }
-}
-
-/// C1 controls and the bidirectional format characters, which have no
-/// picture of their own and are written out as their code.
-fn is_escaped(code: u32) -> bool {
-    (C1_START..=C1_END).contains(&code)
-        || (BIDI_EMBEDDINGS_START..=BIDI_EMBEDDINGS_END).contains(&code)
-        || (BIDI_ISOLATES_START..=BIDI_ISOLATES_END).contains(&code)
 }
 
 /// The wall time `quiet` before `now`: when a running child last wrote.

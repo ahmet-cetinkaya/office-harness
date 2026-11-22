@@ -9,7 +9,8 @@ use kernel::{AgentId, Timestamp};
 use notification_application::common::interfaces::NeedsYouStore;
 use notification_application::queries::list_notifications::LIST_LIMIT;
 use notification_domain::{
-    AttentionEvent, AttentionKind, NeedsYouItem, Notification, NotificationEvent, NotificationId,
+    AttentionEvent, AttentionKind, ItemReport, NeedsYouItem, Notification, NotificationEvent,
+    NotificationId,
 };
 use notification_infrastructure::persistence::{
     NeedsYouRepository, NotificationRepository, SCRIPTS,
@@ -265,6 +266,7 @@ fn waiting_item(agent_id: AgentId, first_event_at: i64) -> NeedsYouItem {
             at: Timestamp::from_unix_millis(first_event_at + 5),
         },
         origin: Some(NotificationId::generate()),
+        report: None,
     }
 }
 
@@ -347,4 +349,49 @@ fn a_database_at_notification_0002_upgrades_with_every_row_intact() {
     }
 
     assert_eq!(repository.list().expect("list"), vec![held, read_row]);
+}
+
+#[test]
+fn a_report_on_an_item_reads_back_and_a_0003_item_has_none() {
+    let handle = Arc::new(Mutex::new(Connection::open_in_memory().expect("open")));
+    let (up_to_0003, from_0004) = SCRIPTS.split_at(3);
+    for script in up_to_0003 {
+        handle
+            .lock()
+            .expect("lock")
+            .execute_batch(script)
+            .expect("migrate to 0003");
+    }
+    let old_agent = AgentId::generate();
+    handle
+        .lock()
+        .expect("lock")
+        .execute(
+            "INSERT INTO notification_needs_you \
+             (agent_id, first_event_at, latest_kind, latest_detail, latest_at, origin) \
+             VALUES (?1, 5, 'bell', NULL, 5, NULL)",
+            [old_agent.to_string()],
+        )
+        .expect("old row");
+    for script in from_0004 {
+        handle
+            .lock()
+            .expect("lock")
+            .execute_batch(script)
+            .expect("migrate to 0004");
+    }
+    let repository = NeedsYouRepository::new(Arc::clone(&handle));
+    let mut reported = waiting_item(AgentId::generate(), 10);
+    reported.report = Some(ItemReport {
+        kind: "question".to_owned(),
+        text: "which branch? \u{241b}[31m".to_owned(),
+        at: Timestamp::from_unix_millis(12),
+    });
+    repository.save(&reported).expect("save");
+
+    let old = repository.find(old_agent).expect("find").expect("old item");
+    let read = repository.find(reported.agent_id).expect("find");
+
+    assert_eq!(old.report, None);
+    assert_eq!(read, Some(reported));
 }

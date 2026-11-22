@@ -303,11 +303,12 @@ fn rejects_an_unknown_setting_name() {
     );
 }
 
-const LIMIT_KEYS: [SettingKey; 4] = [
+const LIMIT_KEYS: [SettingKey; 5] = [
     SettingKey::LimitDirectivesPerAgent,
     SettingKey::LimitDirectivesPerTarget,
     SettingKey::LimitCreatesPerAgent,
     SettingKey::LimitLifecyclePerAgent,
+    SettingKey::LimitReportsPerAgent,
 ];
 
 #[test]
@@ -317,6 +318,7 @@ fn the_limit_defaults_follow_the_plan() {
     assert_eq!(settings.limit_directives_per_target, 3);
     assert_eq!(settings.limit_creates_per_agent, 5);
     assert_eq!(settings.limit_lifecycle_per_agent, 10);
+    assert_eq!(settings.limit_reports_per_agent, 5);
 }
 
 #[test]

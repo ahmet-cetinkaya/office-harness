@@ -9,6 +9,10 @@ use kernel::{AgentId, Timestamp};
 /// How many directives may wait for one target (0012/FR-004).
 pub const QUEUE_LIMIT: usize = 20;
 
+/// How many of a target's waiting entries may be reports, so directives from
+/// above always keep the rest of the queue (0015/FR-010).
+pub const REPORT_SHARE: usize = 10;
+
 /// How long a directive may wait before it is withdrawn (0012/FR-005).
 pub const WAIT_LIMIT: Duration = Duration::from_mins(10);
 
@@ -17,13 +21,50 @@ pub const WAIT_LIMIT: Duration = Duration::from_mins(10);
 /// reads it again (0012/FR-001, plan D8).
 pub const SETTLE_AFTER_TYPING: Duration = Duration::from_secs(2);
 
-/// A directive the office accepted and has not typed yet.
+/// A directive the office accepted and has not typed yet. A report to a
+/// parent waits the same way (0015/FR-004): its `text` is the line to type,
+/// and `report` holds the text its record entries show.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WaitingDirective {
     pub sender: AgentId,
     pub target: AgentId,
     pub text: String,
     pub accepted_at: Timestamp,
+    pub report: Option<String>,
+}
+
+impl WaitingDirective {
+    fn is_report_of(&self, sender: AgentId) -> bool {
+        self.report.is_some() && self.sender == sender
+    }
+}
+
+/// Where a report may go in its parent's queue (0015/FR-010).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReportRoom {
+    /// The sender's waiting report is replaced in place.
+    Replace,
+    /// A new entry at the end.
+    Add,
+    /// `REPORT_SHARE` reports wait already.
+    NoRoomForReports,
+    /// `QUEUE_LIMIT` entries wait already.
+    Full,
+}
+
+/// What became of a report put in its parent's queue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReportPush {
+    /// It took the place of the sender's waiting report, which is returned.
+    Replaced {
+        position: usize,
+        replaced: WaitingDirective,
+    },
+    Added {
+        position: usize,
+    },
+    Refused(ReportRoom),
+    Closed,
 }
 
 /// What a delivery round found at the head of one target's queue.
@@ -46,6 +87,37 @@ struct TargetQueue {
 }
 
 impl TargetQueue {
+    /// The sender's waiting report that a newer one may replace: never the
+    /// head whose delivery is claimed, which a delivery may be typing
+    /// (0015 review r2 N1).
+    fn replaceable_report_of(&self, sender: AgentId) -> Option<usize> {
+        let first_free = usize::from(self.delivering);
+        self.waiting
+            .iter()
+            .enumerate()
+            .skip(first_free)
+            .find(|(_, waiting)| waiting.is_report_of(sender))
+            .map(|(index, _)| index)
+    }
+
+    fn report_room(&self, sender: AgentId) -> ReportRoom {
+        if self.replaceable_report_of(sender).is_some() {
+            return ReportRoom::Replace;
+        }
+        if self.waiting.len() >= QUEUE_LIMIT {
+            return ReportRoom::Full;
+        }
+        let reports = self
+            .waiting
+            .iter()
+            .filter(|waiting| waiting.report.is_some())
+            .count();
+        if reports >= REPORT_SHARE {
+            return ReportRoom::NoRoomForReports;
+        }
+        ReportRoom::Add
+    }
+
     fn settled(&self, now: Timestamp) -> bool {
         self.last_typed
             .is_none_or(|typed| at_least(typed, now, SETTLE_AFTER_TYPING))
@@ -113,6 +185,50 @@ impl DirectiveQueue {
         drop(queues);
         self.work.notify_all();
         Some(position)
+    }
+
+    /// Where a report of `sender` would go in `target`'s queue now.
+    #[must_use]
+    pub fn report_room(&self, target: AgentId, sender: AgentId) -> ReportRoom {
+        self.locked()
+            .by_target
+            .get(&target)
+            .map_or(ReportRoom::Add, |queue| queue.report_room(sender))
+    }
+
+    /// Puts a report in its parent's queue under one lock: it replaces the
+    /// sender's waiting report in place, or joins the end when the queue and
+    /// the report share have room (0015/FR-010). The replacement keeps the
+    /// place but its own acceptance time, so the wait limit counts from it
+    /// (0015 review r2 N2).
+    pub fn push_report(&self, report: WaitingDirective) -> ReportPush {
+        let mut queues = self.locked();
+        if queues.closed {
+            return ReportPush::Closed;
+        }
+        let queue = queues.by_target.entry(report.target).or_default();
+        let pushed = match queue.report_room(report.sender) {
+            ReportRoom::Replace => {
+                let index = queue
+                    .replaceable_report_of(report.sender)
+                    .unwrap_or_default();
+                let replaced = std::mem::replace(&mut queue.waiting[index], report);
+                ReportPush::Replaced {
+                    position: index + 1,
+                    replaced,
+                }
+            }
+            ReportRoom::Add => {
+                queue.waiting.push_back(report);
+                ReportPush::Added {
+                    position: queue.waiting.len(),
+                }
+            }
+            refused => ReportPush::Refused(refused),
+        };
+        drop(queues);
+        self.work.notify_all();
+        pushed
     }
 
     /// Takes the expired heads out and, when the target is free and settled,

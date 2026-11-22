@@ -38,6 +38,11 @@ pub fn needs_you_item_json(item: &NeedsYouItem) -> Value {
         "first_event_at": item.first_event_at.as_unix_millis(),
         "latest_at": item.latest.at.as_unix_millis(),
         "origin_notification_id": item.origin.map(|origin| origin.as_uuid_text()),
+        "report": item.report.as_ref().map(|report| json!({
+            "kind": report.kind,
+            "text": report.text,
+            "at": report.at.as_unix_millis(),
+        })),
     })
 }
 

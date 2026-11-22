@@ -3,7 +3,7 @@
 mod needs_you_item;
 mod notification;
 
-pub use needs_you_item::{NeedsYouItem, order, record_event};
+pub use needs_you_item::{ItemReport, NeedsYouItem, order, record_event, record_report};
 pub use notification::Notification;
 
 #[cfg(test)]

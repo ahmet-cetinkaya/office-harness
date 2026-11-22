@@ -17,6 +17,8 @@ pub enum AgentAction {
     Refused,
     /// The user set, edited, or cleared the task text (0011).
     TaskText,
+    /// An agent sent a report upward (0015).
+    Report,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

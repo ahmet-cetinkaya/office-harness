@@ -56,6 +56,8 @@ No fields. Result: the office-level action record entries (no target agent), new
 | 2 | `the agent <id> is on hold` (the caller, the target, or one of their ancestors) |
 | 3 | `the limit "<name>" allows <n> per 60 seconds` with `<name>` one of `directives sent by one agent`, `directives sent to one target agent`, `agents created by one agent`, `starts, stops, and new tasks by one agent` |
 
+> Amended by 0015: a fifth key, `limit_reports_per_agent` (1 to 1000, default 5), limits the reports one agent sends per 60 seconds, and a refusal names it "reports sent by one agent". `report.send` is an agent-made action for the holds and the limits. See `specs/changes/0015-upward-reports/contracts/report-protocol.md`.
+
 > Amended by 0012: a directive that waits in its target's queue is checked against the holds again before it is typed; a hold that would refuse it now withdraws it, recorded as `withdrawn before typing: <hold reason>` in the sender's and the target's records. That check counts nothing. A queue-full refusal is not a rate-limit refusal and does not count toward the automatic hold.
 
 Each refusal is recorded with the calling agent as actor (MODIFIED 0002/FR-009). A refused `directive.send` is recorded in the action record of the sender and in the action record of the target, one entry each, both published as `action.recorded` to every user client; when sender and target are one agent, one entry. An accepted directive stays in the target's record only. An agent placed on hold automatically is recorded as `hold` with actor `office`.

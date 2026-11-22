@@ -101,3 +101,31 @@ fn every_non_bell_event_creates_its_own_row() {
 
     assert_eq!(store.all().len(), 2);
 }
+
+fn report(agent_id: AgentId, kind: &str) -> CreateNotification {
+    CreateNotification {
+        agent_id,
+        agent_name: "Ana".to_owned(),
+        event: NotificationEvent::Report,
+        at: NOW,
+        detail: Some(kind.to_owned()),
+    }
+}
+
+#[test]
+fn a_report_while_an_unread_report_exists_adds_nothing_but_a_bell_still_does() {
+    let store = Arc::new(MemoryNotifications::default());
+    let create = create_handler(&store);
+    let agent = AgentId::generate();
+
+    let first = create
+        .handle(report(agent, "question"))
+        .expect("first report");
+    let second = create.handle(report(agent, "done")).expect("second report");
+    let rang = create.handle(bell(agent, NOW)).expect("bell");
+
+    assert!(first.is_some_and(|notification| notification.is_unread()));
+    assert_eq!(second, None);
+    assert!(rang.is_some());
+    assert_eq!(store.all().len(), 2);
+}
