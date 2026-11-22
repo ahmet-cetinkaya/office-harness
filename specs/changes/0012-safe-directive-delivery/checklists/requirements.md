@@ -32,10 +32,11 @@ Spec: `specs/changes/0012-safe-directive-delivery/SPEC.md` · Status: draft · D
 | Round | Pass | Findings | Fix |
 |---|---|---|---|
 | 1 | Requirements checklist | "Screen" and "bottom lines" could read as implementation. | Kept: they are what the user sees in the terminal; the Terms table defines an open question in user words, and A2 lists the recognised shapes. |
-| 2 | Hostile reader | The status "waiting for input" is also shown while a CLI asks a question (0001 A1), so a status gate alone would still type into a question. A text letter, not only Enter, can answer a choice list. A waiting directive could be typed after its sender lost the right to send it. Nothing bounded the queue. | FR-003 checks the screen and types neither text nor Enter. FR-005 withdraws on a tree change or a hold. FR-004 caps the queue at 20. |
+| 2 | Hostile reader | The status "waiting for input" is also shown while a CLI asks a question (0001 A1), so a status gate alone would still type into a question. A text letter, not only Enter, can answer a choice list. A waiting directive could be typed after its sender lost the right to send it. Nothing bounded the queue. | FR-002 checks the screen and types neither text nor Enter. FR-005 withdraws on a tree change or a hold. FR-004 caps the queue at 20. |
 | 3 | Hostile reader on the fixed text | A false match could hold a directive forever. A server stop loses waiting directives. | FR-005 withdraws after 10 minutes with the reason (A3). A4 states the loss and that the acceptance stays in the record. |
+| 4 | Review guidance before the review | A quiet CLI showing a prompt the question check does not know still reads as waiting for input, so text and Enter would reach it. | FR-003: type the text, press Enter only when its end shows at the input line within 2 seconds, else leave it unsubmitted and record it. The Residual risk section states what stays open. |
 
 ## Notes
 
-- **Safety direction:** every uncertain case delays a directive, never types it: an unknown status, a recent person input, or anything that looks like a question.
-- **Owner decision pending elsewhere:** a full check through CLI hooks needs the owner's decision on an office settings file for the CLI; this spec does not depend on it (A2, Out of scope).
+- **Safety direction:** every uncertain case delays a directive or withholds its Enter: an unknown status, a recent person input, anything that looks like a question, or a text that does not show at the input line. What stays open is in the spec's Residual risk section.
+- **Owner decision pending elsewhere:** a full check through CLI hooks needs the owner's decision on an office settings file for the CLI; this spec does not depend on it (Residual risk, Out of scope).
