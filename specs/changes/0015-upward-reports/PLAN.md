@@ -4,7 +4,7 @@ spec: specs/changes/0015-upward-reports/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-23 with the spec, for one review of both. -->
+<!-- Drafted 2026-11-23 with the spec, for one review of both. Review r1 (CHANGES) applied: queue share D7, notification coalescing D6, resume hold D6. -->
 
 # Plan: Upward reports (0015)
 
@@ -42,13 +42,13 @@ Deliver spec 0015: a running agent reports upward to its parent or to the person
 
 ## Context
 
-Paths: `H` = `src/apps/office-harnessd`, `M` = `src/modules`, `D` = `src/apps/desktop`. Read on `main` at 1d6edb6 and on `feat/0012-safe-directive-delivery` at 92d7a4c.
+Paths: `H` = `src/apps/office-harnessd`, `M` = `src/modules`, `D` = `src/apps/desktop`. Read on `main` at 468ad56 (0013 merged) and on `feat/0012-safe-directive-delivery` at 92d7a4c.
 
 - **Agent connection:** `H/src/server/agent_call.rs`. `ALLOWED_REQUESTS` (7 types), `answer_request` dispatch, `NOT_ALLOWED`, `journal_refusal`, `smuggled_field`, `truncated`, `answer_subtree` (the no-target request pattern), `answer_directive` (blocking pool plus `ActorScope` plus `recorded_and_published`).
 - **Visible form:** `H/src/server/subtree_status.rs` `visible_text` (0014 D5).
 - **Tree:** `M/hierarchy/domain/src/services/tree_rules.rs` `TreeRow {agent_id, name, role, parent_agent_id, team_id}`; `TreeQuery::store_snapshot`.
 - **Holds and limits:** `M/hierarchy/domain/src/services/rate_windows.rs` (`AgentAction`, `RateWindows::try_take`), `rate_limits.rs` (`LimitKind`, `RateLimits`, defaults), `HoldService::guard(caller, action, target, rows)`; settings in `M/agent/domain/src/value_objects/settings.rs` (`SettingKey`, `limit_*`, `parse_limit`); `H/src/bridges/rate_limit_source.rs`; `D/src/modules/hold/models/limits.ts`.
-- **Notifications and Needs you:** `M/notification/domain` (`NotificationEvent`, `AttentionKind`, `AttentionEvent`, `NeedsYouItem`, `order`, `record_event`), `M/notification/application/src/commands/needs_you` (`NeedsYouService`, `NeedsYouClearReason`), `M/notification/infrastructure/src/persistence` (migrations `0001` to `0003`, `NeedsYouRepository`), `H/src/bridges/notification_bridge.rs` (`record_auto_hold`, `CLEARING_STATUSES`, `record`), `H/src/bridges/needs_you_bridge.rs`, `H/src/bridges/hold_bridges.rs` (`HoldReleased`).
+- **Notifications and Needs you:** `M/notification/domain` (`NotificationEvent` and `AttentionKind`, 6 kinds each since 0013 added `ResumeHold`; `AttentionEvent`, `NeedsYouItem`, `order`, `record_event`), `M/notification/application/src/commands/needs_you` (`NeedsYouService`, `NeedsYouClearReason`), `M/notification/infrastructure/src/persistence` (migrations `0001` to `0003`, `NeedsYouRepository`), `H/src/bridges/notification_bridge.rs` (`record_auto_hold`, `record_resume_hold`, `CLEARING_STATUSES`, `record`), the bell coalescing in `M/notification/application/src/commands/create_notification` (a coalesced row answers `Ok(None)`), `H/src/bridges/needs_you_bridge.rs`, `H/src/bridges/hold_bridges.rs` (`HoldReleased`, which clears `AutoHold` and `ResumeHold` items).
 - **Action record:** `M/audit/domain/src/action_kind.rs` (`ActionKind`, 13 kinds); `DirectiveJournal` port (`M/hierarchy/application/src/common/ports/directive_ports.rs`) and its bridge in `H/src/bridges/directive_bridges.rs`; `D/src/modules/audit/models/action-entry.ts` (`ACTION_TEXT`).
 - **0012 queue (branch):** `M/hierarchy/application/src/commands/send_directive/directive_queue.rs` (`DirectiveQueue`, `QUEUE_LIMIT`, `WaitingDirective`) and `send_directive_handler.rs` (`DirectiveOutcome`, recheck, withdrawals, `DirectiveReceipt::received` on submit).
 - **Desktop Needs you:** `D/src/modules/needs-you/models/needs-you.ts` (`NeedsYouKind`, `readItems`, `eventText`, `rowOf`), `components/needs-you-section.svelte`; notifications `D/src/modules/notification/models/notification.ts`; e2e mock `D/e2e/support/mock-core.ts`.
@@ -61,8 +61,8 @@ Paths: `H` = `src/apps/office-harnessd`, `M` = `src/modules`, `D` = `src/apps/de
 - **D3 Visible form, once:** `answer_report` in `agent_call.rs` validates the raw text (D2), then calls `visible_text` on the text and on the sender's name, and passes only visible strings on. The heading is built by a pure `report_line(name, sender, kind, text)` in the hierarchy domain: `[report from {name} ({sender}): {kind}] {text}`. The record text is `{kind}: {text}`.
 - **D4 Limit:** `AgentAction::Report`, `LimitKind::Report` ("reports sent by one agent"), `RateLimits.report` with `DEFAULT_REPORT_LIMIT = 5`, a `reports` window per caller in `RateWindows`. `SettingKey::LimitReportsPerAgent` (`limit_reports_per_agent`, 1 to 1000, default 5), mapped in `SettingsRateLimits`. The hold target is the parent, or `None` for the person (an office or agent hold on the sender or an ancestor covers it, 0007/FR-004).
 - **D5 Handler:** new `M/hierarchy/application/src/commands/send_report/` `SendReportHandler` with ports: the store (snapshot), the hold guard, a `ReportJournal` (accepted, refused, per D9), a `PersonReports` port (`deliver(sender, kind, text) -> Result<(), String>`), and, from T5, the directive handler's queue. Order: snapshot, receiver, running check of the parent, hold and limit, then delivery. Every refusal journals before it returns (FR-009).
-- **D6 Needs you report field and clear split:** `NeedsYouItem.report: Option<ItemReport {kind: String, text: String, at: Timestamp}>`; migration `0004_needs_you_report.sql` adds `report_kind`, `report_text`, `report_at` (NULL for old rows). `record_event` keeps the old report unless the event carries one. `AttentionKind::Report` and `NotificationEvent::Report` (`"report"`, detail = report kind), in the waiting group. `NeedsYouClearReason::StatusChanged` splits into `Resumed` (`starting`, `working`) and `Stopped`; `Resumed` and `HoldReleased` do not clear an item that holds a report. `NotificationBridge::record_report(agent_id, kind, text)` mirrors `record_auto_hold`; the `PersonReports` bridge calls it. A report notification is never read on arrival.
-- **D7 Parent delivery (T5, after 0012):** the 0012 `WaitingDirective` gains an origin `Directive | Report {sender_kind}`; `SendDirectiveHandler` gets `enqueue_report(sender, parent, line, record_text)` that runs the same readiness, typing, input-line check, and Enter as a directive. For a report: the recheck asks "is the sender still a child of the parent" instead of "is the target still a descendant"; on submit `DirectiveReceipt::received` is not called (PB-3); journal entries use `ActionKind::Report`. The queue limit of 20 counts reports and directives together. The answer maps `DirectiveOutcome` to `delivery`.
+- **D6 Needs you report field and clear split:** `NeedsYouItem.report: Option<ItemReport {kind: String, text: String, at: Timestamp}>`; migration `0004_needs_you_report.sql` adds `report_kind`, `report_text`, `report_at` (NULL for old rows). `record_event` keeps the old report unless the event carries one. `AttentionKind::Report` and `NotificationEvent::Report` (`"report"`, detail = report kind), in the waiting group with `AutoHold` and `ResumeHold`; `ALL` counts 7 in both. `NeedsYouClearReason::StatusChanged` splits into `Resumed` (`starting`, `working`) and `Stopped`; `Resumed` and `HoldReleased` (for `AutoHold` and `ResumeHold` alike) do not clear an item that holds a report. The create handler coalesces a `Report` like a `Bell`: while an unread `report` row of the agent exists, it adds no row and answers `Ok(None)`, and the bridge still feeds Needs you (0003/FR-006 (a) as modified). `NotificationBridge::record_report(agent_id, kind, text)` mirrors `record_auto_hold`; the `PersonReports` bridge calls it. A report notification is never read on arrival.
+- **D7 Parent delivery (T5, after 0012):** the 0012 `WaitingDirective` gains an origin `Directive | Report {sender_kind}`; `SendDirectiveHandler` gets `enqueue_report(sender, parent, line, record_text)` that runs the same readiness, typing, input-line check, and Enter as a directive. For a report: the recheck asks "is the sender still a child of the parent" instead of "is the target still a descendant"; on submit `DirectiveReceipt::received` is not called (PB-3); journal entries use `ActionKind::Report`. The queue limit of 20 counts reports and directives together; inside it, `REPORT_SHARE = 10` waiting reports at most (FR-010). `enqueue_report` first looks for a waiting report of the same sender in the parent's queue: if one exists, the new one takes its place, and the old one is journaled as withdrawn with `replaced by a newer report`; otherwise, with 10 reports waiting, it refuses with `the parent's queue has no room for reports`. Both checks run before the hold guard, as 0012 runs queue-full first, so neither refusal counts toward a limit or the automatic hold. The answer maps `DirectiveOutcome` to `delivery`.
 - **D8 Answer:** `{receiver, delivery, position?}` per the contract.
 - **D9 Record:** `ActionKind::Report` (`"report"`). Accepted to a parent: one entry, agent = parent, actor = sender. For the person: agent = sender. Refusals: `refused` in the sender's record and, with a parent, in the parent's (as 0007/FR-010 does for directives). Withdrawn and unsubmitted: the 0012 journal path, kind `report`.
 - **D10 Desktop:** `NeedsYouKind` adds `report`; `readItems` reads `report` (`{kind, text, at}` or null); `eventText` writes "sent a report: <kind>"; the row shows the report text under the event line, clamped to 3 lines, with a "Show the whole report" / "Show less" button (`aria-expanded`, visible focus) when the text is longer than 160 characters; the text element is the row's `aria-describedby`. `notification.ts` adds `report` ("sent a report: <kind>"); `limits.ts` adds the reports row; `action-entry.ts` adds `report: "Sent a report"`; `mock-core.ts` gets the new setting, a way to push a report item, and the notification.
@@ -86,7 +86,7 @@ SPEC.md, `checklists/requirements.md`, `contracts/report-protocol.md`, this plan
 
 ### T3: Needs you report and notification (D6)
 
-`NotificationEvent::Report`, `AttentionKind::Report`, `ItemReport`, `record_event` keeps the report, the group rank, the migration, the repository read and write, the clear split, `record_report` on the bridge, the hold bridge's release, the status bridge's `Resumed`/`Stopped`, the wire mapping in `needs_you_changed_event` and `needs_you.list`. Unit tests: a report survives a later wait event and a `Resumed` clear; `Stopped`, `TerminalOpened`, dismiss, and delete clear it; a second report replaces the first and keeps the wait time; order puts a report in the waiting group; an old row without report columns reads as `report: null`. **Accept:** notification crates and office-harnessd unit tests pass; `migrations` test counts updated.
+`NotificationEvent::Report`, `AttentionKind::Report`, `ItemReport`, `record_event` keeps the report, the group rank, the migration, the repository read and write, the clear split, `record_report` on the bridge, the hold bridge's release, the status bridge's `Resumed`/`Stopped`, the wire mapping in `needs_you_changed_event` and `needs_you.list`. Unit tests: a report survives a later wait event, a `Resumed` clear, and a `HoldReleased` clear of an `AutoHold` and of a `ResumeHold` item; `Stopped`, `TerminalOpened`, dismiss, and delete clear it; a second report while the first report notification is unread adds no notification row and still updates the item; a second report replaces the first and keeps the wait time; order puts a report in the waiting group; an old row without report columns reads as `report: null`. **Accept:** notification crates and office-harnessd unit tests pass; `migrations` test counts updated.
 
 ### T4: Request and person path (D1, D3, D5 without the queue, D8, D11)
 
@@ -94,9 +94,9 @@ SPEC.md, `checklists/requirements.md`, `contracts/report-protocol.md`, this plan
 
 ### T5: Parent delivery through the 0012 queue (D7)
 
-After PR #115 is on `main`: merge `main`, then the queue origin, `enqueue_report`, the recheck, the journal kind, no receipt, and the answer mapping; T4's interim refusal is removed. Unit tests in `send_directive_handler.tests.rs`: a report waits behind a directive and is typed in order; a report to a parent with a question on screen is not typed; a moved sender's report is withdrawn; a submitted report leaves the parent's task text unchanged. **Accept:** hierarchy application and office-harnessd unit tests pass.
+After PR #115 is on `main`: merge `main`, then the queue origin, `enqueue_report`, the recheck, the journal kind, no receipt, and the answer mapping; T4's interim refusal is removed. Unit tests in `send_directive_handler.tests.rs`: a report waits behind a directive and is typed in order; a report to a parent with a question on screen is not typed; a moved sender's report is withdrawn; a submitted report leaves the parent's task text unchanged; a second report of one sender replaces its waiting one in place and journals the withdrawal; with 10 reports waiting an 11th is refused and a directive is still accepted (SC-011); neither refusal takes a rate slot. **Accept:** hierarchy application and office-harnessd unit tests pass.
 
-### T6: Integration and desktop tests (SC-001 to SC-010)
+### T6: Integration and desktop tests (SC-001 to SC-012)
 
 New `H/tests/agent_report.rs` with the real server and helper:
 - SC-001: CEO, 2 leads, 6 members, all running and waiting for input; each member and lead reports; each report reaches only its parent's terminal (marker per sender).
@@ -108,7 +108,9 @@ New `H/tests/agent_report.rs` with the real server and helper:
 - SC-007: office hold refuses 5 of 5; 6th report in 60 s refused with the limit; the third limit refusal puts the sender on hold.
 - SC-008: the lead sends a directive to the id in the heading; the member receives it.
 - SC-009: the CEO's report item survives `working` and `waiting_for_input`; `notification.read_agent` clears it; a second item clears on dismiss.
-- SC-010: the record entries of D9 for accepted, refused, withdrawn (stop the parent while a report waits), and unsubmitted reports.
+- SC-010: the record entries of D9 for accepted, refused, withdrawn (stop the parent while a report waits), replaced, and unsubmitted reports.
+- SC-011: a working lead with 11 members (placed by the user); 10 members report; the CEO's directive to the lead answers `waiting`; the 11th member's report is refused with the no-room reason; a member that reports twice has one waiting entry.
+- SC-012: the CEO sends 5 reports for the person; exactly 1 `report` notification row; the item shows the 5th report.
 Desktop: `needs-you.spec.ts` (report kind, report text, long-text control, old items without `report`), `notification.spec.ts`, `limits` and `action-entry` specs; Playwright `D/e2e/needs-you-report.spec.ts` on the mock core: a report row shows kind and text, the toggle works from the keyboard with `aria-expanded`, the jump shortcut opens the terminal and the row leaves, axe finds no violation in the section.
 **Accept:** `agent_report` passes 3 times in a row locally; bun unit tests, svelte-check, eslint, prettier, and the Playwright file pass.
 
@@ -145,10 +147,11 @@ All tasks accepted; CI green on three OSes; `qa-report.md` complete; the diff na
 | FR-007 | T3, T4, T6 | SC-003 |
 | FR-008 | T3, T6 | item tests; SC-009 |
 | FR-009 | T2, T4, T5, T6 | SC-010 |
+| FR-010 | T5, T6 | queue-share unit tests; SC-011 |
 | 0002/FR-008 (modified) | T4, T7 | allow list; contract note |
-| 0003/FR-006 (modified) | T3, T6 | `report` notification never read on arrival |
+| 0003/FR-006 (modified) | T3, T6 | `report` notification never read on arrival; coalescing test; SC-012 |
 | 0008/FR-002, FR-003, FR-005 (modified) | T3, T6 | item, order, and clear tests; desktop specs; e2e |
-| SC-001 to SC-010 | T6 | `agent_report.rs`, desktop specs, e2e |
+| SC-001 to SC-012 | T6 | `agent_report.rs`, desktop specs, e2e |
 | PB-1 | T6 | `agent_call.rs`, `agent_directive.rs` stay green |
 | PB-2 | T5, T6 | 0012 tests stay green |
 | PB-3 | T5, T6 | task text unchanged after a submitted report |

@@ -24,6 +24,8 @@ No other field is taken. A frame with any other field, such as `target_agent_id`
 
 `<name>` is the sender's name in visible form, `<agent id>` its full id, `<kind>` the request's kind, `<text>` the text in visible form. The line holds no line break. It is typed and submitted under the 0012 rules, in the parent's directive queue.
 
+**Queue share (FR-010).** A parent's queue holds at most 20 entries (0012), of which at most 10 are reports. A sender has at most one waiting report per parent: a newer report replaces the waiting one in the same place, and the replaced one is recorded as withdrawn with the reason `replaced by a newer report`. With 10 reports waiting, a further report from another sender is `refused` with `the parent's queue has no room for reports`. Neither refusal nor the 0012 queue-full refusal counts toward a rate limit or the automatic hold.
+
 Result:
 
 | Field | Type | Meaning |
@@ -37,10 +39,10 @@ Errors:
 | Code | When | Recorded |
 |---|---|---|
 | `invalid` | A field is not taken; `kind` is missing or not one of the four; `text` is missing, not a string, blank, or longer than 1,000 characters; `for_person` is not a boolean. | Yes, the sender as actor. |
-| `refused` | The frame names `actor` or `caller`; the parent is not running; the office hold or an agent hold covers the sender; the reports limit is reached; the parent's queue is full. | Yes, in the sender's record and, when there is a parent, in the parent's. |
+| `refused` | The frame names `actor` or `caller`; the parent is not running; the office hold or an agent hold covers the sender (a hold on the parent or higher covers it, 0007/FR-004); the reports limit is reached; the parent's queue has no room for reports; the parent's queue is full. | Yes, in the sender's record and, when there is a parent, in the parent's. |
 | `internal` | The tree or Needs you cannot be read or written. | Yes. |
 
-A refused or withdrawn report counts as 0007 says: a limit refusal counts toward the automatic hold, a hold refusal and a queue-full refusal do not.
+A refused or withdrawn report counts as 0007 says: a limit refusal counts toward the automatic hold; a hold refusal, a no-room refusal, and a queue-full refusal do not.
 
 ## Action record
 
@@ -50,19 +52,19 @@ A new action kind `report`. The entry's text is `<kind>: <text>` with the text i
 |---|---|---|
 | To a parent, accepted | the parent | the sender |
 | For the person, accepted | the sender | the sender |
-| Withdrawn or unsubmitted (0012) | the sender and the parent, one entry each | the sender |
+| Withdrawn, replaced, or unsubmitted (0012, FR-010) | the sender and the parent, one entry each | the sender |
 | Refused | the sender, and the parent when there is one | the sender |
 
 ## Notification (amends 0003 `panel-protocol.md`)
 
-A new event `report`. Its `detail` is the report's kind. A report notification is never created as read: exception (b) of 0003/FR-006 does not apply.
+A new event `report`. Its `detail` is the report's kind. A report notification is never created as read: exception (b) of 0003/FR-006 does not apply. While an unread `report` notification of an agent exists, a further report of that agent adds no notification (the bell rule); its Needs you item still changes.
 
 ## Needs you (amends 0008 `needs-you-protocol.md`)
 
 - An item's `kind` can be `report`; its `detail` is then the report's kind.
 - Each item gains `report`: `null`, or `{kind, text, at}` with the latest report for the person (kind, text in visible form, Unix ms). It stays on the item when a later event changes `kind` and `detail` (FR-008).
-- An item whose `report` is not `null` is not removed when the agent changes to `starting` or `working`, nor when a hold is released. It is removed when the agent stops or is deleted, when the user opens its terminal or reads its origin notification, and on dismiss.
-- Order: `report` sorts in the group of `waiting_for_input`, `bell`, and `auto_hold`.
+- An item whose `report` is not `null` is not removed when the agent changes to `starting` or `working`, nor when a hold is released (an `auto_hold` or a `resume_hold` item alike). It is removed when the agent stops or is deleted, when the user opens its terminal or reads its origin notification, and on dismiss.
+- Order: `report` sorts in the group of `waiting_for_input`, `bell`, `auto_hold`, and `resume_hold`.
 
 ## Settings (amends 0007 `hold-protocol.md`)
 
