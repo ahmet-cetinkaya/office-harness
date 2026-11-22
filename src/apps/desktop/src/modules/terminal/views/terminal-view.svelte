@@ -259,7 +259,10 @@
     {:else if focusShortcut !== null}
       Every key goes to the agent, except
       <kbd class="font-mono font-medium">{focusShortcut.label}</kbd>, which
-      moves focus out of the terminal back to the app.
+      moves focus out of the terminal back to the app, and the app shortcuts
+      <kbd class="font-mono font-medium">Ctrl+Shift+F1</kbd> to
+      <kbd class="font-mono font-medium">Ctrl+Shift+F11</kbd> and
+      <kbd class="font-mono font-medium">Ctrl+Shift+H</kbd>.
     {:else}
       Opening the terminal.
     {/if}

@@ -47,6 +47,11 @@ export function createNotificationController(
    * that the Needs you item it made never shows (0008 D8).
    */
   onReadOnArrival: (notificationId: string) => void = () => {},
+  /**
+   * Called when that read failed, so that the item stays and shows: the
+   * server did not clear it (0008 D8).
+   */
+  onReadOnArrivalFailed: (notificationId: string) => void = () => {},
 ) {
   const service = createNotificationService(client);
   let snapshot: NotificationSnapshot = INITIAL_NOTIFICATIONS;
@@ -118,7 +123,8 @@ export function createNotificationController(
       try {
         await service.read(row.id);
       } catch {
-        // The next list read tells the truth again.
+        // The server kept the notification unread and its item.
+        onReadOnArrivalFailed(row.id);
       }
       return;
     }

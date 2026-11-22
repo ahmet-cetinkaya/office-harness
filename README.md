@@ -32,7 +32,7 @@ The exact wording of these OS notices depends on the OS version. The macOS and W
 2. The app connects to the server. A new office shows "The office is empty". Choose "Create the first agent".
 3. Enter a name, a command (the CLI to run, for example `claude`), and a working folder. You can also choose a project.
 4. Select the agent and choose "Start agent".
-5. The terminal of the agent opens in the agent details. Type into it as in a normal terminal. Every key goes to the CLI, except the focus shortcut.
+5. The terminal of the agent opens in the agent details. Type into it as in a normal terminal. Every key goes to the CLI, except the focus shortcut and the app shortcuts (`Ctrl+Shift+F1` to `Ctrl+Shift+F11` and `Ctrl+Shift+H`, described below), which leave the terminal for the app.
 6. To move focus from the terminal back to the rest of the app, press `Ctrl+Shift+F12`.
 7. Close the app when you want. The agents keep running and the server keeps recording their output.
 

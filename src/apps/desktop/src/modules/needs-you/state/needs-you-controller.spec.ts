@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import type { CoreClient, ServerEvent } from "../../../core/api";
 import type { NeedsYouItem } from "../models/needs-you";
 import { createNeedsYouController } from "./needs-you-controller";
@@ -195,5 +195,77 @@ describe("needs-you controller", () => {
     await settle();
 
     expect(requests.map((sent) => sent.kind)).toEqual(["needs_you.list"]);
+  });
+
+  test("a resync from three items to one speaks no stale count", async () => {
+    const { client, push } = fakeClient(() => ({ items: [item("a")] }));
+    const { controller, state } = observe(client);
+    push({
+      type: "needs_you.changed",
+      items: [item("a"), item("b"), item("c")],
+    });
+    expect(state().announcement).toBe("Needs you: 3 agents");
+
+    await controller.load();
+
+    expect(state().items).toHaveLength(1);
+    expect(state().announcement).toBeNull();
+  });
+
+  test("an item that the origin hide covered shows again when the read failed", () => {
+    const { client, push } = fakeClient();
+    const { controller, state } = observe(client);
+    controller.hideOrigin("n1");
+    push({ type: "needs_you.changed", items: [item("a", "n1")] });
+    expect(state().items).toEqual([]);
+
+    controller.showOrigin("n1");
+
+    expect(state().items).toHaveLength(1);
+  });
+
+  describe("a taken item", () => {
+    test("stays out when a list that still has it arrives before the server handled the read", () => {
+      const { client, push } = fakeClient();
+      const { controller, state } = observe(client);
+      push({ type: "needs_you.changed", items: [item("a"), item("b")] });
+
+      controller.takeTop(allKnown);
+      push({ type: "needs_you.changed", items: [item("a"), item("b")] });
+
+      expect(state().items.map((entry) => entry.agent_id)).toEqual(["b"]);
+      expect(controller.takeTop(allKnown)).toBe("b");
+    });
+
+    test("comes back as a new item once a server list had dropped it", () => {
+      const { client, push } = fakeClient();
+      const { controller, state } = observe(client);
+      push({ type: "needs_you.changed", items: [item("a")] });
+      controller.takeTop(allKnown);
+
+      push({ type: "needs_you.changed", items: [] });
+      push({ type: "needs_you.changed", items: [item("a")] });
+
+      expect(state().items).toHaveLength(1);
+    });
+
+    test("shows again after the timeout when the server never dropped it", () => {
+      const { client, push } = fakeClient();
+      const { controller, state } = observe(client);
+      push({ type: "needs_you.changed", items: [item("a")] });
+      controller.takeTop(allKnown);
+      push({ type: "needs_you.changed", items: [item("a")] });
+      const stop = controller.startTicking(5);
+
+      setSystemTime(Date.now() + 60_000);
+      return new Promise<void>((resolve) =>
+        setTimeout(() => {
+          stop();
+          setSystemTime();
+          expect(state().items).toHaveLength(1);
+          resolve();
+        }, 30),
+      );
+    });
   });
 });

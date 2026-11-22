@@ -312,7 +312,17 @@ export async function installMockCore(
       detail: string | null,
       firstEventAt: number,
     ) => {
-      const row = createNotification(agent, kind, detail);
+      // 0003 drops a bell while the agent has an unread bell; the item still
+      // records it, and a new item then has no origin (0008 D3).
+      const isCoalesced =
+        kind === "bell" &&
+        office.notifications.some(
+          (row) =>
+            row.agent_id === agent.id &&
+            row.event === "bell" &&
+            row.read_at === null,
+        );
+      const row = isCoalesced ? null : createNotification(agent, kind, detail);
       const known = office.needsYou.find((item) => item.agent_id === agent.id);
       if (known === undefined) {
         office.needsYou.push({
@@ -321,7 +331,7 @@ export async function installMockCore(
           detail,
           first_event_at: firstEventAt,
           latest_at: Date.now(),
-          origin_notification_id: row.id,
+          origin_notification_id: row?.id ?? null,
         });
       } else {
         Object.assign(known, { kind, detail, latest_at: Date.now() });
@@ -351,9 +361,14 @@ export async function installMockCore(
     };
     const heldAgent = (agentId: string) =>
       office.holds.agents.find((hold) => hold.agent_id === agentId);
+    // FR-005: these statuses end an agent's attention.
+    const CLEARING_STATUSES = ["starting", "working", "stopped"];
     const setStatus = (agent: Agent, status: string) => {
       agent.status = status;
       pushEvent({ type: "agent.status", agent_id: agent.id, status });
+      if (CLEARING_STATUSES.includes(status)) {
+        clearNeedsYou((item) => item.agent_id === agent.id);
+      }
     };
     const endSessions = (agentId: string) => {
       for (const session of office.sessions[agentId] ?? []) {
@@ -878,6 +893,9 @@ export async function installMockCore(
           );
           record(agent.id, "release");
           pushHoldChanged();
+          clearNeedsYou(
+            (item) => item.agent_id === agent.id && item.kind === "auto_hold",
+          );
           return {};
         }
         case "office.actions":

@@ -62,6 +62,7 @@ function observe(
   selected: () => string | null = () => null,
   windowFocused: () => boolean = () => false,
   onReadOnArrival: (notificationId: string) => void = () => {},
+  onReadOnArrivalFailed: (notificationId: string) => void = () => {},
 ) {
   const controller = createNotificationController(
     client,
@@ -69,6 +70,7 @@ function observe(
     selected,
     windowFocused,
     onReadOnArrival,
+    onReadOnArrivalFailed,
   );
   let last = controller.snapshot;
   controller.subscribe((next) => (last = next));
@@ -135,6 +137,31 @@ describe("notification controller", () => {
     await settle();
 
     expect(arrived).toEqual(["on"]);
+  });
+
+  test("a failed read on arrival reports the notification, so its item shows again", async () => {
+    const { client, push } = fakeClient((kind) => {
+      if (kind === "notification.read") {
+        throw { code: "internal", message: "no answer" };
+      }
+      return [];
+    });
+    const { os } = fakeOs();
+    const failed: string[] = [];
+    const { controller } = observe(
+      client,
+      os,
+      () => "agent-ada",
+      () => true,
+      () => {},
+      (notificationId) => failed.push(notificationId),
+    );
+    await controller.load();
+
+    push({ type: "notification.created", notification: row({ id: "on" }) });
+    await settle();
+
+    expect(failed).toEqual(["on"]);
   });
 
   test("the announcement clears on the next load, so each one is spoken once", async () => {

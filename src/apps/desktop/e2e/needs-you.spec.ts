@@ -36,6 +36,11 @@ const PROJECTS = [
   { id: "project-site", name: "Site", folder: "/work/site" },
   { id: "project-api", name: "Api", folder: "/work/api" },
 ];
+const EMPTY_PROJECT = {
+  id: "project-empty",
+  name: "Empty",
+  folder: "/work/empty",
+};
 
 /** Six agents; Zed never has an item, so its terminal can be open first. */
 const AGENTS = [
@@ -421,6 +426,47 @@ test.describe("the jump shortcut", () => {
   });
 });
 
+test.describe("with an empty project chosen", () => {
+  async function chooseEmptyProject(page: Page): Promise<void> {
+    await openPanel(page, {
+      projects: [...PROJECTS, EMPTY_PROJECT],
+      needsYou: [item("agent-ada", "bell", SECOND_MS)],
+    });
+    await page
+      .getByLabel("Project", { exact: true })
+      .selectOption({ label: "Empty" });
+    await expect(
+      page.getByRole("heading", { name: "This project has no agents" }),
+    ).toBeVisible();
+  }
+
+  test("Needs you still covers every project", async ({ page }) => {
+    await chooseEmptyProject(page);
+
+    await expect(
+      needsYouSection(page).getByRole("heading", { name: "Needs you (1)" }),
+    ).toBeVisible();
+    await needsYouSection(page)
+      .getByRole("button", { name: "Dismiss Ada" })
+      .click();
+    await expect(
+      needsYouSection(page).getByText(EMPTY_TEXT, { exact: true }),
+    ).toBeVisible();
+  });
+
+  test("the jump shows all projects first, so the opened terminal renders", async ({
+    page,
+  }) => {
+    await chooseEmptyProject(page);
+
+    await page.keyboard.press(JUMP_KEY);
+
+    await expect(terminalInput(page, "Ada")).toBeFocused();
+    await expect(page.getByLabel("Project", { exact: true })).toHaveValue("");
+    expect(await readAgentIds(page)).toEqual(["agent-ada"]);
+  });
+});
+
 test.describe("the window title count", () => {
   test("follows the dismissals in the panel", async ({ page }) => {
     await openPanel(page, {
@@ -497,6 +543,33 @@ test.describe("announcements", () => {
       1,
     );
     expect(spoken.some((text) => text.includes("needs you"))).toBe(false);
+  });
+
+  test("a view switch does not speak the standing count again", async ({
+    page,
+  }) => {
+    await openPanel(page, {
+      needsYou: [
+        item("agent-ada", "bell", SECOND_MS),
+        item("agent-bo", "bell", SECOND_MS),
+      ],
+    });
+    await needsYouSection(page)
+      .getByRole("button", { name: "Dismiss Ada" })
+      .click();
+    await expect(liveRegion(page)).toHaveText("Needs you: 1 agent");
+
+    await page.getByRole("button", { name: "To the scene" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Office scene" }),
+    ).toBeVisible();
+    await expect(page.locator("p.sr-only[role='status']")).not.toContainText(
+      "Needs you",
+    );
+    await page.getByRole("button", { name: "To the panel" }).click();
+
+    await expect(needsYouSection(page)).toBeVisible();
+    await expect(liveRegion(page)).not.toContainText("Needs you");
   });
 
   test("an event for the on-screen agent in the focused window leaves no item, title, or count announcement", async ({

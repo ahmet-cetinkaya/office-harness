@@ -315,14 +315,15 @@
   });
 
   // A count change speaks through the scene's one live region.
-  let lastNeedsYouAnnouncement: string | null = null;
-  $effect(() =>
-    needsYou.subscribe((next) => {
-      if (next.announcement === lastNeedsYouAnnouncement) return;
-      lastNeedsYouAnnouncement = next.announcement;
+  // An announcement that stood before this view mounted was spoken already.
+  $effect(() => {
+    let lastAnnouncement = needsYou.snapshot.announcement;
+    return needsYou.subscribe((next) => {
+      if (next.announcement === lastAnnouncement) return;
+      lastAnnouncement = next.announcement;
       if (next.announcement !== null) announce(next.announcement);
-    }),
-  );
+    });
+  });
 
   /** The focus shortcut hands focus back to the desk that opened it (D5). */
   function leaveTerminalToDesk(): void {

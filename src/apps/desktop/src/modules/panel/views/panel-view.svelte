@@ -48,6 +48,7 @@
   import ProjectSwitcher from "../components/project-switcher.svelte";
   import {
     agentHierarchy,
+    ALL_PROJECTS,
     effectiveChoice,
     isEmptyProject,
     projectNameOf,
@@ -111,6 +112,9 @@
   let lastHoldAnnouncement: string | null = null;
   let lastNotificationAnnouncement: string | null = null;
   let lastNeedsYouAnnouncement: string | null = null;
+  // The first run sees an announcement that stood before this view mounted
+  // (the other view spoke it), so it only records it.
+  let isNeedsYouAnnouncementSeen = false;
   $effect(() => {
     const next = holdSnapshot.announcement;
     if (next === lastHoldAnnouncement) return;
@@ -125,9 +129,11 @@
   });
   $effect(() => {
     const next = needsYouSnapshot.announcement;
+    const isFirstRun = !isNeedsYouAnnouncementSeen;
+    isNeedsYouAnnouncementSeen = true;
     if (next === lastNeedsYouAnnouncement) return;
     lastNeedsYouAnnouncement = next;
-    if (next !== null) liveAnnouncement = next;
+    if (next !== null && !isFirstRun) liveAnnouncement = next;
   });
 
   const choice = $derived(
@@ -210,14 +216,20 @@
   /**
    * The jump opens the top item's agent through the same path as the
    * switcher, so a project that the choice hides does not matter (0008 D5).
+   * An empty project shows no detail area, so the view shows all projects
+   * first and the terminal has a place to render.
    */
-  function jumpToTopAgent(): void {
+  async function jumpToTopAgent(): Promise<void> {
     const agentId = store.needsYou.takeTop((id) =>
       office.agents.some((agent) => agent.id === id),
     );
     if (agentId === null) return;
+    if (emptyProject) {
+      store.setProjectChoice(ALL_PROJECTS);
+      await tick();
+    }
     openAgent(agentId);
-    void focusHeadingUnlessRunning(detailArea, isAgentActive(agentId));
+    await focusHeadingUnlessRunning(detailArea, isAgentActive(agentId));
   }
 
   function isAgentActive(agentId: string): boolean {
@@ -267,7 +279,7 @@
     }
     if (pressed.kind === "jump") {
       event.preventDefault();
-      jumpToTopAgent();
+      void jumpToTopAgent();
       return;
     }
     if (pressed.position === null) return;
@@ -299,6 +311,17 @@
     createAgentInProject = null;
   }
 </script>
+
+<!-- Needs you covers every project (FR-009), so each view that the project
+  choice can show renders it. -->
+{#snippet needsYouSection()}
+  <NeedsYouSection
+    rows={needsYouRows}
+    count={needsYouRows.length}
+    isJumpUnbound={isJumpOff}
+    ondismiss={store.needsYou.dismiss}
+  />
+{/snippet}
 
 <div class="mx-auto flex max-w-6xl flex-col gap-6 p-6">
   <header class="flex flex-wrap items-center justify-between gap-3">
@@ -379,6 +402,7 @@
         </Button>
       </section>
     {:else if emptyProject}
+      {@render needsYouSection()}
       <section
         aria-labelledby="panel-empty-project-heading"
         class="flex flex-col items-start gap-3"
@@ -400,12 +424,7 @@
     {:else}
       <div class="grid gap-6 md:grid-cols-[20rem_1fr]">
         <div class="flex flex-col gap-6">
-          <NeedsYouSection
-            rows={needsYouRows}
-            count={needsYouSnapshot.items.length}
-            isJumpUnbound={isJumpOff}
-            ondismiss={store.needsYou.dismiss}
-          />
+          {@render needsYouSection()}
           <section
             aria-labelledby={AGENTS_HEADING_ID}
             class="flex flex-col gap-2"

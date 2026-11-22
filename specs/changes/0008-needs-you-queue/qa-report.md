@@ -3,9 +3,9 @@
 ## Summary
 
 - **Date:** 2026-11-22.
-- **Build under test:** branch `feat/0008-p2-desktop` at a3d4415 (Phase 2, desktop). Phase 1 (server) is PR #87, run at e62500f (r2).
+- **Build under test:** branch `feat/0008-p2-desktop` at the PR #92 r2 commit (the review fixes on top of 43198ad; Phase 2, desktop). Phase 1 (server) is PR #87, run at e62500f (r2).
 - **Overall status:** the automated evidence stands for every requirement, success criterion, and edge case, with the gaps named in Known gaps. The hands-on rows (screen reader pass, 200 percent zoom, the real window title on KDE, the real jump key on KDE) are BLOCKED: nobody has run them. macOS and Windows hands-on rows are WAIVED (owner, 2026-11-20, the same decision as 0003, 0005, and 0007: CI evidence suffices). No hands-on row is PASS.
-- **Status of this file:** the local gate results below were run on this branch on 2026-11-22. The test names were read from the repository on 2026-11-22. This task ran no test, build, or browser: it is a docs task.
+- **Status of this file:** the local gate results below were run on this branch on 2026-11-22. The test names were read from the repository on 2026-11-22. The desktop gates (`bun test`, `svelte-check`, `eslint`, `prettier`, Playwright) were run again after the PR #92 review fixes; the Rust and `tauri build` rows are from a3d4415, and no Rust file changed in those fixes.
 
 ### Verdict words
 
@@ -30,12 +30,12 @@
 |---|---|---|
 | `cargo test -p agent-domain -p agent-infrastructure -p office-harnessd` | at a3d4415: 396 passed, 0 failed | PASS |
 | `cargo clippy` | `agent-domain`, `agent-infrastructure`: lint clean | PASS |
-| `office-harness-desktop` (Tauri crate) | lint clean; 45 tests passed | PASS |
+| `office-harness-desktop` (Tauri crate) | at a3d4415: lint clean; 45 tests passed | PASS |
 | `bun run tauri build --debug --no-bundle` | desktop, at a3d4415 | PASS (succeeded) |
-| `bun test src` | desktop: 250 passed, 0 failed | PASS |
+| `bun test src` | desktop, after the PR #92 review fixes: 259 passed, 0 failed | PASS |
 | `svelte-check` | desktop: 0 errors, 0 warnings | PASS |
 | `eslint`, `prettier --check` | desktop | PASS (clean) |
-| Playwright (system chromium, 4 workers) | desktop, full suite: 176 passed, 0 failed, including the 17 tests of `e2e/needs-you.spec.ts` | PASS |
+| Playwright (system chromium, 4 workers) | desktop, full suite after the PR #92 review fixes: 179 passed, 0 failed, including the 20 tests of `e2e/needs-you.spec.ts` | PASS |
 | Phase 1 (PR #87 r2, e62500f) | 327 tests passed on the 4 notification crates and `office-harnessd`; `tests/needs_you.rs` and `tests/notifications.rs` passed 3 times | PASS |
 
 One Playwright test was corrected during the run. The five-press jump test expected keyboard focus in the terminal of the exited agent Ed. The terminal of a non-running agent is read-only and does not take focus (0001 terminal view, `terminal-view.svelte`, about line 211). The test now asserts that the terminal is shown, and asserts focus only for running agents. See SC-002.
@@ -65,7 +65,7 @@ Paths are relative to the repository root. `N` is `src/modules/notification`, `H
 | PB-4 | PASS (automated) | `NE`: the list, an empty list, and the collision line are checked with axe (`expectNoSeriousViolations`) in `shows name, project, event, and wait time as text, in the server's order`, `says that no agent needs the user when the list is empty`, and `a stored focus shortcut equal to the jump key keeps the key and unbinds the jump`. Keyboard: `a dismiss by keyboard removes the item and leaves the agent's status`, `the dismiss button shows a focus ring`, the five-press test. Text, not color: `NM`, `the accessible name holds name, project, event, and wait time`. |
 | PB-5 | PARTIAL (automated) | The requests are local wire requests on the existing connection; no new outbound code was written for this change. No new test asserts it, and the existing guards of 0001 are not part of this report's runs. |
 | A1 and the collision edge cases | PASS (automated) | Server stores the jump key as a focus shortcut: `A/domain/src/value_objects/settings.tests.rs`, `a_stored_jump_shortcut_is_kept_in_every_spelling`, `a_stored_value_loads_as_a_new_value_does_except_the_jump_shortcut`, `a_reserved_shortcut_is_refused_in_every_spelling_the_desktop_matches`, `each_reserved_shortcut_normalizes_to_its_canonical_form`; `A/application/.../set_setting_handler.tests.rs`, `a_shortcut_of_the_fixed_table_is_a_conflict`. Desktop: `D/src/core/shortcuts/focus-shortcut.spec.ts`, `a stored jump key is kept, in every spelling`; `AS`, `the jump entry is unbound and the other entries stay bound`, `the jump is bound for the default focus shortcut`, `no entry equals the focus shortcut`. Collision line and behavior: `NE`, `a stored focus shortcut equal to the jump key keeps the key and unbinds the jump`, `the collision line is absent with the default focus shortcut`. The line text is the one in the README. |
-| SC-001 | PASS (automated) | Server: `NY`, `thirty_agents_with_five_events_list_exactly_those_five_in_order` (30 agents, 5 items, the order of FR-003). Desktop: `NE`, `shows name, project, event, and wait time as text, in the server's order`; the jump shows the top agent's terminal with focus in the five-press test. The 1 second bound is not timed by a test: the jump shows the terminal in the Playwright run without a wait of that length, but no test measures it. A real-CLI run is BLOCKED (Manual QA). |
+| SC-001 | PASS (automated) | Server: `NY`, `thirty_agents_with_five_events_list_exactly_those_five_in_order` (30 agents, 5 items, the order of FR-003). Desktop: `NE`, `shows name, project, event, and wait time as text, in the server's order`; the jump shows the top agent's terminal with focus in the five-press test. The 1 second bound is tested for the first jump: `NE`, `five presses from a focused terminal ...` waits at most `FIRST_JUMP_BUDGET_MS` (1 s) for it, on the mock core. A real-CLI run is BLOCKED (Manual QA). |
 | SC-002 | PASS (automated) | `NE`, `five presses from a focused terminal open the five terminals in order and empty the list`. Corrected during the 2026-11-22 run: the first version expected focus in the terminal of the exited agent Ed. The terminal of a non-running agent is read-only and takes no focus (0001 terminal view, `terminal-view.svelte`, about line 211). Per Efe's D5 clarification (2026-11-22), the jump now puts focus on the terminal view heading ("Terminal, Ed") for an agent that is not running; the test asserts that for Ed and focus in the terminal for the running agents. See Plan deviations 7. |
 | SC-003 | PASS (automated) | Server: `NY`, `a_change_reaches_a_connected_client_within_two_seconds`, `a_wait_is_announced_after_the_quiet_period_and_within_two_seconds_of_it`. Desktop title: `NE`, `follows the dismissals in the panel`, `follows the jumps in the scene`. |
 | SC-004 | PASS (automated) | `NY`, `events_while_no_client_is_connected_list_with_their_first_event_times` (three events with no client; all three listed with their first event times). The 3 second bound after the app opens is not timed by a test. |
@@ -107,7 +107,7 @@ Paths are relative to the repository root. `N` is `src/modules/notification`, `H
 
 ## Known gaps (open only)
 
-1. **The 1 second (SC-001) and 3 second (SC-004) bounds are not timed by a test.** The server bound of 2 seconds (SC-003) is tested.
+1. **The 3 second (SC-004) bound is not timed by a test.** The 1 second bound of SC-001 is tested on the mock core only, and the server bound of 2 seconds (SC-003) is tested.
 2. **PB-2 and PB-5 have no test of their own.** They rest on code reading and on the existing 0001 guards.
 3. **No test shows the window title with a missing title bar** (tiling layout).
 4. **No hands-on pass** of the rows in Manual QA.

@@ -112,9 +112,18 @@
 
   // The window title shows the count in both views (0008 D7, FR-009). The
   // title is set by the core, which takes only the number.
-  let needsYouCount = $state(0);
+  let needsYouAgentIds = $state<string[]>([]);
   $effect(() =>
-    panel.needsYou.subscribe((next) => (needsYouCount = next.items.length)),
+    panel.needsYou.subscribe(
+      (next) => (needsYouAgentIds = next.items.map((item) => item.agent_id)),
+    ),
+  );
+  // The panel's rows drop items of agents that are gone, so the title counts
+  // the same items.
+  const needsYouCount = $derived(
+    needsYouAgentIds.filter((agentId) =>
+      panel.office.snapshot.agents.some((agent) => agent.id === agentId),
+    ).length,
   );
   // The window starts without a count, so a first count of 0 sends nothing.
   let titleCount = 0;

@@ -2,7 +2,6 @@
 
 export {
   APP_SHORTCUT_TABLE,
-  isAppShortcut,
   isJumpUnbound,
   pressedAppShortcut,
   type AppShortcut,

@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { CoreClient } from "../api";
-import { loadFocusShortcut } from "./focus-shortcut";
+import { loadFocusShortcut, sharedFocusShortcut } from "./focus-shortcut";
 import { DEFAULT_FOCUS_SHORTCUT } from "./shortcut";
 
 function clientWithSetting(value: unknown): CoreClient {
@@ -57,5 +57,27 @@ describe("focus shortcut", () => {
       expect(focus.label).toBe(DEFAULT_FOCUS_SHORTCUT);
       expect(focus.shortcut.key).toBe("f12");
     }
+  });
+
+  // One failed read must not replace the user's stored key for the whole run.
+  test("a failed shared load gives the default now and reads again next time", async () => {
+    let isFailing = true;
+    const stored = clientWithSetting("Ctrl+Alt+F11");
+    const client: CoreClient = {
+      ...stored,
+      sendRequest: async (kind, fields) => {
+        if (isFailing) throw new Error("not connected");
+        return stored.sendRequest(kind, fields);
+      },
+    };
+
+    const first = await sharedFocusShortcut(client);
+    isFailing = false;
+    const second = await sharedFocusShortcut(client);
+    const third = await sharedFocusShortcut(client);
+
+    expect(first.label).toBe(DEFAULT_FOCUS_SHORTCUT);
+    expect(second.label).toBe("Ctrl+Alt+F11");
+    expect(third).toBe(second);
   });
 });

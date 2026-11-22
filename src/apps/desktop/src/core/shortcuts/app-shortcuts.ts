@@ -97,12 +97,3 @@ export function appShortcutNamed(text: string): AppShortcut | null {
     ) ?? null
   );
 }
-
-/**
- * True when the text names a combination of the table: the focus shortcut
- * must not take any of them, so this is the one list the desktop checks a
- * focus shortcut against.
- */
-export function isAppShortcut(text: string): boolean {
-  return appShortcutNamed(text) !== null;
-}
