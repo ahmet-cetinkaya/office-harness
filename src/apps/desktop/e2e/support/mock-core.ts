@@ -355,6 +355,14 @@ export async function installMockCore(
       office.actions.push(entry);
       pushEvent({ type: "action.recorded", entry });
     };
+    /** The server counts Unicode scalar values, not UTF-16 units. Declared
+     * here because this function is serialized into the page. */
+    const TASK_TEXT_MAX_CHARACTERS = 8192;
+    /** The task of the real server: its own event, never `agent.changed`. */
+    const setTask = (agent: Agent, task: Agent["task"]) => {
+      agent.task = task;
+      pushEvent({ type: "agent.task", agent_id: agent.id, task });
+    };
     /** The full state after a hold change, as `hold.changed` carries it. */
     const pushHoldChanged = () => {
       pushEvent({ type: "hold.changed", ...structuredClone(office.holds) });
@@ -483,6 +491,7 @@ export async function installMockCore(
         status: "stopped",
         created_at: Date.now(),
         last_line: null,
+        task: null,
       };
       office.agents.push(agent);
       office.additions[agent.id] = {
@@ -677,6 +686,7 @@ export async function installMockCore(
         case "agent.new_task": {
           const agent = findAgent(fields.agent_id);
           const session = startSession(agent, null);
+          if (kind === "agent.new_task") setTask(agent, null);
           record(agent.id, kind === "agent.start" ? "start" : "new_task");
           return session;
         }
@@ -771,6 +781,20 @@ export async function installMockCore(
             additions: saved,
           });
           return saved;
+        }
+        case "agent.task.set": {
+          const agent = findAgent(fields.agent_id);
+          const text = String(fields.text ?? "");
+          if ([...text].length > TASK_TEXT_MAX_CHARACTERS) {
+            refuse("invalid", "a task text has at most 8,192 characters");
+          }
+          const task =
+            text.trim() === ""
+              ? null
+              : { text, set_at: Date.now(), source: "user" as const };
+          setTask(agent, task);
+          record(agent.id, "task_text");
+          return { ...agent, last_line: null };
         }
         case "session.list":
           return office.sessions[String(fields.agent_id)] ?? [];

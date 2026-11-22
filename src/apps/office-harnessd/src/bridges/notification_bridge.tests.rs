@@ -139,6 +139,14 @@ impl AgentStore for BrokenStore {
         Ok(())
     }
 
+    fn update_task(
+        &self,
+        _id: AgentId,
+        _task: Option<&agent_domain::value_objects::TaskText>,
+    ) -> Result<(), PortError> {
+        Ok(())
+    }
+
     fn delete(&self, _id: AgentId) -> Result<(), PortError> {
         Ok(())
     }
@@ -187,6 +195,14 @@ impl AgentStore for OneAgent {
     }
 
     fn update_status(&self, _id: AgentId, _status: AgentStatus) -> Result<(), PortError> {
+        Ok(())
+    }
+
+    fn update_task(
+        &self,
+        _id: AgentId,
+        _task: Option<&agent_domain::value_objects::TaskText>,
+    ) -> Result<(), PortError> {
         Ok(())
     }
 

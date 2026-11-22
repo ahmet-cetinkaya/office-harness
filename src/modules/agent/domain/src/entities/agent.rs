@@ -7,7 +7,7 @@ use kernel::{AgentId, Timestamp};
 use crate::enums::{AgentStatus, StatusEvent};
 use crate::errors::AgentError;
 use crate::services::next_status;
-use crate::value_objects::{AgentCommand, DisplayName, MachineId, ProjectId};
+use crate::value_objects::{AgentCommand, DisplayName, MachineId, ProjectId, TaskText};
 
 /// An agent definition and its status.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +21,8 @@ pub struct Agent {
     pub machine_id: MachineId,
     pub status: AgentStatus,
     pub created_at: Timestamp,
+    /// The last task the office gave the agent, if any (0011).
+    pub task: Option<TaskText>,
 }
 
 impl Agent {
@@ -58,6 +60,7 @@ impl Agent {
             machine_id,
             status: AgentStatus::Stopped,
             created_at,
+            task: None,
         })
     }
 

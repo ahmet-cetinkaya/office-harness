@@ -27,9 +27,9 @@ use super::{
     AgentServices, ServerLog, StartupError, StorageAlerts, TerminalServices, run_migrations,
 };
 use crate::bridges::{
-    AgentCreatorBridge, DirectiveJournalBridge, DirectiveTargetBridge, DirectiveWriterBridge,
-    HoldJournalBridge, HoldNotifierBridge, NeedsYouBridge, NotificationBridge, RoleRequestsBridge,
-    SettingsRateLimits, SteadyClock, SubtreeRequestsBridge,
+    AgentCreatorBridge, DirectiveJournalBridge, DirectiveReceiptBridge, DirectiveTargetBridge,
+    DirectiveWriterBridge, HoldJournalBridge, HoldNotifierBridge, NeedsYouBridge,
+    NotificationBridge, RoleRequestsBridge, SettingsRateLimits, SteadyClock, SubtreeRequestsBridge,
 };
 use crate::server::EventHub;
 
@@ -139,9 +139,15 @@ pub fn build_hierarchy_services(
     let send_directive = Arc::new(
         SendDirectiveHandler::new(
             Arc::clone(&store),
-            Arc::new(DirectiveTargetBridge::new(agents)),
+            Arc::new(DirectiveTargetBridge::new(Arc::clone(&agents))),
             Arc::new(DirectiveWriterBridge::new(Arc::clone(&terminal.runtime))),
             Arc::clone(&directive_journal) as Arc<dyn DirectiveJournal>,
+            Arc::new(DirectiveReceiptBridge::new(
+                agents,
+                events.clone(),
+                alerts.clone(),
+                Arc::clone(&agent.task_order),
+            )),
         )
         .with_hold_guard(Arc::clone(&holds)),
     );
