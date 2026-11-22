@@ -69,13 +69,15 @@ Errors: `not_found`, `internal` (git cannot start, does not answer in 10 seconds
 
 Fields: `agent_id`, `path`, `old_path` (optional, for a rename), `commit` (optional), `reveal` (boolean, default `false`).
 
+`old_path` goes through the same parse as `path` (contract Paths) and, without `commit`, the same containment; a deleted old path resolves through its deepest existing parent. With `commit`, both paths name files of git's trees, not of the disk, so the parse alone applies: git reads no file of the disk for them.
+
 Without `commit`: the change of the path in the root against HEAD, staged and unstaged together. For an untracked file the server builds the diff itself: every line added. With `commit`: the change of the path in that commit against its first parent, or against nothing for a commit without a parent.
 
 Result: `{path, state, size, content_base64}`.
 
 | `state` | When | `content_base64` |
 |---|---|---|
-| `secret` | The path or `old_path` is secret-looking and `reveal` is not `true`. | `null` |
+| `secret` | `path` or `old_path` is secret-looking, by the requested name or, for a path on disk, the resolved name, and `reveal` is not `true` (FR-004: a rename with either side secret-looking is secret). | `null` |
 | `too_large` | The diff is over 524,288 bytes; `size` is its size when known, else `null`. | `null` |
 | `binary` | git reports a binary change, or the untracked file is binary. | `null` |
 | `none` | No change of that path. | `null` |
