@@ -46,7 +46,7 @@ Every agent object in an `agent.*` answer (the `agent.list` rows, the `agent.cre
 
 ### `agent.create` — extended
 
-Optional `role` object: `{ kind: "ceo" | "lead" | "member", parent_agent_id: string?, team_id: string? }`. `kind: "ceo"` takes no parent or team. `kind: "lead"` requires `team_id` and no CEO parent (the team is its place; its parent becomes the CEO when one exists, else none); a team that already holds its lead refuses the create with `conflict`, and a lead placement names that team's lead. `kind: "member"` requires `parent_agent_id` of a lead and takes that lead's team. Refusal `refused` names the roles allowed at the given place (FR-003). Omitted `role` = 0001 behavior (PB-1).
+Optional `role` object: `{ kind: "ceo" | "lead" | "member", parent_agent_id: string?, team_id: string? }`. `kind: "ceo"` takes no parent or team. `kind: "lead"` requires `team_id` and no CEO parent (the team is its place; its parent becomes the CEO when one exists, else none); a team that already holds its lead refuses the create with `conflict`, and a lead placement names that team's lead. `kind: "member"` requires `parent_agent_id` of a lead and takes that lead's team. Refusal `refused` names the roles allowed at the given place (FR-003). Omitted `role` = 0001 behavior (PB-1). A member's or lead's project is its team's project (A6): a `project_id` that differs from the team's is `invalid`, and the team's own `project_id` or none is accepted. A member or lead of a team with no project gets none, so a `project_id` sent for it is `invalid` too.
 
 ### `agent.stop` / `agent.delete` — extended
 
@@ -62,6 +62,8 @@ The `auth` frame of an agent adds `agent_id`; its proof is the office proof keye
 
 Same envelope, but the connection proves an agent call token instead of the office token, and the server fixes the actor to that agent. Allowed types: `agent.create` (with `role`, within its own descendants and the role rules), `agent.start`, `agent.new_task`, `agent.stop` (descendants only), `directive.send`. Any other type, including `agent.delete`, `team.*`, and `hierarchy.tree`, is `refused` with the reason recorded (FR-008, FR-009). The `role` object of an agent's `agent.create` follows the user rules above: `kind: "lead"` requires `team_id` of an existing team (the user's `team.create` makes one), `kind: "member"` takes no `team_id` of its own (its lead's team applies, A6), and a field `role` does not take is `invalid`.
 
+Every entry that a request on the agent connection writes, the record of a refusal included, is sent as `action.recorded` to every user client, so an agent's action shows in an open panel without a reload. A request that the agent connection forwards to the office gateway (`agent.create`, `agent.start`, `agent.new_task`, `agent.stop`) publishes its entries once, there.
+
 ### `directive.send`
 
 | Field | Type | Rule |
@@ -69,7 +71,7 @@ Same envelope, but the connection proves an agent call token instead of the offi
 | `target_agent_id` | string | must be a running descendant of the caller |
 | `text` | string | 1 to 8192 characters; no C0 control characters (the server appends the Enter itself) |
 
-Result: `{}`. Errors: `refused` (not a descendant: names the rule; not running: says so), `invalid` (control characters, empty, oversize). Every refusal is recorded with the actor and the reason.
+Result: `{}`. Errors: `refused` (not a descendant: names the rule; not running: says so), `invalid` (control characters, empty, oversize). Every refusal is recorded with the actor and the reason, in the action record of the sender and in the action record of the target (one entry when they are the same agent); an accepted directive is recorded in the target's record only.
 
 > Amended by 0007: `directive.send`, `agent.create`, `agent.start`, `agent.stop`, and `agent.new_task` can also fail with `refused` for a hold or a rate limit. The reasons and their order are in `specs/changes/0007-hold-and-limits/contracts/hold-protocol.md`. They are checked after every refusal above.
 
@@ -77,7 +79,7 @@ Result: `{}`. Errors: `refused` (not a descendant: names the rule; not running: 
 
 ### `hierarchy.changed`
 
-Fields: `{ cause: "team.created" | "team.deleted" | "agent.placed" | "agent.unplaced" | "subtree.stopped" | "subtree.deleted" }`. Sent after any change that alters the tree shape or a role. Clients re-read `hierarchy.tree`. No per-node deltas in 0002 (plan D6).
+Fields: `{ cause: "team.created" | "team.deleted" | "agent.placed" | "agent.unplaced" | "subtree.stopped" | "subtree.deleted" }`. Sent after any change that alters the tree shape or a role, and only after the change succeeded. Clients re-read `hierarchy.tree`. The causes: `team.created` and `team.deleted` for `team.create` and `team.delete`; `agent.placed` for a successful `agent.create` with a `role` (user or agent connection); `agent.unplaced` for a successful `agent.delete` of an agent that held a place; `subtree.stopped` for a successful `agent.stop` with `include_descendants`; `subtree.deleted` for a successful `agent.delete` with `include_descendants` of a placed agent. When a request also sends `agent.changed` for a new agent, that event goes first. No per-node deltas in 0002 (plan D6).
 
 ## Environment contract (agent children)
 

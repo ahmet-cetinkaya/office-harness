@@ -257,8 +257,11 @@ fn a_control_character_in_a_refused_text_is_escaped_in_the_journal() {
 
     journal.record(sender, target, "bell \u{7} inside", Some("refused"));
 
+    // A refusal is written for the target and for the sender (ACF-168);
+    // both entries carry the escaped text.
     let entries = recorder.entries();
-    assert_eq!(entries.len(), 1);
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[1].failure, entries[0].failure);
     assert_eq!(entries[0].actor, kernel::Actor::Agent(sender));
     assert_eq!(entries[0].agent_id, target);
     assert_eq!(entries[0].action, AgentAction::Directive);
@@ -266,6 +269,50 @@ fn a_control_character_in_a_refused_text_is_escaped_in_the_journal() {
         entries[0].failure.as_deref(),
         Some("refused: bell \\u0007 inside")
     );
+}
+
+#[test]
+fn a_refusal_is_recorded_for_the_target_and_for_the_sender() {
+    let sender = AgentId::generate();
+    let target = AgentId::generate();
+    let recorder = Arc::new(RecordingRecorder::default());
+    let journal = journal_of(&recorder);
+
+    journal.record(sender, target, "text", Some("refused"));
+
+    let entries = recorder.entries();
+    let recorded_for: Vec<AgentId> = entries.iter().map(|entry| entry.agent_id).collect();
+    assert_eq!(recorded_for, vec![target, sender]);
+    for entry in &entries {
+        assert_eq!(entry.actor, kernel::Actor::Agent(sender));
+        assert_eq!(entry.action, AgentAction::Directive);
+        assert_eq!(entry.failure.as_deref(), Some("refused: text"));
+    }
+}
+
+#[test]
+fn a_refusal_where_sender_and_target_are_one_agent_is_recorded_once() {
+    let agent = AgentId::generate();
+    let recorder = Arc::new(RecordingRecorder::default());
+    let journal = journal_of(&recorder);
+
+    journal.record(agent, agent, "text", Some("refused"));
+
+    assert_eq!(recorder.entries().len(), 1);
+}
+
+#[test]
+fn an_accepted_directive_is_recorded_for_the_target_only() {
+    let sender = AgentId::generate();
+    let target = AgentId::generate();
+    let recorder = Arc::new(RecordingRecorder::default());
+    let journal = journal_of(&recorder);
+
+    journal.record(sender, target, "text", None);
+
+    let entries = recorder.entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].agent_id, target);
 }
 
 #[test]

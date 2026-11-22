@@ -97,15 +97,21 @@ async fn live_credential(records: &Path) -> (String, String) {
     )
 }
 
+/// Runs `directive.send` through the helper.
+async fn send_directive(credential: &str, server_file: &str, request: &Value) -> Output {
+    call_helper("directive.send", credential, server_file, request).await
+}
+
 /// Runs the helper with a credential, on a blocking thread: waiting for it
 /// on the runtime thread would stop the server it talks to.
-async fn send_directive(credential: &str, server_file: &str, request: &Value) -> Output {
+async fn call_helper(kind: &str, credential: &str, server_file: &str, request: &Value) -> Output {
+    let kind = kind.to_owned();
     let credential = credential.to_owned();
     let server_file = server_file.to_owned();
     let request = request.to_string();
     tokio::task::spawn_blocking(move || {
         Command::new(HELPER)
-            .args(["agent-call", "directive.send", &request])
+            .args(["agent-call", &kind, &request])
             .env("OFFICE_HARNESS_AGENT_TOKEN", credential)
             .env("OFFICE_HARNESS_SERVER_FILE", server_file)
             .output()
@@ -113,6 +119,19 @@ async fn send_directive(credential: &str, server_file: &str, request: &Value) ->
     })
     .await
     .expect("helper task")
+}
+
+/// The entry of the next `action.recorded` event that the watcher receives
+/// with this action on this agent. The watcher sent no request, so the event
+/// can only arrive through the server's publish to every client.
+async fn next_recorded(watcher: &mut Client, action: &str, agent_id: &str) -> Value {
+    loop {
+        let event = watcher.next_event("action.recorded").await;
+        let entry = &event["entry"];
+        if entry["action"] == action && entry["agent_id"] == agent_id {
+            return entry.clone();
+        }
+    }
 }
 
 /// The JSON answer of a failed helper call.
@@ -256,6 +275,29 @@ async fn a_directive_to_a_running_non_descendant_is_refused_and_recorded() {
 }
 
 #[tokio::test]
+async fn a_refused_directive_is_recorded_for_the_sender_and_for_the_target() {
+    let office = Office::open().await;
+    // The stranger stays unplaced, so the tree refuses the directive.
+    let (lead, stranger, token, server_file) = office_with(&office, None).await;
+
+    let request = json!({"target_agent_id": stranger, "text": "you there?"});
+    let outcome = send_directive(&token, &server_file, &request).await;
+    assert!(!outcome.status.success(), "{outcome:?}");
+
+    // Both agents' records, read back, list the refusal once (ACF-168).
+    let mut client = office.client().await;
+    for agent in [&lead, &stranger] {
+        let entries = actions_of(&mut client, agent).await;
+        let refused = entries
+            .iter()
+            .filter(|entry| entry["action"] == "directive" && entry["result"] != "ok")
+            .count();
+        assert_eq!(refused, 1, "{agent}: {entries:?}");
+    }
+    office.serving.stop().await;
+}
+
+#[tokio::test]
 async fn an_escape_in_the_text_is_invalid_and_recorded() {
     let office = Office::open().await;
     let (lead, member, token, server_file) = office_with(&office, Some(Role::Lead)).await;
@@ -315,6 +357,62 @@ async fn a_request_carrying_an_actor_field_is_refused_and_recorded() {
         .iter()
         .find(|entry| entry["action"] == "refused")
         .expect("the gateway refusal is recorded");
+    assert_eq!(entry["actor"], json!(format!("agent:{lead}")), "{entry}");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_refused_directive_of_an_agent_reaches_a_client_that_did_not_send_it() {
+    let office = Office::open().await;
+    let (lead, stranger, token, server_file) = office_with(&office, None).await;
+    let mut watcher = office.client().await;
+
+    let request = json!({"target_agent_id": stranger, "text": "you there?"});
+    let outcome = send_directive(&token, &server_file, &request).await;
+    assert_eq!(answer_of(&outcome)["error"]["code"], "refused");
+
+    // The target's entry arrives; a second entry for the sender may come with
+    // it, so the test looks for the target's.
+    let entry = next_recorded(&mut watcher, "directive", &stranger).await;
+    assert_ne!(entry["result"], "ok", "{entry}");
+    assert_eq!(entry["actor"], json!(format!("agent:{lead}")), "{entry}");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn an_accepted_directive_of_an_agent_reaches_a_client_that_did_not_send_it() {
+    let office = Office::open().await;
+    let (lead, member, token, server_file) = office_with(&office, Some(Role::Lead)).await;
+    let mut watcher = office.client().await;
+
+    let request = json!({"target_agent_id": member, "text": DIRECTIVE});
+    let outcome = send_directive(&token, &server_file, &request).await;
+    assert!(outcome.status.success(), "{outcome:?}");
+
+    let entry = next_recorded(&mut watcher, "directive", &member).await;
+    assert_eq!(entry["result"], "ok", "{entry}");
+    assert_eq!(entry["actor"], json!(format!("agent:{lead}")), "{entry}");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_gateway_refusal_of_an_agent_reaches_a_client_that_did_not_send_it() {
+    let office = Office::open().await;
+    let (lead, _member, token, server_file) = office_with(&office, Some(Role::Lead)).await;
+    let mut watcher = office.client().await;
+
+    // `agent.delete` is outside the agent allowlist, so the gateway itself
+    // refuses it and writes the entry.
+    let outcome = call_helper(
+        "agent.delete",
+        &token,
+        &server_file,
+        &json!({"agent_id": lead}),
+    )
+    .await;
+    assert_eq!(answer_of(&outcome)["error"]["code"], "refused");
+
+    let entry = next_recorded(&mut watcher, "refused", &lead).await;
     assert_eq!(entry["actor"], json!(format!("agent:{lead}")), "{entry}");
     office.serving.stop().await;
 }

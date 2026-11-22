@@ -28,6 +28,7 @@ fn never_called() -> ! {
 /// call, and fails them when `fail_place` is set.
 struct PlacingStore {
     rows: Vec<TreeRow>,
+    teams: Vec<hierarchy_domain::entities::Team>,
     fail_place: bool,
     places: Mutex<Vec<(AgentId, Option<TeamId>)>>,
     /// Never contended here; the exclusion exists so the trait stays whole.
@@ -44,7 +45,7 @@ impl HierarchyStore for PlacingStore {
     fn snapshot(&self) -> Result<TreeSnapshot, HierarchyApplicationError> {
         Ok(TreeSnapshot {
             rows: self.rows.clone(),
-            teams: Vec::new(),
+            teams: self.teams.clone(),
         })
     }
 
@@ -98,6 +99,7 @@ impl HierarchyStore for PlacingStore {
 #[derive(Default)]
 struct RecordingCreator {
     made: Mutex<Vec<AgentId>>,
+    seeds: Mutex<Vec<AgentSeed>>,
     removed: Mutex<Vec<AgentId>>,
     fail_create: Mutex<Option<CreatorError>>,
     fail_remove: Mutex<Option<CreatorError>>,
@@ -128,10 +130,11 @@ impl RecordingCreator {
 }
 
 impl AgentCreator for RecordingCreator {
-    fn create(&self, _seed: AgentSeed) -> Result<AgentId, CreatorError> {
+    fn create(&self, seed: AgentSeed) -> Result<AgentId, CreatorError> {
         if let Some(error) = locked(&self.fail_create).clone() {
             return Err(error);
         }
+        locked(&self.seeds).push(seed);
         let agent_id = AgentId::generate();
         locked(&self.made).push(agent_id);
         Ok(agent_id)
@@ -208,8 +211,23 @@ fn handler_with(
     Arc<PlacingStore>,
     Arc<RecordingCreator>,
 ) {
+    handler_over(rows, Vec::new(), fail_place, creator)
+}
+
+/// As `handler_with`, with the teams the snapshot reads.
+fn handler_over(
+    rows: Vec<TreeRow>,
+    teams: Vec<hierarchy_domain::entities::Team>,
+    fail_place: bool,
+    creator: RecordingCreator,
+) -> (
+    CreateRoleAgentHandler,
+    Arc<PlacingStore>,
+    Arc<RecordingCreator>,
+) {
     let store = Arc::new(PlacingStore {
         rows,
+        teams,
         fail_place,
         places: Mutex::new(Vec::new()),
         tree_writes: Mutex::new(()),
@@ -280,6 +298,83 @@ fn a_member_takes_its_leads_team() {
 
     assert_eq!(creator.made(), [agent_id]);
     assert_eq!(store.placed(), [(agent_id, Some(family.team))]);
+}
+
+/// A6: a member created with no folder and no project takes its team's
+/// project, so the agent module uses that project's folder.
+#[test]
+fn a_member_without_a_folder_takes_its_teams_project() {
+    let family = lead_with_team();
+    let project = kernel::ProjectId::generate();
+    let team = hierarchy_domain::entities::Team::stored(
+        family.team,
+        hierarchy_domain::TeamName::parse("Backend").expect("name"),
+        Some(project),
+        family.lead,
+    );
+    let tree_writes = Mutex::new(());
+    let tree = TreeExclusion::new(&tree_writes);
+    let (handler, _store, creator) =
+        handler_over(family.rows, vec![team], false, RecordingCreator::default());
+
+    handler
+        .handle(
+            request(seed("Bo"), Role::Member, Some(family.lead), None),
+            &tree,
+        )
+        .expect("create and place");
+
+    let seeds = locked(&creator.seeds).clone();
+    assert_eq!(seeds.len(), 1);
+    assert_eq!(seeds[0].project_id, Some(project));
+    assert_eq!(seeds[0].working_folder, None);
+}
+
+/// A6: a project that differs from the team's is refused, nothing is
+/// created, and the team's own project id passes.
+#[test]
+fn a_project_other_than_the_teams_is_refused_and_the_teams_own_passes() {
+    let family = lead_with_team();
+    let project = kernel::ProjectId::generate();
+    let team = hierarchy_domain::entities::Team::stored(
+        family.team,
+        hierarchy_domain::TeamName::parse("Backend").expect("name"),
+        Some(project),
+        family.lead,
+    );
+    let tree_writes = Mutex::new(());
+    let tree = TreeExclusion::new(&tree_writes);
+    let (handler, _store, creator) =
+        handler_over(family.rows, vec![team], false, RecordingCreator::default());
+    let with_project = |project_id| AgentSeed {
+        project_id: Some(project_id),
+        ..seed("Bo")
+    };
+
+    let error = handler
+        .handle(
+            request(
+                with_project(kernel::ProjectId::generate()),
+                Role::Member,
+                Some(family.lead),
+                None,
+            ),
+            &tree,
+        )
+        .expect_err("another project than the team's");
+    assert_eq!(
+        error,
+        HierarchyApplicationError::InvalidInput(PROJECT_IS_TEAMS_MESSAGE.to_owned())
+    );
+    assert_eq!(creator.made(), Vec::<AgentId>::new());
+
+    handler
+        .handle(
+            request(with_project(project), Role::Member, Some(family.lead), None),
+            &tree,
+        )
+        .expect("the team's own project");
+    assert_eq!(locked(&creator.seeds)[0].project_id, Some(project));
 }
 
 #[test]
@@ -641,6 +736,7 @@ fn two_racing_ceo_creates_let_one_win_and_remove_the_loser() {
     // removal follows.
     let failing = Arc::new(PlacingStore {
         rows: Vec::new(),
+        teams: Vec::new(),
         fail_place: true,
         places: Mutex::new(Vec::new()),
         tree_writes: Mutex::new(()),

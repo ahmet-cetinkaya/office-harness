@@ -26,6 +26,11 @@ use support::wire_client::WireClient;
 
 const QUIET_PERIOD_MS: u64 = 400;
 
+/// How long a client listens before it counts the silence as no tree event:
+/// the server publishes a request's events while it handles the request, so a
+/// second is far more than the events need.
+const NO_TREE_EVENT_WAIT: std::time::Duration = std::time::Duration::from_millis(1000);
+
 struct Office {
     serving: ServingOffice,
     clis: FakeClis,
@@ -486,5 +491,189 @@ async fn a_team_create_with_a_lead_object_tells_every_client_of_the_new_lead() {
     assert_eq!(marker["ok"], true, "{marker}");
     let next_changed = next_event_of(&mut watcher, "agent.changed").await;
     assert_eq!(next_changed["agent"]["name"], "Marker", "{next_changed}");
+    office.serving.stop().await;
+}
+
+/// Creates the CEO through `agent.create` with a `role` object.
+async fn create_ceo(office: &Office, client: &mut WireClient, id: u32) -> String {
+    let created = call(
+        client,
+        id,
+        "agent.create",
+        json!({
+            "name": "Chief",
+            "command": "fake-cli",
+            "working_folder": office.work_path(),
+            "role": {"kind": "ceo"},
+        }),
+    )
+    .await;
+    assert_eq!(created["ok"], true, "{created}");
+    created["result"]["id"].as_str().expect("id").to_owned()
+}
+
+/// A CEO with one lead under it, both placed and both running.
+async fn started_ceo_with_lead(
+    office: &Office,
+    client: &mut WireClient,
+    observer: &mut WireClient,
+) -> (String, String) {
+    let ceo = create_agent(office, client, 1, "Ceo", "fake-cli").await;
+    let lead = create_agent(office, client, 2, "Lead", "fake-cli").await;
+    place(&office.serving.office, &ceo, Role::Ceo, None);
+    place(&office.serving.office, &lead, Role::Lead, Some(&ceo));
+    for (id, agent) in [(3, &ceo), (4, &lead)] {
+        let started = call(client, id, "agent.start", json!({"agent_id": agent})).await;
+        assert_eq!(started["ok"], true, "{started}");
+    }
+    statuses_until(observer, &[(&ceo, "working"), (&lead, "working")]).await;
+    (ceo, lead)
+}
+
+#[tokio::test]
+async fn an_agent_create_with_a_role_tells_every_client_the_tree_changed() {
+    let office = Office::open().await;
+    office.clis.add("fake-cli", "echo up; sleep 30");
+    let mut client = office.client().await;
+    let mut watcher = office.client().await;
+
+    let ceo = create_ceo(&office, &mut client, 1).await;
+
+    // The new agent goes first, so a client knows it before the tree names it.
+    let changed = next_event_of(&mut watcher, "agent.changed").await;
+    assert_eq!(changed["agent"]["id"], ceo.as_str(), "{changed}");
+    let tree = next_event_of(&mut watcher, "hierarchy.changed").await;
+    assert_eq!(tree["cause"], "agent.placed", "{tree}");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_delete_of_a_placed_agent_tells_every_client_the_tree_changed() {
+    let office = Office::open().await;
+    office.clis.add("fake-cli", "echo up; sleep 30");
+    let mut client = office.client().await;
+    let mut watcher = office.client().await;
+    let ceo = create_ceo(&office, &mut client, 1).await;
+    let placed = next_event_of(&mut watcher, "hierarchy.changed").await;
+    assert_eq!(placed["cause"], "agent.placed", "{placed}");
+
+    let deleted = call(&mut client, 2, "agent.delete", json!({"agent_id": ceo})).await;
+
+    assert_eq!(deleted["ok"], true, "{deleted}");
+    let tree = next_event_of(&mut watcher, "hierarchy.changed").await;
+    assert_eq!(tree["cause"], "agent.unplaced", "{tree}");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_subtree_stop_tells_every_client_the_tree_changed() {
+    let office = Office::open().await;
+    office.clis.add("fake-cli", "echo up; sleep 30");
+    let mut client = office.client().await;
+    let mut watcher = office.client().await;
+    let (ceo, _lead) = started_ceo_with_lead(&office, &mut client, &mut watcher).await;
+
+    let stopped = call(
+        &mut client,
+        5,
+        "agent.stop",
+        json!({"agent_id": ceo, "include_descendants": true}),
+    )
+    .await;
+
+    assert_eq!(stopped["ok"], true, "{stopped}");
+    let tree = next_event_of(&mut watcher, "hierarchy.changed").await;
+    assert_eq!(tree["cause"], "subtree.stopped", "{tree}");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_subtree_delete_tells_every_client_the_tree_changed() {
+    let office = Office::open().await;
+    office.clis.add("fake-cli", "echo up; sleep 30");
+    let mut client = office.client().await;
+    let mut watcher = office.client().await;
+    let (ceo, _lead) = started_ceo_with_lead(&office, &mut client, &mut watcher).await;
+
+    let deleted = call(
+        &mut client,
+        5,
+        "agent.delete",
+        json!({"agent_id": ceo, "include_descendants": true, "descendant_count": 1}),
+    )
+    .await;
+
+    assert_eq!(deleted["ok"], true, "{deleted}");
+    let tree = next_event_of(&mut watcher, "hierarchy.changed").await;
+    assert_eq!(tree["cause"], "subtree.deleted", "{tree}");
+    office.serving.stop().await;
+}
+
+/// Listens for `NO_TREE_EVENT_WAIT` and fails when a `hierarchy.changed`
+/// arrives. Other events pass.
+async fn assert_no_tree_change(watcher: &mut WireClient) {
+    let listen = async {
+        loop {
+            let message = watcher.receive_json().await;
+            assert_ne!(message["type"], "hierarchy.changed", "{message}");
+        }
+    };
+    let _silence = tokio::time::timeout(NO_TREE_EVENT_WAIT, listen).await;
+}
+
+#[tokio::test]
+async fn a_refused_create_with_a_role_sends_no_tree_change() {
+    let office = Office::open().await;
+    office.clis.add("fake-cli", "echo up; sleep 30");
+    let mut client = office.client().await;
+    let mut watcher = office.client().await;
+    create_ceo(&office, &mut client, 1).await;
+    next_event_of(&mut watcher, "hierarchy.changed").await;
+
+    let second = call(
+        &mut client,
+        2,
+        "agent.create",
+        json!({
+            "name": "Second",
+            "command": "fake-cli",
+            "working_folder": office.work_path(),
+            "role": {"kind": "ceo"},
+        }),
+    )
+    .await;
+
+    assert_eq!(second["ok"], false, "{second}");
+    assert_no_tree_change(&mut watcher).await;
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_delete_of_an_unplaced_agent_sends_no_tree_change() {
+    let office = Office::open().await;
+    office.clis.add("fake-cli", "echo up; sleep 30");
+    let mut client = office.client().await;
+    let mut watcher = office.client().await;
+    let agent = create_agent(&office, &mut client, 1, "Loose", "fake-cli").await;
+
+    let deleted = call(&mut client, 2, "agent.delete", json!({"agent_id": agent})).await;
+
+    assert_eq!(deleted["ok"], true, "{deleted}");
+    assert_no_tree_change(&mut watcher).await;
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_plain_stop_without_descendants_sends_no_tree_change() {
+    let office = Office::open().await;
+    office.clis.add("fake-cli", "echo up; sleep 30");
+    let mut client = office.client().await;
+    let mut watcher = office.client().await;
+    let (_ceo, lead) = started_ceo_with_lead(&office, &mut client, &mut watcher).await;
+
+    let stopped = call(&mut client, 5, "agent.stop", json!({"agent_id": lead})).await;
+
+    assert_eq!(stopped["ok"], true, "{stopped}");
+    assert_no_tree_change(&mut watcher).await;
     office.serving.stop().await;
 }
