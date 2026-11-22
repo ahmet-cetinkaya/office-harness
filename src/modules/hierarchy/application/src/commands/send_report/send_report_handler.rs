@@ -219,14 +219,21 @@ impl SendReportHandler {
             })
     }
 
+    /// Journals a refusal with the text in visible form, so no control or
+    /// bidirectional format character of a refused report reorders or acts
+    /// on the record (0015/FR-003, final review L1).
     fn refused(
         &self,
         report: &Report,
         parent: Option<AgentId>,
         error: HierarchyApplicationError,
     ) -> HierarchyApplicationError {
-        self.journal
-            .refused(report.sender, parent, &report.text, &error.to_string());
+        self.journal.refused(
+            report.sender,
+            parent,
+            &visible_text(&report.text),
+            &error.to_string(),
+        );
         error
     }
 }
