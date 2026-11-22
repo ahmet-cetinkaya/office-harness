@@ -10,14 +10,14 @@ commits: per-task
 
 ## Summary
 
-A directive no longer goes into the terminal at once. The send handler checks it as before, then either types it now (the target waits for input, no person typed there in the last 30 s, no open question on the screen, nothing waits before it) or puts it in the target's queue. One server thread types waiting directives when their target is ready, and withdraws the ones that time out, lose their target, or meet a hold or a tree change.
+A directive no longer goes into the terminal at once. The send handler checks it as before, then either delivers it now (the target waits for input, no person typed there in the last 30 s, no open question on the screen, nothing waits before it) or puts it in the target's queue. Delivery pastes the text, waits up to 2 s for its end to show at the input line of the server's screen copy, and only then sends Enter. One server thread delivers waiting directives when their target is ready, and withdraws the ones that time out, lose their target, or meet a hold or a tree change.
 
 **What you get:**
 - A per-target queue inside the hierarchy send handler, with a fast path that keeps today's behavior when the target is ready.
 - A readiness answer from the target bridge: status, person input in the last 30 s, and a screen check.
-- A pure screen recogniser for open questions in the terminal domain, with unit tests over sample screens.
-- `directive.send` answers `{"delivery": "typed"}` or `{"delivery": "waiting", "position": n}`.
-- Withdrawals and the queue-full refusal in the sender's and the target's action records.
+- Two pure screen checks in the terminal domain, with unit tests over sample screens: open question, and text at the input line.
+- `directive.send` answers `{"delivery": "submitted"}`, `{"delivery": "waiting", "position": n}`, or `{"delivery": "unsubmitted"}`.
+- Withdrawals, unsubmitted directives, and the queue-full refusal in the sender's and the target's action records.
 
 **Why this approach:**
 - The send handler already owns the order of terminal writes (`write_order`, `send_directive_handler.rs:27-29`), the journal, and the receipt, so the queue lives next to them and the bridges stay thin.
@@ -29,7 +29,8 @@ A directive no longer goes into the terminal at once. The send handler checks it
 **Shape of the work:** 4 tasks in one PR, one commit per task. **Effort:** S to M.
 
 **Main risks:**
-- **Existing directive tests** type at once into a member that is still `working`. With the gate they wait for `waiting_for_input`. T4 starts those offices with a short quiet period and waits for the member's `waiting_for_input` before sending, so they keep testing the fast path.
+- **Existing directive tests** type at once into a member that is still `working`, and the member reads with `stty raw -echo`, so nothing shows at its input line. With the gates they wait for `waiting_for_input`, and with echo off no Enter follows. T4 starts those offices with a short quiet period, waits for the member's `waiting_for_input`, and lets the member echo (`stty raw`), so they keep testing the fast path and the exact bytes.
+- **CLIs that collapse a long paste** into a placeholder never show the text's end, so such directives stay unsubmitted (spec Residual risk, edge case). The recogniser tests document it.
 - **False question matches** delay a directive up to the 10-minute limit. The recogniser looks only at the bottom 15 non-empty rows and uses tight markers (D4); the unit tests include idle screens of each CLI shape that must not match.
 
 **Blockers:** none.
@@ -47,6 +48,7 @@ Deliver spec 0012: FR-001 to FR-005 and the MODIFIED 0002/FR-010, with PB-1 to P
   - Agent-call route: `src/apps/office-harnessd/src/server/agent_call.rs` (`answer_directive` 183-217 answers `Value::Null`; `recorded_and_published` 144-151).
   - Terminal: `TerminalRuntime` (`src/modules/terminal/application/src/common/interfaces/terminal_runtime.rs`), `PortableTerminalRuntime`, `TerminalSession` (core lock holds the `ScreenEmulator`), `ScreenEmulator::last_line` / `cursor_line` read the vt100 screen.
   - User input route: `src/apps/office-harnessd/src/server/terminal_requests.rs` (`INPUT` at 24, dispatched at 98).
+  - Paste: `TerminalRuntime::paste` wraps the text in the bracketed-paste markers when the CLI turned that mode on (`terminal_session.rs`, `paste`), the same path the startup prompt uses (`bridges/typed_input.rs`).
   - Holds: `HoldService::guard` counts the rate window; the pure `hold_refusal(holds, rows, caller, target)` checks holds only (`hold_service.rs`).
   - Clocks: `SteadyClock` implements `HoldClock` (`src/apps/office-harnessd/src/bridges/system_clock.rs:50-58`).
   - Integration tests: `src/apps/office-harnessd/tests/agent_directive.rs`, `agent_hold.rs`, `task_text.rs`, `task_order.rs`, `agent_call.rs`; the office binds with an optional quiet period (`tests/support/running_office.rs:39-75`).
@@ -54,49 +56,53 @@ Deliver spec 0012: FR-001 to FR-005 and the MODIFIED 0002/FR-010, with PB-1 to P
 ## Decisions
 
 - **D1 Queue home.** `DirectiveQueue` in `send_directive/directive_queue.rs`: one `Mutex<HashMap<AgentId, TargetQueue>>` plus a `Condvar`. `TargetQueue { waiting: VecDeque<WaitingDirective>, last_typed: Option<Timestamp> }`; `WaitingDirective { sender, target, text, accepted_at }`. The handler owns it. Lock order: queue, then `write_order`, then the receipt's task lock; nothing that takes the queue lock runs under the others.
-- **D2 Fast path and acceptance** (FR-001, FR-002, FR-004, PB-1, PB-2). `handle` keeps every check in its order: snapshot, descendant, text, running, then the new queue-full check (before the hold guard, so a full queue never counts toward a rate limit, 0007 A10), then the hold guard. Under the queue lock: when the target's queue is empty and readiness is `Ready` and the settle gap (D8) has passed, type now and answer `Typed`; else push and answer `Waiting { position }` (1-based). Both paths journal the accepted directive once, as today (`journal.record(sender, target, text, None)`). The answer type is `DirectiveOutcome { Typed, Waiting { position: usize } }`.
+- **D2 Fast path and acceptance** (FR-001, FR-002, FR-004, PB-1, PB-2). `handle` keeps every check in its order: snapshot, descendant, text, running, then the new queue-full check (before the hold guard, so a full queue never counts toward a rate limit, 0007 A10), then the hold guard. It journals the accepted directive once, as today (`journal.record(sender, target, text, None)`). Under the queue lock: when the target's queue is empty, readiness is `Ready`, and the settle gap (D8) has passed, deliver now (D12) and answer `Submitted` or `Unsubmitted`; else push and answer `Waiting { position }` (1-based). The answer type is `DirectiveOutcome { Submitted, Waiting { position: usize }, Unsubmitted }`.
 - **D3 Readiness port** (FR-002, FR-003, FR-005). `DirectiveTarget` gains `fn readiness(&self, agent_id) -> Result<Readiness, String>` with `Readiness { Ready, Busy(BusyReason), Gone }` and `BusyReason { Working, PersonTyping, OpenQuestion }`. The bridge reads, in order: the stored status (`Gone` when not running, `Busy(Working)` unless `waiting_for_input`), the person-input stamp (D5), then the screen (D4).
 - **D4 Question recogniser** (FR-003). `terminal_domain::services::open_question::shows_open_question(screen: &str) -> bool`, pure. It looks at the bottom 15 non-empty rows, lower-cased, and matches when a row:
   - contains a yes-or-no choice: `(y/n)`, `[y/n]`, `(yes/no)`, `[yes/no]`;
   - starts, after spaces, with a selection mark (`❯ › ▶ ► → ● >`) followed by a number and `.` or `)`;
   - contains a permission phrase: `do you want to`, `do you trust`, `allow once`, `allow always`, `allow this`, `approve this`, `permission required`, `requires permission`, `press enter to confirm`, `press enter to continue`.
-  `TerminalRuntime` gains `fn screen_text(&self, agent_id) -> Option<String>` (the visible rows, no scrollback; `None` when not running), with a default of `None` so test fakes stay unchanged; `PortableTerminalRuntime` reads it through `TerminalSession` from `ScreenEmulator::screen_text`.
+  `TerminalRuntime` gains `fn screen(&self, agent_id) -> Option<ScreenView>` with `ScreenView { rows: Vec<String>, cursor_row: usize }` (the visible rows, no scrollback; `None` when not running), with a default of `None` so test fakes stay unchanged; `PortableTerminalRuntime` reads it through `TerminalSession` from `ScreenEmulator::screen_view`.
 - **D5 Person input** (FR-002, PB-5). `PersonInput` in `bridges/person_input.rs`: a `Mutex<HashMap<AgentId, Instant>>` with `stamp(agent)` and `typed_within(agent, window) -> bool`. `TerminalRequests::input` stamps before it forwards the bytes, and forwards them unchanged. The directive writer does not stamp. Window: `PERSON_TYPING_PAUSE = 30 s`.
 - **D6 Delivery thread.** `bootstrap/directive_delivery.rs` spawns one thread: it waits on the queue's `Condvar` while every queue is empty, else every 250 ms runs `handler.deliver_waiting()` inside `recorded_and_published` (made `pub(crate)`), so withdrawal entries reach clients as `action.recorded`. `deliver_waiting` visits each target once: it withdraws expired heads (`accepted_at` older than 10 min), withdraws the whole queue on `Gone`, re-checks the head's tree place (`check_descendant` on a fresh snapshot) and holds (`HoldService::refusal(sender, target, rows) -> Option<String>`, a new non-counting wrapper of `hold_refusal`), and types the head when `Ready` and the settle gap passed.
-- **D7 Withdrawal record** (FR-005, SC-004). `journal.record(sender, target, text, Some("withdrawn before typing: <reason>"))`; the bridge writes it in the sender's and the target's records like any refusal. Reasons: `not typed within 10 minutes`, `<name> is no longer running`, `<name> is no longer a descendant of the sender`, and the hold refusal text from 0007.
-- **D8 Settle gap** (FR-001). After a directive is typed, the next one for the same target waits at least `SETTLE_AFTER_TYPING = 2 s`, so the target's status has moved off `waiting_for_input` (its echo and its turn) before the gate reads it again.
+- **D7 Withdrawal record** (FR-005, SC-005). `journal.record(sender, target, text, Some("withdrawn before typing: <reason>"))`; the bridge writes it in the sender's and the target's records like any refusal. Reasons: `not typed within 10 minutes`, `<name> is no longer running`, `<name> is no longer a descendant of the sender`, and the hold refusal text from 0007.
+- **D8 Settle gap** (FR-001). After a directive is typed (submitted or unsubmitted), the next one for the same target waits at least `SETTLE_AFTER_TYPING = 2 s`, so the target's status has moved off `waiting_for_input` (its echo and its turn) before the gate reads it again.
 - **D9 Clock.** A new port `DirectiveClock { fn steady_now(&self) -> Timestamp }`, implemented by `SteadyClock`; the unit tests drive a fake clock through the 10-minute limit and the settle gap.
-- **D10 Answer and contract** (FR-004). `answer_directive` answers `{"delivery":"typed"}` or `{"delivery":"waiting","position":n}`. The queue-full refusal is `refused` with `the queue of <name> is full: 20 directives wait`. `contracts/hierarchy-protocol.md` of 0002 gets an "Amended by 0012" note for the result and the new refusal; 0002 SPEC gets the note under FR-010 and the edge case.
-- **D11 Constants.** `QUEUE_LIMIT = 20`, `WAIT_LIMIT = 10 min`, `PERSON_TYPING_PAUSE = 30 s`, `SETTLE_AFTER_TYPING = 2 s`, `DELIVERY_POLL = 250 ms`, `QUESTION_ROWS = 15`. Fixed (spec A8).
+- **D10 Answer and contract** (FR-004). `answer_directive` answers `{"delivery":"submitted"}`, `{"delivery":"waiting","position":n}`, or `{"delivery":"unsubmitted"}`. The queue-full refusal is `refused` with `the queue of <name> is full: 20 directives wait`. `contracts/hierarchy-protocol.md` of 0002 gets an "Amended by 0012" note for the result and the new refusal; 0002 SPEC gets the note under FR-010 and the edge case.
+- **D11 Constants.** `QUEUE_LIMIT = 20`, `WAIT_LIMIT = 10 min`, `PERSON_TYPING_PAUSE = 30 s`, `SETTLE_AFTER_TYPING = 2 s`, `DELIVERY_POLL = 250 ms`, `QUESTION_ROWS = 15`, `INPUT_LINE_WAIT = 2 s`, `INPUT_LINE_POLL = 50 ms`, `INPUT_LINE_ROWS = 3`, `TEXT_END_CHARS = 24`. Fixed (spec A8).
+- **D12 Delivery with the input-line check** (FR-003, A9, A10). `DirectiveWriter::write` becomes `deliver(&self, agent_id, text) -> Result<Delivery, String>` with `Delivery { Submitted, Unsubmitted }`. The bridge reads the input line (the cursor row and the two rows above it), pastes the text with `runtime.paste`, then polls the screen every 50 ms for up to `INPUT_LINE_WAIT = 2 s`. The pure `terminal_domain::services::input_line::shows_typed_text(before, after, text) -> bool` removes whitespace and frame-drawing characters (U+2500 to U+257F) from the rows and from the text, takes the text's last 24 characters, and is true when the joined rows after contain them and the rows before did not end with them. True: the bridge writes `\r` and answers `Submitted`. False: no write, `Unsubmitted`. The handler calls the receipt only on `Submitted` (PB-3) and journals `Unsubmitted` as `typed but not submitted: the text did not show at the input line` (FR-003).
 
 ## Tasks
 
-### T1 — Screen recogniser and screen text (terminal module)
+### T1 — Screen checks and screen view (terminal module)
 
-- `open_question.rs` + `open_question.tests.rs` in `terminal_domain::services` (D4). Tests: each marker kind matches; an idle prompt row (`> `, a shell `$ `), a numbered list in agent output without a selection mark, and a question older than the bottom 15 rows do not match.
-- `ScreenEmulator::screen_text`, `TerminalSession::screen_text`, `TerminalRuntime::screen_text` (default `None`), `PortableTerminalRuntime` override. One emulator test.
+- `open_question.rs` + tests in `terminal_domain::services` (D4). Tests: each marker kind matches; an idle prompt row (`> `, a shell `$ `), a numbered list in agent output without a selection mark, and a question older than the bottom 15 rows do not match.
+- `input_line.rs` + tests (D12). Tests: plain echo, a framed input box, a line wrapped over two rows, a line that already ended with the text (false), a placeholder instead of the text (false), a text shorter than 24 characters.
+- `ScreenView`, `ScreenEmulator::screen_view`, `TerminalSession::screen`, `TerminalRuntime::screen` (default `None`), `PortableTerminalRuntime` override. One emulator test for the rows and the cursor row.
 - **Done when:** terminal crates' tests and clippy pass.
 
 ### T2 — Queue in the send handler (hierarchy module)
 
-- Ports (D3, D9), `DirectiveQueue` (D1), `handle` returning `DirectiveOutcome` (D2), `deliver_waiting` (D6), `HoldService::refusal` (D6), withdrawal journaling (D7), settle gap (D8).
-- Unit tests with fakes: fast path typed; waiting while `Working`, `PersonTyping`, `OpenQuestion`, each typing nothing; order of 10 kept (SC-003); position numbers; 21st refused and journaled; head expires at 10 min and is journaled (fake clock); `Gone` withdraws all; a hold and a tree change withdraw the head; the settle gap delays the second; the accepted directive journaled once on both paths (PB-2); the receipt only when typed (PB-3); rules and refusals unchanged (existing tests stay green, PB-1).
+- Ports (D3, D9, D12), `DirectiveQueue` (D1), `handle` returning `DirectiveOutcome` (D2), `deliver_waiting` (D6), `HoldService::refusal` (D6), withdrawal and unsubmitted journaling (D7, D12), settle gap (D8).
+- Unit tests with fakes: fast path submitted; fast path unsubmitted (no receipt, journaled in both records); waiting while `Working`, `PersonTyping`, `OpenQuestion`, each typing nothing; order of 10 kept (SC-004); position numbers; 21st refused and journaled; head expires at 10 min and is journaled (fake clock); `Gone` withdraws all; a hold and a tree change withdraw the head; the settle gap delays the second; the accepted directive journaled once on both paths (PB-2); the receipt only when submitted (PB-3); rules and refusals unchanged (existing tests stay green, PB-1).
 - **Done when:** hierarchy crates' tests and clippy pass.
 
 ### T3 — Bridges, input stamp, delivery thread, answer (server)
 
 - `PersonInput` (D5) with unit tests; stamp in `TerminalRequests::input`.
-- `DirectiveTargetBridge::readiness` (D3) with unit tests over status, stamp, and a fake runtime's screen text.
+- `DirectiveTargetBridge::readiness` (D3) with unit tests over status, stamp, and a fake runtime's screen.
+- `DirectiveWriterBridge::deliver` (D12) with unit tests over a fake runtime: echo shows, Enter written; no echo, no Enter after the wait.
 - `SteadyClock` implements `DirectiveClock`; wiring in `hierarchy_services.rs`; delivery thread (D6); `answer_directive` result (D10).
 - **Done when:** `office-harnessd` builds, its unit tests and clippy pass.
 
 ### T4 — Integration tests and documents
 
-- `tests/agent_directive.rs`: existing tests bind with a short quiet period (300 ms) and wait for the member's `waiting_for_input` before sending; the answer checks `delivery: "typed"`.
+- `tests/agent_directive.rs`: existing tests bind with a short quiet period (300 ms), wait for the member's `waiting_for_input` before sending, and let the member echo; the answer checks `delivery: "submitted"` and the exact bytes (text, then Enter).
 - New integration tests in `tests/agent_directive.rs`:
-  - a member shows `Do you want to proceed? (y/n)` and stays quiet; the directive answers `waiting`; nothing is typed while the question shows; the fake CLI then clears the screen and reads, and receives exactly the text and Enter (SC-001, FR-003);
+  - a member shows `Do you want to proceed? (y/n)` and stays quiet; the directive answers `waiting`; nothing is typed while the question shows; the fake CLI then clears the screen and reads with echo, and receives exactly the text and Enter (SC-001, FR-002);
+  - a member shows an unknown question and reads with echo off: the answer is `unsubmitted`, the member receives the text and no Enter, and both records show the reason (SC-002, FR-003);
   - person input through `terminal.input` and then a directive: the answer is `waiting` (FR-002);
-  - a waiting directive and a stop of the target: the sender's and the target's records show `withdrawn before typing` with the text (FR-005, SC-004).
+  - a waiting directive and a stop of the target: the sender's and the target's records show `withdrawn before typing` with the text (FR-005, SC-005).
 - Documents: 0002 SPEC note under FR-010 and its edge case, 0002 contract note (D10), 0012 `qa-report.md` (FR and SC rows with evidence), spec status to `in_progress` after approval, and the Deviations section if anything differs.
 - **Done when:** the workspace gate passes (fmt, clippy, all Rust tests, boundaries script), and the desktop checks pass unchanged (no desktop file changes; `bun run check` only if a shared contract type moved).
 
