@@ -15,6 +15,9 @@ use gethostname::gethostname;
 use notification_infrastructure::persistence::{
     LEDGER_TABLE as NOTIFICATION_LEDGER_TABLE, SCRIPTS as NOTIFICATION_SCRIPTS,
 };
+use template_infrastructure::persistence::{
+    LEDGER_TABLE as TEMPLATE_LEDGER_TABLE, SCRIPTS as TEMPLATE_SCRIPTS,
+};
 
 use super::{
     AccessServices, AgentServices, HierarchyServices, LoginSetup, NotificationServices, ServerLog,
@@ -84,6 +87,12 @@ pub fn start_with(
         &mut connection,
         NOTIFICATION_LEDGER_TABLE,
         NOTIFICATION_SCRIPTS,
+        &[],
+    )?;
+    run_migrations(
+        &mut connection,
+        TEMPLATE_LEDGER_TABLE,
+        TEMPLATE_SCRIPTS,
         &[],
     )?;
 

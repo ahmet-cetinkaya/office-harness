@@ -79,7 +79,7 @@ clean_metadata() {
   cat <<'JSON'
 {
   "workspace_root": "/w",
-  "workspace_members": ["kernel", "wire", "agent-domain", "agent-application", "agent-infrastructure", "agent-presentation", "terminal-domain", "notification-domain", "notification-application", "notification-infrastructure", "notification-presentation", "office-harnessd", "desktop"],
+  "workspace_members": ["kernel", "wire", "agent-domain", "agent-application", "agent-infrastructure", "agent-presentation", "terminal-domain", "notification-domain", "notification-application", "notification-infrastructure", "notification-presentation", "template-domain", "template-application", "template-infrastructure", "template-presentation", "office-harnessd", "desktop"],
   "packages": [
     {"id": "kernel", "name": "kernel", "manifest_path": "/w/src/kernel/Cargo.toml", "dependencies": [{"name": "serde"}]},
     {"id": "wire", "name": "wire", "manifest_path": "/w/src/shared/wire/Cargo.toml", "dependencies": [{"name": "serde"}]},
@@ -92,6 +92,10 @@ clean_metadata() {
     {"id": "notification-application", "name": "notification-application", "manifest_path": "/w/src/modules/notification/application/Cargo.toml", "dependencies": [{"name": "notification-domain"}]},
     {"id": "notification-infrastructure", "name": "notification-infrastructure", "manifest_path": "/w/src/modules/notification/infrastructure/Cargo.toml", "dependencies": [{"name": "notification-application"}, {"name": "notification-domain"}, {"name": "rusqlite"}]},
     {"id": "notification-presentation", "name": "notification-presentation", "manifest_path": "/w/src/modules/notification/presentation/Cargo.toml", "dependencies": [{"name": "notification-application"}, {"name": "notification-domain"}, {"name": "wire"}]},
+    {"id": "template-domain", "name": "template-domain", "manifest_path": "/w/src/modules/template/domain/Cargo.toml", "dependencies": [{"name": "kernel"}]},
+    {"id": "template-application", "name": "template-application", "manifest_path": "/w/src/modules/template/application/Cargo.toml", "dependencies": [{"name": "template-domain"}]},
+    {"id": "template-infrastructure", "name": "template-infrastructure", "manifest_path": "/w/src/modules/template/infrastructure/Cargo.toml", "dependencies": [{"name": "template-application"}, {"name": "template-domain"}, {"name": "rusqlite"}]},
+    {"id": "template-presentation", "name": "template-presentation", "manifest_path": "/w/src/modules/template/presentation/Cargo.toml", "dependencies": [{"name": "template-application"}, {"name": "template-domain"}, {"name": "wire"}]},
     {"id": "office-harnessd", "name": "office-harnessd", "manifest_path": "/w/src/apps/office-harnessd/Cargo.toml", "dependencies": [{"name": "agent-presentation"}, {"name": "agent-infrastructure"}, {"name": "notification-presentation"}, {"name": "notification-infrastructure"}, {"name": "axum"}, {"name": "tokio"}]},
     {"id": "desktop", "name": "desktop", "manifest_path": "/w/src/apps/desktop/src-tauri/Cargo.toml", "dependencies": [{"name": "wire"}, {"name": "tauri"}]}
   ]
@@ -151,6 +155,13 @@ readonly PLANTED_CASES=(
   "notification-domain notification-infrastructure 6"
   "notification-infrastructure notification-presentation 6"
   "notification-domain office-harnessd 9"
+  "template-domain rusqlite 1"
+  "template-application tokio 1"
+  "template-presentation rusqlite 2"
+  "template-application agent-domain 3"
+  "template-domain template-infrastructure 6"
+  "template-infrastructure template-presentation 6"
+  "template-domain office-harnessd 9"
 )
 
 check_planted_case() {
