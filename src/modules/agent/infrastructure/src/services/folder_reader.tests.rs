@@ -68,13 +68,17 @@ fn a_listing_has_folders_first_then_names_by_code_point() {
 #[test]
 fn the_git_folder_is_never_listed_in_any_case() {
     let fixture = fixture();
+    // In two folders, because a disk that ignores case cannot hold both.
     fs::create_dir(fixture.work.join(".git")).expect("folder");
-    fs::create_dir(fixture.work.join(".GIT")).expect("folder");
+    fs::create_dir_all(fixture.work.join("upper/.GIT")).expect("folder");
     fs::write(fixture.work.join(".gitignore"), "x").expect("file");
 
-    let listing = list_folder(&fixture.work, &RelativePath::root()).expect("list");
+    let root = list_folder(&fixture.work, &RelativePath::root()).expect("list");
+    let upper_path = RelativePath::parse("path", "upper").expect("path");
+    let upper = list_folder(&fixture.work, &upper_path).expect("list");
 
-    assert_eq!(names(&listing), [".gitignore"]);
+    assert_eq!(names(&root), ["upper", ".gitignore"]);
+    assert_eq!(names(&upper), Vec::<&str>::new());
 }
 
 #[test]

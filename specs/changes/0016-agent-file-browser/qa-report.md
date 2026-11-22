@@ -90,6 +90,7 @@
 ## Gaps and residual risk
 
 - **No hands-on run of the packaged app.** The desktop flow is proven against the mock core and the server against real repositories, but the two were not run together in the packaged app on a real agent for this change.
+- **Tests that run on Unix only.** Links, named pipes, and shell scripts as hook programs exist on Unix only in these tests, so `tests/file_view.rs` (SC-001, SC-003, SC-009 over the wire, PB-1, PB-4), the link and pipe tests of the folder reader, the type-change test, the old-path containment test, and the SC-004 marker tests run on Linux and macOS, not on Windows. On Windows CI the rest runs: path rules, listing, size cap, secret names, and the git reader's changes, diffs, history, and commits.
 - **Unix-only open flags.** `O_NONBLOCK` and `O_NOFOLLOW` apply on Unix only. On Windows a named pipe cannot be swapped in for a file the same way, and the containment check still runs first.
 - **Race and hard links.** An agent that swaps a folder for a link between the check and the read, or that adds a hard link to an outside file, can still make the view show that file (spec Residual risk).
 - **`.git` on Windows.** The `.git` refusal compares ASCII case only; NTFS short names and trailing dots are not covered.

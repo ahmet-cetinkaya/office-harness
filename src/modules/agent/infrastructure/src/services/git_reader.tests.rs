@@ -2,7 +2,6 @@
 
 use std::fmt::Write as _;
 use std::fs;
-use std::os::unix::fs::symlink;
 
 use super::*;
 use crate::services::file_view_fixture::Repo;
@@ -68,13 +67,10 @@ fn the_changes_of_the_root_list_every_kind_and_skip_ignored_files() {
         "renamed-from.txt",
         "same content here\nmore lines\nand more\n",
     );
-    repo.write("typed.txt", "file\n");
     repo.commit_all("first");
     repo.write("modified.txt", "two\n");
     fs::remove_file(repo.path("deleted.txt")).expect("remove");
     repo.git(&["mv", "renamed-from.txt", "renamed-to.txt"]);
-    fs::remove_file(repo.path("typed.txt")).expect("remove");
-    symlink("modified.txt", repo.path("typed.txt")).expect("link");
     repo.write("added.txt", "new\n");
     repo.git(&["add", "added.txt"]);
     repo.write("untracked.txt", "u\n");
@@ -90,7 +86,6 @@ fn the_changes_of_the_root_list_every_kind_and_skip_ignored_files() {
             ("deleted.txt", ChangeKind::Deleted),
             ("modified.txt", ChangeKind::Modified),
             ("renamed-to.txt", ChangeKind::Renamed),
-            ("typed.txt", ChangeKind::TypeChanged),
             ("untracked.txt", ChangeKind::Untracked),
         ]
     );
@@ -99,6 +94,25 @@ fn the_changes_of_the_root_list_every_kind_and_skip_ignored_files() {
         Some("renamed-from.txt")
     );
     assert_eq!(changes.more, 0);
+}
+
+/// A file replaced by a link; links need Unix here.
+#[cfg(unix)]
+#[test]
+fn a_file_replaced_by_a_link_is_a_type_change() {
+    let repo = Repo::new();
+    repo.write("target.txt", "file\n");
+    repo.write("typed.txt", "file\n");
+    repo.commit_all("first");
+    fs::remove_file(repo.path("typed.txt")).expect("remove");
+    std::os::unix::fs::symlink("target.txt", repo.path("typed.txt")).expect("link");
+
+    let changes = reader(&repo).changes(&repo.work).expect("changes");
+
+    assert_eq!(
+        paths(&changes.files),
+        [("typed.txt", ChangeKind::TypeChanged)]
+    );
 }
 
 #[test]
