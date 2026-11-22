@@ -84,7 +84,7 @@
   />
   <TextField
     label="Environment variables"
-    hint="One NAME=value for each line."
+    hint="One NAME=value for each line. A bare NAME has no value: the CLI does not get it, so the login environment's value stays."
     isMultiline
     bind:value={environmentText}
   />

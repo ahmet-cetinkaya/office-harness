@@ -24,11 +24,13 @@ describe("additions text", () => {
     });
   });
 
-  test("a line without an equals sign is named in the message", () => {
-    const parsed = parseEnvironment("A=1\nBROKEN");
-    expect(parsed).toEqual({
-      ok: false,
-      message: '"BROKEN" needs the form NAME=value.',
+  test("a bare NAME is no value and NAME= is an empty value", () => {
+    expect(parseEnvironment("API_KEY\nEMPTY=")).toEqual({
+      ok: true,
+      entries: [
+        { name: "API_KEY", value: null },
+        { name: "EMPTY", value: "" },
+      ],
     });
   });
 
@@ -38,7 +40,11 @@ describe("additions text", () => {
   });
 
   test("formatting then parsing returns the same lists", () => {
-    const entries = [{ name: "A", value: "x y" }];
+    const entries = [
+      { name: "A", value: "x y" },
+      { name: "NO_VALUE", value: null },
+      { name: "EMPTY", value: "" },
+    ];
     expect(parseEnvironment(formatEnvironment(entries))).toEqual({
       ok: true,
       entries,

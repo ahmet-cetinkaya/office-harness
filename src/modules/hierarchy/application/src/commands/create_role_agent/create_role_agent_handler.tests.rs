@@ -783,7 +783,7 @@ fn the_seed_round_trips_every_field_into_the_created_agent() {
 
     let additions = SeedAdditions {
         flags: vec!["--flag".to_owned()],
-        env: vec![("KEY".to_owned(), "value".to_owned())],
+        env: vec![("KEY".to_owned(), Some("value".to_owned()))],
         startup_prompt: Some("begin".to_owned()),
     };
     let seed = AgentSeed {

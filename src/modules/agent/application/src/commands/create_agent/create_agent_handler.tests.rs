@@ -145,7 +145,7 @@ fn a_malformed_environment_name_is_refused_and_named_and_nothing_is_created() {
     let office = Office::new();
     let mut with_bad_entry = request("Ana");
     with_bad_entry.additions = Some(AdditionsInput {
-        env: vec![("1BAD".to_owned(), "x".to_owned())],
+        env: vec![("1BAD".to_owned(), Some("x".to_owned()))],
         ..AdditionsInput::default()
     });
 
@@ -165,7 +165,7 @@ fn the_additions_given_at_creation_are_stored_with_the_agent() {
     let mut with_additions = request("Ana");
     with_additions.additions = Some(AdditionsInput {
         flags: vec!["--verbose".to_owned()],
-        env: vec![("KEY".to_owned(), "value".to_owned())],
+        env: vec![("KEY".to_owned(), Some("value".to_owned()))],
         startup_prompt: Some("hello".to_owned()),
     });
 
