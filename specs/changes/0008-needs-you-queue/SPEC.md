@@ -1,7 +1,7 @@
 ---
 status: approved
 capability: office
-plan:
+plan: specs/changes/0008-needs-you-queue/PLAN.md
 supersedes: 0001/FR-017 (as modified by 0003)
 ---
 

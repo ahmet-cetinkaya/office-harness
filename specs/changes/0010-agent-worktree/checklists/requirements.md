@@ -1,6 +1,6 @@
 # Requirements checklist: 0010-agent-worktree
 
-Spec: `specs/changes/0010-agent-worktree/SPEC.md` · Status: draft · Date: 2026-11-19 · Result: 15 of 16 items pass. One `[NEEDS CLARIFICATION]` marker remains for the owner (whether templates carry the own-worktree choice). Every `0001/` and `0002/` reference was checked against the approved specs on `main` at 2df9f59.
+Spec: `specs/changes/0010-agent-worktree/SPEC.md` · Status: approved by the owner on 2026-11-19 · Date: 2026-11-19 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker; the question whether templates carry the own-worktree choice is answered in the spec (A2 and FR-009: they do). Every `0001/` and `0002/` reference was checked against the approved specs on `main` at 2df9f59.
 
 ## Content quality
 
@@ -22,7 +22,7 @@ Spec: `specs/changes/0010-agent-worktree/SPEC.md` · Status: draft · Date: 2026
 
 ## Readiness
 
-- [ ] At most three `[NEEDS CLARIFICATION]` markers; none inside an approved spec. (One marker remains; the count passes, but the spec cannot be approved until the owner answers it.)
+- [x] At most three `[NEEDS CLARIFICATION]` markers; none inside an approved spec. (The one marker was answered; none remains.)
 - [x] No vague words ("works," "fast," "secure," "robust," "intuitive") and no placeholders without an observable.
 - [x] Terminology is consistent across stories, requirements, entities, and criteria.
 - [x] The spec meets the spec contract's Size rule, or Out of scope records the declined split.
@@ -39,4 +39,4 @@ Spec: `specs/changes/0010-agent-worktree/SPEC.md` · Status: draft · Date: 2026
 
 - **Data safety:** the delete question defaults to keep; uncommitted changes need a second confirmation; branches with own commits are never deleted by the office.
 - **Shared history:** a worktree separates files, not branches and commits; Context and Out of scope say so.
-- **Size rule:** 8 ADDED FRs.
+- **Size rule:** 9 ADDED FRs (FR-001 to FR-009) and two MODIFIED requirements (0009/FR-001, 0009/FR-003); FR-009 came with the template answer.

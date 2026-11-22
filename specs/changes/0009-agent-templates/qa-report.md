@@ -6,7 +6,7 @@
 - **Build under test:** branch `feat/0009-p2-desktop` (Phase 2, desktop: T6 file commands and T7 templates UI). Phase 1 (server: T2 to T5) is merged as PR #98, head f14aaa2.
 - **Phase 2 gate (2026-11-22, Linux, the phase 2 tree with the umbrella and main 2405c5a merged in):** PASS. `cargo fmt --check`, workspace lint, and `scripts/check-boundaries.sh` passed; `cargo test --workspace` passed 1050 tests with 0 failures; `tauri build --debug` passed; `bun test` passed 313 tests; `svelte-check`, `eslint`, and `prettier --check` passed; Playwright passed 208 tests.
 - **Overall status:** the automated evidence stands for every requirement, success criterion, and edge case, with the gaps named in Known gaps. The hands-on rows are BLOCKED: nobody has run them (SC-001's 3-minute human run, the real file dialogs on KDE, macOS, and Windows, a screen reader pass, and 200 percent zoom). No hands-on row is PASS.
-- **Status of this file:** the test names were read from the repository on 2026-11-22. The counts in "Local gates" come from the worker reports of Phase 1, T6, and T7; this task ran no test.
+- **Status of this file:** the test names were read from the repository on 2026-11-22. The per-phase counts in "Local gates" come from the worker reports of Phase 1, T6, and T7; this task ran no test. The Phase 2 gate above is the one run on the merged phase 2 tree; it is not a run of the final umbrella head.
 
 ### Verdict words
 
@@ -100,14 +100,14 @@ Every row of the Traceability table in `PLAN.md` has evidence or a recorded gap.
 
 ## Plan deviations
 
-None recorded by T8. The T6 crate facts below are from the T6 worker.
+None recorded by T8. The T6 crate facts below are from the T6 worker. After this report, 0010 superseded the D2 rule that a body with `own_worktree` is refused (see the plan, D9), and ACF-183 added the tests of PB-3, A1, and A10 named above.
 
 ## Known gaps (open only)
 
 1. **A project whose folder is missing has no test of its own.** The template's missing folder is tested.
 2. **Only `template.list` is tested against the agent connection.** The allowlist refuses every type outside it.
 3. **No hands-on pass** of the rows in Manual QA.
-4. **The umbrella gate, the CI matrix of the Phase 2 PR, `/ac:review`, and `/ac:verify`** are not run in this file.
+4. **The CI matrix of the Phase 2 PR, `/ac:review`, and `/ac:verify` on the umbrella head** are not run in this file. The full local gate ran once, on the merged phase 2 tree (see the Summary and "Local gates").
 
 ## Manual QA
 
