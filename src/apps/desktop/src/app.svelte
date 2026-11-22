@@ -104,6 +104,7 @@
     void panel.office.controller.watch();
     void panel.notifications.watch();
     void panel.hold.watch();
+    void panel.resume.watch();
     void panel.needsYou.watch();
     void hierarchy.watch();
     void panel.templates.watch();

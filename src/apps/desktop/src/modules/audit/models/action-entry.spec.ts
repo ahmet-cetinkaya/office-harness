@@ -17,6 +17,7 @@ function entry(id: number): ActionEntry {
     action: "start",
     result: "ok",
     at: id,
+    detail: null,
   };
 }
 

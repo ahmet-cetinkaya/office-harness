@@ -12,11 +12,15 @@
 
   let { sessions, isBusy, oncontinue }: Props = $props();
 
+  const LOST_TEXT = "lost: the server stopped uncleanly";
   const NO_REASON = "The CLI cannot continue this session.";
 
   function endText(session: Session): string {
     if (session.ended_at === null) return "Running";
-    const result = session.exit_result ?? "unknown";
+    const result =
+      session.exit_result === "lost"
+        ? LOST_TEXT
+        : (session.exit_result ?? "unknown");
     return `Ended ${formatTimestamp(session.ended_at)}, result ${result}`;
   }
 </script>
