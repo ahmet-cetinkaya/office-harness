@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { CoreClient } from "../../../core/api";
-import type { NewAgent } from "../../agent";
+import {
+  readDeleteResult,
+  type DeleteResult,
+  type NewAgent,
+  type WorktreeChoice,
+} from "../../agent";
 import { readHierarchyTree, type HierarchyTree } from "../models/hierarchy";
 import type { RoleKind } from "../models/placement";
 
@@ -82,18 +87,22 @@ export function createHierarchyService(client: CoreClient) {
     },
 
     /** Deletes an agent and, when asked, its whole subtree; the server
-     * recounts `descendant_count` (FR-006). */
+     * recounts `descendant_count` (FR-006). The worktree choice is the one
+     * the question gave (0010, FR-005). */
     deleteSubtree: async (
       agentId: string,
       includeDescendants: boolean,
       descendantCount: number,
-    ) => {
-      await send("agent.delete", {
-        agent_id: agentId,
-        include_descendants: includeDescendants,
-        descendant_count: descendantCount,
-      });
-    },
+      choice?: WorktreeChoice,
+    ): Promise<DeleteResult> =>
+      readDeleteResult(
+        await send("agent.delete", {
+          agent_id: agentId,
+          include_descendants: includeDescendants,
+          descendant_count: descendantCount,
+          ...choice,
+        }),
+      ),
   };
 }
 

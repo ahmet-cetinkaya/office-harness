@@ -6,11 +6,27 @@ export {
 } from "./state/office.store.svelte";
 export { default as AgentFormDialog } from "./components/agent-form-dialog.svelte";
 export { default as AgentDetails } from "./components/agent-details.svelte";
+export { default as WorktreeDeleteDialog } from "./components/worktree-delete-dialog.svelte";
+export { default as WorktreeField } from "./components/worktree-field.svelte";
 export { default as ConfirmDialog } from "./components/confirm-dialog.svelte";
 export { default as ProjectFormDialog } from "./components/project-form-dialog.svelte";
 export { default as ProjectList } from "./components/project-list.svelte";
 export type { Agent, NewAgent, Project } from "./models/agent";
 export { isActive, shownStatusText } from "./models/agent";
+export {
+  KEEP_WORKTREES,
+  deleteResultText,
+  failedOutcome,
+  readDeleteResult,
+  type DeleteOutcome,
+  type DeleteResult,
+  type WorktreeChoice,
+  type WorktreeInfo,
+  type WorktreeSelection,
+  type WorktreeQuery,
+  type WorktreeStatus,
+} from "./models/worktree";
+export { createAgentService } from "./services/agent-service";
 export { taskRowText } from "./models/task-text";
 export {
   LAST_AGENT_GONE_LEAD,

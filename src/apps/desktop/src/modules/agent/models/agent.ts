@@ -25,6 +25,14 @@ export interface AgentTask {
   source: "directive" | "user";
 }
 
+/** The own worktree of an agent (0010, FR-003). */
+export interface AgentWorktree {
+  repository: string;
+  base: string;
+  branch: string;
+  folder: string;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -38,6 +46,8 @@ export interface Agent {
   last_line: string | null;
   /** Absent or null when the agent has no task text. */
   task?: AgentTask | null;
+  /** Absent or null when the agent works in its own folder. */
+  worktree?: AgentWorktree | null;
 }
 
 export interface Project {
@@ -81,6 +91,10 @@ export interface NewAgent {
   command: string;
   working_folder?: string;
   project_id?: string;
+  /** The own worktree choice; `base` and `branch_name` need it (0010). */
+  own_worktree?: boolean;
+  base?: string;
+  branch_name?: string;
 }
 
 export interface NewProject {
