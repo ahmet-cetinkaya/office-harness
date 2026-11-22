@@ -92,7 +92,8 @@
         Saved environment variables
       </h4>
       <ul class="text-sm text-neutral-900">
-        {#each additions.env as entry (entry.name)}
+        <!-- Keyed by position: the office keeps two variables with one name. -->
+        {#each additions.env as entry, position (position)}
           <li class="break-all whitespace-pre-wrap">
             {environmentLineText(entry)}
           </li>

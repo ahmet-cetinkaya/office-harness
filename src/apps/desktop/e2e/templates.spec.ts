@@ -650,3 +650,33 @@ test("an agent's details show a variable without a value as no value", async ({
   await expect(saved.getByText("MODE=fast")).toBeVisible();
   await expectNoSeriousViolations(page);
 });
+
+test("an agent's details show every saved variable, even two with one name", async ({
+  page,
+}) => {
+  await openOffice(page, {
+    agents: [agent()],
+    additions: {
+      "agent-ada": {
+        flags: [],
+        env: [
+          { name: "MODE", value: "fast" },
+          { name: "MODE", value: "slow" },
+        ],
+        startup_prompt: null,
+        updated_at: 1,
+        applies_next_session: false,
+      },
+    },
+  });
+
+  await page.getByRole("button", { name: "Ada, stopped" }).click();
+
+  const saved = page.getByRole("region", {
+    name: "Saved environment variables",
+  });
+  await expect(saved.getByRole("listitem")).toHaveText([
+    "MODE=fast",
+    "MODE=slow",
+  ]);
+});
