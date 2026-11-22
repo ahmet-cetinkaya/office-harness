@@ -231,6 +231,17 @@ async fn after_a_sigkill_only_a_cli_that_ignores_the_hangup_outlives_the_server_
         ignoring.still_runs(),
         "the next server start leaves the orphan running"
     );
+    let plan = client.ask("resume.plan", json!({})).await;
+    let marked = plan["result"]["agents"]
+        .as_array()
+        .expect("planned agents")
+        .iter()
+        .filter(|entry| entry["after_unclean_stop"] == true)
+        .count();
+    assert_eq!(
+        marked, 3,
+        "every agent of the unclean stop is marked: {plan}"
+    );
 
     let continued = client
         .ask(
