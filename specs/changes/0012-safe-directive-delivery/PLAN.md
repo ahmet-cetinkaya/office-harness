@@ -1,10 +1,10 @@
 ---
-status: draft
+status: approved
 spec: specs/changes/0012-safe-directive-delivery/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-23 together with the spec, for one review of both. -->
+<!-- Drafted 2026-11-23 together with the spec and approved with it through the review gate (r3 PASS at bb7d334). Built as recorded in the spec's Deviations section. -->
 
 # Plan: Safe directive delivery (0012)
 

@@ -73,6 +73,8 @@ Every entry that a request on the agent connection writes, the record of a refus
 
 Result: `{}`. Errors: `refused` (not a descendant: names the rule; not running: says so), `invalid` (control characters, empty, oversize). Every refusal is recorded with the actor and the reason, in the action record of the sender and in the action record of the target (one entry when they are the same agent); an accepted directive is recorded in the target's record only.
 
+> Amended by 0012: the result is `{"delivery": "submitted"}` (typed, then Enter), `{"delivery": "waiting", "position": n}` (in the target's queue, `n` from 1), or `{"delivery": "unsubmitted"}` (typed, no Enter, because the text did not show at the input line). A 21st directive for one target is `refused` with `the queue of <name> is full: 20 directives wait`, recorded like every refusal and checked before the 0007 holds and limits. A waiting directive that is withdrawn, and an unsubmitted one, gets one more entry in the sender's and the target's records: `withdrawn before typing: <reason>` or `typed but not submitted: the text did not show at the input line`.
+
 > Amended by 0007: `directive.send`, `agent.create`, `agent.start`, `agent.stop`, and `agent.new_task` can also fail with `refused` for a hold or a rate limit. The reasons and their order are in `specs/changes/0007-hold-and-limits/contracts/hold-protocol.md`. They are checked after every refusal above.
 
 ## New event

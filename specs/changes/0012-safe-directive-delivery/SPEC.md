@@ -1,11 +1,11 @@
 ---
-status: draft
+status: in_progress
 capability: office
 plan: specs/changes/0012-safe-directive-delivery/PLAN.md
 supersedes: 0002/FR-010
 ---
 
-<!-- Draft for review, 2026-11-23. Approval goes through the review gate under the owner's spec delegation. -->
+<!-- Approved for implementation 2026-11-23 through the review gate (spec review r3 PASS at bb7d334, its one condition met at 4590311), under the owner's spec delegation. -->
 
 # 0012: Safe directive delivery
 
@@ -219,3 +219,13 @@ What this change does not cover, stated plainly:
 - Settings for the typing pause, the input-line wait, the time limit, or the queue size (A8).
 - Holding back input that a person types or pastes (PB-5).
 - Changing how a startup prompt is pasted (0001/FR-022); this change only holds directives back while one waits for the person (FR-002, A11).
+
+## Deviations
+
+Implementation notes. None of them defers or changes a requirement.
+
+- **One delivery per target, not one write lock for all.** The plan kept the handler's single write lock. A delivery can wait up to 2 seconds for the input line, so the handler now marks one delivery per target instead; directives to other targets go on meanwhile, and writes and receipts of one target keep their order (0011 D2).
+- **Readiness has three answers.** The plan named the reasons a target is busy. The handler needs only ready, busy, or gone, so the reasons are not carried.
+- **Input-line check by count.** The plan compared the text's end with the end of the line before typing. The check counts how often the text's end, and a paste placeholder, show at the input line before and after typing, so a line that already held the same text elsewhere does not count (A9).
+- **Commits.** The plan named one commit per task. The hierarchy change and the server change do not build apart, so T2 to T4 code and tests are one commit, and the documents are another.
+
