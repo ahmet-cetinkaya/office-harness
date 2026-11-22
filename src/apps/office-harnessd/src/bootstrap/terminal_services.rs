@@ -3,8 +3,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use agent_application::common::interfaces::WorktreeManager;
 use agent_domain::value_objects::Settings;
-use agent_infrastructure::services::{AttributionTiming, Environment, LoginEnvironment};
+use agent_infrastructure::services::{
+    AttributionTiming, Environment, GitWorktrees, LoginEnvironment,
+};
 use terminal_application::common::interfaces::{TerminalEventSink, TerminalRuntime};
 use terminal_domain::errors::TerminalError;
 use terminal_domain::value_objects::OutputLimits;
@@ -21,6 +24,9 @@ pub struct TerminalServices {
     pub handlers: Arc<TerminalHandlers>,
     pub launcher: TerminalLauncher,
     pub events: TerminalEvents,
+    /// The agents' own git worktrees (0010). It runs git with the same login
+    /// environment the agents start with.
+    pub worktrees: Arc<dyn WorktreeManager>,
 }
 
 /// The environment a launched agent starts from: the server's own, and the
@@ -69,9 +75,15 @@ pub fn build_terminal_services(
         },
         Arc::new(events.clone()) as Arc<dyn TerminalEventSink>,
     ));
+    let worktrees = Arc::new(GitWorktrees::new(
+        config.worktrees_folder_path(),
+        Arc::clone(&login_environment),
+        server_environment.clone(),
+    ));
     Ok(TerminalServices {
         handlers: Arc::new(TerminalHandlers::new(&runtime)),
         launcher: TerminalLauncher::new(runtime.clone(), login_environment, server_environment),
+        worktrees,
         runtime,
         events,
     })

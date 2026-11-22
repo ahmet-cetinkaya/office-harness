@@ -291,6 +291,44 @@ describe("office controller", () => {
     expect(state().notice).toBeNull();
   });
 
+  test("a delete that kept a branch shows the result as a notice", async () => {
+    const { client } = fakeClient((kind) =>
+      kind === "agent.delete"
+        ? { deleted_branches: [], kept_branches: ["b"], kept_folders: ["/f"] }
+        : officeHandler([agent("a")])(kind),
+    );
+    const { controller, state } = observe(client);
+    await controller.load();
+
+    const outcome = await controller.deleteAgent("a", { worktrees: "keep" });
+
+    expect(outcome.kind).toBe("deleted");
+    expect(state().notice?.message).toBe("Kept branches: b. Kept folders: /f.");
+  });
+
+  test("a worktree that changed answers changed with the server's words", async () => {
+    const { client } = fakeClient((kind) => {
+      if (kind === "agent.delete") {
+        throw {
+          code: "conflict",
+          message: "the worktree of Agent a changed; confirm again",
+        };
+      }
+      return officeHandler([agent("a")])(kind);
+    });
+    const { controller, state } = observe(client);
+    await controller.load();
+
+    const outcome = await controller.deleteAgent("a", {
+      worktrees: "remove",
+      confirmed_status: { a: "old" },
+    });
+
+    expect(outcome.kind).toBe("changed");
+    expect(state().notice?.message).toContain("confirm again");
+    expect(state().agents.map((known) => known.id)).toEqual(["a"]);
+  });
+
   test("an additions event refreshes the open agent only", async () => {
     const { client, push } = fakeClient(
       officeHandler([agent("a"), agent("b")]),

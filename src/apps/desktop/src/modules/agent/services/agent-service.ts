@@ -10,6 +10,14 @@ import type {
   Project,
   Session,
 } from "../models/agent";
+import {
+  readDeleteResult,
+  type DeleteResult,
+  type WorktreeChoice,
+  type WorktreeInfo,
+  type WorktreeQuery,
+  type WorktreeStatus,
+} from "../models/worktree";
 
 function asList<Item>(result: unknown): Item[] {
   return Array.isArray(result) ? (result as Item[]) : [];
@@ -39,9 +47,19 @@ export function createAgentService(client: CoreClient) {
     startNewTask: async (agentId: string) => {
       await send("agent.new_task", { agent_id: agentId });
     },
-    deleteAgent: async (agentId: string) => {
-      await send("agent.delete", { agent_id: agentId });
-    },
+    deleteAgent: async (
+      agentId: string,
+      choice?: WorktreeChoice,
+    ): Promise<DeleteResult> =>
+      readDeleteResult(
+        await send("agent.delete", { agent_id: agentId, ...choice }),
+      ),
+    worktreeInfo: async (query: WorktreeQuery) =>
+      (await send("agent.worktree_info", { ...query })) as WorktreeInfo,
+    worktreeStatus: async (agentIds: string[]) =>
+      asList<WorktreeStatus>(
+        await send("agent.worktree_status", { agent_ids: agentIds }),
+      ),
     getAdditions: async (agentId: string) =>
       (await send("agent.additions.get", {
         agent_id: agentId,

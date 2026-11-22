@@ -7,7 +7,9 @@ use kernel::{AgentId, Timestamp};
 use crate::enums::{AgentStatus, StatusEvent};
 use crate::errors::AgentError;
 use crate::services::next_status;
-use crate::value_objects::{AgentCommand, DisplayName, MachineId, ProjectId, TaskText};
+use crate::value_objects::{
+    AgentCommand, AgentWorktree, DisplayName, MachineId, ProjectId, TaskText,
+};
 
 /// An agent definition and its status.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +25,9 @@ pub struct Agent {
     pub created_at: Timestamp,
     /// The last task the office gave the agent, if any (0011).
     pub task: Option<TaskText>,
+    /// The agent's own branch and worktree, when it was created with one
+    /// (0010). The working folder then lies inside the worktree.
+    pub worktree: Option<AgentWorktree>,
 }
 
 impl Agent {
@@ -61,6 +66,7 @@ impl Agent {
             status: AgentStatus::Stopped,
             created_at,
             task: None,
+            worktree: None,
         })
     }
 

@@ -39,6 +39,7 @@ use serde_json::{Value, json};
 use wire::{Request, Response};
 
 use super::*;
+use agent_application::commands::delete_agent::WorktreeOutcome;
 
 fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -323,11 +324,19 @@ impl SubtreeRequests for FakeSubtree {
         SubtreeResult::Stopped(locked(&self.stopped).clone())
     }
 
-    fn delete_subtree(&self, _request: &Request, _agent_id: AgentId) -> SubtreeResult {
+    fn delete_subtree(
+        &self,
+        _request: &Request,
+        _agent_id: AgentId,
+        _worktrees: &DeleteWorktrees,
+    ) -> SubtreeResult {
         if let Some(failure) = &*locked(&self.failure) {
             return failure.clone();
         }
-        SubtreeResult::Deleted(locked(&self.deleted).clone())
+        SubtreeResult::Deleted {
+            agents: locked(&self.deleted).clone(),
+            worktrees: WorktreeOutcome::default(),
+        }
     }
 }
 
@@ -445,6 +454,8 @@ fn use_cases(stores: &FakeStores) -> AgentUseCases {
         list_projects: ListProjectsHandler::new(Arc::clone(&stores.projects)),
         set_setting: SetSettingHandler::new(Arc::clone(&stores.settings)),
         get_settings: GetSettingsHandler::new(Arc::clone(&stores.settings)),
+        worktree_info: WorktreeInfoHandler::new(Arc::clone(&stores.projects), None),
+        worktree_status: WorktreeStatusHandler::new(Arc::clone(&stores.agents_trait), None),
     }
 }
 

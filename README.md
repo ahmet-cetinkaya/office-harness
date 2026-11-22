@@ -137,6 +137,32 @@ Each agent row can show one more line under the last output line: the last task 
 
 The shapes of the request and the event are in [the task protocol](specs/changes/0011-task-line/contracts/task-protocol.md).
 
+## Own worktree per agent
+
+Two agents that work in one git repository folder change the same files. To keep them apart, turn on "Own worktree" when you create an agent whose working folder is inside a git repository. The office then creates a new branch and a git worktree of it for that agent, and the agent's CLI starts there. Your own repository folder does not change; the repository only gets the new branch and the worktree record.
+
+**At create.**
+- "Own worktree" shows only when the folder is inside a git repository, and it is off by default. It needs git 2.22 or newer on the login `PATH`.
+- The base is the branch checked out in that folder (or its commit, when no branch is checked out). You can pick another local branch.
+- The branch is named `office-harness/<agent name>`, in lower case with every other character replaced by `-`. When that name is taken, the office adds `-2`, `-3`, and so on. The form shows the name before you create the agent.
+- The worktree is in the `worktrees/` folder of the [data folder](#data-folder), never inside your repository. When you chose a subfolder of the repository, the agent starts in the same subfolder of its worktree.
+- Untracked files, such as local environment files, are not copied into the worktree.
+- If the branch or the worktree cannot be made, no agent is created and no branch or folder is left.
+- The office runs git without hooks and without asking for credentials, and it writes no git configuration. Checkout filters that your repository configures, such as Git LFS, still run during the checkout, as in your own checkout, and can download files.
+- Only you can turn the choice on. Agents that create agents never get an own worktree.
+
+**In the details.** The agent's details show its branch, its base, and the worktree folder. If the worktree folder is gone or no longer linked to its repository (for example after you moved the repository), the agent does not start and says why.
+
+**At delete.** Deleting an agent with an own worktree asks once, for the agent and every descendant that the delete covers, whether to keep or remove the worktrees. Keep is the default.
+- **Keep:** the folder and the branch stay, and the office shows where they are. From then on they are yours; the office does not manage them.
+- **Remove:** the office stops the agent, counts the changes in the worktree again, and removes it only if nothing changed since the question. A worktree with uncommitted changes (changed, added, deleted, or untracked files) is removed only after a second confirmation that names the number of changed files. Files that git ignores are not counted and are removed with the worktree.
+- The branch is deleted only when it has no commits that its base lacks and the base still exists. Otherwise it stays, and the office names it. A branch checked out in another folder also stays.
+- A worktree whose repository cannot be read is kept, and the agent is still deleted.
+
+The office never commits, merges, pushes, or rebases. Worktrees share the repository's history, so their branches and commits show in your repository too. To remove a kept worktree yourself, run `git worktree remove <folder>` in the repository and `git branch -D <branch>` if you no longer need the branch.
+
+The shapes of the requests are in [the worktree protocol](specs/changes/0010-agent-worktree/contracts/worktree-protocol.md).
+
 ## Start at login
 
 The server runs only while you are logged in. Agents end when you log out or shut the machine down. After the next login the server starts again, and the agents that were running show `interrupted`. No agent starts without your action.
@@ -182,7 +208,7 @@ The server keeps its state in your local application data folder:
 | macOS   | `~/Library/Application Support/dev.office-harness.office-harness` |
 | Windows | `%LOCALAPPDATA%\office-harness\office-harness\data`             |
 
-The folder holds `office.db` (the office), `token` (the office token), `server.json` (the port of the running server), `server.lock`, `server.log`, `output/` (one capped output file for each session), and `bin/` (the login copies). The token file and the stored output are readable only by your OS user.
+The folder holds `office.db` (the office), `token` (the office token), `server.json` (the port of the running server), `server.lock`, `server.log`, `output/` (one capped output file for each session), `worktrees/` (the agents' own git worktrees, see [Own worktree per agent](#own-worktree-per-agent)), and `bin/` (the login copies). The token file and the stored output are readable only by your OS user.
 
 The server accepts `--data-folder <path>` to use another folder. A server started at login always uses the default folder.
 

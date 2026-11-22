@@ -311,14 +311,19 @@ fn fill_last_lines(result: &mut Value, last_line: &dyn Fn(AgentId) -> Option<Str
 }
 
 /// Writes `role` and `team` into every agent object of a response result;
-/// an agent outside the hierarchy gets null for both.
+/// an agent outside the hierarchy gets null for both. An object without an
+/// agent `id` is not an agent (the worktree answers of 0010) and stays as
+/// it is.
 fn fill_places(result: &mut Value, places: &HashMap<AgentId, RowPlace>) {
     for agent in agent_objects(result) {
-        let place = agent
+        let Some(agent_id) = agent
             .get("id")
             .and_then(Value::as_str)
             .and_then(|id| AgentId::from_str(id).ok())
-            .and_then(|agent_id| places.get(&agent_id));
+        else {
+            continue;
+        };
+        let place = places.get(&agent_id);
         let role = place
             .and_then(|place| place.role)
             .map_or(Value::Null, |role| Value::from(role.as_str()));

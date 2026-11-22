@@ -243,6 +243,63 @@ describe("hierarchy controller", () => {
     });
   });
 
+  test("a subtree delete sends the worktree choice and answers the result", async () => {
+    const client = fakeClient((kind: string) =>
+      kind === "agent.delete"
+        ? { deleted_branches: ["b"], kept_branches: [], kept_folders: [] }
+        : TREE,
+    );
+    const controller = createHierarchyController(client);
+
+    const outcome = await controller.deleteSubtree("lead-1", true, 2, {
+      worktrees: "remove",
+      confirmed_status: { "lead-1": "h" },
+    });
+
+    expect(client.sentFields("agent.delete")).toEqual({
+      agent_id: "lead-1",
+      include_descendants: true,
+      descendant_count: 2,
+      worktrees: "remove",
+      confirmed_status: { "lead-1": "h" },
+    });
+    expect(outcome).toEqual({
+      kind: "deleted",
+      result: { deleted_branches: ["b"], kept_branches: [], kept_folders: [] },
+    });
+  });
+
+  test("a worktree that changed answers changed so the view asks again", async () => {
+    const client = fakeClient((kind: string) => {
+      if (kind === "agent.delete") {
+        throw {
+          code: "conflict",
+          message: "the worktree of Bo changed; confirm again",
+        };
+      }
+      return TREE;
+    });
+    const controller = createHierarchyController(client);
+
+    const outcome = await controller.deleteSubtree("lead-1", true, 2, {
+      worktrees: "remove",
+      confirmed_status: {},
+    });
+
+    expect(outcome.kind).toBe("changed");
+  });
+
+  test("the worktree status is read for the listed agents", async () => {
+    const client = fakeClient([]);
+    const controller = createHierarchyController(client);
+
+    await controller.worktreeStatus(["lead-1", "member-1"]);
+
+    expect(client.sentFields("agent.worktree_status")).toEqual({
+      agent_ids: ["lead-1", "member-1"],
+    });
+  });
+
   test("a plain stop sends no descendant fields", async () => {
     const client = fakeClient(TREE);
     const controller = createHierarchyController(client);
@@ -264,9 +321,12 @@ describe("hierarchy controller", () => {
     });
     const controller = createHierarchyController(client);
 
-    const failure = await controller.deleteSubtree("lead-1", true, 2);
+    const outcome = await controller.deleteSubtree("lead-1", true, 2);
 
-    expect(failure).toBe("the agent has 3 members now");
+    expect(outcome).toEqual({
+      kind: "refused",
+      message: "the agent has 3 members now",
+    });
   });
 
   test("placeOf reads the tree the snapshot holds", async () => {

@@ -5,7 +5,16 @@ import {
   type CoreClient,
   type ServerEvent,
 } from "../../../core/api";
-import type { NewAgent } from "../../agent";
+import {
+  createAgentService,
+  KEEP_WORKTREES,
+  failedOutcome,
+  type DeleteOutcome,
+  type NewAgent,
+  type WorktreeChoice,
+  type WorktreeQuery,
+  type WorktreeStatus,
+} from "../../agent";
 import { EMPTY_TREE, type HierarchyTree } from "../models/hierarchy";
 import { placeOf, type CreatePlace } from "../models/placement";
 import {
@@ -40,6 +49,7 @@ export type FailureText = string | null;
  */
 export function createHierarchyController(client: CoreClient) {
   const service = createHierarchyService(client);
+  const agentService = createAgentService(client);
   let snapshot: HierarchySnapshot = INITIAL_HIERARCHY;
   const listeners = new Set<(snapshot: HierarchySnapshot) => void>();
   // Reloads can overlap when events arrive while a read is still out; the
@@ -145,15 +155,34 @@ export function createHierarchyController(client: CoreClient) {
       submit(() => service.stopSubtree(agentId, includeDescendants)),
 
     /** Deletes an agent and, when asked, its whole subtree (FR-006). The
-     * count is what the confirmation showed; the server recounts it. */
-    deleteSubtree: (
+     * count is what the confirmation showed; the server recounts it. A
+     * worktree that changed after the question answers "changed" (0010). */
+    deleteSubtree: async (
       agentId: string,
       includeDescendants: boolean,
       descendantCount: number,
-    ): Promise<FailureText> =>
-      submit(() =>
-        service.deleteSubtree(agentId, includeDescendants, descendantCount),
-      ),
+      choice?: WorktreeChoice,
+    ): Promise<DeleteOutcome> => {
+      try {
+        const result = await service.deleteSubtree(
+          agentId,
+          includeDescendants,
+          descendantCount,
+          choice,
+        );
+        return { kind: "deleted", result };
+      } catch (rejection) {
+        return failedOutcome(rejection, choice ?? KEEP_WORKTREES);
+      }
+    },
+
+    /** The worktree request of a form (0010, FR-001). It rejects, and the
+     * form hides the choice. */
+    worktreeInfo: (query: WorktreeQuery) => agentService.worktreeInfo(query),
+
+    /** The worktrees among these agents. It rejects when the read fails. */
+    worktreeStatus: (agentIds: string[]): Promise<WorktreeStatus[]> =>
+      agentService.worktreeStatus(agentIds),
 
     /** The place a create dialog would act at, from the tree as it is now. */
     placeOf: (selectedAgentId: string | null): CreatePlace =>

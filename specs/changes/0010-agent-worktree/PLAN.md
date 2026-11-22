@@ -1,5 +1,5 @@
 ---
-status: approved
+status: in_progress
 spec: specs/changes/0010-agent-worktree/SPEC.md
 commits: per-task
 ---

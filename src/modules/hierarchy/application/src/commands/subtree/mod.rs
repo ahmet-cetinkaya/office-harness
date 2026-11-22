@@ -2,4 +2,4 @@
 
 mod subtree_handler;
 
-pub use subtree_handler::{SubtreeHandler, SubtreeRequest};
+pub use subtree_handler::{SubtreeDeletion, SubtreeHandler, SubtreeRequest};

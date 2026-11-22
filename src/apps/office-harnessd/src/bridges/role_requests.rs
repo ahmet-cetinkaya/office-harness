@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use agent_application::commands::create_agent::OwnWorktree;
+use agent_application::commands::delete_agent::DeleteWorktrees;
 use agent_application::common::additions_input::AdditionsInput;
 use agent_application::common::command_line::split_command;
 use agent_domain::value_objects::{AgentCommand, DisplayName};
@@ -12,7 +14,7 @@ use hierarchy_application::commands::create_role_agent::{
 use hierarchy_application::common::errors::HierarchyApplicationError;
 use hierarchy_application::common::interfaces::HierarchyStore;
 use hierarchy_application::common::ports::{
-    AgentCreator, AgentSeed, CreatorError, CreatorErrorKind, SeedAdditions,
+    AgentCreator, AgentSeed, CreatorError, CreatorErrorKind, SeedAdditions, SeedWorktree,
 };
 use hierarchy_domain::{Role, TeamId};
 use kernel::AgentId;
@@ -128,6 +130,10 @@ fn seed_of(seed: &RoleSeed) -> Result<AgentSeed, String> {
             env: additions.env.clone(),
             startup_prompt: additions.startup_prompt.clone(),
         }),
+        worktree: seed.worktree.as_ref().map(|own| SeedWorktree {
+            base: own.base.clone(),
+            branch_name: own.branch_name.clone(),
+        }),
     })
 }
 
@@ -185,15 +191,22 @@ impl AgentCreator for AgentCreatorBridge {
                     working_folder: seed.working_folder,
                     project_id: seed.project_id,
                     additions: seed.additions.map(additions_input),
+                    worktree: seed.worktree.map(|own| OwnWorktree {
+                        base: own.base,
+                        branch_name: own.branch_name,
+                    }),
                 },
             )
             .map_err(|error| agent_failure(&error))?;
         Ok(agent.id)
     }
 
+    /// The create undo: the worktree and branch the create made go too,
+    /// without asking (0010 D5).
     fn remove(&self, agent_id: AgentId) -> Result<(), CreatorError> {
         self.delete
-            .handle(agent_id)
+            .handle(agent_id, &DeleteWorktrees::Discard)
+            .map(|_| ())
             .map_err(|error| agent_failure(&error))
     }
 }
