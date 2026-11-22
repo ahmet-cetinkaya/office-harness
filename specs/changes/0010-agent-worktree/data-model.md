@@ -8,7 +8,7 @@ Four nullable columns on `agent_agents`, migration `0007_agent_worktree.sql` of 
 
 | Column | Type | Rule |
 |---|---|---|
-| `worktree_repository` | TEXT | The top folder of the repository that holds the chosen folder (`git rev-parse --show-toplevel`). |
+| `worktree_repository` | TEXT | The main worktree of the repository that holds the chosen folder: the first record of `git worktree list --porcelain`, so a folder inside a linked worktree names the main one. For a bare repository, the top of the chosen folder (`git rev-parse --show-toplevel`). |
 | `worktree_base` | TEXT | The base: a local branch name, or the full commit id when the chosen folder was detached (A2). |
 | `worktree_branch` | TEXT | The agent's branch, `office-harness/<slug>` or `office-harness/<slug>-<n>` (D3). |
 | `worktree_folder` | TEXT | The worktree folder, under the office's worktrees folder (D2). |
@@ -39,16 +39,17 @@ All run as `git -c core.hooksPath=<no-hooks> -c core.fsmonitor=false -C <folder>
 |---|---|---|
 | Version (2.22 or newer) | `git version` | 10 s |
 | Repository and subfolder | `rev-parse --show-toplevel --show-prefix` | 10 s |
+| Main worktree | `worktree list --porcelain` | 10 s |
 | Base | `symbolic-ref --quiet HEAD`, else `rev-parse --verify HEAD^{commit}` | 10 s |
 | Local branches | `for-each-ref --format=%(refname) refs/heads/` | 10 s |
 | Branch name check | `check-ref-format --branch <name>` | 10 s |
 | Create the branch | `branch --no-track -- <branch> <refs/heads/base or commit>` | 10 s |
 | Create the worktree | `worktree add -- <folder> <branch>` | 120 s |
 | Change count | `status --porcelain=v1 --untracked-files=all --ignore-submodules=none -z` | 10 s |
-| Own commits | `rev-list --count <base ref>..refs/heads/<branch>` | 10 s |
+| Own commits | `rev-list --count <base ref>..refs/heads/<branch> --` | 10 s |
 | Base exists | `rev-parse --verify --quiet <base ref>^{commit}` | 10 s |
-| Remove a clean worktree | `worktree remove -- <folder>` | 10 s |
-| Remove a changed or missing worktree | `worktree remove --force -- <folder>` | 10 s |
+| Remove a clean worktree | `-c status.showUntrackedFiles=normal worktree remove -- <folder>` | 120 s |
+| Remove a changed or missing worktree | `-c status.showUntrackedFiles=normal worktree remove --force -- <folder>` | 120 s |
 | Delete the branch | `branch -D -- <branch>` | 10 s |
 
 A `worktree prune` is never run. The office writes no git configuration.
@@ -59,7 +60,7 @@ A `worktree prune` is never run. The office writes no git configuration.
 |---|---|
 | `changed_files` | The line count of the status command above: changed, added, deleted, and every untracked file; ignored files are not counted (A9). |
 | `status_hash` | A hash of the status output plus the size and change time of each changed file, hex. Valid within one server run. |
-| `own_commits` | Commits on the agent's branch that the base lacks; 0 when the base is gone. |
+| `own_commits` | Commits on the agent's branch that the base lacks; absent when the base is gone or git cannot count them, which keeps the branch. |
 | `base_exists` | The base branch or commit still exists. |
 | `folder_exists` | The worktree folder exists. |
 | `reachable` | The repository answers and the status could be read. |
