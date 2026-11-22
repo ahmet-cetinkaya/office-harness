@@ -79,7 +79,7 @@ Result: `{agent}`. The agent is created, not started (A1). Errors: `invalid` wit
 | `parent_agent_id` | string | the parent of the lead |
 | `project_id` | string? | as above |
 
-Result: `{team, agents: [agent]}`, the lead first. The team, its lead under the parent, and each member under the lead are created in one action, or none is (all-or-nothing); the position sets each role (A4). Errors: `invalid` with every reason, `conflict` "team name \"<name>\" is already used", `refused`, `not_found`. A failed undo names the first reason and each agent left behind. Sends one `agent.changed` for each created agent and one `hierarchy.changed`, and nothing for a failed creation.
+Result: `{team, agents: [agent]}`, the lead first. The team, its lead under the parent, and each member under the lead are created in one action, or none is (all-or-nothing); the position sets each role (A4). Errors: `invalid` with every reason, `conflict` "team name \"<name>\" is already used", `refused`, `not_found`. A failed undo names the first reason and each agent left behind. Sends one `agent.changed` for each created agent and one `hierarchy.changed`. A rolled-back creation sends no `agent.changed` and no `hierarchy.changed`, but it does send the `action.recorded` events of its Create and Delete entries, because those entries exist. A creation whose writes all succeeded answers success and sends its events even when the office cannot read an agent back afterward; that agent is then named by `id` and `name` only, has no `agent.changed`, and a `storage.error` is raised.
 
 ### `template.export` (FR-007)
 

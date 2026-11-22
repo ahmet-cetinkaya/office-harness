@@ -154,8 +154,12 @@ pub fn start_with(
         &events,
         &notification_bridge,
     )?;
-    let template =
-        build_template_services(&connection, Arc::clone(&agent_bridge_store), &hierarchy);
+    let template = build_template_services(
+        &connection,
+        Arc::clone(&agent_bridge_store),
+        &hierarchy,
+        &storage_alerts,
+    );
     Ok(Services {
         machine,
         agents,

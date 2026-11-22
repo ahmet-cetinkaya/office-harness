@@ -9,7 +9,7 @@ use template_application::services::TemplateService;
 use template_infrastructure::persistence::TemplateRepository;
 use template_presentation::TemplateHandlers;
 
-use super::HierarchyServices;
+use super::{HierarchyServices, StorageAlerts};
 use crate::bridges::{AgentDefinitionBridge, SystemClock, TemplateCreateBridge};
 
 /// The template services of the host: the template use cases and handlers,
@@ -31,6 +31,7 @@ pub fn build_template_services(
     connection: &SharedConnection,
     agents: Arc<dyn AgentStore>,
     hierarchy: &HierarchyServices,
+    alerts: &StorageAlerts,
 ) -> TemplateServices {
     let templates: Arc<dyn TemplateStore> = Arc::new(TemplateRepository::new(connection.handle()));
     let projects: Arc<dyn ProjectStore> = Arc::new(ProjectRepository::new(connection.clone()));
@@ -50,6 +51,7 @@ pub fn build_template_services(
             Arc::clone(&hierarchy.creator),
             agents,
             Arc::clone(&projects),
+            alerts.clone(),
         )),
         templates,
         projects,
