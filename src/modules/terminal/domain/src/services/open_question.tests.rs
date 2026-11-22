@@ -144,3 +144,29 @@ fn a_blank_row_ends_a_choice_list() {
     let idle = ["› Ask anything", "", "  ? for shortcuts"];
     assert!(!shows_open_question(&screen(&idle)));
 }
+
+/// A screen whose cursor sits on the row at `cursor_row`.
+fn screen_with_cursor(rows: &[&str], cursor_row: usize) -> ScreenView {
+    ScreenView {
+        cursor_row,
+        ..screen(rows)
+    }
+}
+
+#[test]
+fn an_idle_prompt_below_wrapped_output_is_not_a_question() {
+    let idle = ["● The answer wraps", "  onto a second row.", "› "];
+    assert!(!shows_open_question(&screen_with_cursor(&idle, 2)));
+}
+
+#[test]
+fn an_idle_prompt_with_a_hint_at_its_text_column_is_not_a_question() {
+    let idle = ["Done.", "", "> draft text", "  ? for shortcuts"];
+    assert!(!shows_open_question(&screen_with_cursor(&idle, 2)));
+}
+
+#[test]
+fn a_choice_list_with_the_cursor_below_it_is_still_a_question() {
+    let dialog = [" ❯ Leave", "   Stay and work here", "", " Enter to confirm"];
+    assert!(shows_open_question(&screen_with_cursor(&dialog, 3)));
+}
