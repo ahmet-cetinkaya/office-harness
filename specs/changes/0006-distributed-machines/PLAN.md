@@ -54,7 +54,7 @@ Deliver spec 0006: the user turns on the listener, hands one join code to a seco
   - Action record: `src/modules/audit/domain/src/action_kind.rs` holds 13 kinds (`create`, `start`, `stop`, `delete`, `new_task`, `continue`, `team_create`, `team_delete`, `directive`, `refused`, `hold`, `release`, `task_text`), and `ActionKind::ALL` lists them, so the four new kinds of D11 extend that list; each writing module declares its own `ActionRecorder` port and the host bridges to `audit-application`.
   - Composition: `src/apps/office-harnessd/src/bootstrap/` builds services per module and runs per-module migrations (`migrations.rs`); `src/apps/office-harnessd/src/bridges/` holds the cross-module adapters. `scripts/check-boundaries.sh` reads crate roles from manifest paths, so a new module needs no script change.
   - Desktop: `app.svelte` renders `OfficeView` after the connection states; the create flow is `modules/agent/components/agent-form-dialog.svelte`; requests go through `modules/agent/services/agent-service.ts`; state lives in `modules/agent/state/office-controller.ts`; the e2e mock core is `src/apps/desktop/e2e/support/mock-core.ts`.
-  - Protocol surface: `specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md` fixes the message shapes, error codes, and close codes that this change extends.
+  - Protocol surface: `specs/changes/archive/0001-office-server-and-terminal/contracts/client-protocol.md` fixes the message shapes, error codes, and close codes that this change extends.
 - **Floor rules:** one build or test at a time on the floor; ask god for the build slot before each local build or test run (`CARGO_BUILD_JOBS=4`, `--test-threads=4`, at most 30 minutes). Efe reviews each PR at its exact head sha; god merges. Nothing is pushed to `main`. No other project's name appears in any repository file.
 - **Toolchain:** as 0001 to 0003 (cargo 1.100, bun 1.4.4, Node 24, Tauri v2, Svelte 5 with runes, Tailwind CSS 4, TypeScript). TLS rides rustls; no platform TLS API, so the three OSes share one code path.
 
@@ -269,7 +269,7 @@ Paths are relative to the repository root. `M/` stands for `src/modules/`, `D/` 
 
 ### T12: Documentation and amendments (FR-005 and FR-008 texts, security g)
 
-- **Files:** `docs/PRD.md`, `specs/changes/0001-office-server-and-terminal/SPEC.md`, `README.md`, `docs/ARCHITECTURE.md`.
+- **Files:** `docs/PRD.md`, `specs/changes/archive/0001-office-server-and-terminal/SPEC.md`, `README.md`, `docs/ARCHITECTURE.md`.
 - **Work:**
   - (a) Amend the texts the spec's Clarifications pin: `docs/PRD.md` 4.1 (the office token rule gains the machine credential) and 0001 A13 (joined machines prove themselves with their own credential; the office token stays on the home machine and the desktop app) (security g).
   - (b) Record in 0001 that `0006/FR-005` and `0006/FR-008` supersede FR-005 and FR-008 in part: office data stays inside the user's machines, and client connections come from the same machine or from joined machines with a valid credential scoped to their own agents (the spec's MODIFIED entries).
@@ -317,7 +317,7 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 | 9 | T9 | `M/machine/`, `M/agent/`, `H/bridges/` | `feat(machine): mark offline machines and their agents` |
 | 10 | T10 | `src/apps/desktop/src/modules/machines/`, `app.svelte`, `mock-core.ts` | `feat(desktop): add the machines view and the join flow` |
 | 11 | T11 | `D/modules/agent/`, `M/agent/`, `H/bridges/` | `feat(desktop): pick a machine and set its project folder` |
-| 12 | T12 | `docs/PRD.md`, `specs/changes/0001-office-server-and-terminal/SPEC.md`, `README.md`, `docs/ARCHITECTURE.md` | `docs: amend the token rule and describe the machines` |
+| 12 | T12 | `docs/PRD.md`, `specs/changes/archive/0001-office-server-and-terminal/SPEC.md`, `README.md`, `docs/ARCHITECTURE.md` | `docs: amend the token rule and describe the machines` |
 | 13 | T13 | `specs/changes/0006-distributed-machines/qa-report.md`, tests | `test(spec-0006): record QA and threat test results` |
 
 ## QA and evidence

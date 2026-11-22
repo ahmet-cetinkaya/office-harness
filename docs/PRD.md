@@ -152,7 +152,7 @@ There is no small agent cap (12 or more must work). Anything not in this table i
 | Action record entry | One recorded action with its actor, target, and time |
 | Notification | A status event that the user must see, read or unread (0003) |
 
-The detailed model for 0001 is in [data-model.md](../specs/changes/0001-office-server-and-terminal/data-model.md).
+The detailed model for 0001 is in [data-model.md](../specs/changes/archive/0001-office-server-and-terminal/data-model.md).
 
 ## 8. Quality, security, and privacy
 
