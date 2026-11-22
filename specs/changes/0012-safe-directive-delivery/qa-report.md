@@ -3,7 +3,7 @@
 ## Summary
 
 - **Date:** 2026-11-23.
-- **Build under test:** branch `feat/0012-safe-directive-delivery`, the commit that adds the unsent-text hold (A5 decision) on top of merge commit 05640c5 (`main` c07f21c), toolchain 1.100.0. The full gates below ran on that tree; the three repeated runs of the directive tests ran on 82b8934, before the merge.
+- **Build under test:** branch `feat/0012-safe-directive-delivery`, the merge of `main` 1d6edb6 into the unsent-text hold commit 92d7a4c, toolchain 1.100.0. The full gates below ran on that tree; the three repeated runs of the directive tests ran on 82b8934, before the merge.
 - **Overall status:** automated evidence stands for FR-001 to FR-005, the modified 0002/FR-010, and PB-1 to PB-5. The success criteria that name a count are proven with fewer directives than the count, so they are PARTIAL. Rows that need the real agent CLIs are BLOCKED. Nobody ran them.
 - **Status of this file:** the gate numbers come from runs on 2026-11-23. The CI result of the PR is not in this file.
 
@@ -27,11 +27,12 @@
 |---|---|---|
 | `cargo fmt --check` | workspace | PASS |
 | `cargo clippy --all-targets -D warnings` | workspace without `office-harness-desktop` | PASS (clean) |
-| `cargo test` | workspace without `office-harness-desktop`: 1212 passed, 0 failed | PASS |
+| `cargo test` | workspace without `office-harness-desktop`: 1217 passed, 0 failed | PASS |
+| `tests/agent_hold.rs` | 10 tests, run 3 times after the merge (the sender-record check from `main` leaves withdrawals out, as the target count does) | PASS (each time) |
 | `tests/agent_directive.rs`, `tests/task_text.rs` | 13 and 14 tests, run 3 times in a row on 82b8934, once more in the merged workspace run | PASS (each time) |
 | `scripts/check-boundaries.sh` | repository | PASS (boundaries ok) |
 | Desktop checks (`bun test`, Playwright, `svelte-check`) | no desktop file changed | Not run |
-| CI | the PR at dc9aa61 | Ubuntu and Windows passed; macOS failed one test: BSD `stty raw` also turns echo off, so a fake CLI showed no text. The fake CLIs now ask for `stty raw echo`. CI on the new head is not in this file. |
+| CI | the PR at dc9aa61 and 92d7a4c | dc9aa61: macOS failed one test (BSD `stty raw` turns echo off; the fake CLIs now ask for `stty raw echo`). 92d7a4c: Windows passed; Ubuntu and macOS failed the 100-directive hold test, because `main` had added a sender-record count that the 0012 withdrawals change; fixed in the merge. CI on the new head is not in this file. |
 
 ## Requirements
 
