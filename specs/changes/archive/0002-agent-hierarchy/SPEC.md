@@ -79,7 +79,7 @@ A parent agent creates child agents and sends directives to them, as a CEO gives
 - **FR-008** (US2): THE SYSTEM SHALL let a running agent, from inside its own session, create, start, and stop agents, start new tasks, and send directives only within its own descendants and only for the roles that FR-001 allows.
 - **FR-009** (US2): IF an agent asks for an action on an agent that is not its descendant, or for a role or action that FR-008 does not allow, THEN THE SYSTEM SHALL refuse the action, tell the agent the reason, and record the refusal.
 - **FR-010** (US2): WHEN a parent agent sends a directive, THE SYSTEM SHALL enter the directive text into the target agent's terminal as one unbroken input followed by Enter.
-- **FR-011** (US1, US2): THE SYSTEM SHALL add directives and refused actions to the action record and SHALL record a named agent as the actor of each action that an agent takes.
+  - Amended by 0012 (`specs/changes/0012-safe-directive-delivery/SPEC.md`): the text goes in as one paste only when the target waits for input, no person typed there in the last 30 seconds or left unsent text there, no text the office typed without Enter waits there, and the screen shows no open question; until then the directive waits in the target's queue. Enter follows only when the text, or the CLI's paste placeholder, shows at the input line (0012/FR-001 to FR-003).- **FR-011** (US1, US2): THE SYSTEM SHALL add directives and refused actions to the action record and SHALL record a named agent as the actor of each action that an agent takes.
 
 ### PRESERVED
 
@@ -134,6 +134,7 @@ A parent agent creates child agents and sends directives to them, as a CEO gives
 - **SC-002:** With 30 agents in 3 levels that run at the same time, the hierarchy view shows 100% of them under their correct parents.
 - **SC-003:** In a test of 20 agent requests that FR-008 does not allow, 100% are refused, and 100% show in the action record with the actor and the reason.
 - **SC-004:** In a test of 100 directives sent while the user types in the target terminal, 100% arrive as one unbroken input followed by Enter.
+  - Amended by 0012: while the user types, or leaves typed text unsent, the directives wait in the target's queue and are typed after the user's input, each as one unbroken input followed by Enter (0012/FR-002, 0012/SC-003, 0012/SC-008).
 - **SC-005:** Deleting a team lead with N members removes exactly N + 1 agents after the user confirms, and 0 agents when the user cancels.
 - **SC-006:** A team lead agent creates a member and gives it a directive with 0 user actions between the two steps.
 
@@ -150,8 +151,8 @@ A parent agent creates child agents and sends directives to them, as a CEO gives
 | An agent sends a directive to an agent that is not running. | Invalid | The system refuses, tells the sender that the target is not running, and records the refusal. |
 | A directive is very long or contains control characters. | Boundary | The system enters the text as one input and does not run control characters in it as keys. |
 | An agent creates many agents in a loop. | Boundary | The system adds no fixed cap (FR-005). Each new agent shows in the tree and the action record, and the user stops the parent and its descendants in one action (FR-007). |
-| The user types while a directive arrives. | Concurrent | The directive arrives as one unbroken input (FR-010). |
-| Two parent agents' directives arrive at the same target at the same time. | Concurrent | Each directive arrives as one unbroken input, one after the other. |
+| The user types while a directive arrives. | Concurrent | The user's input reaches the terminal at once; the directive waits until 30 seconds after the user's last input, then arrives as one unbroken input (FR-010 as amended by 0012). |
+| Two parent agents' directives arrive at the same target at the same time. | Concurrent | Each directive arrives as one unbroken input, one after the other, in the order the office accepted them (0012/FR-001). |
 | The user deletes an agent while its parent sends it a directive. | Concurrent | The system refuses the directive, tells the parent that the target was deleted, and records the refusal. |
 | An agent acts outside its own descendants, on itself, or asks to delete an agent. | Unauthorized | The system refuses and records it (FR-009). |
 | A parent agent stops, fails, or is interrupted while its children run. | Failure | The children keep running and keep their place in the tree. |

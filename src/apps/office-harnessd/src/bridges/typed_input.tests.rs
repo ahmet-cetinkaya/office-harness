@@ -96,7 +96,7 @@ fn the_prompt_is_pasted_and_never_submitted() {
     let run = RunId(1);
     let runtime = RecordingRuntime::new(Some(run), None);
 
-    paste_into_run(&runtime, AgentId::generate(), run, "do it").expect("paste");
+    assert!(paste_into_run(&runtime, AgentId::generate(), run, "do it").expect("paste"));
 
     assert_eq!(*runtime.pasted.lock().expect("lock"), ["do it"]);
     assert!(runtime.written.lock().expect("lock").is_empty());
@@ -106,7 +106,7 @@ fn the_prompt_is_pasted_and_never_submitted() {
 fn a_prompt_of_an_earlier_run_is_not_pasted_into_a_newer_one() {
     let runtime = RecordingRuntime::new(Some(RunId(2)), None);
 
-    paste_into_run(&runtime, AgentId::generate(), RunId(1), "old").expect("skipped");
+    assert!(!paste_into_run(&runtime, AgentId::generate(), RunId(1), "old").expect("skipped"));
 
     assert!(runtime.pasted.lock().expect("lock").is_empty());
 }
@@ -117,7 +117,10 @@ fn a_child_that_ended_is_not_a_failure_but_another_error_is() {
     let ended = RecordingRuntime::new(Some(run), Some(not_running));
     let failing = RecordingRuntime::new(Some(run), Some(broken));
 
-    assert!(paste_into_run(&ended, AgentId::generate(), run, "x").is_ok());
+    assert!(matches!(
+        paste_into_run(&ended, AgentId::generate(), run, "x"),
+        Ok(false)
+    ));
     assert!(matches!(
         paste_into_run(&failing, AgentId::generate(), run, "x"),
         Err(TerminalRuntimeError::Io(_))

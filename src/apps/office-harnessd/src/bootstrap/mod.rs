@@ -3,6 +3,7 @@
 mod access_services;
 mod agent_services;
 mod database;
+mod directive_delivery;
 mod hierarchy_services;
 mod instance_lock;
 mod interrupt_agents;

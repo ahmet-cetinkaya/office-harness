@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use terminal_domain::services::QueryScanner;
-use terminal_domain::value_objects::TerminalSize;
+use terminal_domain::value_objects::{ScreenView, TerminalSize};
 
 const LINE_BREAK: &str = "\r\n";
 const ENTER_ALTERNATE_SCREEN: &str = "\x1b[?1049h";
@@ -110,6 +110,18 @@ impl ScreenEmulator {
         let (row, _) = screen.cursor_position();
         let columns = screen.size().1.get();
         screen.contents_between(row, 0, row, columns)
+    }
+
+    /// The visible rows as plain text and the cursor row, without the
+    /// scrollback.
+    #[must_use]
+    pub fn screen_view(&self) -> ScreenView {
+        let screen = self.parser.screen();
+        let (cursor_row, _) = screen.cursor_position();
+        ScreenView {
+            rows: screen.rows(0, screen.size().1.get()).collect(),
+            cursor_row: usize::from(cursor_row),
+        }
     }
 
     /// Terminal bytes that redraw this screen on an empty terminal: the
