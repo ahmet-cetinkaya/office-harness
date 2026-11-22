@@ -1,6 +1,6 @@
 # Subtree status protocol (0014)
 
-One new request on the agent connection (`office-harnessd agent-call`, 0002 contract). The envelope, the proof, and the actor rules are the 0002 ones. User clients are not offered this request: on the office connection it is an unknown `agent.*` type, answered `invalid` like any other unknown type.
+One new request on the agent connection (`office-harnessd agent-call`, 0002 contract). The envelope, the proof, and the actor rules are the 0002 ones. User clients are not offered this request: on the office connection it is an unknown `agent.*` type, answered `not_found` ("no request of the type agent.subtree") like any other unknown type.
 
 ## `agent.subtree` (agent caller)
 
@@ -14,7 +14,7 @@ Result: an array with one entry per descendant of the caller, in tree order: eac
 | `name` | string | Its name, in visible form (below). |
 | `parent_agent_id` | string | Its parent; the caller for a child of the caller. |
 | `role` | `"lead"` or `"member"` | Its role. A descendant is always placed, so the role is never null. |
-| `status` | string | One of the 0001 statuses: `starting`, `working`, `waiting for input`, `exited`, `failed`, `stopped`, `interrupted`. |
+| `status` | string | The 0001 status in its wire form, as `agent.list` sends it: `starting`, `working`, `waiting_for_input`, `exited`, `failed`, `stopped`, `interrupted`. |
 | `last_output_at` | number or null | Unix ms of the last write of its CLI to the terminal in the current session; the session's start when the CLI wrote nothing yet; `null` when the CLI does not run (A1). |
 | `needs_you` | boolean | Whether it has an item in Needs you (0008). |
 | `held` | boolean | Whether the office hold or an agent hold on it or on one of its ancestors covers it (0007/FR-004, A4). |

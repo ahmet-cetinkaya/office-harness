@@ -1,10 +1,10 @@
 ---
-status: draft
+status: in_progress
 spec: specs/changes/0014-subtree-status/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-23 with the spec, for one review of both. Code starts only after the spec review gate passes. -->
+<!-- Drafted 2026-11-23 with the spec, for one review of both. The spec review gate passed for coding at 637b500 (2026-11-23); T2 to T5 are built on this branch. Deviations are in qa-report.md. -->
 
 # Plan: A parent reads the state of its descendants (0014)
 
