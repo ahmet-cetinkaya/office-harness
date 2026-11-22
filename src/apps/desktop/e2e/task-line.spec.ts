@@ -11,6 +11,10 @@ import { installMockCore } from "./support/mock-core";
 const SERIOUS_IMPACTS = ["serious", "critical"];
 const TASK_TOO_LONG_MESSAGE = "a task text has at most 8,192 characters";
 const TOO_LONG_LENGTH = 8193;
+const TASK_CHANGED_NOTICE =
+  "The task changed while you were editing. Saving replaces the new text with yours.";
+const TASK_AGE_TICK_MS = 60_000;
+const SLOW_SAVE_MS = 1_000;
 
 function agent(overrides: Partial<Agent> = {}): Agent {
   return {
@@ -28,10 +32,14 @@ function agent(overrides: Partial<Agent> = {}): Agent {
   };
 }
 
-async function openPanel(page: Page, agents: Agent[] = [agent()]) {
+async function openPanel(
+  page: Page,
+  agents: Agent[] = [agent()],
+  setTaskDelayMs?: number,
+) {
   await installMockCore(page, {
     initialState: { status: "connected" },
-    office: { agents },
+    office: { agents, setTaskDelayMs },
   });
   await page.goto("/");
   await expect(page.getByRole("button", { name: /^Ada/ })).toBeVisible();
@@ -165,6 +173,44 @@ test.describe("task line", () => {
     await expect(row(page)).toContainText("Keep me");
   });
 
+  test("a task that arrives while the editor is open shows a notice and keeps the draft", async ({
+    page,
+  }) => {
+    await openPanel(page, [agent({ task: task("Old task") })]);
+    await openDetails(page);
+
+    await pressByKeyboard(page, "Edit task");
+    await page.getByLabel("Task text").fill("My draft");
+    await expect(page.getByText(TASK_CHANGED_NOTICE)).toHaveCount(0);
+
+    await pushTask(page, "Directive text");
+
+    await expect(page.getByText(TASK_CHANGED_NOTICE)).toBeVisible();
+    await expect(page.getByLabel("Task text")).toHaveValue("My draft");
+    await expectNoSeriousViolations(page);
+  });
+
+  test("saving the user's own text shows no changed notice while the answer is slow", async ({
+    page,
+  }) => {
+    await openPanel(page, [agent({ task: task("Old task") })], SLOW_SAVE_MS);
+    await openDetails(page);
+
+    await pressByKeyboard(page, "Edit task");
+    await page.getByLabel("Task text").fill("My own text");
+    await pressByKeyboard(page, "Save task");
+
+    // The task event arrives within milliseconds; the save answers only after
+    // SLOW_SAVE_MS, so the editor is open with the new text in the state.
+    await page.waitForTimeout(SLOW_SAVE_MS / 2);
+    await expect(page.getByLabel("Task text")).toBeVisible();
+    // A one-shot count: toHaveCount(0) would retry until the save answers.
+    expect(await page.getByText(TASK_CHANGED_NOTICE).count()).toBe(0);
+
+    await expect(page.getByLabel("Task text")).toBeHidden();
+    await expect(page.getByText(TASK_CHANGED_NOTICE)).toHaveCount(0);
+  });
+
   test("8,193 characters show the refusal and keep the editor open", async ({
     page,
   }) => {
@@ -204,6 +250,38 @@ test.describe("task line", () => {
       .press("Enter");
 
     await expect(row(page)).not.toContainText("Task given");
+  });
+
+  test("only a row with a task runs the one-minute age clock", async ({
+    page,
+  }) => {
+    await page.addInitScript((tickMs) => {
+      const live = new Set<number>();
+      const setTimer = window.setInterval.bind(window);
+      const clearTimer = window.clearInterval.bind(window);
+      window.setInterval = ((handler: TimerHandler, delay?: number) => {
+        const id = setTimer(handler, delay);
+        if (delay === tickMs) live.add(id);
+        return id;
+      }) as typeof window.setInterval;
+      window.clearInterval = ((id?: number) => {
+        live.delete(id as number);
+        clearTimer(id);
+      }) as typeof window.clearInterval;
+      Reflect.set(window, "liveAgeClocks", () => live.size);
+    }, TASK_AGE_TICK_MS);
+    const ageClocks = () =>
+      page.evaluate(() => Reflect.get(window, "liveAgeClocks")());
+    await openPanel(page, [
+      agent(),
+      agent({ id: "agent-bo", name: "Bo", task: task("Has a task") }),
+    ]);
+    await expect(page.getByRole("button", { name: /^Bo/ })).toBeVisible();
+    expect(await ageClocks()).toBe(1);
+
+    await pushTask(page, "Ada gets one");
+    await expect(row(page)).toContainText("Task given");
+    expect(await ageClocks()).toBe(2);
   });
 
   test("the scene desks show no task text", async ({ page }) => {

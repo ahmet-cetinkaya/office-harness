@@ -53,6 +53,7 @@ const PROJECT_DELETED: &str = "deleted";
 pub const REQUEST_PREFIXES: [&str; 4] = ["agent.", "project.", "session.", "settings."];
 
 /// The use cases that the handlers call.
+#[derive(Clone)]
 pub struct AgentUseCases {
     pub create_agent: CreateAgentHandler,
     pub delete_agent: DeleteAgentHandler,
