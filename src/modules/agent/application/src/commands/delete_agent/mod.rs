@@ -2,4 +2,4 @@
 
 mod delete_agent_handler;
 
-pub use delete_agent_handler::DeleteAgentHandler;
+pub use delete_agent_handler::{DeleteAgentHandler, DeleteWorktrees, WorktreeOutcome};

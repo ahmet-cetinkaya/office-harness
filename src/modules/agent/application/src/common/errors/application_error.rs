@@ -58,6 +58,27 @@ impl From<PortError> for ApplicationError {
 }
 
 impl ApplicationError {
+    /// The same error with `detail` after its text: a failure that comes
+    /// after a change the caller must still learn of.
+    #[must_use]
+    pub fn with_detail(self, detail: &str) -> Self {
+        let add = |text: String| format!("{text}. {detail}");
+        match self {
+            Self::Invalid(text) => Self::Invalid(add(text)),
+            Self::NotFound(text) => Self::NotFound(add(text)),
+            Self::Conflict(text) => Self::Conflict(add(text)),
+            Self::Refused(text) => Self::Refused(add(text)),
+            Self::Internal(text) => Self::Internal(add(text)),
+            Self::Storage {
+                message,
+                is_disk_failure,
+            } => Self::Storage {
+                message: add(message),
+                is_disk_failure,
+            },
+        }
+    }
+
     /// Like `From<PortError>`, but a duplicate names the field and the value.
     #[must_use]
     pub fn from_insert(error: PortError, field: &str, value: &str) -> Self {

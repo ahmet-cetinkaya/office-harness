@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use crate::bridges::{delete_worktrees, worktree_report};
 use agent_application::commands::delete_agent::DeleteAgentHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
 use agent_application::common::interfaces::AgentStore;
@@ -13,7 +14,7 @@ use hierarchy_application::commands::subtree::SubtreeHandler;
 use hierarchy_application::common::interfaces::HoldStore;
 use hierarchy_application::common::ports::{
     AgentCreator, DirectiveJournal, HoldClock, HoldJournal, HoldNotifier, RateLimitSource,
-    SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover,
+    SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover, SubtreeWorktrees, WorktreeReport,
 };
 use hierarchy_application::{CreateTeamHandler, DeleteTeamHandler, PlaceAgentHandler, TreeQuery};
 use hierarchy_infrastructure::persistence::migrations::{LEDGER_TABLE, SCRIPTS};
@@ -244,9 +245,34 @@ impl DeleteAgentPort {
 }
 
 impl SubtreeAgentRemover for DeleteAgentPort {
-    fn delete(&self, agent_id: AgentId) -> Result<(), SubtreeActionError> {
+    fn check(
+        &self,
+        agent_id: AgentId,
+        worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError> {
         self.delete
-            .handle(agent_id)
+            .check(agent_id, &delete_worktrees(worktrees))
+            .map_err(|error| SubtreeActionError(error.to_string()))
+    }
+
+    fn prepare(
+        &self,
+        agent_id: AgentId,
+        worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError> {
+        self.delete
+            .stop_and_check(agent_id, &delete_worktrees(worktrees))
+            .map_err(|error| SubtreeActionError(error.to_string()))
+    }
+
+    fn delete(
+        &self,
+        agent_id: AgentId,
+        worktrees: &SubtreeWorktrees,
+    ) -> Result<WorktreeReport, SubtreeActionError> {
+        self.delete
+            .handle(agent_id, &delete_worktrees(worktrees))
+            .map(worktree_report)
             .map_err(|error| SubtreeActionError(error.to_string()))
     }
 }

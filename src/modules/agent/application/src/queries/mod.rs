@@ -5,3 +5,4 @@ pub mod get_settings;
 pub mod list_agents;
 pub mod list_projects;
 pub mod list_sessions;
+pub mod worktrees;

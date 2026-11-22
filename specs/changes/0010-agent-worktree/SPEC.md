@@ -1,5 +1,5 @@
 ---
-status: approved
+status: in_progress
 capability: office
 plan:
 supersedes: 0009/FR-001, 0009/FR-003
@@ -192,3 +192,17 @@ When the user deletes an agent that has an own worktree, he chooses whether to k
 - Managing kept worktrees after the agent is deleted (A6).
 - Copying untracked files into a worktree (A8).
 - Version control systems other than git.
+
+## Deviations
+
+Implementation notes. Only the first item defers requirements; the others do not change them.
+
+- **Deferred: FR-009, MODIFIED 0009/FR-001 and 0009/FR-003.** Templates carrying the own worktree choice (plan T6) need the 0009 template module, which is not on `main` yet. Decided 2026-11-22 under the owner's delegation: this change ships without them, and a follow-up change adds them after 0009 merges. The create undo that a template batch needs is already in place: `AgentCreator::remove` discards the agent's new worktree and branch without asking.
+- **Branch name (A3).** As the plan records (D3): `office-harness/<slug>`, then `-2`, `-3`, and so on, with no short id, because the form shows the name before the agent exists.
+- **Delete answer.** `agent.delete` now answers `{deleted_branches, kept_branches, kept_folders}` for every delete, also for an agent without a worktree (empty lists), instead of `null`.
+- **Delete refusal text.** A subtree delete passes the agent module's refusal through without a `conflict: ` prefix, so a changed worktree reads `the worktree of <name> changed; confirm again` on a single and on a subtree delete.
+- **Unknown own commits.** When git cannot count the branch's own commits, `own_commits` is `null` and the branch is kept.
+- **Hooks off (D1).** The plan named an empty `.no-hooks` folder in the data folder as `core.hooksPath`. An agent can write into that folder, so every command now uses the null device instead, and also switches off hooks that git's configuration names (`hook.<event>.enabled=false`).
+- **Stale subtree member (D6).** The plan kept a member whose worktree changed and deleted the others. A subtree delete now refuses as a whole and deletes nobody, so one confirmation still covers one known set; members already stopped stay stopped. The worktree protocol states this.
+- **Partial delete.** A delete that fails after some agents went names, in its error text, the branches it deleted and the branches and folders it kept for them. A single delete removes the agent's row before git touches its worktree. The branch is deleted with `update-ref -d` and the commit its own commits were counted at, so a commit made after the count keeps the branch.
+- **Repository of a linked worktree.** When the chosen folder is inside a linked worktree (for example another agent's), the stored repository is the main worktree, so the agent stays reachable after that linked worktree is removed.

@@ -6,8 +6,10 @@ mod hold_ports;
 mod subtree_ports;
 
 pub use agent_creator_ports::{
-    AgentCreator, AgentSeed, CreatorError, CreatorErrorKind, SeedAdditions,
+    AgentCreator, AgentSeed, CreatorError, CreatorErrorKind, SeedAdditions, SeedWorktree,
 };
 pub use directive_ports::{DirectiveJournal, DirectiveReceipt, DirectiveTarget, DirectiveWriter};
 pub use hold_ports::{HoldClock, HoldJournal, HoldNotifier, RateLimitSource};
-pub use subtree_ports::{SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover};
+pub use subtree_ports::{
+    SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover, SubtreeWorktrees, WorktreeReport,
+};

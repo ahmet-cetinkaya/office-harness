@@ -2,8 +2,9 @@
 
 use super::*;
 use crate::common::errors::PortError;
+use crate::common::interfaces::WorktreeError;
 use crate::common::models::AgentActionEntry;
-use crate::test_support::{Office, absolute_folder, project_named};
+use crate::test_support::{FakeWorktrees, Office, absolute_folder, project_named};
 
 struct FailingAdditions;
 
@@ -27,6 +28,7 @@ fn request(name: &str) -> CreateAgentRequest {
         working_folder: Some(absolute_folder("work")),
         project_id: None,
         additions: None,
+        worktree: None,
     }
 }
 
@@ -200,4 +202,168 @@ fn an_agent_whose_additions_cannot_be_saved_is_not_left_behind() {
     );
     assert_eq!(office.agents.all().len(), 0);
     assert_eq!(office.recorder.entries().len(), 0);
+}
+
+fn own_worktree_request(name: &str) -> CreateAgentRequest {
+    CreateAgentRequest {
+        worktree: Some(OwnWorktree::default()),
+        ..request(name)
+    }
+}
+
+#[test]
+fn without_the_choice_no_worktree_is_made() {
+    let office = Office::new();
+    let worktrees = FakeWorktrees::new(&absolute_folder("wt"));
+
+    let agent = office
+        .create_agent_with(&worktrees)
+        .handle(request("Ana"))
+        .expect("create");
+
+    assert_eq!(agent.worktree, None);
+    assert_eq!(agent.working_folder, Some(absolute_folder("work")));
+    assert_eq!(worktrees.calls().len(), 0);
+}
+
+#[test]
+fn with_the_choice_the_agent_works_in_the_worktree_subfolder() {
+    let office = Office::new();
+    let worktrees = FakeWorktrees::new(&absolute_folder("wt"));
+
+    let agent = office
+        .create_agent_with(&worktrees)
+        .handle(own_worktree_request("Ana"))
+        .expect("create");
+
+    assert_eq!(
+        agent.working_folder,
+        Some(absolute_folder("wt").join("sub"))
+    );
+    assert_eq!(agent.worktree, Some(worktrees.worktree()));
+    assert_eq!(office.agents.all(), [agent]);
+    assert_eq!(
+        worktrees.calls(),
+        [format!("create {}", absolute_folder("work").display())]
+    );
+}
+
+#[test]
+fn the_project_folder_is_the_chosen_folder_without_a_working_folder() {
+    let office = Office::new();
+    let project = project_named("Site");
+    office.projects.insert(&project).expect("project");
+    let worktrees = FakeWorktrees::new(&absolute_folder("wt"));
+
+    office
+        .create_agent_with(&worktrees)
+        .handle(CreateAgentRequest {
+            working_folder: None,
+            project_id: Some(project.id),
+            ..own_worktree_request("Ana")
+        })
+        .expect("create");
+
+    assert_eq!(
+        worktrees.calls(),
+        [format!("create {}", project.folder.display())]
+    );
+}
+
+#[test]
+fn an_insert_failure_discards_the_worktree_and_the_branch() {
+    let office = Office::new();
+    office.create_agent().handle(request("Ana")).expect("first");
+    let worktrees = FakeWorktrees::new(&absolute_folder("wt"));
+
+    let error = office
+        .create_agent_with(&worktrees)
+        .handle(own_worktree_request("ANA"))
+        .expect_err("duplicate");
+
+    assert!(matches!(error, ApplicationError::Conflict(_)));
+    assert_eq!(
+        worktrees.calls().last().map(String::as_str),
+        Some("discard")
+    );
+    assert_eq!(office.agents.all().len(), 1);
+}
+
+#[test]
+fn a_failed_additions_save_discards_the_worktree() {
+    let office = Office::new();
+    let worktrees = FakeWorktrees::new(&absolute_folder("wt"));
+    let handler = CreateAgentHandler::new(
+        office.agents.clone(),
+        office.projects.clone(),
+        Arc::new(FailingAdditions),
+        Office::clock(),
+        ActionJournal::new(office.recorder.clone(), Office::clock()),
+        office.machine_id,
+    )
+    .with_worktrees(worktrees.clone());
+
+    handler
+        .handle(own_worktree_request("Ana"))
+        .expect_err("disk full");
+
+    assert_eq!(
+        worktrees.calls().last().map(String::as_str),
+        Some("discard")
+    );
+    assert_eq!(office.agents.all().len(), 0);
+}
+
+#[test]
+fn a_create_the_record_refuses_discards_the_agent_and_the_worktree() {
+    let office = Office::new();
+    let worktrees = FakeWorktrees::new(&absolute_folder("wt"));
+    office.recorder.fail_from_now();
+
+    office
+        .create_agent_with(&worktrees)
+        .handle(own_worktree_request("Ana"))
+        .expect_err("not recorded");
+
+    assert_eq!(
+        worktrees.calls().last().map(String::as_str),
+        Some("discard")
+    );
+    assert_eq!(office.agents.all().len(), 0);
+}
+
+#[test]
+fn a_worktree_that_cannot_be_made_creates_no_agent() {
+    let office = Office::new();
+    let worktrees = FakeWorktrees::new(&absolute_folder("wt"));
+    *worktrees.create_error.lock().expect("lock") =
+        Some(WorktreeError::Conflict("the branch x exists".to_owned()));
+
+    let error = office
+        .create_agent_with(&worktrees)
+        .handle(own_worktree_request("Ana"))
+        .expect_err("conflict");
+
+    assert_eq!(
+        error,
+        ApplicationError::Conflict("the branch x exists".to_owned())
+    );
+    assert_eq!(office.agents.all().len(), 0);
+    assert_eq!(office.recorder.entries().len(), 0);
+}
+
+#[test]
+fn without_a_worktree_service_the_choice_is_refused() {
+    let office = Office::new();
+
+    let error = office
+        .create_agent()
+        .handle(own_worktree_request("Ana"))
+        .expect_err("refused");
+
+    assert_eq!(
+        error,
+        ApplicationError::Invalid(NEEDS_REPOSITORY.to_owned())
+    );
+    assert_eq!(office.agents.all().len(), 0);
 }

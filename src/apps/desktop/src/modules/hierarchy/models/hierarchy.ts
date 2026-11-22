@@ -156,6 +156,21 @@ export function branchOfAgent(
     : undefined;
 }
 
+/** The agents below one agent, as the server counts them: the CEO has every
+ * lead and member, a lead has its team's members (0002, FR-006). */
+export function descendantIdsOf(
+  tree: HierarchyTree,
+  agentId: string,
+): string[] {
+  const teamIds = (team: HierarchyTreeTeam) => [
+    team.lead.id,
+    ...team.members.map((member) => member.id),
+  ];
+  if (tree.ceo?.id === agentId) return tree.teams.flatMap(teamIds);
+  const led = tree.teams.find((team) => team.lead.id === agentId);
+  return led === undefined ? [] : led.members.map((member) => member.id);
+}
+
 function nodeName(title: string, meta: string): string {
   return meta === "" ? title : `${title}, ${meta}`;
 }

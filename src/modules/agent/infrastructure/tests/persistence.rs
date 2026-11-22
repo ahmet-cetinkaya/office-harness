@@ -537,3 +537,25 @@ fn a_stored_task_the_domain_rejects_reads_as_no_task_and_keeps_the_agent_readabl
     assert_eq!(listed.len(), 2);
     assert!(listed.iter().all(|agent| agent.task.is_none()));
 }
+
+#[test]
+fn a_worktree_survives_a_reopen() {
+    let folder = tempfile::tempdir().expect("folder");
+    let database = database_in(&folder);
+    let first = open_office(&database);
+    let mut agent = agent_named(&first, "Ana", None);
+    agent.worktree = Some(agent_domain::value_objects::AgentWorktree {
+        repository: PathBuf::from("/work/repo"),
+        base: "main".to_owned(),
+        branch: "office-harness/ana".to_owned(),
+        folder: PathBuf::from("/data/worktrees/repo-1234abcd/0a1b2c3d"),
+    });
+    first.agents.insert(&agent).expect("agent");
+    let plain = agent_named(&first, "Ben", None);
+    first.agents.insert(&plain).expect("agent");
+    drop(first);
+
+    let second = open_office(&database);
+
+    assert_eq!(second.agents.list().expect("agents"), [agent, plain]);
+}

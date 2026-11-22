@@ -20,6 +20,7 @@ use crate::common::models::{
     PrepareLaunch, PreparedLaunch, SessionCommand, SessionPlan, StartTerminal, TrackedSession,
     TrackingRequest,
 };
+use crate::common::worktree_link::is_linked_worktree;
 
 /// What a start was asked to do.
 #[derive(Debug, Clone, Copy)]
@@ -374,6 +375,9 @@ impl SessionLauncher {
     }
 
     fn existing_working_folder(&self, agent: &Agent) -> Result<PathBuf, ApplicationError> {
+        if let Some(worktree) = &agent.worktree {
+            require_linked_worktree(&worktree.folder)?;
+        }
         let (field, folder) = match (&agent.working_folder, agent.project_id) {
             (Some(folder), _) => ("working folder", folder.clone()),
             (None, Some(project_id)) => (
@@ -394,6 +398,18 @@ impl SessionLauncher {
     fn now(&self) -> kernel::Timestamp {
         self.clock.now()
     }
+}
+
+/// Refuses the start of an agent whose worktree is gone or no longer linked
+/// to its repository (0010 FR-008).
+fn require_linked_worktree(folder: &Path) -> Result<(), ApplicationError> {
+    if is_linked_worktree(folder) {
+        return Ok(());
+    }
+    Err(ApplicationError::Invalid(format!(
+        "the worktree folder is missing or broken: {}",
+        folder.display()
+    )))
 }
 
 enum PrepareError {

@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import type { Agent, Project } from "../../agent";
 import {
   buildHierarchy,
+  descendantIdsOf,
   EMPTY_TREE,
   flattenVisible,
   readHierarchyTree,
@@ -241,5 +242,28 @@ describe("flattenVisible", () => {
     expect(
       flattenVisible(buildHierarchy(EMPTY_TREE, [], [], NO_COLLAPSED)),
     ).toEqual([]);
+  });
+});
+
+describe("descendantIdsOf", () => {
+  const tree: HierarchyTree = {
+    ceo: { id: "ceo", role: "ceo" },
+    teams: [
+      {
+        id: "t",
+        name: "T",
+        project_id: null,
+        lead: { id: "lead", role: "lead" },
+        members: [{ id: "m1", role: "member" }],
+      },
+    ],
+    unassigned: [{ id: "free", role: null }],
+  };
+
+  test("the CEO holds every lead and member, a lead its members", () => {
+    expect(descendantIdsOf(tree, "ceo")).toEqual(["lead", "m1"]);
+    expect(descendantIdsOf(tree, "lead")).toEqual(["m1"]);
+    expect(descendantIdsOf(tree, "m1")).toEqual([]);
+    expect(descendantIdsOf(tree, "free")).toEqual([]);
   });
 });

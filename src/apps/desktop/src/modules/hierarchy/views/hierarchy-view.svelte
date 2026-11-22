@@ -4,12 +4,24 @@
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import Button from "$shared/ui/button.svelte";
   import FailureMessage from "$shared/ui/failure-message.svelte";
-  import type { Agent, NewAgent, Project } from "../../agent";
+  import {
+    WorktreeDeleteDialog,
+    deleteResultText,
+    type Agent,
+    type NewAgent,
+    type Project,
+    type WorktreeChoice,
+    type WorktreeStatus,
+  } from "../../agent";
   import HierarchyAgentDialog from "../components/hierarchy-agent-dialog.svelte";
   import HierarchyConfirmDialog from "../components/hierarchy-confirm-dialog.svelte";
   import TeamFormDialog from "../components/team-form-dialog.svelte";
   import TreeRow from "../components/tree-row.svelte";
-  import { branchOfAgent, buildHierarchy } from "../models/hierarchy";
+  import {
+    branchOfAgent,
+    buildHierarchy,
+    descendantIdsOf,
+  } from "../models/hierarchy";
   import type { HierarchyNode } from "../models/hierarchy";
   import { allowedRolesAt, placeOf, type RoleKind } from "../models/placement";
   import {
@@ -145,6 +157,11 @@
   let pendingAgent = $state<{ id: string; name: string } | null>(null);
   let pendingDescendants = $state(0);
   let pendingCountFailure = $state<string | null>(null);
+  /** The worktrees among the agents a delete removes; empty asks no
+   * worktree question (0010, FR-005). */
+  let pendingWorktrees = $state<WorktreeStatus[]>([]);
+  /** What the last delete left in the repositories, as text. */
+  let deleteResult = $state<string | null>(null);
   /** The stop answer the user picked; delete has no choice to make. */
   let pendingStopWithDescendants = $state(false);
 
@@ -170,12 +187,40 @@
     ];
   });
 
+  /** The worktrees among the agents a delete removes, or null after the
+   * refusal is shown when they could not be read. */
+  async function readWorktrees(
+    agentId: string,
+  ): Promise<WorktreeStatus[] | null> {
+    const ids = [agentId, ...descendantIdsOf(snapshot.tree, agentId)];
+    const hasWorktree = agents.some(
+      (known) => ids.includes(known.id) && known.worktree,
+    );
+    if (!hasWorktree) return [];
+    try {
+      return await controller.worktreeStatus(ids);
+    } catch (rejection) {
+      refusal = {
+        agentId,
+        branch: branchOfAgent(snapshot.tree, agentId) ?? null,
+        text: controller.describeCountFailure(rejection),
+      };
+      return null;
+    }
+  }
+
   async function ask(
     kind: PendingAction["kind"],
-    node: HierarchyNode,
+    node: Pick<HierarchyNode, "agentId" | "title">,
   ): Promise<void> {
     if (node.agentId === null) return;
     pendingStopWithDescendants = false;
+    pendingWorktrees = [];
+    if (kind === "delete") {
+      const statuses = await readWorktrees(node.agentId);
+      if (statuses === null) return;
+      pendingWorktrees = statuses;
+    }
     try {
       pendingDescendants = await controller.countDescendants(node.agentId);
       pendingCountFailure = null;
@@ -204,23 +249,34 @@
     pendingStopWithDescendants = withDescendants;
   }
 
-  async function confirmPending(): Promise<void> {
+  async function confirmPending(choice?: WorktreeChoice): Promise<void> {
     if (pending === null || pendingAgent === null) return;
     const { kind } = pending;
-    const { id } = pendingAgent;
+    const { id, name } = pendingAgent;
     const includeDescendants =
       pendingDescendants > 0 &&
       (kind === "delete" || pendingStopWithDescendants);
     pending = null;
     pendingAgent = null;
-    const answered =
-      kind === "delete"
-        ? await controller.deleteSubtree(
-            id,
-            includeDescendants,
-            pendingDescendants,
-          )
-        : await controller.stopSubtree(id, includeDescendants);
+    deleteResult = null;
+    let answered: FailureText = null;
+    let isChanged = false;
+    if (kind === "delete") {
+      const outcome = await controller.deleteSubtree(
+        id,
+        includeDescendants,
+        pendingDescendants,
+        choice,
+      );
+      if (outcome.kind === "deleted") {
+        deleteResult = deleteResultText(outcome.result);
+      } else {
+        answered = outcome.message;
+        isChanged = outcome.kind === "changed";
+      }
+    } else {
+      answered = await controller.stopSubtree(id, includeDescendants);
+    }
     // A refusal is kept with the branch the agent sat in when it was
     // refused; a request that went through drops the last one.
     refusal =
@@ -231,6 +287,8 @@
             branch: branchOfAgent(snapshot.tree, id) ?? null,
             text: answered,
           };
+    // A worktree changed after the question, so the question is asked again.
+    if (isChanged) await ask("delete", { agentId: id, title: name });
   }
 
   function cancelPending(): void {
@@ -463,6 +521,10 @@
     Hierarchy
   </h2>
 
+  {#if deleteResult !== null}
+    <p role="status" class="text-sm text-neutral-900">{deleteResult}</p>
+  {/if}
+
   {#if shownRefusal !== null}
     <FailureMessage
       lead="The hierarchy did not change."
@@ -561,6 +623,7 @@
     subject={`New ${ROLE_WORDS[createRole]}`}
     {isBusy}
     onsubmit={(agent) => submitCreate(() => submitCreateRole(agent))}
+    onworktreeinfo={controller.worktreeInfo}
     onclose={closeCreate}
   />
 {/if}
@@ -572,7 +635,17 @@
     onclose={closeCreate}
   />
 {/if}
-{#if pending !== null && pendingAgent !== null && pendingQuestion !== null}
+{#if pending?.kind === "delete" && pendingAgent !== null && pendingQuestion !== null && pendingWorktrees.length > 0}
+  <WorktreeDeleteDialog
+    title={pendingQuestion.title}
+    body={pendingCountFailure === null
+      ? pendingQuestion.body
+      : `${pendingQuestion.body} The descendant count could not be read: ${pendingCountFailure}`}
+    statuses={pendingWorktrees}
+    onanswer={(choice) => void confirmPending(choice)}
+    oncancel={cancelPending}
+  />
+{:else if pending !== null && pendingAgent !== null && pendingQuestion !== null}
   <HierarchyConfirmDialog
     title={pendingQuestion.title}
     body={pendingCountFailure === null
