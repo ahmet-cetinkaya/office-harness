@@ -26,6 +26,7 @@ notification-application = { path = "../../modules/notification/application" }
 notification-domain = { path = "../../modules/notification/domain" }
 notification-infrastructure = { path = "../../modules/notification/infrastructure" }
 notification-presentation = { path = "../../modules/notification/presentation" }
+template-infrastructure = { path = "../../modules/template/infrastructure" }
 auto-launch.workspace = true
 axum.workspace = true
 directories.workspace = true
@@ -50,6 +51,8 @@ tokio-tungstenite.workspace = true
 wire = { path = "../../shared/wire" }
 
 [dev-dependencies]
+template-application = { path = "../../modules/template/application" }
+template-domain = { path = "../../modules/template/domain" }
 tempfile.workspace = true
 tower.workspace = true
 
