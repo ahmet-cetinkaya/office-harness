@@ -165,6 +165,23 @@ The office never commits, merges, pushes, or rebases. Worktrees share the reposi
 
 The shapes of the requests are in [the worktree protocol](specs/changes/0010-agent-worktree/contracts/worktree-protocol.md).
 
+## Browse an agent's files
+
+To review what an agent did, choose "Browse files" in its details. A read-only view of the folder the agent starts in (its working folder, its own worktree, or its project's folder) opens with three tabs:
+
+- **Files:** the folder as a tree, folders first. Open a file to read it with line numbers.
+- **Changes:** the files that differ from the last commit, staged and unstaged together, with what kind of change each is. Open one to see its diff. Ignored files are not listed.
+- **History:** the commits that changed this folder, 50 at a time ("Show more" adds the next 50). Open a commit to see its message and its files, and a file to see its diff against the commit's first parent.
+
+**What it shows and what it does not.**
+- Only the agent's folder: a path that leads outside it, also through a link, is refused. The repository's `.git` folder is never listed or opened.
+- Files and diffs up to 512 KiB; a larger one shows its size only. Binary files are not shown. A folder lists at most 1,000 entries and the Changes tab at most 1,000 files; the rest is counted.
+- Files with names that often hold secrets, such as `.env`, `*.pem`, `*.key`, `id_rsa`, or names containing `secret` or `credential`, show their content or diff only after you choose "Reveal". The reveal lasts until you open another file, switch tabs, or refresh.
+- Everything shows as plain text: no markup is rendered, no image loads, and control characters show as visible symbols.
+- The view writes nothing. It changes no file, takes no git lock, and runs no git hook, filter, external diff, text conversion, or signature program that a repository configures. It shows the state at the time of the last load; choose "Refresh" to load again.
+
+Agents cannot use this view. The shapes of the requests are in [the file view protocol](specs/changes/0016-agent-file-browser/contracts/file-view-protocol.md).
+
 ## Resume interrupted agents
 
 When the background server stops while agents run (a crash, a logout, a restart of the machine), those agents show `interrupted` at the next start, and none starts by itself. The panel header then offers **Resume interrupted (N)**.
