@@ -90,6 +90,10 @@ Deliver spec 0011. Each agent row shows the task given (first line, at most 80 c
   - The row shows `Task given <age>: <line>` under the last line. The row's accessible name includes it.
   - The details show a "Task" row with the full visible text (pre-wrapped), plus Edit (a textarea with Save and Cancel, without `maxlength`, because it counts UTF-16 units and would disagree with the server's count) and Clear buttons, all by keyboard.
   - The age ticks once a minute.
+- **D5a Shipped after the plan (recorded 2026-11-22, from commit 6aca675):**
+  - The directive receipt is `DirectiveReceiptBridge` (`H/bridges/directive_bridges.rs`). The handler's `write_order` mutex of D2 stays and orders the directive writes. A shared `TaskOrder` (`H/bootstrap/agent_services.rs`), which this bridge and the agent gateway (`H/server/agent_requests.rs`) both take, additionally orders the stored text and its event against a user edit. A receipt waits while the gateway holds the order for a user edit, so clients see the `agent.task` events in the order the texts were stored.
+  - `H/tests/task_order.rs` proves that order with a store that blocks the user's write (`a_receipt_waits_for_a_user_edit_that_holds_the_task_order`); the plan's T3 list did not name it.
+  - A row runs its one-minute age clock only while it has a task. An open task editor says so when the task text changes under it; the draft stays and Save still replaces the new text. Both are in `D/e2e/task-line.spec.ts`.
 - **D6 Out of the desks:** the scene and Needs you do not read `task`. The scene's like-for-like comparison of 0005 SC-003 is unaffected.
 - **Constitution check:** module boundaries hold (the new port is bridged in `H/`), no CLI configuration is touched (PB-3), every new action works from the keyboard (PB-5), and no other project's name is in the repository.
 

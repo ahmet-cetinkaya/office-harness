@@ -92,7 +92,7 @@ Deliver spec 0009:
   - An agent body is `{name_pattern, command, working_folder?, additions: {flags, env: [{name, value: string|null}], startup_prompt?}, role?: "ceo"|"lead"|"member"}`.
   - A team body is `{lead: <agent body>, members: [{entry: <agent body>, count}]}`. Entries are copies, so editing or deleting an agent template changes no team template (A5).
   - Rules on save: the name is unique case-insensitively; the command is not empty; the pattern is not empty and at most 64 characters after expansion; each member count is at least 1; a team has at least one member entry; and 1 + the sum of the counts is at most 50 (FR-010).
-  - Unknown fields: a body or a file entry with a field this build does not know is refused, and the answer names the field. A build therefore never drops a field on save or import. 0010 adds `own_worktree: bool` (default false) by its MODIFIED text, which the 0010 plan owns; a 0009 build refuses a body that carries it.
+  - Unknown fields: a body or a file entry with a field this build does not know is refused, and the answer names the field. A build therefore never drops a field on save or import. 0010 adds `own_worktree: bool` (default false) by its MODIFIED text, which the 0010 plan owns; a 0009-only build would refuse a body that carries it. 0010 has shipped: the build accepts `own_worktree` (`M/template/domain/src/entities/agent_body.rs`), so no shipped build refuses it.
 - **D3 "No value"** (FR-011, A6, Efe's plan note):
   - `EnvEntry.value` becomes `Option<String>`. `None` is "no value"; `Some("")` stays a value the user typed on purpose.
   - Every text path in Context carries the option:
@@ -169,6 +169,10 @@ Deliver spec 0009:
   - No data leaves the machine; export writes only the picked file (PB-4).
   - Keyboard access is kept (PB-5).
   - No other project's name is in the repository.
+- **D9 Shipped after the plan (recorded 2026-11-22):**
+  - 0010 superseded the D2 rule that a body with `own_worktree` is refused. `own_worktree` is a known, optional field (default `false`) of an agent body and of every team entry; see `data-model.md`.
+  - ACF-183 added tests beyond the T4 list: `template_work_starts_no_agent_and_writes_no_cli_configuration` (PB-3, A1) and `template_changes_write_no_action_record` (A10), both in `H/tests/templates.rs`.
+  - `qa-report.md` records no plan deviation of T1 to T8.
 
 ## Scope
 
@@ -366,7 +370,7 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 2. **Architecture:** `scripts/check-boundaries.sh` passes with the new crates.
 3. **Code quality:** lints are clean; `/ac:review` of the umbrella diff has no open blocking finding.
 4. **Migration safety:** an office from before the change opens after the upgrade (T3 migration test, CI on three OSes).
-5. **Scope fidelity:** no own-worktree field, no agent use of templates.
+5. **Scope fidelity:** no own-worktree field at the 0009 delivery (0010 added it afterwards, see D9), no agent use of templates.
 6. **Readiness:** `/ac:verify` passes on the umbrella head before the PR to `main`.
 
 ## Traceability

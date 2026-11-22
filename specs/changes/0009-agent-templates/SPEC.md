@@ -1,7 +1,7 @@
 ---
 status: approved
 capability: office
-plan:
+plan: specs/changes/0009-agent-templates/PLAN.md
 supersedes:
 ---
 

@@ -1,7 +1,7 @@
 ---
 status: approved
 capability: office
-plan:
+plan: specs/changes/0011-task-line/PLAN.md
 supersedes: 0003/FR-002
 ---
 

@@ -103,6 +103,14 @@ Deliver spec 0008. Needs you lists exactly the agents that wait for the user, in
   - A count change is announced in the panel's live region and in the scene's live region. A new item is not announced separately (spec Accessibility).
   - The desktop does not show, count, title, or announce an item whose origin notification it has just marked read on arrival. The server removes that item on the read (D2).
   - No new visuals beyond these controls (spec Design rule).
+- **D9 Accepted deviations (shipped; recorded 2026-11-22 from qa-report "Plan deviations"):**
+  - `AgentNameLookup` is a port in `M/notification/application/src/common/interfaces/agent_name_lookup.rs`, so the notification module reads an agent's name without a dependency on the agent module. The server adapter `AgentNames` lives in `H/bridges/needs_you_bridge.rs`. Accepted by Efe.
+  - T3 and T4 landed in one commit. Accepted by Efe.
+  - The `detail` of a `failed` item is the status text of the server, not a text built from the exit code in the desktop. Decided by god; the contract says so.
+  - The free key of the e2e test is `Control+Alt+F11`, not `Ctrl+Shift+F12` as T5 says: `Ctrl+Shift+F12` is the default focus shortcut, so it is not free (`D/e2e/panel.spec.ts`, `a key that is no table combination reaches the CLI`).
+  - `focus-shortcut.ts` moved from `D/modules/terminal/services/` to `D/core/shortcuts/`, beside a new `focus-shortcut-state.ts`, so the shared state loads the focus shortcut once at app start. A change of the setting applies at the next app start. Every file name `D/modules/terminal/services/focus-shortcut*` in the Context and in T5 means the `D/core/shortcuts/` file.
+  - A dismiss that answers `not_found` is a success in the desktop, because the item is already gone.
+  - The jump focus rule of D5 is the clarification of Efe of 2026-11-22 (focus on the terminal view heading for an agent that does not run).
 - **Constitution check:**
   - Module boundaries hold: `notification` gains no dependency, bridges live in `H/bridges/`, and `scripts/check-boundaries.sh` passes.
   - No CLI configuration is touched (PB-2).
@@ -181,12 +189,12 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 
 ### T5: Shortcut table, collision, ACF-160 (FR-007, MODIFIED 0001/FR-017, edge cases, A1)
 
-- **Files:** `M/agent/domain/src/value_objects/settings.rs` (+ tests), `M/agent/infrastructure/src/persistence/repositories/settings_repository.rs`, `M/agent/infrastructure/tests/persistence.rs`, `D/core/shortcuts/{app-shortcuts.ts,app-shortcuts.spec.ts,index.ts}`, `D/modules/terminal/{views/terminal-view.svelte,services/focus-shortcut.ts,services/focus-shortcut.spec.ts}`, `src/apps/desktop/e2e/panel.spec.ts`.
+- **Files:** `M/agent/domain/src/value_objects/settings.rs` (+ tests), `M/agent/infrastructure/src/persistence/repositories/settings_repository.rs`, `M/agent/infrastructure/tests/persistence.rs`, `D/core/shortcuts/{app-shortcuts.ts,app-shortcuts.spec.ts,index.ts}`, `D/modules/terminal/views/terminal-view.svelte`, `D/core/shortcuts/{focus-shortcut.ts,focus-shortcut.spec.ts}` (moved from `D/modules/terminal/services/`, D9), `src/apps/desktop/e2e/panel.spec.ts`.
 - **Work:**
   - The 12th reserved shortcut and the 12th table entry (D5).
   - Remove `isTerminalShortcut` and `pressedTerminalShortcut`; the terminal checks `pressedAppShortcut` (ACF-160).
   - The D6 load rule on the server and the desktop.
-  - The free-key e2e test moves from `Ctrl+Shift+F11` to `Ctrl+Shift+F12`. That key is free while the focus shortcut is the test default; the test checks this.
+  - The free-key e2e test moves from `Ctrl+Shift+F11` to a free key. Shipped: `Control+Alt+F11`, because `Ctrl+Shift+F12` is the default focus shortcut (D9).
 - **Depends on:** T4 (lands in p2).
 - **Acceptance:**
   - Settings tests: setting the focus shortcut to `Ctrl+Shift+F11` is refused with the conflict named, and a stored `Ctrl+Shift+F11` and a stored `Shift+Ctrl+F11` load unchanged. Every other stored value loads as before: a table of stored values, each kept or falling back exactly as at 037b10f (A1).
