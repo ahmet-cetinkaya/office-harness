@@ -23,6 +23,7 @@ use hierarchy_domain::Role;
 use hierarchy_infrastructure::persistence::repositories::hierarchy_repository::HierarchyRepository;
 use hierarchy_infrastructure::services::agent_places::AgentPlaces;
 use serde_json::{Value, json};
+use support::entries_under;
 use support::office_client::{Client, Office, error_text, wait_for};
 
 /// The real server binary that the fake CLIs run as the helper.
@@ -57,6 +58,11 @@ fn typing_member(typed: &Path) -> String {
 
 /// A member that prints output until the test ends.
 const PRINTING_MEMBER: &str = "while true; do echo tick; sleep 0.1; done";
+
+/// A member that sets its own terminal title and shows a prompt, again and
+/// again, as a CLI does.
+const TITLE_SETTING_MEMBER: &str =
+    "while true; do printf '\\033]0;Fixing the login test\\007'; echo '> '; sleep 0.1; done";
 
 /// A lead that hands its session environment to the records folder, so the
 /// test holds its live credential, and stays alive.
@@ -493,6 +499,46 @@ async fn a_member_that_prints_output_keeps_its_task_text() {
 
     assert_eq!(setup.task_of(&member).await, event["task"]);
     assert!(no_task_event(&mut setup.watcher).await);
+    setup.stop().await;
+}
+
+/// PB-3: the office takes no text from a CLI's title or prompt, and its
+/// task steps write nothing in the home folders the CLIs read or in the
+/// project folder.
+#[tokio::test]
+async fn the_task_text_neither_reads_a_cli_title_nor_writes_a_cli_configuration() {
+    let mut setup = Setup::with_member(|_| TITLE_SETTING_MEMBER.to_owned()).await;
+    let member = setup.member.clone();
+    let fake_folders = setup
+        .office
+        .clis
+        .tool_folder()
+        .parent()
+        .expect("fake folders")
+        .to_path_buf();
+    let work_folder = setup.office.work_folder.path().to_path_buf();
+    let watched = [fake_folders.as_path(), work_folder.as_path()];
+    wait_for_last_line(&mut setup.client, &member).await;
+    assert_eq!(
+        setup.task_of(&member).await,
+        Value::Null,
+        "no title became a task"
+    );
+    let before = entries_under(&watched);
+
+    let set = setup.set_task(&member, "Edited by the user").await;
+    assert_eq!(set["ok"], true, "{set}");
+    let event = next_task_event(&mut setup.watcher, &member).await;
+    tokio::time::sleep(OUTPUT_PERIOD).await;
+    let cleared = setup.set_task(&member, "   ").await;
+    assert_eq!(cleared["ok"], true, "{cleared}");
+    next_task_event(&mut setup.watcher, &member).await;
+    tokio::time::sleep(OUTPUT_PERIOD).await;
+
+    assert_eq!(event["task"]["text"], "Edited by the user");
+    assert_eq!(setup.task_of(&member).await, Value::Null);
+    assert!(no_task_event(&mut setup.watcher).await);
+    assert_eq!(entries_under(&watched), before);
     setup.stop().await;
 }
 
