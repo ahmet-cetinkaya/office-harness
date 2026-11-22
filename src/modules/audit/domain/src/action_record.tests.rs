@@ -32,11 +32,17 @@ fn hold_and_release_have_their_wire_names() {
     assert_eq!(ActionKind::Release.as_str(), "release");
     assert_eq!("hold".parse::<ActionKind>(), Ok(ActionKind::Hold));
     assert_eq!("release".parse::<ActionKind>(), Ok(ActionKind::Release));
-    assert_eq!(ActionKind::ALL.len(), 13);
+    assert_eq!(ActionKind::ALL.len(), 14);
 }
 
 #[test]
 fn the_task_text_kind_has_its_wire_name() {
     assert_eq!(ActionKind::TaskText.as_str(), "task_text");
     assert_eq!("task_text".parse::<ActionKind>(), Ok(ActionKind::TaskText));
+}
+
+#[test]
+fn the_report_kind_has_its_wire_name() {
+    assert_eq!(ActionKind::Report.as_str(), "report");
+    assert_eq!("report".parse::<ActionKind>(), Ok(ActionKind::Report));
 }
