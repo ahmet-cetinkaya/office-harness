@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
 
 use agent_application::common::interfaces::{AgentStore, ProjectStore, WorktreeManager};
@@ -17,6 +18,9 @@ use crate::bootstrap::StorageAlerts;
 
 use super::template_create_error::TemplateCreateError;
 use super::template_plan::Planner;
+
+/// The reason the undo gives when a creation step panicked.
+const STOPPED_UNEXPECTEDLY: &str = "the creation stopped unexpectedly";
 
 /// Where a direct creation puts an agent whose template has a role (D4): the
 /// parent and the team. A template with no role, and a CEO, take no place.
@@ -312,18 +316,8 @@ impl TemplateCreateBridge {
         tree: &TreeExclusion<'_>,
         plan: &DirectPlan,
     ) -> Result<AgentId, TemplateCreateError> {
-        let mut created = Created::default();
-        let agent_id = self.create_tracked(&plan.seed, &mut created)?;
-        let Some(place) = &plan.place else {
-            return Ok(agent_id);
-        };
-        self.store
-            .place_agent(agent_id, Some(place.role), place.parent, place.team)
-            .map_err(|error| {
-                let failure = TemplateCreateError::from_hierarchy(&error);
-                self.undo(tree, &created, failure)
-            })?;
-        Ok(agent_id)
+        self.write_or_undo(tree, |created| self.write_direct(plan, created))
+            .map(|(agent_id, _)| agent_id)
     }
 
     fn apply_team(
@@ -331,11 +325,41 @@ impl TemplateCreateBridge {
         tree: &TreeExclusion<'_>,
         plan: &TeamPlan,
     ) -> Result<(Team, Created), TemplateCreateError> {
+        self.write_or_undo(tree, |created| self.write_team(tree, plan, created))
+    }
+
+    /// Runs `write` and undoes what it made when it fails, and also when it
+    /// panics: a panic would otherwise leave half a creation behind. The
+    /// panic goes on after the undo, so it still reaches the request.
+    fn write_or_undo<T>(
+        &self,
+        tree: &TreeExclusion<'_>,
+        write: impl FnOnce(&mut Created) -> Result<T, TemplateCreateError>,
+    ) -> Result<(T, Created), TemplateCreateError> {
         let mut created = Created::default();
-        match self.write_team(tree, plan, &mut created) {
-            Ok(team) => Ok((team, created)),
-            Err(failure) => Err(self.undo(tree, &created, failure)),
+        match panic::catch_unwind(AssertUnwindSafe(|| write(&mut created))) {
+            Ok(Ok(value)) => Ok((value, created)),
+            Ok(Err(failure)) => Err(self.undo(tree, &created, failure)),
+            Err(payload) => {
+                let failure = TemplateCreateError::internal(STOPPED_UNEXPECTEDLY.to_owned());
+                drop(self.undo(tree, &created, failure));
+                panic::resume_unwind(payload)
+            }
         }
+    }
+
+    fn write_direct(
+        &self,
+        plan: &DirectPlan,
+        created: &mut Created,
+    ) -> Result<AgentId, TemplateCreateError> {
+        let agent_id = self.create_tracked(&plan.seed, created)?;
+        if let Some(place) = &plan.place {
+            self.store
+                .place_agent(agent_id, Some(place.role), place.parent, place.team)
+                .map_err(|error| TemplateCreateError::from_hierarchy(&error))?;
+        }
+        Ok(agent_id)
     }
 
     /// The lead first, then the team row with the lead's place, then each
