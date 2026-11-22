@@ -8,6 +8,16 @@ pub struct Fields<'a>(pub &'a Map<String, Value>);
 
 impl Fields<'_> {
     /// # Errors
+    /// The body has a field that `request` does not take, so a misspelt
+    /// field never acts on the office.
+    pub fn refuse_other_than(&self, request: &str, known: &[&str]) -> Result<(), String> {
+        match self.0.keys().find(|field| !known.contains(&field.as_str())) {
+            Some(field) => Err(format!("{field} is not a field of {request}")),
+            None => Ok(()),
+        }
+    }
+
+    /// # Errors
     /// The field is missing or is not text.
     pub fn required_text(&self, name: &str) -> Result<String, String> {
         self.optional_text(name)?

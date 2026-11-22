@@ -29,6 +29,7 @@ struct ActionRow {
     action: String,
     result: String,
     at: i64,
+    detail: Option<String>,
 }
 
 impl ActionRow {
@@ -40,6 +41,7 @@ impl ActionRow {
             action: row.get(3)?,
             result: row.get(4)?,
             at: row.get(5)?,
+            detail: row.get(6)?,
         })
     }
 
@@ -56,6 +58,7 @@ impl ActionRow {
                 action: self.action.parse::<ActionKind>()?,
                 result: ActionResult::from_text(&self.result),
                 at: Timestamp::from_unix_millis(self.at),
+                detail: self.detail,
             },
         })
     }
@@ -124,14 +127,15 @@ impl ActionLog for ActionRepository {
         let connection = self.connection();
         connection
             .execute(
-                "INSERT INTO audit_actions (actor, target_agent_id, action, result, at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO audit_actions (actor, target_agent_id, action, result, at, detail) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     actor_text(record.actor),
                     record.target_agent_id.map(|agent_id| agent_id.to_string()),
                     record.action.as_str(),
                     record.result.as_text(),
                     record.at.as_unix_millis(),
+                    record.detail.as_deref(),
                 ],
             )
             .map_err(|error| storage_failure(&error))?;
@@ -145,7 +149,7 @@ impl ActionLog for ActionRepository {
         let connection = self.connection();
         let mut statement = connection
             .prepare(
-                "SELECT id, actor, target_agent_id, action, result, at FROM audit_actions \
+                "SELECT id, actor, target_agent_id, action, result, at, detail FROM audit_actions \
                  WHERE target_agent_id = ?1 ORDER BY id",
             )
             .map_err(|error| storage_failure(&error))?;
@@ -161,7 +165,7 @@ impl ActionLog for ActionRepository {
         let connection = self.connection();
         let mut statement = connection
             .prepare(
-                "SELECT id, actor, target_agent_id, action, result, at FROM audit_actions \
+                "SELECT id, actor, target_agent_id, action, result, at, detail FROM audit_actions \
                  WHERE target_agent_id IS NULL ORDER BY id DESC LIMIT ?1",
             )
             .map_err(|error| storage_failure(&error))?;

@@ -49,6 +49,7 @@ fn record(agent_id: AgentId, action: ActionKind, at: i64) -> ActionRecord {
         action,
         result: ActionResult::Ok,
         at: Timestamp::from_unix_millis(at),
+        detail: None,
     }
 }
 

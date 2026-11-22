@@ -17,6 +17,7 @@ pub fn action_entry_json(entry: &ActionEntry) -> Value {
         "agent_id": record.target_agent_id.map(|agent_id| agent_id.to_string()),
         "action": record.action.as_str(),
         "result": record.result.as_text(),
+        "detail": record.detail,
         "at": record.at.as_unix_millis(),
     })
 }

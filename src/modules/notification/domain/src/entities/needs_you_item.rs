@@ -25,9 +25,10 @@ impl NeedsYouItem {
     const fn group_rank(&self) -> u8 {
         match self.latest.kind {
             AttentionKind::Failed => FAILED_GROUP,
-            AttentionKind::WaitingForInput | AttentionKind::Bell | AttentionKind::AutoHold => {
-                WAITING_GROUP
-            }
+            AttentionKind::WaitingForInput
+            | AttentionKind::Bell
+            | AttentionKind::AutoHold
+            | AttentionKind::ResumeHold => WAITING_GROUP,
             AttentionKind::Exited => EXITED_GROUP,
         }
     }

@@ -75,6 +75,9 @@ describe("event text", () => {
   test("the other kinds are named", () => {
     expect(eventText(item({ kind: "exited" }))).toBe("exited");
     expect(eventText(item({ kind: "bell" }))).toBe("bell");
+    expect(eventText(item({ kind: "resume_hold", detail: "ended" }))).toBe(
+      "was put on hold after its resume failed: ended",
+    );
     expect(eventText(item({ kind: "auto_hold", detail: "rate" }))).toBe(
       "put on hold by the office, limit: rate",
     );

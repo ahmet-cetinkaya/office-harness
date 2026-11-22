@@ -15,7 +15,11 @@
     type WorktreeChoice,
     type WorktreeStatus,
   } from "../../agent";
-  import { INITIAL_HIERARCHY, type HierarchyController } from "../../hierarchy";
+  import {
+    INITIAL_HIERARCHY,
+    roleText,
+    type HierarchyController,
+  } from "../../hierarchy";
   import {
     automaticHoldText,
     holdOfAgent,
@@ -41,6 +45,7 @@
     type NeedsYouSnapshot,
   } from "../../needs-you";
   import { FileViewDialog } from "../../files";
+  import { interruptedCount, ResumeAction } from "../../resume";
   import { SaveAsTemplateDialog, TemplatesView } from "../../template";
   import {
     isJumpUnbound,
@@ -157,6 +162,14 @@
       return [rowOf(item, agent.name, project, needsYouSnapshot.now)];
     }),
   );
+
+  const interrupted = $derived(interruptedCount(office.agents));
+
+  function identifyForResume(agentId: string): { name: string; role: string } {
+    const agent = office.agents.find((known) => known.id === agentId);
+    const { role } = agentHierarchy(treeSnapshot.tree, agentId);
+    return { name: agent?.name ?? agentId, role: roleText(role) };
+  }
 
   const AGENTS_HEADING_ID = "panel-agents-heading";
   const EMPTY_HEADING_ID = "panel-empty-heading";
@@ -408,6 +421,11 @@
         >
           Templates
         </Button>
+        <ResumeAction
+          controller={store.resume}
+          count={interrupted}
+          identify={identifyForResume}
+        />
         <Button onclick={() => offerAgentForm(null)}>New agent</Button>
       </div>
       <div class="basis-full">

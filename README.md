@@ -182,6 +182,18 @@ To review what an agent did, choose "Browse files" in its details. A read-only v
 
 Agents cannot use this view. The shapes of the requests are in [the file view protocol](specs/changes/0016-agent-file-browser/contracts/file-view-protocol.md).
 
+## Resume interrupted agents
+
+When the background server stops while agents run (a crash, a logout, a restart of the machine), those agents show `interrupted` at the next start, and none starts by itself. The panel header then offers **Resume interrupted (N)**.
+
+- The dialog lists the interrupted agents in start order: members first, then leads, then the CEO, so a resumed lead finds its members running. Each row says what will happen: continue the session that started at a given time, or start a new session, with the reason (for example, the CLI cannot continue a session). Agents on hold are listed unchecked.
+- After an unclean stop (for example a SIGKILL of the server, a crash, or a power loss), the agents whose last session was still open are marked. A warning says that their CLI processes from before may still run, and Confirm waits until you tick that you understand that a second copy may start. The office does not find or end such leftover processes. The session list shows such a session as `lost`.
+- After Confirm, each agent's result shows live: checking, continued, new session (with the reason), on hold (with the reason), or skipped (with the reason). You can close the dialog; the server finishes the checks.
+- The office watches each start for 20 seconds. When a continued session ends by itself in that time, the office starts the agent once in a new session. That start is in the agent's action record with the office as actor and the reason, because the CLI's earlier context was not carried over. When that new session also ends within 20 seconds, the office does not start the agent again: it puts the agent on hold with the reason and notifies you once.
+- Any end of the CLI within the 20 seconds counts, whatever its exit code. A command that ends quickly by design is started twice and then held; uncheck such agents.
+
+The shapes of the requests are in [the resume protocol](specs/changes/0013-bulk-resume/contracts/resume-protocol.md).
+
 ## Start at login
 
 The server runs only while you are logged in. Agents end when you log out or shut the machine down. After the next login the server starts again, and the agents that were running show `interrupted`. No agent starts without your action.
@@ -328,6 +340,7 @@ An agent acts only within its own descendants: the agents under it in the tree. 
 - The hands-on checks on macOS and Windows are still open. CI runs the automated tests on all three OSes, but nobody has used the installers by hand on macOS or Windows yet. The QA status is in [the QA report](specs/changes/0001-office-server-and-terminal/qa-report.md).
 - Windows stops an agent with `taskkill /T /F`. It can miss a child process whose parent already ended.
 - The quiet period and the output limit apply after a server restart.
+- After an unclean stop of the server, a CLI that ignores the terminal hang-up can keep running. The `opencode` background service does. The office marks the affected agents and warns before a resume, but it does not end those processes.
 - The app has no update check, because office-harness opens no connection to an outside service.
 - The database upgrade is forward-only. An older program refuses a database that a newer one upgraded. To go back, use the previous program together with a copy of `office.db` that you made before the upgrade (see [Data folder](#data-folder)). The program does not make that copy for you, so copy the file before you install a new version. Restore the copy and the previous program as one step.
 

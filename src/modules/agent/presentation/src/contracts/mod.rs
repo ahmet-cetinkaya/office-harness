@@ -8,8 +8,8 @@ mod file_view_requests;
 pub use additions_body::read_additions;
 pub use agent_requests::{
     AdditionsRequest, AgentIdRequest, CreateAgentRequest, CreateProjectRequest, DeleteAgentRequest,
-    ProjectIdRequest, RolePlacement, SessionIdRequest, SettingKeyRequest, SettingRequest,
-    TaskTextRequest, WorktreeInfoRequest, WorktreeStatusRequest,
+    ProjectIdRequest, ResumeAgentRequest, RolePlacement, SessionIdRequest, SettingKeyRequest,
+    SettingRequest, TaskTextRequest, WorktreeInfoRequest, WorktreeStatusRequest,
 };
 pub use fields::Fields;
 pub use file_view_requests::{

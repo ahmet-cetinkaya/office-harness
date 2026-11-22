@@ -51,6 +51,20 @@ export interface TemplateFilesOptions {
   exportFailure?: { code: string; message: string };
 }
 
+/** How the faked server resumes one interrupted agent (0013). */
+export interface ResumeSeed {
+  /** False when the CLI cannot continue the last session. */
+  canContinue?: boolean;
+  /** Why the session cannot be continued. */
+  reason?: string;
+  /** The last session was lost at an unclean stop. */
+  afterUncleanStop?: boolean;
+  /** What a start does: "continues" runs the session (the default),
+   * "refuses" has the CLI refuse it so that a new session starts, and
+   * "fails" has the new session end too, which puts the agent on hold. */
+  outcome?: "continues" | "refuses" | "fails";
+}
+
 /** What the faked office holds when the page opens. */
 export interface OfficeSeed {
   agents?: SeededAgent[];
@@ -80,6 +94,12 @@ export interface OfficeSeed {
   setTaskDelayMs?: number;
   /** The holds the faked server keeps. None when left out. */
   holds?: Partial<HoldState>;
+  /** How each interrupted agent resumes, by agent id. An agent left out
+   * continues its session. A held agent is one of `holds`. */
+  resume?: Record<string, ResumeSeed>;
+  /** Milliseconds between the "checking" and the final result of a resume,
+   * as a start with a real check period. Zero when left out. */
+  resumeCheckMs?: number;
   /** Limit settings that differ from the server's defaults, by key. */
   limits?: Record<string, string>;
   /** The stored `last_view` JSON text, as `settings.get` answers with it. */
@@ -406,7 +426,12 @@ export async function installMockCore(
     const findAgent = (agentId: unknown) =>
       office.agents.find((agent) => agent.id === agentId) ??
       refuse("not_found", "no such agent");
-    const record = (agentId: string | null, action: string, actor = "user") => {
+    const record = (
+      agentId: string | null,
+      action: string,
+      actor = "user",
+      detail: string | null = null,
+    ) => {
       const entry: ActionEntry = {
         id: office.actions.length + 1,
         actor,
@@ -414,6 +439,7 @@ export async function installMockCore(
         action,
         result: "ok",
         at: Date.now(),
+        detail,
       };
       office.actions.push(entry);
       pushEvent({ type: "action.recorded", entry });
@@ -1593,7 +1619,9 @@ export async function installMockCore(
           record(agent.id, "release");
           pushHoldChanged();
           clearNeedsYou(
-            (item) => item.agent_id === agent.id && item.kind === "auto_hold",
+            (item) =>
+              item.agent_id === agent.id &&
+              ["auto_hold", "resume_hold"].includes(item.kind),
           );
           return {};
         }
@@ -1607,6 +1635,16 @@ export async function installMockCore(
             setTimeout(resolve, mock.office?.fileViewDelayMs ?? 0),
           );
           return answerFileView(kind, fields);
+        case "resume.plan":
+          return resumePlan();
+        case "resume.start": {
+          const ids = fields.agent_ids;
+          if (!Array.isArray(ids) || ids.length === 0) {
+            refuse("invalid", "agent_ids is empty");
+          }
+          startResume(ids as string[]);
+          return { order: ids };
+        }
         case "office.actions":
           return office.actions
             .filter((entry) => entry.agent_id === null)
@@ -1618,6 +1656,138 @@ export async function installMockCore(
         default:
           return undefined;
       }
+    };
+
+    // The resume of 0013: the plan from the interrupted agents, and the
+    // results as events after the answer, as the server sends them.
+    const RESUME_ROLE_RANK: Record<string, number> = { lead: 1, ceo: 2 };
+    const RESUME_REFUSED_REASON = "the CLI refused the session";
+    const RESUME_FAILED_REASON =
+      "the new session ended within its check period";
+    const NO_CONTINUE_REASON = "the CLI cannot continue this session";
+    const resumeSeedOf = (agentId: string) =>
+      mock.office?.resume?.[agentId] ?? {};
+    const resumePlan = () => {
+      const interrupted = office.agents
+        .filter((agent) => agent.status === "interrupted")
+        .map((agent, index) => ({ agent, index }))
+        .sort(
+          (first, second) =>
+            (RESUME_ROLE_RANK[first.agent.role ?? ""] ?? 0) -
+              (RESUME_ROLE_RANK[second.agent.role ?? ""] ?? 0) ||
+            first.index - second.index,
+        );
+      return {
+        agents: interrupted.map(({ agent }) => {
+          const seed = resumeSeedOf(agent.id);
+          const canContinue = seed.canContinue !== false;
+          return {
+            agent_id: agent.id,
+            last_session: structuredClone(
+              office.sessions[agent.id]?.[0] ?? {
+                id: `session-of-${agent.id}`,
+                agent_id: agent.id,
+                started_at: agent.created_at,
+              },
+            ),
+            can_continue: canContinue,
+            ...(canContinue
+              ? {}
+              : { reason: seed.reason ?? NO_CONTINUE_REASON }),
+            held: heldAgent(agent.id) !== undefined,
+            after_unclean_stop: seed.afterUncleanStop === true,
+          };
+        }),
+      };
+    };
+    const pushResumeResult = (
+      agentId: string,
+      result: string,
+      extra: { continued?: boolean; reason?: string },
+      isFinal: boolean,
+    ) => {
+      pushEvent({
+        type: "resume.result",
+        agent_id: agentId,
+        result,
+        ...extra,
+        is_final: isFinal,
+      });
+    };
+    const finishResume = (agent: Agent) => {
+      const seed = resumeSeedOf(agent.id);
+      const canContinue = seed.canContinue !== false;
+      if (seed.outcome === "fails") {
+        const reason = RESUME_FAILED_REASON;
+        setStatus(agent, "failed");
+        office.holds.agents.push({
+          agent_id: agent.id,
+          set_by: "office",
+          reason,
+          since: Date.now(),
+        });
+        record(agent.id, "hold", "office");
+        pushHoldChanged();
+        recordAttention(agent, "resume_hold", reason, Date.now());
+        pushResumeResult(agent.id, "held", { reason }, true);
+        return;
+      }
+      if (seed.outcome === "refuses" && canContinue) {
+        startSession(agent, null);
+        record(agent.id, "start", "office", RESUME_REFUSED_REASON);
+        setStatus(agent, "working");
+        pushResumeResult(
+          agent.id,
+          "new_session",
+          { reason: RESUME_REFUSED_REASON },
+          true,
+        );
+        return;
+      }
+      setStatus(agent, "working");
+      if (canContinue) {
+        pushResumeResult(agent.id, "continued", {}, true);
+        return;
+      }
+      pushResumeResult(
+        agent.id,
+        "new_session",
+        { reason: seed.reason ?? NO_CONTINUE_REASON },
+        true,
+      );
+    };
+    const beginResume = (agent: Agent) => {
+      const seed = resumeSeedOf(agent.id);
+      const canContinue = seed.canContinue !== false;
+      const lastSession = office.sessions[agent.id]?.[0];
+      startSession(agent, canContinue ? (lastSession?.id ?? null) : null);
+      if (!canContinue) {
+        record(agent.id, "start", "user", seed.reason ?? NO_CONTINUE_REASON);
+      }
+      pushResumeResult(agent.id, "checking", { continued: canContinue }, false);
+    };
+    const startResume = (ids: string[]) => {
+      const resumable = ids.filter(
+        (id) =>
+          office.agents.find((agent) => agent.id === id)?.status ===
+          "interrupted",
+      );
+      for (const id of ids) {
+        if (resumable.includes(id)) continue;
+        pushResumeResult(
+          id,
+          "skipped",
+          { reason: "the agent is no longer interrupted" },
+          true,
+        );
+      }
+      setTimeout(() => {
+        resumable.forEach((id) => beginResume(findAgent(id)));
+        setTimeout(
+          () => resumable.forEach((id) => finishResume(findAgent(id))),
+          mock.office?.resumeCheckMs ?? 0,
+        );
+      }, 0);
     };
 
     const internals = {

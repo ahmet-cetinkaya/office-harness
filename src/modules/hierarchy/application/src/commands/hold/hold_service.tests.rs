@@ -112,6 +112,7 @@ enum Event {
     Released(HoldScope),
     StorageFailed,
     Notified(AgentId),
+    ResumeNotified(AgentId, String),
 }
 
 #[derive(Default)]
@@ -148,6 +149,10 @@ impl HoldJournal for Recorder {
 impl HoldNotifier for Recorder {
     fn auto_held(&self, agent: AgentId, _limit: &LimitRefusal) {
         self.push(Event::Notified(agent));
+    }
+
+    fn resume_held(&self, agent: AgentId, reason: &str) {
+        self.push(Event::ResumeNotified(agent, reason.to_owned()));
     }
 }
 
@@ -253,6 +258,65 @@ fn conflict_text(error: HierarchyApplicationError) -> String {
         HierarchyApplicationError::Conflict(text) => text,
         other => panic!("expected a conflict, got {other:?}"),
     }
+}
+
+#[test]
+fn an_office_hold_for_a_failed_resume_stores_the_reason_journals_and_notifies_once() {
+    let fixture = fixture();
+
+    let hold = fixture
+        .service
+        .hold_by_office(id(MEMBER), "the new session ended too")
+        .expect("hold")
+        .expect("a new hold");
+
+    assert_eq!(hold.scope, HoldScope::Agent(id(MEMBER)));
+    assert_eq!(hold.set_by, HoldSetter::Office);
+    assert_eq!(hold.since, Timestamp::from_unix_millis(START_MILLIS));
+    assert_eq!(hold.reason.as_deref(), Some("the new session ended too"));
+    assert_eq!(fixture.service.list().agents, std::slice::from_ref(&hold));
+    assert_eq!(*locked(&fixture.store.holds), [hold]);
+    assert_eq!(
+        fixture.recorder.events(),
+        [
+            Event::Held(HoldScope::Agent(id(MEMBER)), HoldSetter::Office),
+            Event::ResumeNotified(id(MEMBER), "the new session ended too".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn an_agent_that_is_already_held_gets_no_second_hold_and_no_notification() {
+    let fixture = fixture();
+    fixture
+        .service
+        .set_hold(HoldScope::Agent(id(MEMBER)))
+        .expect("user hold");
+    let events_before = fixture.recorder.events();
+
+    let held = fixture
+        .service
+        .hold_by_office(id(MEMBER), "the new session ended too")
+        .expect("no error");
+
+    assert_eq!(held, None);
+    assert_eq!(fixture.recorder.events(), events_before);
+    assert_eq!(fixture.service.list().agents[0].set_by, HoldSetter::User);
+}
+
+#[test]
+fn a_failed_write_of_an_office_hold_leaves_memory_and_the_ports_untouched() {
+    let fixture = fixture();
+    fixture.fail_writes();
+
+    let error = fixture
+        .service
+        .hold_by_office(id(MEMBER), "reason")
+        .expect_err("storage failure");
+
+    assert!(matches!(error, HierarchyApplicationError::Storage(_)));
+    assert_eq!(fixture.service.list(), HoldsView::default());
+    assert_eq!(fixture.recorder.events(), []);
 }
 
 #[test]

@@ -282,3 +282,96 @@ fn the_plain_team_writes_take_the_exclusion_themselves() {
 
     assert_eq!(store.snapshot().expect("snapshot").teams.len(), 0);
 }
+
+fn parent_of(connection: &Connection, id: &AgentId) -> Option<String> {
+    connection
+        .query_row(
+            "SELECT parent_agent_id FROM agent_agents WHERE id = ?1",
+            params![id.as_uuid_text()],
+            |row| row.get(0),
+        )
+        .expect("the agent row")
+}
+
+/// 0002 A5: teams can exist before the CEO; when the CEO is placed, the
+/// leads that have no parent move under it, and a member keeps its lead.
+#[test]
+fn placing_a_ceo_moves_the_parentless_leads_under_it() {
+    let shared = database();
+    let (lead, member, ceo) = (
+        AgentId::generate(),
+        AgentId::generate(),
+        AgentId::generate(),
+    );
+    let team_id = TeamId::generate();
+    {
+        let connection = shared.lock().expect("database");
+        agent(&connection, &lead, "Lea");
+        agent(&connection, &member, "Mo");
+        agent(&connection, &ceo, "Cy");
+        team(&connection, &team_id, &lead);
+    }
+    let store = repository(&shared);
+    store
+        .place_agent(lead, Some(Role::Lead), None, Some(team_id))
+        .expect("the lead");
+    store
+        .place_agent(member, Some(Role::Member), Some(lead), Some(team_id))
+        .expect("the member");
+
+    store
+        .place_agent(ceo, Some(Role::Ceo), None, None)
+        .expect("the CEO");
+
+    let connection = shared.lock().expect("database");
+    assert_eq!(parent_of(&connection, &lead), Some(ceo.as_uuid_text()));
+    assert_eq!(parent_of(&connection, &member), Some(lead.as_uuid_text()));
+    assert_eq!(parent_of(&connection, &ceo), None);
+}
+
+/// The adoption is part of the CEO's placement: when the placement fails,
+/// no lead moves.
+#[test]
+fn a_failed_ceo_placement_moves_no_lead() {
+    let shared = database();
+    let (lead, ceo) = (AgentId::generate(), AgentId::generate());
+    let team_id = TeamId::generate();
+    {
+        let connection = shared.lock().expect("database");
+        agent(&connection, &lead, "Lea");
+        agent(&connection, &ceo, "Cy");
+        team(&connection, &team_id, &lead);
+    }
+    let store = repository(&shared);
+    store
+        .place_agent(lead, Some(Role::Lead), None, Some(team_id))
+        .expect("the lead");
+    {
+        let connection = shared.lock().expect("database");
+        // The failure lands on the adoption UPDATE, after the CEO's own
+        // place write in the same transaction.
+        connection
+            .execute_batch(
+                "CREATE TEMP TRIGGER refuse_adoption BEFORE UPDATE OF parent_agent_id \
+                 ON agent_agents WHEN OLD.role = 'lead' \
+                 BEGIN SELECT RAISE(ABORT, 'adoption refused'); END;",
+            )
+            .expect("trigger");
+    }
+
+    let error = store
+        .place_agent(ceo, Some(Role::Ceo), None, None)
+        .expect_err("the adoption fails");
+
+    assert!(error.to_string().contains("adoption refused"), "{error}");
+    let connection = shared.lock().expect("database");
+    assert_eq!(parent_of(&connection, &lead), None);
+    let ceo_role: Option<String> = connection
+        .query_row(
+            "SELECT role FROM agent_agents WHERE id = ?1",
+            params![ceo.as_uuid_text()],
+            |row| row.get(0),
+        )
+        .expect("the CEO row");
+    assert_eq!(ceo_role, None);
+}

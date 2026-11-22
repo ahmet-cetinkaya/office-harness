@@ -613,6 +613,8 @@ mod hold_guard {
         fn auto_held(&self, _agent: AgentId, _limit: &LimitRefusal) {
             self.notifications.fetch_add(1, Ordering::SeqCst);
         }
+
+        fn resume_held(&self, _agent: AgentId, _reason: &str) {}
     }
 
     struct Guarded {
