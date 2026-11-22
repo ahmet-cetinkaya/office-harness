@@ -513,3 +513,27 @@ fn a_task_text_of_an_unknown_agent_is_not_found() {
         "{error}"
     );
 }
+
+#[test]
+fn a_stored_task_the_domain_rejects_reads_as_no_task_and_keeps_the_agent_readable() {
+    let folder = TempDir::new().expect("folder");
+    let database = database_in(&folder);
+    let office = open_office(&database);
+    let broken = agent_named(&office, "Ana", None);
+    let healthy = agent_named(&office, "Bo", None);
+    office.agents.insert(&broken).expect("agent");
+    office.agents.insert(&healthy).expect("agent");
+    Connection::open(&database)
+        .expect("open database")
+        .execute(
+            "UPDATE agent_agents SET task_text = 'x', task_set_at = 1, \
+             task_source = 'from a later version' WHERE id = ?1",
+            [broken.id.to_string()],
+        )
+        .expect("hand edit");
+
+    let listed = office.agents.list().expect("the list is still readable");
+
+    assert_eq!(listed.len(), 2);
+    assert!(listed.iter().all(|agent| agent.task.is_none()));
+}

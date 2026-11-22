@@ -512,7 +512,12 @@ fn a_received_directive_becomes_the_task_text_and_is_published() {
     let store = Arc::new(TaskKeeper::default());
     let events = EventHub::new();
     let mut subscriber = events.subscribe();
-    let bridge = DirectiveReceiptBridge::new(store.clone(), events, StorageAlerts::new(test_log()));
+    let bridge = DirectiveReceiptBridge::new(
+        store.clone(),
+        events,
+        StorageAlerts::new(test_log()),
+        TaskOrder::default(),
+    );
 
     bridge.received(target, "Fix the login test");
 
@@ -533,7 +538,8 @@ fn a_failed_task_store_is_an_alert_and_publishes_nothing() {
     let mut subscriber = events.subscribe();
     let alerts = StorageAlerts::new(test_log());
     let mut alert_feed = alerts.subscribe();
-    let bridge = DirectiveReceiptBridge::new(Arc::new(BrokenStore), events, alerts);
+    let bridge =
+        DirectiveReceiptBridge::new(Arc::new(BrokenStore), events, alerts, TaskOrder::default());
 
     bridge.received(AgentId::generate(), "Fix the login test");
 

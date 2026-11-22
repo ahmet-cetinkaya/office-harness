@@ -45,7 +45,7 @@ use audit_presentation::AuditHandlers;
 use super::{ServerLog, StorageAlerts, TerminalServices};
 use crate::bridges::{
     ActionRecorderBridge, AgentCalls, SavedOutputs, StatusOrder, StoppingFlag, SystemClock,
-    TerminalHostBridge,
+    TaskOrder, TerminalHostBridge,
 };
 
 /// The agent and audit modules, wired: the use cases behind their handlers,
@@ -63,6 +63,8 @@ pub struct AgentServices {
     pub saved_outputs: SavedOutputs,
     /// Orders `agent.start` before the statuses its terminal causes.
     pub status_order: StatusOrder,
+    /// Orders the storing and the publishing of every task text change.
+    pub task_order: TaskOrder,
     /// Set by the interrupt at stop, so no start follows it.
     pub stopping: StoppingFlag,
     /// The action record the agent use cases write. The hierarchy's
@@ -149,6 +151,7 @@ pub fn build_agent_services(
         ),
         saved_outputs: SavedOutputs::new(wiring.sessions),
         status_order: StatusOrder::default(),
+        task_order: TaskOrder::default(),
         stopping: StoppingFlag::default(),
         journal: wiring.journal.clone(),
     }

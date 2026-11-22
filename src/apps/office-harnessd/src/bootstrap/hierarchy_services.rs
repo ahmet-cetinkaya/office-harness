@@ -146,6 +146,7 @@ pub fn build_hierarchy_services(
                 agents,
                 events.clone(),
                 alerts.clone(),
+                Arc::clone(&agent.task_order),
             )),
         )
         .with_hold_guard(Arc::clone(&holds)),
