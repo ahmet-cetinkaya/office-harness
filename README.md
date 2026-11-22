@@ -270,7 +270,7 @@ office-harnessd agent-call <request type> [<json fields>]
 
 The helper reads the credential and the server file from the environment, connects to the server, sends one request, and prints the answer as JSON. It exits with code 0 when the answer is a success, code 2 when the command is used wrong or runs outside an agent session, and code 1 when anything else fails, for example when the server refuses the request or cannot be reached.
 
-Today the office answers an agent only for `agent.whoami`, which returns the agent's own id:
+The office answers `agent.whoami` with the agent's own id:
 
 ```sh
 office-harnessd agent-call agent.whoami
@@ -282,7 +282,15 @@ office-harnessd agent-call agent.whoami
 
 The command works the same in every supported CLI, because it is an ordinary program and the credential lives in the session environment, which the CLI and everything that it starts share. An agent runs it as a shell command in its session, in the way that its CLI runs shell commands. Outside a session the environment has no credential, so the command exits with code 2.
 
-Every other request type is refused. The refusal of a type outside the agent list names the rule: an agent may only create, start, stop, and give new tasks to its own descendants, and send them directives. A type inside that list is refused for now with the reason that it is not available to agents yet. Later in this change, an agent will be able to create, start, and stop agents below it, start new tasks on them, and send them directives; the protocol contract lists the request shapes.
+An agent reads the state of the agents below it with `agent.subtree`, which takes no fields:
+
+```sh
+office-harnessd agent-call agent.subtree
+```
+
+The answer lists each descendant after its parent, with its name, role, status, the time its terminal last showed output, whether it waits in Needs you, whether a hold covers it, and its task line. It never carries terminal output, and it lists no agent outside the caller's own subtree. A hold does not refuse the read, the read counts toward no rate limit, and an answered read is not in the action record. The shapes are in `specs/changes/0014-subtree-status/contracts/subtree-protocol.md`.
+
+An agent also creates, starts, and stops agents below it, starts new tasks on them, and sends them directives; the protocol contract lists the request shapes. Every other request type is refused, and the refusal names the rule: an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants.
 
 A hold or a limit can refuse these requests as well. The answer is `refused`, and its message is one of these, checked after the rules above in this order:
 

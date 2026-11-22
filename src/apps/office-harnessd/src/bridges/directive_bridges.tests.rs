@@ -124,6 +124,10 @@ impl TerminalRuntime for RecordingRuntime {
     fn current_run(&self, _agent_id: AgentId) -> Option<RunId> {
         Some(RunId(1))
     }
+
+    fn quiet_for(&self, _agent_id: AgentId) -> Option<Duration> {
+        None
+    }
 }
 
 /// Keeps every entry the journal records.

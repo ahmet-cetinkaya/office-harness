@@ -7,7 +7,7 @@ use agent_application::common::actor_scope::ActorScope;
 use axum::extract::ws::{Message, WebSocket};
 use hierarchy_application::common::errors::HierarchyApplicationError;
 use hierarchy_domain::{
-    AgentAction, HierarchyError, Role, TeamId, TreeRow, check_descendant, is_descendant_of,
+    AgentAction, HierarchyError, Hold, Role, TeamId, TreeRow, check_descendant, is_descendant_of,
 };
 use kernel::{Actor, AgentId};
 use serde_json::{Value, json};
@@ -24,8 +24,9 @@ use crate::bridges::take_recorded_events;
 /// other type is refused, so no agent reaches `terminal.*`, `agent.delete`,
 /// `team.*`, `hierarchy.*`, `server.*`, `settings.*`, `project.*`,
 /// `template.*`, or the additions of an agent.
-const ALLOWED_REQUESTS: [&str; 6] = [
+const ALLOWED_REQUESTS: [&str; 7] = [
     "agent.whoami",
+    "agent.subtree",
     "agent.create",
     "agent.start",
     "agent.new_task",
@@ -34,7 +35,7 @@ const ALLOWED_REQUESTS: [&str; 6] = [
 ];
 
 /// What the connection of an agent says about a request it will not run.
-const NOT_ALLOWED: &str = "an agent may only create, start, stop, and give new tasks to its own descendants, and send them directives";
+const NOT_ALLOWED: &str = "an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants";
 
 /// The longest client text a refusal reason keeps: the type and a field key
 /// travel into the log and the record, so the limit keeps one hostile frame
@@ -104,6 +105,7 @@ async fn answer_request(state: &ServerState, grant: &AgentGrant, frame: &str) ->
                         json!({"agent_id": grant.agent_id.to_string()}),
                     );
                 }
+                "agent.subtree" => return answer_subtree(state, grant, &request).await,
                 "directive.send" => return answer_directive(state, grant, &request).await,
                 "agent.create" | "agent.start" | "agent.new_task" | "agent.stop" => {
                     return answer_office_request(state, grant, &request).await;
@@ -175,6 +177,38 @@ fn refusal_reason(refusal: &Refusal, kind: &str) -> String {
             truncated(field, MAX_REFUSAL_TEXT_CHARS)
         ),
     }
+}
+
+/// Answers `agent.subtree` (0014): the state of the caller's descendants.
+/// The read takes no field, so it can point nowhere but at the caller's own
+/// subtree (FR-002); a field is `invalid` and recorded (FR-005). It passes no
+/// hold and no rate limit (FR-004), and an answered read writes no record
+/// entry and publishes no event (FR-005).
+async fn answer_subtree(state: &ServerState, grant: &AgentGrant, request: &Request) -> Response {
+    let caller = grant.agent_id;
+    if let Some(key) = request.fields.keys().next() {
+        let message = format!(
+            "agent.subtree does not take the field {:?}",
+            truncated(key, MAX_REFUSAL_TEXT_CHARS)
+        );
+        journal_refusal(state, caller, &message);
+        return Response::failure(request.id, ErrorCode::Invalid, message);
+    }
+    let gateway = state.agents.clone();
+    let holds = Arc::clone(&state.hold_service);
+    let read = spawn_blocking(move || {
+        let view = holds.list();
+        let holds: Vec<Hold> = view.office.into_iter().chain(view.agents).collect();
+        gateway.subtree_status(caller, &holds)
+    })
+    .await;
+    let message = match read {
+        Ok(Ok(entries)) => return Response::success(request.id, entries),
+        Ok(Err(message)) => truncated(&message, MAX_REFUSAL_TEXT_CHARS),
+        Err(error) => format!("the request task failed: {error}"),
+    };
+    journal_refusal(state, caller, &message);
+    Response::failure(request.id, ErrorCode::Internal, message)
 }
 
 /// Runs `directive.send` from the caller's actor: the parse failures answer
