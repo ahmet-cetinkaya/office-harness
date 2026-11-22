@@ -158,6 +158,7 @@ mod with_a_stand_in_program {
         assert!(!output.contains("GIT_WORK_TREE="), "{output}");
         assert!(output.contains("GIT_OPTIONAL_LOCKS=0"), "{output}");
         assert!(output.contains("GIT_NO_LAZY_FETCH=1"), "{output}");
+        assert!(output.contains("GIT_ALLOW_PROTOCOL=none/"), "{output}");
         let output = runner.write(temp.path(), &["x"]).expect("ran");
         assert!(!output.contains("GIT_OPTIONAL_LOCKS"), "{output}");
     }
