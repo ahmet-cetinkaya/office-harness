@@ -1,7 +1,7 @@
 ---
 status: deferred (post-MVP, draft)
 capability: office
-plan:
+plan: specs/changes/0006-distributed-machines/PLAN.md
 supersedes: 0001/FR-005 (in part), 0001/FR-008 (in part)
 ---
 
@@ -98,7 +98,7 @@ The user sees when a machine goes offline, gets its agents back when it returns,
 - **FR-002** (US1): WHEN the user asks for a join code, THE SYSTEM SHALL create a code of at least 64 bits from a secure random source, that works once and expires after 10 minutes, SHALL show it once with the server fingerprint, and SHALL NOT show it again.
 - **FR-003** (US1): WHEN a machine presents a valid join code, THE SYSTEM SHALL register the machine under the name that the user gave it, issue it a machine credential, and record the join with the machine's name and time; IF the code is wrong, used, or expired, THEN THE SYSTEM SHALL refuse it and record the refusal.
 - **FR-004** (US1, US3): THE SYSTEM SHALL encrypt and authenticate every connection between the office server and a joined machine, and a machine SHALL send the join code, and every later connection SHALL send the machine credential, only to a server that has the fingerprint that the join code held, compared on at least 128 bits of a hash of the server's public identity; a shorter human-readable form of the fingerprint may be shown, and the full value is what every connection compares; a server with another identity SHALL be refused until the user joins the machine again with a new code.
-- **FR-005** (US1): IF a source makes 5 failed join attempts within 1 minute, THEN THE SYSTEM SHALL refuse every join attempt from that source for the next 5 minutes. The lockout stops join attempts only: it does not stop connected machines or their credentials, and it does not use up a valid join code.
+- **FR-005** (US1): IF a source makes 5 failed join attempts within 1 minute, THEN THE SYSTEM SHALL refuse every join attempt from that source for the next 5 minutes. The lockout stops join attempts only: it does not stop connected machines or their credentials, and it does not use up a valid join code. The office server tracks a bounded number of sources. While every tracked source is locked out, a new source is not tracked, and the server says so once in its log and the panel shows that lockout tracking is at capacity; the join code's strength is the protection then (FR-002).
 - **FR-006** (US2): WHEN the user creates an agent, THE SYSTEM SHALL let the user pick the home machine or an `online` joined machine, start the agent there with that machine's own user environment (0001/FR-020), and show the machine's name in the agent list and the agent's details.
 - **FR-007** (US2, US3): THE SYSTEM SHALL give every agent on a joined machine the same terminal, status, last output, and action record as a local agent, and WHEN a joined machine is offline THE SYSTEM SHALL show its agents as `unreachable`, keep them running on that machine, and show their real status when the connection returns.
 - **FR-008** (US3): WHEN the user removes a joined machine, THE SYSTEM SHALL state how many agents it affects, ask for confirmation, then make the machine's credential stop working and close its connection.
