@@ -40,6 +40,7 @@ const AGENT_FIELDS: &[&str] = &[
     "working_folder",
     "additions",
     "role",
+    "own_worktree",
 ];
 const AGENT_FIELDS_WITH_VERSION: &[&str] = &[
     "body_version",
@@ -48,6 +49,7 @@ const AGENT_FIELDS_WITH_VERSION: &[&str] = &[
     "working_folder",
     "additions",
     "role",
+    "own_worktree",
 ];
 const TEAM_FIELDS: &[&str] = &["body_version", "lead", "members"];
 const MEMBER_FIELDS: &[&str] = &["entry", "count"];
@@ -80,6 +82,7 @@ fn read_agent(object: &KnownObject<'_>) -> Result<AgentBody, TemplateError> {
         working_folder: object.optional_text("working_folder")?.map(str::to_owned),
         additions,
         role,
+        own_worktree: object.optional_bool("own_worktree")?.unwrap_or(false),
     })
 }
 
@@ -176,6 +179,7 @@ fn agent_json(agent: &AgentBody) -> Value {
             "startup_prompt": agent.additions.startup_prompt,
         },
         "role": agent.role.map(TemplateRole::as_str),
+        "own_worktree": agent.own_worktree,
     })
 }
 

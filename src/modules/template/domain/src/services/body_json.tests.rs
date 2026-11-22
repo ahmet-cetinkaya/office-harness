@@ -58,7 +58,7 @@ fn a_team_body_round_trips() {
 #[test]
 fn an_unknown_field_is_refused_and_named_at_every_depth() {
     let mut top = agent_json();
-    top["own_worktree"] = json!(true);
+    top["worktree_base"] = json!("main");
     let mut nested = agent_json();
     nested["additions"]["colour"] = json!("red");
     let mut env = agent_json();
@@ -71,7 +71,7 @@ fn an_unknown_field_is_refused_and_named_at_every_depth() {
     member["lead"]["speed"] = json!(1);
 
     for (kind, body, path) in [
-        (TemplateKind::Agent, top, "body.own_worktree"),
+        (TemplateKind::Agent, top, "body.worktree_base"),
         (TemplateKind::Agent, nested, "body.additions.colour"),
         (TemplateKind::Agent, env, "body.additions.env[0].secret"),
         (TemplateKind::Team, member.clone(), "body.lead.speed"),
@@ -127,5 +127,48 @@ fn a_member_count_that_is_not_a_whole_number_is_refused() {
         error
             .to_string()
             .contains("body.members[0].count must be a whole number")
+    );
+}
+
+#[test]
+fn the_own_worktree_choice_defaults_to_off_and_round_trips_in_every_entry() {
+    let TemplateBody::Agent(without) =
+        parse_body(TemplateKind::Agent, &agent_json()).expect("without")
+    else {
+        panic!("not an agent body");
+    };
+    assert!(!without.own_worktree);
+
+    let chosen =
+        json!({"name_pattern": "{team}-member-{n}", "command": "claude", "own_worktree": true});
+    let value = json!({
+        "body_version": 1,
+        "lead": entry_json(),
+        "members": [{"entry": chosen, "count": 2}]
+    });
+    let body = parse_body(TemplateKind::Team, &value).expect("body");
+    let TemplateBody::Team(team) = &body else {
+        panic!("not a team body");
+    };
+    assert!(!team.lead.own_worktree);
+    assert!(team.members[0].entry.own_worktree);
+    assert_eq!(
+        parse_body(TemplateKind::Team, &body_to_json(&body)).expect("again"),
+        body
+    );
+}
+
+#[test]
+fn an_own_worktree_choice_that_is_not_true_or_false_is_refused() {
+    let value =
+        json!({"body_version": 1, "name_pattern": "x", "command": "c", "own_worktree": "yes"});
+
+    let error = parse_body(TemplateKind::Agent, &value).expect_err("choice");
+
+    assert!(
+        error
+            .to_string()
+            .contains("body.own_worktree must be true or false"),
+        "{error}"
     );
 }

@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
-use agent_application::common::interfaces::{AdditionsStore, AgentStore, ProjectStore};
+use agent_application::common::interfaces::{
+    AdditionsStore, AgentStore, ProjectStore, WorktreeManager,
+};
 use agent_infrastructure::persistence::{AdditionsRepository, ProjectRepository, SharedConnection};
 use template_application::common::interfaces::{AgentSource, TemplateClock, TemplateStore};
 use template_application::services::TemplateService;
@@ -31,6 +33,7 @@ pub fn build_template_services(
     connection: &SharedConnection,
     agents: Arc<dyn AgentStore>,
     hierarchy: &HierarchyServices,
+    worktrees: Arc<dyn WorktreeManager>,
     alerts: &StorageAlerts,
 ) -> TemplateServices {
     let templates: Arc<dyn TemplateStore> = Arc::new(TemplateRepository::new(connection.handle()));
@@ -51,6 +54,7 @@ pub fn build_template_services(
             Arc::clone(&hierarchy.creator),
             agents,
             Arc::clone(&projects),
+            worktrees,
             alerts.clone(),
         )),
         templates,

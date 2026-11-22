@@ -179,6 +179,7 @@ pub fn start_with(
         &connection,
         Arc::clone(&agent_bridge_store),
         &hierarchy,
+        Arc::clone(&terminal.worktrees),
         &storage_alerts,
     );
     Ok(Services {

@@ -115,6 +115,7 @@ pub fn agent_body(pattern: &str) -> AgentBody {
             startup_prompt: None,
         },
         role: None,
+        own_worktree: false,
     }
 }
 
@@ -129,6 +130,7 @@ pub fn definition() -> AgentDefinition {
         working_folder: Some("/work".to_owned()),
         additions: agent_body("x").additions,
         role: None,
+        own_worktree: false,
     }
 }
 

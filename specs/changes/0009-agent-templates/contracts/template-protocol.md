@@ -58,7 +58,7 @@ Result: `{}`. Errors: `not_found`. Sends `template.changed`. A team template kee
 |---|---|---|
 | `agent_id` | string | the agent to copy |
 
-Result: `{body}`, an unsaved agent body with the agent's command, working folder, office additions, and role, and the pattern `<agent name>-{n}` (A2). Nothing is saved and the agent does not change. Errors: `not_found` for an unknown agent.
+Result: `{body}`, an unsaved agent body with the agent's command, working folder, office additions, role, and own worktree choice (`own_worktree` is `true` when the agent has its own worktree; the working folder is then the repository folder with the agent's subfolder, not the worktree folder), and the pattern `<agent name>-{n}` (A2). Nothing is saved and the agent does not change. Errors: `not_found` for an unknown agent.
 
 ### `template.create_agent` (FR-002, FR-005, PB-1, PB-2)
 
@@ -68,7 +68,7 @@ Result: `{body}`, an unsaved agent body with the agent's command, working folder
 | `place` | `{parent_agent_id, team_id}`? | where the template's role goes (0002); absent for a template with no role, refused with `invalid` when given for one |
 | `project_id` | string? | the project; its folder is the working folder when the template has none |
 
-Result: `{agent}`. The agent is created, not started (A1). Errors: `invalid` with every reason (a taken or too long name, an empty command, a bad environment name, a missing folder named, "a working folder is needed", an unknown project, a `{team}` pattern with no team, naming the pattern); `refused` with the 0002 text that names the allowed roles; `not_found`. Sends `agent.changed` and `hierarchy.changed`.
+Result: `{agent}`. The agent is created, not started (A1). Errors: `invalid` with every reason (a taken or too long name, an empty command, a bad environment name, a missing folder named, "a working folder is needed", an unknown project, a `{team}` pattern with no team, naming the pattern, and "own worktree needs a git repository" for an entry whose folder is not inside a git repository); `refused` with the 0002 text that names the allowed roles; `not_found`. Sends `agent.changed` and `hierarchy.changed`.
 
 ### `template.create_team` (FR-004, FR-005, SC-005)
 
@@ -79,7 +79,7 @@ Result: `{agent}`. The agent is created, not started (A1). Errors: `invalid` wit
 | `parent_agent_id` | string | the parent of the lead |
 | `project_id` | string? | as above |
 
-Result: `{team, agents: [agent]}`, the lead first. The team, its lead under the parent, and each member under the lead are created in one action, or none is (all-or-nothing); the position sets each role (A4). Errors: `invalid` with every reason, `conflict` "team name \"<name>\" is already used", `refused`, `not_found`. A failed undo names the first reason and each agent left behind. Sends one `agent.changed` for each created agent and one `hierarchy.changed`. A rolled-back creation sends no `agent.changed` and no `hierarchy.changed`, but it does send the `action.recorded` events of its Create and Delete entries, because those entries exist. A creation whose writes all succeeded answers success and sends its events even when the office cannot read an agent back afterward; that agent is then named by `id` and `name` only, has no `agent.changed`, and a `storage.error` is raised.
+Result: `{team, agents: [agent]}`, the lead first. The team, its lead under the parent, and each member under the lead are created in one action, or none is (all-or-nothing); the position sets each role (A4). Errors: `invalid` with every reason (an entry with `own_worktree` and a folder outside a git repository adds "<agent name>: own worktree needs a git repository", and nothing is created), `conflict` "team name \"<name>\" is already used", `refused`, `not_found`. A failed undo names the first reason and each agent left behind. Sends one `agent.changed` for each created agent and one `hierarchy.changed`. A rolled-back creation sends no `agent.changed` and no `hierarchy.changed`, but it does send the `action.recorded` events of its Create and Delete entries, because those entries exist. A creation whose writes all succeeded answers success and sends its events even when the office cannot read an agent back afterward; that agent is then named by `id` and `name` only, has no `agent.changed`, and a `storage.error` is raised.
 
 ### `template.export` (FR-007)
 

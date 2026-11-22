@@ -58,6 +58,14 @@
     isMultiline
     bind:value={draft.promptText}
   />
+  <label class="flex items-center gap-2 text-sm font-medium text-neutral-900">
+    <input type="checkbox" class="size-5" bind:checked={draft.isOwnWorktree} />
+    {title}: own worktree
+  </label>
+  <p class="-mt-2 text-sm text-neutral-700">
+    Each agent made from this entry gets its own git branch and worktree. The
+    working folder must be in a git repository when the agent is created.
+  </p>
   {#if hasRole}
     <SelectField
       label={`${title}: role`}

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use agent_application::common::interfaces::{AdditionsStore, AgentStore};
+use agent_domain::entities::Agent;
 use hierarchy_application::common::interfaces::HierarchyStore;
 use hierarchy_domain::Role;
 use kernel::AgentId;
@@ -83,14 +85,29 @@ impl AgentSource for AgentDefinitionBridge {
                 TemplateApplicationError::NotFound(format!("agent {agent_id} does not exist"))
             })?;
         Ok(AgentDefinition {
+            own_worktree: agent.worktree.is_some(),
+            working_folder: chosen_folder(&agent)
+                .map(|folder| folder.to_string_lossy().into_owned()),
             name: agent.name.as_str().to_owned(),
             command: agent.command.as_str().to_owned(),
-            working_folder: agent
-                .working_folder
-                .map(|folder| folder.to_string_lossy().into_owned()),
             additions: self.additions_of(agent_id)?,
             role: self.role_of(agent_id)?,
         })
+    }
+}
+
+/// The folder a new agent is created in. An agent with its own worktree
+/// works inside a folder that the office owns; a template keeps the chosen
+/// folder in the repository instead, because the base and the worktree are
+/// made again at each creation (0010 A2).
+fn chosen_folder(agent: &Agent) -> Option<PathBuf> {
+    let folder = agent.working_folder.as_ref()?;
+    let Some(worktree) = &agent.worktree else {
+        return Some(folder.clone());
+    };
+    match folder.strip_prefix(&worktree.folder) {
+        Ok(subfolder) => Some(worktree.repository.join(subfolder)),
+        Err(_) => Some(folder.clone()),
     }
 }
 

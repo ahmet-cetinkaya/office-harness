@@ -25,6 +25,7 @@ export interface AgentDraft {
   promptText: string;
   /** Kept as saved; only a direct creation uses it (A4). */
   role: TemplateRole | null;
+  isOwnWorktree: boolean;
 }
 
 export interface MemberDraft {
@@ -56,6 +57,7 @@ export function emptyAgentDraft(namePattern = ""): AgentDraft {
     environmentText: "",
     promptText: "",
     role: null,
+    isOwnWorktree: false,
   };
 }
 
@@ -79,6 +81,7 @@ export function draftOfAgentBody(body: AgentBody): AgentDraft {
     environmentText: formatEnvironment(body.additions.env),
     promptText: body.additions.startup_prompt ?? "",
     role: body.role,
+    isOwnWorktree: body.own_worktree,
   };
 }
 
@@ -122,6 +125,7 @@ export function agentBodyOfDraft(
         startup_prompt: parseStartupPrompt(draft.promptText),
       },
       role: draft.role,
+      own_worktree: draft.isOwnWorktree,
     },
   };
 }

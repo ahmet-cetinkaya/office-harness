@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use agent_application::common::interfaces::{AgentStore, ProjectStore};
+use agent_application::common::interfaces::{AgentStore, ProjectStore, WorktreeManager};
 use agent_domain::entities::Agent;
 use hierarchy_application::common::interfaces::{HierarchyStore, TreeExclusion, TreeSnapshot};
 use hierarchy_application::common::ports::{AgentCreator, AgentSeed};
@@ -87,6 +87,7 @@ pub struct TemplateCreateBridge {
     creator: Arc<dyn AgentCreator>,
     agents: Arc<dyn AgentStore>,
     projects: Arc<dyn ProjectStore>,
+    worktrees: Arc<dyn WorktreeManager>,
     alerts: StorageAlerts,
 }
 
@@ -98,6 +99,7 @@ impl TemplateCreateBridge {
         creator: Arc<dyn AgentCreator>,
         agents: Arc<dyn AgentStore>,
         projects: Arc<dyn ProjectStore>,
+        worktrees: Arc<dyn WorktreeManager>,
         alerts: StorageAlerts,
     ) -> Self {
         Self {
@@ -106,6 +108,7 @@ impl TemplateCreateBridge {
             creator,
             agents,
             projects,
+            worktrees,
             alerts,
         }
     }
@@ -195,7 +198,11 @@ impl TemplateCreateBridge {
             .map_err(|error| TemplateCreateError::internal(error.to_string()))?
             .into_iter()
             .map(|agent| agent.name.as_str().to_owned());
-        Ok(Planner::new(self.creator.as_ref(), names))
+        Ok(Planner::new(
+            self.creator.as_ref(),
+            self.worktrees.as_ref(),
+            names,
+        ))
     }
 
     fn plan_direct(
