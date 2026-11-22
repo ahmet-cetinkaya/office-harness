@@ -114,7 +114,7 @@ test.describe("task line", () => {
     await openPanel(page);
     await pushTask(page, "\u001b[31mred\nsecond line");
 
-    await expect(row(page)).toContainText("Task given 0 min ago: ␛[31mred");
+    await expect(row(page)).toContainText("Task given 0 min ago: ␛[31mred…");
     await expect(row(page)).not.toContainText("second line");
     await expect(row(page)).not.toContainText("\u001b");
   });
