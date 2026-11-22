@@ -287,9 +287,14 @@ fn a_failing_delete_deletes_no_agent_above_the_failed_one() {
         .delete_subtree(&request(family.ceo, true, Some(2)))
         .expect_err("the lead cannot be deleted");
 
-    assert!(
-        matches!(&error, HierarchyApplicationError::ConflictInput(text) if text.contains("the lead cannot be deleted"))
-    );
+    let HierarchyApplicationError::ConflictInput(text) = &error else {
+        panic!("{error:?}");
+    };
+    assert!(text.contains("the lead cannot be deleted"), "{text}");
+    // The member's kept branch is reported once, in the refusal.
+    let member_branch = format!("office-harness/{}", name_of(family.member));
+    assert!(text.contains(&member_branch), "{text}");
+    assert!(!text.contains(&name_of(family.lead)), "{text}");
     // The member went first; the root was never attempted, so it still exists.
     assert_eq!(remover.calls.order(), [family.member, family.lead]);
 }

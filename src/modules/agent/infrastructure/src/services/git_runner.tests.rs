@@ -58,6 +58,14 @@ fn the_reason_loses_url_credentials_and_is_cut() {
     );
 }
 
+#[test]
+fn the_reason_loses_control_and_bidirectional_format_characters() {
+    assert_eq!(
+        clean_reason("fatal: \u{1b}[31mbad\u{7} name \u{202E}txt.exe\u{2066}"),
+        "fatal: [31mbad name txt.exe"
+    );
+}
+
 #[cfg(unix)]
 mod with_a_stand_in_program {
     use std::fs;
@@ -97,7 +105,7 @@ mod with_a_stand_in_program {
     }
 
     fn runner_for(folder: &Path, script: &str, environment: &Environment) -> GitRunner {
-        GitRunner::new(program(folder, script), environment, folder.join("hooks"))
+        GitRunner::new(program(folder, script), environment)
     }
 
     fn environment() -> Environment {
@@ -131,21 +139,20 @@ mod with_a_stand_in_program {
             .read(temp.path(), &["a b", "; rm -rf /"])
             .expect("ran");
         let arguments: Vec<&str> = output.lines().collect();
-        let hooks = format!("core.hooksPath={}", temp.path().join("hooks").display());
         let folder = temp.path().display().to_string();
-        assert_eq!(
-            arguments,
-            vec![
-                "-c",
-                hooks.as_str(),
-                "-c",
-                "core.fsmonitor=false",
-                "-C",
-                folder.as_str(),
-                "a b",
-                "; rm -rf /"
-            ]
-        );
+        let mut expected = vec!["-c", NO_HOOKS_PATH];
+        for switch in DISABLED_HOOK_EVENTS {
+            expected.extend(["-c", switch]);
+        }
+        expected.extend([
+            "-c",
+            "core.fsmonitor=false",
+            "-C",
+            folder.as_str(),
+            "a b",
+            "; rm -rf /",
+        ]);
+        assert_eq!(arguments, expected);
     }
 
     #[test]

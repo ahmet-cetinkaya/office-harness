@@ -44,6 +44,21 @@ impl WorktreeReport {
         self.kept_branches.extend(other.kept_branches);
         self.kept_folders.extend(other.kept_folders);
     }
+
+    /// The report as one sentence, or `None` when it names nothing.
+    #[must_use]
+    pub fn describe(&self) -> Option<String> {
+        let parts: Vec<String> = [
+            ("deleted branches", &self.deleted_branches),
+            ("kept branches", &self.kept_branches),
+            ("kept folders", &self.kept_folders),
+        ]
+        .into_iter()
+        .filter(|(_, names)| !names.is_empty())
+        .map(|(label, names)| format!("{label}: {}", names.join(", ")))
+        .collect();
+        (!parts.is_empty()).then(|| parts.join("; "))
+    }
 }
 
 /// Deletes one agent, as `agent.delete` does (FR-006).

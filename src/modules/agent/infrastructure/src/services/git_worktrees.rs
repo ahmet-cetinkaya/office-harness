@@ -21,13 +21,14 @@ use crate::services::login_environment::{Environment, LoginEnvironment};
 use crate::services::program_lookup::find_program;
 
 const GIT_PROGRAM: &str = "git";
-const HOOKS_FOLDER: &str = ".no-hooks";
 const BRANCH_REF_PREFIX: &str = "refs/heads/";
 const WORKTREE_RECORD_PREFIX: &str = "worktree ";
 const BARE_RECORD: &str = "bare";
 const SHOW_UNTRACKED_FILES: &str = "status.showUntrackedFiles=normal";
 const SHORT_ID_CHARS: usize = 8;
 const REPOSITORY_HASH_CHARS: usize = 8;
+/// `<repository>-<hash>/<short agent id>` below the worktrees folder.
+const OWNED_DEPTH: usize = 2;
 const NEEDS_REPOSITORY: &str = "own worktree needs a git repository";
 const DATA_FOLDER_INSIDE: &str = "the office data folder is inside this repository";
 /// The undo of a create removes even the locked worktree of an interrupted
@@ -81,12 +82,6 @@ impl GitWorktrees {
         }
     }
 
-    /// The empty folder every git run uses as its hooks folder.
-    #[must_use]
-    pub fn hooks_folder(root: &Path) -> PathBuf {
-        root.join(HOOKS_FOLDER)
-    }
-
     fn runner(&self) -> Option<&GitRunner> {
         self.runner
             .get_or_init(|| {
@@ -97,9 +92,6 @@ impl GitWorktrees {
                         server_environment,
                     } => login_runner(&self.root, environment, server_environment),
                 }?;
-                // The hooks folder must exist, or git reads no hooks anyway
-                // but warns; an empty one is the clean state.
-                std::fs::create_dir_all(Self::hooks_folder(&self.root)).ok()?;
                 runner.is_supported().then_some(runner)
             })
             .as_ref()
@@ -122,14 +114,29 @@ impl GitWorktrees {
             .join(agent_id.chars().take(SHORT_ID_CHARS).collect::<String>())
     }
 
-    /// True when `folder` is inside the worktrees folder, read lexically so
-    /// a stored path with `..` cannot leave it.
+    /// True when `folder` has the shape `folder_for` makes: exactly a
+    /// repository folder and an agent folder below the worktrees folder,
+    /// read lexically so a stored path with `..` cannot leave it, and never
+    /// a whole repository's folder.
     fn is_owned(&self, folder: &Path) -> bool {
-        folder.starts_with(&self.root)
-            && folder != self.root
-            && folder
-                .components()
-                .all(|component| !matches!(component, Component::ParentDir))
+        folder.strip_prefix(&self.root).is_ok_and(|inside| {
+            inside.components().count() == OWNED_DEPTH
+                && inside
+                    .components()
+                    .all(|component| matches!(component, Component::Normal(_)))
+        })
+    }
+
+    /// `is_owned`, and also after links resolve: the real folder that a
+    /// delete of the whole tree would empty is still the office's own.
+    fn is_really_owned(&self, folder: &Path) -> bool {
+        let (Ok(real), Some(root)) = (folder.canonicalize(), canonical_existing(&self.root)) else {
+            return false;
+        };
+        self.is_owned(folder)
+            && real
+                .strip_prefix(&root)
+                .is_ok_and(|inside| inside.components().count() == OWNED_DEPTH)
     }
 
     /// Refuses a worktrees folder inside the repository before anything is
@@ -393,7 +400,7 @@ impl WorktreeManager for GitWorktrees {
         // A `worktree add` ended by a timeout leaves its new worktree
         // locked; only a double force removes a locked one.
         let _ = self.remove_record(worktree, DISCARD_FORCE);
-        if self.is_owned(&worktree.folder) && worktree.folder.exists() {
+        if self.is_really_owned(&worktree.folder) {
             let _ = std::fs::remove_dir_all(&worktree.folder);
             // A folder git could not remove leaves a record whose folder is
             // now gone; the forced remove clears that one record.
@@ -410,11 +417,7 @@ fn login_runner(
 ) -> Option<GitRunner> {
     let login = environment.resolve(server_environment).variables;
     let program = find_program(GIT_PROGRAM, &login, root)?;
-    Some(GitRunner::new(
-        program,
-        &login,
-        GitWorktrees::hooks_folder(root),
-    ))
+    Some(GitRunner::new(program, &login))
 }
 
 /// The main worktree of the repository that holds `top`; `None` for a bare

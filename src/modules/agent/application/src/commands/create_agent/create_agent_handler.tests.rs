@@ -315,6 +315,24 @@ fn a_failed_additions_save_discards_the_worktree() {
 }
 
 #[test]
+fn a_create_the_record_refuses_discards_the_agent_and_the_worktree() {
+    let office = Office::new();
+    let worktrees = FakeWorktrees::new(&absolute_folder("wt"));
+    office.recorder.fail_from_now();
+
+    office
+        .create_agent_with(&worktrees)
+        .handle(own_worktree_request("Ana"))
+        .expect_err("not recorded");
+
+    assert_eq!(
+        worktrees.calls().last().map(String::as_str),
+        Some("discard")
+    );
+    assert_eq!(office.agents.all().len(), 0);
+}
+
+#[test]
 fn a_worktree_that_cannot_be_made_creates_no_agent() {
     let office = Office::new();
     let worktrees = FakeWorktrees::new(&absolute_folder("wt"));

@@ -110,6 +110,28 @@ fn a_clean_confirmed_worktree_is_removed_without_force_with_its_branch() {
 }
 
 #[test]
+fn a_record_that_fails_after_the_removal_names_what_went() {
+    let office = Office::new();
+    let worktrees = FakeWorktrees::new(&std::env::temp_dir().join("wt"));
+    let agent = agent_with_worktree(&office, &worktrees, AgentStatus::Stopped);
+    office.recorder.fail_from_now();
+
+    let error = office
+        .delete_agent_with(&worktrees)
+        .handle(agent.id, &remove_confirming(&agent, "h0"))
+        .expect_err("not recorded");
+
+    let ApplicationError::Storage { message, .. } = &error else {
+        panic!("{error:?}");
+    };
+    assert!(
+        message.contains("The agent was deleted; deleted branches: office-harness/ana"),
+        "{message}"
+    );
+    assert_eq!(office.agents.all().len(), 0);
+}
+
+#[test]
 fn a_worktree_with_changes_is_removed_with_force_only_when_confirmed() {
     let office = Office::new();
     let worktrees = FakeWorktrees::new(&std::env::temp_dir().join("wt"));

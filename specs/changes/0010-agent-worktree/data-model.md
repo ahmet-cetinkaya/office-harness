@@ -24,8 +24,8 @@ Domain type: `AgentWorktree { repository, base, branch, folder }`, the field `Ag
 `<data folder>/worktrees/<repository folder name>-<8 hex of the repository path hash>/<first 8 characters of the agent id>`.
 
 - The worktrees folder must be outside the chosen repository; a data folder inside it refuses the create (A1).
-- `<data folder>/worktrees/.no-hooks` is an empty folder that every git command uses as `core.hooksPath`, so no repository hook runs (D1).
-- Every remove checks that the stored folder is inside the worktrees folder before it touches the disk.
+- Every git command sets `core.hooksPath` to the null device (`/dev/null`, `NUL` on Windows), which no one can fill, and switches off the hooks named in git's configuration (`hook.<event>.enabled=false`) for every event the office's commands can fire: `post-checkout`, `reference-transaction`, `post-index-change`, and `pre-auto-gc`. So no repository hook runs (D1).
+- Every remove checks that the stored folder is exactly `<repository>-<hash>/<id>` below the worktrees folder before it touches the disk; the undo of a create also checks that after links resolve.
 
 ## Branch name (D3)
 
@@ -33,7 +33,7 @@ The slug is the agent name lower-cased, every character outside `[a-z0-9-]` repl
 
 ## Git commands
 
-All run as `git -c core.hooksPath=<no-hooks> -c core.fsmonitor=false -C <folder> ...`, with no shell, a null stdin, and the login environment without any `GIT_*`, `GIT_ASKPASS`, or `SSH_ASKPASS` variable, plus `LC_ALL=C`, `GIT_TERMINAL_PROMPT=0`, and `GCM_INTERACTIVE=never`. Read commands add `GIT_OPTIONAL_LOCKS=0`.
+All run as `git -c core.hooksPath=<null device> -c hook.<event>.enabled=false ... -c core.fsmonitor=false -C <folder> ...`, with no shell, a null stdin, and the login environment without any `GIT_*`, `GIT_ASKPASS`, or `SSH_ASKPASS` variable, plus `LC_ALL=C`, `GIT_TERMINAL_PROMPT=0`, and `GCM_INTERACTIVE=never`. Read commands add `GIT_OPTIONAL_LOCKS=0`.
 
 | Purpose | Command | Timeout |
 |---|---|---|

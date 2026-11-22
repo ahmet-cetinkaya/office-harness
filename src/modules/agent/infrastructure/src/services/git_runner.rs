@@ -4,7 +4,7 @@
 //! shell, a null input, a clean environment, a timeout that ends the whole
 //! process tree, and bounded output.
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -13,6 +13,22 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::services::login_environment::Environment;
+
+/// `core.hooksPath` for every run: a device, never a folder that anyone can
+/// fill, so git finds no hook file there.
+#[cfg(windows)]
+pub const NO_HOOKS_PATH: &str = "core.hooksPath=NUL";
+#[cfg(not(windows))]
+pub const NO_HOOKS_PATH: &str = "core.hooksPath=/dev/null";
+/// Newer git also runs hooks named in its configuration
+/// (`hook.<name>.command`), which `core.hooksPath` does not turn off. These
+/// switch off every hook of the events the office's commands can fire.
+pub const DISABLED_HOOK_EVENTS: [&str; 4] = [
+    "hook.post-checkout.enabled=false",
+    "hook.reference-transaction.enabled=false",
+    "hook.post-index-change.enabled=false",
+    "hook.pre-auto-gc.enabled=false",
+];
 
 /// Read commands: status, rev-parse, rev-list, for-each-ref.
 pub const READ_TIMEOUT: Duration = Duration::from_secs(10);
@@ -68,7 +84,6 @@ impl GitFailure {
 pub struct GitRunner {
     program: PathBuf,
     environment: Environment,
-    hooks_folder: PathBuf,
     read_timeout: Duration,
     checkout_timeout: Duration,
 }
@@ -76,14 +91,12 @@ pub struct GitRunner {
 impl GitRunner {
     /// A runner for `program`. `login_environment` is the user's environment;
     /// every `GIT_*` and askpass variable is dropped from it, so nothing in it
-    /// can point git at another repository. `hooks_folder` becomes
-    /// `core.hooksPath`, so no repository hook runs; it should be empty.
+    /// can point git at another repository.
     #[must_use]
-    pub fn new(program: PathBuf, login_environment: &Environment, hooks_folder: PathBuf) -> Self {
+    pub fn new(program: PathBuf, login_environment: &Environment) -> Self {
         Self {
             program,
             environment: child_environment(login_environment),
-            hooks_folder,
             read_timeout: READ_TIMEOUT,
             checkout_timeout: CHECKOUT_TIMEOUT,
         }
@@ -190,12 +203,12 @@ impl GitRunner {
     }
 
     fn command(&self, folder: &Path, is_read: bool) -> Command {
-        let mut hooks = OsString::from("core.hooksPath=");
-        hooks.push(&self.hooks_folder);
         let mut command = Command::new(&self.program);
+        command.args(["-c", NO_HOOKS_PATH]);
+        for switch in DISABLED_HOOK_EVENTS {
+            command.args(["-c", switch]);
+        }
         command
-            .arg("-c")
-            .arg(hooks)
             // A configured file-system monitor is a program git would start.
             .args(["-c", "core.fsmonitor=false", "-C"])
             .arg(folder)
@@ -248,7 +261,17 @@ pub fn parse_version(output: &str) -> Option<(u32, u32)> {
 pub fn clean_reason(stderr: &str) -> String {
     let one_line = stderr.split_whitespace().collect::<Vec<_>>().join(" ");
     let cleaned = without_url_credentials(&one_line);
-    cleaned.chars().take(REASON_MAX_CHARS).collect()
+    // The repository partly controls this text; a control or bidirectional
+    // format character could change how the client shows it.
+    cleaned
+        .chars()
+        .filter(|character| !character.is_control() && !is_bidi_format(*character))
+        .take(REASON_MAX_CHARS)
+        .collect()
+}
+
+fn is_bidi_format(character: char) -> bool {
+    matches!(character, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }
 
 fn without_url_credentials(text: &str) -> String {
@@ -347,8 +370,14 @@ fn end_tree(child: &mut Child) {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     // `taskkill /T` walks the tree itself; a tree already gone makes it
-    // fail, which is fine.
-    let _ = Command::new("taskkill")
+    // fail, which is fine. A helper whose parent already exited is not in
+    // that tree and can outlive the timeout; only Unix ends the whole group.
+    // The full path, so no folder on PATH supplies another program.
+    let program = std::env::var_os("SystemRoot").map_or_else(
+        || PathBuf::from("taskkill.exe"),
+        |root| PathBuf::from(root).join("System32").join("taskkill.exe"),
+    );
+    let _ = Command::new(program)
         .args(["/PID", &child.id().to_string(), "/T", "/F"])
         .creation_flags(CREATE_NO_WINDOW)
         .output();

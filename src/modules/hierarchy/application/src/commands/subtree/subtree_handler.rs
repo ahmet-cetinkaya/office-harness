@@ -8,7 +8,7 @@ use kernel::AgentId;
 use crate::common::errors::HierarchyApplicationError;
 use crate::common::interfaces::HierarchyStore;
 use crate::common::ports::{
-    SubtreeAgentEnder, SubtreeAgentRemover, SubtreeWorktrees, WorktreeReport,
+    SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover, SubtreeWorktrees, WorktreeReport,
 };
 
 /// What `agent.stop` and `agent.delete` carry when they reach a subtree
@@ -100,7 +100,8 @@ impl SubtreeHandler {
     /// `Conflict` when the agent still has descendants and the request does
     /// not confirm their fresh count, or a worktree changed since the user
     /// confirmed it; the error of the first agent that cannot be deleted.
-    /// The agents deleted before that step stay deleted.
+    /// The agents deleted before that step stay deleted, and the error text
+    /// names what became of their worktrees, which nothing else reports.
     pub fn delete_subtree(
         &self,
         request: &SubtreeRequest,
@@ -119,11 +120,10 @@ impl SubtreeHandler {
         }
         let mut worktrees = WorktreeReport::default();
         for agent in &deleted {
-            let report = self
-                .remover
-                .delete(*agent, &request.worktrees)
-                .map_err(HierarchyApplicationError::from_delete)?;
-            worktrees.extend(report);
+            match self.remover.delete(*agent, &request.worktrees) {
+                Ok(report) => worktrees.extend(report),
+                Err(error) => return Err(partly_deleted(error, &worktrees)),
+            }
         }
         Ok(SubtreeDeletion { deleted, worktrees })
     }
@@ -189,6 +189,18 @@ impl SubtreeHandler {
         let snapshot = self.store.snapshot()?;
         Ok(descendants_of(&snapshot.rows, agent_id))
     }
+}
+
+/// A delete that failed after some members went: the failure, then what
+/// became of the deleted members' worktrees.
+fn partly_deleted(error: SubtreeActionError, done: &WorktreeReport) -> HierarchyApplicationError {
+    let Some(text) = done.describe() else {
+        return HierarchyApplicationError::from_delete(error);
+    };
+    HierarchyApplicationError::from_delete(SubtreeActionError(format!(
+        "{}. The agents deleted before this step: {text}",
+        error.0
+    )))
 }
 
 /// Deepest first, the agent itself last: when a step fails mid-run, no
