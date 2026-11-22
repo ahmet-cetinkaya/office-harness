@@ -22,6 +22,9 @@ use support::running_office::{ServingOffice, serve_office_with};
 use support::wire_client::WireClient;
 
 const QUIET_PERIOD_MS: u64 = 400;
+/// The quiet period of the status-sequence test: far above the 0.1 s before
+/// the exit and far below the 3 s pause.
+const STATUS_QUIET_PERIOD_MS: u64 = 1500;
 const SNAPSHOT_HEADER_BYTES: usize = 17;
 const MARKER_WAIT: Duration = Duration::from_secs(10);
 
@@ -37,10 +40,14 @@ impl Office {
     }
 
     async fn open_with(clis: FakeClis) -> Self {
+        Self::open_with_quiet_period(clis, QUIET_PERIOD_MS).await
+    }
+
+    async fn open_with_quiet_period(clis: FakeClis, quiet_period_ms: u64) -> Self {
         let serving = serve_office_with(
             ServerOptions::default(),
             clis.login_setup(),
-            Some(QUIET_PERIOD_MS),
+            Some(quiet_period_ms),
         )
         .await;
         Self {
@@ -708,11 +715,14 @@ async fn two_agents_run_side_by_side_without_interfering() {
 
 #[tokio::test]
 async fn the_status_follows_starting_working_waiting_and_exited_or_failed() {
-    let office = Office::open().await;
+    // The exit 0.1 s after "again" must not count as quiet, and the 3 s pause
+    // must. A loaded runner delayed that exit past a 400 ms quiet period
+    // (seen on macOS), so this office waits 1.5 s, well apart from both.
+    let office = Office::open_with_quiet_period(FakeClis::new(), STATUS_QUIET_PERIOD_MS).await;
     office
         .clis
-        .add("quiet-cli", "echo ready; sleep 2; echo again; sleep 0.1");
-    office.clis.add("failing-cli", "echo oops; sleep 2; exit 3");
+        .add("quiet-cli", "echo ready; sleep 3; echo again; sleep 0.1");
+    office.clis.add("failing-cli", "echo oops; sleep 3; exit 3");
     let mut client = office.client().await;
     let mut observer = office.client().await;
     let finishing = create_agent(&office, &mut client, "Finishing", "quiet-cli").await;

@@ -3,7 +3,7 @@
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use agent_application::common::interfaces::Clock;
-use hierarchy_application::common::ports::HoldClock;
+use hierarchy_application::common::ports::{DirectiveClock, HoldClock};
 use kernel::Timestamp;
 use notification_application::common::interfaces::NotificationClock;
 use template_application::common::interfaces::TemplateClock;
@@ -47,14 +47,28 @@ impl Default for SteadyClock {
     }
 }
 
+impl SteadyClock {
+    /// The start's wall time plus the monotonic time since, so a step of the
+    /// system clock never moves it.
+    fn steady_time(&self) -> Timestamp {
+        let elapsed = i64::try_from(self.started.elapsed().as_millis()).unwrap_or(i64::MAX);
+        Timestamp::from_unix_millis(self.started_at.as_unix_millis().saturating_add(elapsed))
+    }
+}
+
 impl HoldClock for SteadyClock {
     fn now(&self) -> Timestamp {
         wall_now()
     }
 
     fn steady_now(&self) -> Timestamp {
-        let elapsed = i64::try_from(self.started.elapsed().as_millis()).unwrap_or(i64::MAX);
-        Timestamp::from_unix_millis(self.started_at.as_unix_millis().saturating_add(elapsed))
+        self.steady_time()
+    }
+}
+
+impl DirectiveClock for SteadyClock {
+    fn steady_now(&self) -> Timestamp {
+        self.steady_time()
     }
 }
 

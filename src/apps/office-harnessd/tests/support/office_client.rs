@@ -43,7 +43,22 @@ impl Office {
     }
 
     pub async fn open_with_options(clis: FakeClis, options: ServerOptions) -> Self {
-        let serving = serve_office_with(options, clis.login_setup(), Some(QUIET_PERIOD_MS)).await;
+        Self::open_with_options_and_quiet_period(clis, options, QUIET_PERIOD_MS).await
+    }
+
+    /// An office whose agents count as waiting after `quiet_period_ms` of
+    /// silence, for a test that must not depend on the runner's scheduling.
+    pub async fn open_with_quiet_period(clis: FakeClis, quiet_period_ms: u64) -> Self {
+        Self::open_with_options_and_quiet_period(clis, ServerOptions::default(), quiet_period_ms)
+            .await
+    }
+
+    async fn open_with_options_and_quiet_period(
+        clis: FakeClis,
+        options: ServerOptions,
+        quiet_period_ms: u64,
+    ) -> Self {
+        let serving = serve_office_with(options, clis.login_setup(), Some(quiet_period_ms)).await;
         Self {
             serving,
             clis,

@@ -11,6 +11,7 @@ mod directive_bridges;
 mod hold_bridges;
 mod needs_you_bridge;
 mod notification_bridge;
+mod person_input;
 mod person_reports;
 mod rate_limit_source;
 mod role_requests;
@@ -36,6 +37,7 @@ pub use directive_bridges::{
 pub use hold_bridges::{HoldJournalBridge, HoldNotifierBridge};
 pub use needs_you_bridge::{AgentNames, NeedsYouBridge};
 pub use notification_bridge::NotificationBridge;
+pub use person_input::{PERSON_TYPING_PAUSE, PersonInput};
 pub use person_reports::PersonReportsBridge;
 pub use rate_limit_source::SettingsRateLimits;
 pub use role_requests::{AgentCreatorBridge, RoleRequestsBridge};

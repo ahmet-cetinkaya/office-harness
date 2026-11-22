@@ -16,6 +16,7 @@ use terminal_domain::services::{
 };
 use terminal_domain::value_objects::{OutputKey, TerminalSize};
 
+use super::person_input::PersonInput;
 use super::terminal_events::TerminalEvents;
 use super::terminal_launcher::{LaunchError, PrepareRequest, SpawnRequest, TerminalLauncher};
 use super::typed_input::type_after_first_output;
@@ -37,6 +38,8 @@ pub struct TerminalHostBridge {
     /// The two values that tell an agent how to call the office back: the
     /// server binary and the file that names its port.
     call_helper: CallHelper,
+    /// Told when a startup prompt waits for the person (0012 A11).
+    person_input: PersonInput,
 }
 
 /// What an agent session needs to call the office back: the store that
@@ -74,7 +77,16 @@ impl TerminalHostBridge {
             log,
             calls: agent_calls.store,
             call_helper: agent_calls.helper,
+            person_input: PersonInput::default(),
         }
+    }
+
+    /// Shares the record that a pasted startup prompt waits for the person,
+    /// so directives hold back until the person types (0012 A11).
+    #[must_use]
+    pub fn with_person_input(mut self, person_input: PersonInput) -> Self {
+        self.person_input = person_input;
+        self
     }
 }
 
@@ -149,6 +161,9 @@ impl TerminalHost for TerminalHostBridge {
         // The session's output file is named by its id.
         let output_key =
             OutputKey::parse(&request.session_id.to_string()).map_err(|e| failed(&e))?;
+        // A new session has an empty input line: nothing a person or the
+        // office typed into an earlier one holds its directives (0012).
+        self.person_input.session_started(request.agent_id);
         // Subscribed before the start, so the first output is not missed.
         let first_output = request
             .typed_input
@@ -181,6 +196,7 @@ impl TerminalHost for TerminalHostBridge {
                 request.agent_id,
                 text,
                 self.log.clone(),
+                self.person_input.clone(),
             );
         }
         Ok(())
