@@ -20,7 +20,7 @@ Archived change specs merged here:
 - [0005-office-scene](../changes/archive/0005-office-scene/SPEC.md)
 - [0007-hold-and-limits](../changes/archive/0007-hold-and-limits/SPEC.md)
 
-Changes 0001 and 0008 to 0011 merge in when they ship. 0004, 0006, 0012 to 0014 are not merged.
+Changes 0001 and 0008 to 0011 merge in when they ship. 0004, 0006, 0012 to 0014, and 0016 are not merged.
 
 ## How to read this file
 
