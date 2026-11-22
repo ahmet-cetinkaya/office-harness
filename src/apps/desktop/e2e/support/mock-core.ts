@@ -169,7 +169,8 @@ export interface NotificationSeed {
   id: string;
   agent_id: string;
   agent_name: string;
-  event: "exited" | "failed" | "waiting_for_input" | "bell" | "auto_hold";
+  event:
+    "exited" | "failed" | "waiting_for_input" | "bell" | "auto_hold" | "report";
   detail?: string | null;
   created_at: number;
   read_at: number | null;
@@ -207,6 +208,17 @@ declare global {
         detail?: string,
         firstEventAt?: number,
       ): void;
+      /**
+       * An agent sends a report, as the server records it (0015): a
+       * "report" notification (none while the agent has an unread one) and a
+       * Needs you item that holds the report text.
+       */
+      report(
+        agentId: string,
+        reportKind: string,
+        text: string,
+        firstEventAt?: number,
+      ): void;
       /** The office puts an agent on hold by itself, as a limit does (0007). */
       autoHold(agentId: string, limitName: string): void;
       calls: RecordedCall[];
@@ -234,12 +246,13 @@ export async function installMockCore(
     const terminalChannels: number[] = [];
     const calls: RecordedCall[] = [];
     const settings: RecordedSetting[] = [];
-    // The four limits of the contract, with the server's defaults (0007).
+    // The limits of the contract, with the server's defaults (0007).
     const LIMIT_DEFAULTS: Record<string, string> = {
       limit_directives_per_agent: "10",
       limit_directives_per_target: "3",
       limit_creates_per_agent: "5",
       limit_lifecycle_per_agent: "10",
+      limit_reports_per_agent: "5",
     };
     const LIMIT_INVALID =
       "invalid: a limit is a whole number of at least 1 and at most 1000";
@@ -403,9 +416,47 @@ export async function installMockCore(
           first_event_at: firstEventAt,
           latest_at: Date.now(),
           origin_notification_id: row?.id ?? null,
+          report: null,
         });
       } else {
         Object.assign(known, { kind, detail, latest_at: Date.now() });
+      }
+      pushNeedsYouChanged();
+    };
+    const recordReport = (
+      agent: Agent,
+      reportKind: string,
+      text: string,
+      firstEventAt: number,
+    ) => {
+      const hasUnreadReport = office.notifications.some(
+        (row) =>
+          row.agent_id === agent.id &&
+          row.event === "report" &&
+          row.read_at === null,
+      );
+      const row = hasUnreadReport
+        ? null
+        : createNotification(agent, "report", reportKind);
+      const report = { kind: reportKind, text, at: Date.now() };
+      const known = office.needsYou.find((item) => item.agent_id === agent.id);
+      if (known === undefined) {
+        office.needsYou.push({
+          agent_id: agent.id,
+          kind: "report",
+          detail: reportKind,
+          first_event_at: firstEventAt,
+          latest_at: report.at,
+          origin_notification_id: row?.id ?? null,
+          report,
+        });
+      } else {
+        Object.assign(known, {
+          kind: "report",
+          detail: reportKind,
+          latest_at: report.at,
+          report,
+        });
       }
       pushNeedsYouChanged();
     };
@@ -1770,6 +1821,19 @@ export async function installMockCore(
             findAgent(agentId),
             kind,
             detail ?? null,
+            firstEventAt ?? Date.now(),
+          );
+        },
+        report: (
+          agentId: string,
+          reportKind: string,
+          text: string,
+          firstEventAt?: number,
+        ) => {
+          recordReport(
+            findAgent(agentId),
+            reportKind,
+            text,
             firstEventAt ?? Date.now(),
           );
         },

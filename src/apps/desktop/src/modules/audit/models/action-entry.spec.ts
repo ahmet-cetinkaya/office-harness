@@ -39,6 +39,7 @@ describe("action entries", () => {
     expect(actionText("new_task")).toBe("Started a new task");
     expect(actionText("hold")).toBe("Put on hold");
     expect(actionText("release")).toBe("Released from hold");
+    expect(actionText("report")).toBe("Sent a report");
     expect(actorText("office")).toBe("the office");
     expect(actorText("user")).toBe("user");
   });

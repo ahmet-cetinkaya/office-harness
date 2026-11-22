@@ -20,8 +20,21 @@
   const COLLISION_TEXT =
     "The jump shortcut is off because the focus shortcut uses Ctrl+Shift+F11. Change the focus_shortcut setting (see the README) and reopen the app to turn the jump on.";
 
+  const WHOLE_REPORT_TEXT = "Show the whole report";
+  const LESS_REPORT_TEXT = "Show less";
+
+  let expandedAgentIds = $state<string[]>([]);
   let failure = $state<DismissFailure>(null);
   let heading = $state<HTMLHeadingElement | null>(null);
+
+  const reportId = (agentId: string) => `needs-you-report-${agentId}`;
+  const isExpanded = (agentId: string) => expandedAgentIds.includes(agentId);
+
+  function toggleReport(agentId: string): void {
+    expandedAgentIds = isExpanded(agentId)
+      ? expandedAgentIds.filter((known) => known !== agentId)
+      : [...expandedAgentIds, agentId];
+  }
 
   // The dismissed row's button is gone, so focus would fall to the page.
   async function dismiss(agentId: string): Promise<void> {
@@ -58,6 +71,9 @@
           <div
             role="group"
             aria-label={row.label}
+            aria-describedby={row.reportText === null
+              ? undefined
+              : reportId(row.agentId)}
             class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-neutral-400 px-3 py-2 text-sm text-neutral-900"
           >
             <span class="flex flex-col">
@@ -66,6 +82,28 @@
                 <span class="text-neutral-700">project {row.projectName}</span>
               {/if}
               <span>{row.event}</span>
+              {#if row.reportText !== null}
+                <span
+                  id={reportId(row.agentId)}
+                  class={[
+                    "break-words whitespace-pre-line",
+                    !isExpanded(row.agentId) && "line-clamp-3",
+                  ]}>{row.reportText}</span
+                >
+                {#if row.isReportLong}
+                  <button
+                    type="button"
+                    aria-expanded={isExpanded(row.agentId)}
+                    aria-controls={reportId(row.agentId)}
+                    onclick={() => toggleReport(row.agentId)}
+                    class="min-h-11 self-start rounded-md px-2 text-sm font-medium text-blue-700 underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+                  >
+                    {isExpanded(row.agentId)
+                      ? LESS_REPORT_TEXT
+                      : WHOLE_REPORT_TEXT}
+                  </button>
+                {/if}
+              {/if}
               <span class="text-neutral-700">{row.wait}</span>
             </span>
             <Button

@@ -60,6 +60,15 @@ describe("notification rows", () => {
     );
   });
 
+  test("a report names its kind from the detail (0015)", () => {
+    expect(announcementText(row({ event: "report", detail: "blocked" }))).toBe(
+      "Ada sent a report: blocked",
+    );
+    expect(announcementText(row({ event: "report" }))).toBe(
+      "Ada sent a report",
+    );
+  });
+
   test("a row reads as one sentence in its reading order (D11)", () => {
     expect(rowText(row(), true)).toBe("Ada, exited");
     expect(rowText(row({ event: "bell" }), true)).toBe("Ada, rang the bell");

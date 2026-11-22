@@ -9,7 +9,7 @@ import {
   readHoldState,
   type Hold,
 } from "./hold";
-import { LIMIT_INVALID_MESSAGE, limitProblem } from "./limits";
+import { LIMIT_INVALID_MESSAGE, LIMIT_SETTINGS, limitProblem } from "./limits";
 
 const ada: Hold = { agent_id: "ada", set_by: "user", since: 1 };
 const bo: Hold = {
@@ -88,6 +88,16 @@ describe("hold announcements", () => {
   test("a state that changed nothing announces nothing", () => {
     const held = { office: OFFICE, agents: [ada] };
     expect(announcementOfChange(held, held, nameOf)).toBeNull();
+  });
+});
+
+describe("limit rows", () => {
+  test("the reports limit is listed last, defaulting to 5 (0015)", () => {
+    expect(LIMIT_SETTINGS.at(-1)).toEqual({
+      key: "limit_reports_per_agent",
+      label: "Reports sent by one agent",
+      defaultValue: 5,
+    });
   });
 });
 
