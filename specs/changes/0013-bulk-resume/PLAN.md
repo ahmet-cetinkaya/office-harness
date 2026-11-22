@@ -14,6 +14,7 @@ After a server restart, the panel header offers "Resume interrupted (N)". A dial
 - `agent.resume` in the agent module: one atomic "still interrupted? then continue or start new" step, and the fallback step "the refused session is still the last one and ended by itself? then start new".
 - `resume.plan`, `resume.start`, and the `resume.result` event in a new host gateway, which orders the agents, watches each start, and runs the fallback and the hold.
 - `HoldService::hold_by_office` and a `resume_hold` notification event.
+- An optional `detail` on action record entries, so each new session that replaces a continue keeps its reason in the agent's record (FR-007).
 - The header action, the dialog, and its results in the desktop app.
 
 **Why this approach:**
@@ -71,6 +72,9 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - **D6 Office hold for a failed resume.** `HoldService::hold_by_office(agent, reason) -> Result<Option<Hold>, _>`: under the lock, `None` when the agent is already held (A9); otherwise it stores `Hold { set_by: Office, reason: Some(reason) }`, journals `held`, and calls the new `HoldNotifier::resume_held(agent, reason)`. `HoldNotifierBridge::resume_held` records a `resume_hold` notification with the reason as detail and publishes `hold.changed`. A store failure gives final `held` with "the hold could not be stored: ..." and the storage alert (edge case).
 - **D7 Notification event `resume_hold`.** Added to `NotificationEvent`, `AttentionKind`, the Needs-you kinds that wait for the user, and the hold-release clear reason, all next to `auto_hold`. Desktop text: "was put on hold after its resume failed: <detail>". The notification table stores the event as text, so no migration is needed (checked in T2).
 - **D8 Event `resume.result`.** `{type, agent_id, result, reason?, is_final}` with `result` one of `checking`, `continued`, `new_session`, `held`, `skipped`. `checking` carries what was started (`continued` true or false). The event goes to every user client. The dialog shows the results of its own request and ignores ids that it did not send.
+- **D10 Reason in the action record** (FR-004, FR-007). Migration `0003_detail.sql` in `M/audit/infrastructure/src/persistence/migrations/` adds a nullable `detail TEXT` column to `audit_actions` (forward only, as the earlier audit migrations). `AgentActionEntry` gains `detail: Option<String>`. `ActionJournal::record_detailed(agent, action, failure, detail)` writes it, and `record` passes `None`. The audit presentation writes `detail` (null when absent) into entries and `action.recorded`.
+  - `ResumeAgentHandler` builds the text itself from the sessions, so the host passes no free text. A new session that the CLI's lack of support caused reads "new session: <the continue refusal text>". A fallback reads "new session: the CLI ended <n> s after continuing the session of <start time>, exit code <c>", or "... did not start: <failure>".
+  - Desktop: `action-record.svelte` shows the detail after the result text.
 - **D9 Desktop.**
   - `D/modules/resume/`: service (`resume.plan`, `resume.start`), model (result text), and a controller that keeps the results from `resume.result`.
   - Header button "Resume interrupted (N)" from the agent list, shown only for N > 0 (FR-001).
@@ -84,10 +88,15 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 
 ## Tasks
 
-### T1 Agent module: `agent.resume` (D1)
+### T1 Agent module and record detail: `agent.resume` (D1, D10)
 
 - `ResumeAgentHandler` with `resume(agent_id)` and `fall_back(agent_id, after_session)`; presentation parsing for `agent_id` and the optional `after_session`; wiring in `H/bootstrap/agent_services.rs`; `ORDERED_REQUESTS` and `STARTING_REQUESTS`.
-- **Acceptance:** unit tests prove each D1 branch: continue, new session when the CLI cannot continue, `conflict` when not interrupted, fallback only after an end by itself, `conflict` after a stop or a newer session, and the actor of the record. `cargo test -p agent-application -p agent-presentation` passes.
+- The audit `detail` column, entry field, journal method, and JSON field (D10).
+- **Acceptance:**
+  - Unit tests prove each D1 branch: continue, new session when the CLI cannot continue, `conflict` when not interrupted, fallback only after an end by itself, `conflict` after a stop or a newer session, and the actor of the record.
+  - Each new session of D1 has its D10 detail; a continue and every other action have none.
+  - The migration test counts are updated.
+  - `cargo test -p agent-application -p agent-presentation -p audit-infrastructure -p audit-presentation` passes.
 
 ### T2 Office hold and `resume_hold` notification (D6, D7)
 
@@ -109,10 +118,10 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 
 ### T4 Desktop (D9) — depends on T3 for the contract only
 
-- Module, header button, dialog, wiring in `panel-view.svelte`, and the mock-core requests and event.
+- Module, header button, dialog, wiring in `panel-view.svelte`, the action record detail (D10), and the mock-core requests and event.
 - **Acceptance:**
   - Vitest covers the model and the controller.
-  - Playwright `e2e/resume.spec.ts` covers: the button count and its absence; uncheck and confirm; live results, including `new_session` and `held`; Confirm disabled with nothing checked; keyboard only, with Escape; an axe scan of the dialog with no violation.
+  - Playwright `e2e/resume.spec.ts` covers: the button count and its absence; uncheck and confirm; live results, including `new_session` and `held`; the reason in the agent's action record; Confirm disabled with nothing checked; keyboard only, with Escape; an axe scan of the dialog with no violation.
   - `bun run check`, `lint`, `format:check`, `test`, and the Playwright suite pass.
 
 ### T5 Docs and evidence — depends on T1 to T4

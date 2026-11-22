@@ -17,6 +17,7 @@ When the background server stops while agents run (a crash, a logout, a machine 
 - This change depends on 0001 (statuses, sessions, continuing a session, the action record), 0002 (the tree of CEO, leads, and members), 0003 (notifications), and 0007 (the agent hold and the office as an actor).
 - The office still starts no agent by itself: the user opens the action and confirms it. 0001/FR-004 and the 0001 out-of-scope entry "Automatic restart of interrupted agents" stay as they are.
 - Research R1 (`research.md`) killed the server with SIGKILL while agents ran. A CLI that ends on the terminal hang-up was gone; a CLI that ignores the hang-up kept running as an orphan, and the next server start did not see it. Continuing a session after the restart worked. Sweeping such orphans is out of scope here (see Out of scope).
+- The idea comes from an MIT-licensed reference office app; the pull request names it. No code is taken from it; this spec describes behavior only.
 - The requirements below describe behavior only. The plan decides how to build them.
 
 ## Terms
@@ -57,12 +58,12 @@ When the CLI ends at once instead of continuing the session, the office starts t
 
 **Why this priority:** without it, an agent whose CLI refuses the old session stays dead after the bulk action, and the user must find it among many. It ships with US1.
 
-**Independent test:** give one agent a CLI that ends 1 second after it is asked to continue a session. Resume it with the bulk action. The office starts it once in a new session, the result says that the CLI ended 1 second after the continue, and the action record shows that start with the office as actor.
+**Independent test:** give one agent a CLI that ends 1 second after it is asked to continue a session. Resume it with the bulk action. The office starts it once in a new session, the result says that the CLI ended 1 second after the continue, and the agent's action record shows that start with the office as actor and the same reason.
 
 **Scenarios:**
 
-1. Given the office continued an agent's last session, When that session ends by itself within the check period, Then the office starts the agent once in a new session and the result says why.
-2. Given the agent's CLI cannot continue its last session (the CLI does not support it, or the office does not know the CLI's session id), When the office resumes it, Then it starts a new session at once and the result says why.
+1. Given the office continued an agent's last session, When that session ends by itself within the check period, Then the office starts the agent once in a new session, and both the result and the agent's action record say why.
+2. Given the agent's CLI cannot continue its last session (the CLI does not support it, or the office does not know the CLI's session id), When the office resumes it, Then it starts a new session at once, and both the result and the agent's action record say why.
 3. Given the continued session still runs at the end of the check period, When the period ends, Then the result is "continued" and the office does nothing more.
 4. Given the user stops the agent, starts a new task, or continues a session within the check period, When the session ends, Then the office does not start the agent again and the result stays as it was.
 
@@ -86,9 +87,10 @@ When the new session also ends at once, the office stops trying, puts the agent 
 - **FR-001** (US1): WHILE at least one agent of the office is `interrupted`, THE SYSTEM SHALL offer a "Resume interrupted" action that shows the number of interrupted agents.
 - **FR-002** (US1, US3): WHEN the user opens the "Resume interrupted" action, THE SYSTEM SHALL list every interrupted agent in start order, with what will happen to it (continue its last session, shown with that session's start time, or start a new session, shown with the reason) and with whether it is on hold, SHALL check every listed agent that is not on hold, and SHALL start nothing before the user confirms.
 - **FR-003** (US1, US2): WHEN the user confirms, THE SYSTEM SHALL, for each checked agent that is still `interrupted`, continue its last session where the agent's CLI supports continuing it (0001/FR-025) and otherwise start a new session (0001/FR-024), SHALL start every member before its lead and every lead before the CEO, and SHALL skip each checked agent that is no longer `interrupted`, with that reason.
-- **FR-004** (US2): IF a session that this action continued ends by itself within the check period, or does not start, THEN THE SYSTEM SHALL start the agent once in a new session and SHALL record that start in the action record with the office as actor.
+- **FR-004** (US2): IF a session that this action continued ends by itself within the check period, or does not start, THEN THE SYSTEM SHALL start the agent once in a new session and SHALL record that start in the agent's action record with the office as actor and the reason (which session the CLI refused, and how).
 - **FR-005** (US3): IF a new session that this action started ends by itself within the check period, or does not start, THEN THE SYSTEM SHALL NOT start the agent again, SHALL put the agent on hold (0007/FR-003) with the office as actor and the reason, and SHALL notify the user once, naming the agent.
 - **FR-006** (US1, US2, US3): THE SYSTEM SHALL show the result of each checked agent as text as soon as it is known: checking (during the check period), continued, new session (with the reason), on hold (with the reason), or skipped (with the reason).
+- **FR-007** (US2): WHEN this action starts a new session instead of continuing the last one, for any reason, THE SYSTEM SHALL keep the reason with that start's entry in the agent's action record, so the user sees in the agent's details that the CLI's earlier context was not carried over.
 
 ### PRESERVED
 
@@ -107,6 +109,7 @@ When the new session also ends at once, the office stops trying, puts the agent 
 3. The user unchecks agents to leave out and confirms.
 4. The dialog shows each checked agent's result and updates it: checking, then continued, new session with the reason, on hold with the reason, or skipped with the reason.
 5. The user closes the dialog at any time. The office finishes the check periods without it, and the action record and the hold list keep what happened.
+6. In an agent's details, the action record shows each new session that this action started instead of a continue, with its actor and its reason.
 
 **Visible states:**
 
@@ -119,6 +122,7 @@ When the new session also ends at once, the office stops trying, puts the agent 
 | Nothing checked | Confirm is unavailable, with the text that at least one agent must be checked. | Edge cases |
 | Results | Each checked agent with its result text, updated live. | FR-006 |
 | Request failed | The reason in the dialog; nothing started. | Edge cases |
+| Agent details after a new session | The action record entry of that start, with its actor (user or office) and the reason. | FR-004, FR-007 |
 
 **Design:** no fixed design exists. The plan must not add visuals beyond this flow without a design that the owner approves.
 
@@ -134,11 +138,12 @@ When the new session also ends at once, the office stops trying, puts the agent 
 |---|---|---|---|
 | Resume result | What the action did to one checked agent. | agent, result (checking, continued, new session, on hold, skipped), reason | Shown while the dialog is open; not stored. What happened stays in the action record and the hold list. |
 | Hold (extends 0007) | An agent hold. | reason, which can now also be a failed resume | Set by the office (FR-005). |
+| Action record entry (extends 0001) | One recorded action. | reason (optional): why a start began a new session instead of a continue | Belongs to the agent it names (0001/FR-011). |
 
 ## Success criteria
 
 - **SC-001:** With 30 interrupted agents, the user resumes all of them with 2 activations (open the action, confirm), and 100% of them have a started session within 60 seconds of the confirm.
-- **SC-002:** With a CLI that ends within 1 second of every continue, 100% of the checked agents run a new session within 30 seconds of the confirm, and each has exactly 1 action record entry for that start with the office as actor.
+- **SC-002:** With a CLI that ends within 1 second of every continue, 100% of the checked agents run a new session within 30 seconds of the confirm, and each has exactly 1 action record entry for that start with the office as actor and a reason.
 - **SC-003:** An agent whose CLI ends within 1 second of every start is started at most 2 times by one bulk action, is on hold after it, and causes exactly 1 notification.
 - **SC-004:** After 10 server starts that follow a SIGKILL of the server, 0 agents start without an action of the user.
 - **SC-005:** In a tree of 1 CEO, 2 leads, and 4 members, all interrupted, 100% of the members start before their lead and both leads start before the CEO.
@@ -175,7 +180,7 @@ When the new session also ends at once, the office stops trying, puts the agent 
 - **A8:** The fallback of FR-004 happens at most once per agent per action. The office does not try a second continue or a second new session.
 - **A9:** The hold of FR-005 uses the 0007 agent hold, so it also refuses agent-made actions of the agent's descendants (0007 A2), and the user releases it as any other hold (0007 A6). If the agent is already on hold, no second hold and no second notification are made.
 - **A10:** Only the user's desktop app offers the action. Agents cannot start it; it is outside the agent call surface of 0002.
-- **A11:** The result list is not stored. When the dialog closes, the action record, the agent statuses, and the hold list keep what happened.
+- **A11:** The result list is not stored. When the dialog closes, the action record (with the reason of each new session, FR-007), the agent statuses, and the hold list (with the reason of each hold) keep what happened.
 
 ## Out of scope
 

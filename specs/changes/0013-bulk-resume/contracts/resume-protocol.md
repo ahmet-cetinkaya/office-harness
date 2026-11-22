@@ -64,6 +64,6 @@ Every user client receives it.
 
 ## Changed shapes
 
-- Action entries: a fallback start is `start` with actor `office`.
+- Action entries (`agent.actions`, `office.actions`, `action.recorded`): a new field `detail`, a string or null. It is set only on a `start` that began a new session instead of a continue (spec FR-007), with the reason. A fallback start is `start` with actor `office`; a new session started at once because the CLI cannot continue is `start` with actor `user`.
 - Holds: `set_by: "office"` with a `reason` can now also come from a failed resume.
 - `notification` entries, `notification.created`, and Needs-you items: `event` and `kind` may be `"resume_hold"`, with the reason as `detail`. Releasing the hold clears the Needs-you item, as for `auto_hold`.
