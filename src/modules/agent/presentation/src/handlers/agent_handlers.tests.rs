@@ -774,12 +774,17 @@ fn a_resume_of_an_unknown_agent_is_not_found() {
     assert_eq!(failure_of(&handled).0, "not_found");
 }
 
-fn agent_with_folder(agents: &FakeAgents, folder: &str) -> AgentId {
+/// An absolute folder on every platform; nothing is created there.
+fn work_folder() -> std::path::PathBuf {
+    std::env::temp_dir().join("work")
+}
+
+fn agent_in_work_folder(agents: &FakeAgents) -> AgentId {
     let agent = Agent::new(
         AgentId::generate(),
         DisplayName::parse("agent name", "Ana").expect("name"),
         AgentCommand::parse("claude").expect("command"),
-        Some(folder.into()),
+        Some(work_folder()),
         None,
         MachineId::generate(),
         Timestamp::from_unix_millis(0),
@@ -793,7 +798,7 @@ fn agent_with_folder(agents: &FakeAgents, folder: &str) -> AgentId {
 #[test]
 fn a_files_request_answers_with_the_contract_fields_and_publishes_nothing() {
     let (agents, handlers) = single_agent_office();
-    let agent_id = agent_with_folder(&agents, "/work");
+    let agent_id = agent_in_work_folder(&agents);
 
     let handled = handlers.handle(&request(
         "agent.files.list",
@@ -803,7 +808,7 @@ fn a_files_request_answers_with_the_contract_fields_and_publishes_nothing() {
     let Response::Success { result, .. } = &handled.response else {
         panic!("expected success, got {:?}", handled.response);
     };
-    assert_eq!(result["root"], "/work");
+    assert_eq!(result["root"], work_folder().display().to_string());
     assert_eq!(result["path"], "src");
     assert_eq!(result["entries"], json!([]));
     assert_eq!(result["read_at"], 5);
@@ -813,7 +818,7 @@ fn a_files_request_answers_with_the_contract_fields_and_publishes_nothing() {
 #[test]
 fn a_files_request_names_the_field_at_fault() {
     let (agents, handlers) = single_agent_office();
-    let agent_id = agent_with_folder(&agents, "/work");
+    let agent_id = agent_in_work_folder(&agents);
     let id = agent_id.as_uuid_text();
 
     let cases = [
@@ -853,7 +858,7 @@ fn a_files_request_names_the_field_at_fault() {
 #[test]
 fn a_files_request_maps_the_failures_to_the_contract_codes() {
     let (agents, handlers) = single_agent_office();
-    let agent_id = agent_with_folder(&agents, "/work");
+    let agent_id = agent_in_work_folder(&agents);
     let id = agent_id.as_uuid_text();
 
     let unknown = handlers.handle(&request(
