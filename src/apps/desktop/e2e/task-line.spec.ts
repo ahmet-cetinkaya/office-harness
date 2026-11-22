@@ -14,6 +14,7 @@ const TOO_LONG_LENGTH = 8193;
 const TASK_CHANGED_NOTICE =
   "The task changed while you were editing. Saving replaces the new text with yours.";
 const TASK_AGE_TICK_MS = 60_000;
+const SLOW_SAVE_MS = 1_000;
 
 function agent(overrides: Partial<Agent> = {}): Agent {
   return {
@@ -31,10 +32,14 @@ function agent(overrides: Partial<Agent> = {}): Agent {
   };
 }
 
-async function openPanel(page: Page, agents: Agent[] = [agent()]) {
+async function openPanel(
+  page: Page,
+  agents: Agent[] = [agent()],
+  setTaskDelayMs?: number,
+) {
   await installMockCore(page, {
     initialState: { status: "connected" },
-    office: { agents },
+    office: { agents, setTaskDelayMs },
   });
   await page.goto("/");
   await expect(page.getByRole("button", { name: /^Ada/ })).toBeVisible();
@@ -183,6 +188,27 @@ test.describe("task line", () => {
     await expect(page.getByText(TASK_CHANGED_NOTICE)).toBeVisible();
     await expect(page.getByLabel("Task text")).toHaveValue("My draft");
     await expectNoSeriousViolations(page);
+  });
+
+  test("saving the user's own text shows no changed notice while the answer is slow", async ({
+    page,
+  }) => {
+    await openPanel(page, [agent({ task: task("Old task") })], SLOW_SAVE_MS);
+    await openDetails(page);
+
+    await pressByKeyboard(page, "Edit task");
+    await page.getByLabel("Task text").fill("My own text");
+    await pressByKeyboard(page, "Save task");
+
+    // The task event arrives within milliseconds; the save answers only after
+    // SLOW_SAVE_MS, so the editor is open with the new text in the state.
+    await page.waitForTimeout(SLOW_SAVE_MS / 2);
+    await expect(page.getByLabel("Task text")).toBeVisible();
+    // A one-shot count: toHaveCount(0) would retry until the save answers.
+    expect(await page.getByText(TASK_CHANGED_NOTICE).count()).toBe(0);
+
+    await expect(page.getByLabel("Task text")).toBeHidden();
+    await expect(page.getByText(TASK_CHANGED_NOTICE)).toHaveCount(0);
   });
 
   test("8,193 characters show the refusal and keep the editor open", async ({
