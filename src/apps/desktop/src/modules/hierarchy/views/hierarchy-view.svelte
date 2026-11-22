@@ -34,6 +34,8 @@
     onselect: (agentId: string) => void;
     /** Shown while the office has no tree content at all. */
     empty?: Snippet;
+    /** Opens the create-from-template dialog (0009). Absent: no button. */
+    oncreatefromtemplate?: () => void;
   }
 
   let {
@@ -43,6 +45,7 @@
     selectedAgentId,
     onselect,
     empty,
+    oncreatefromtemplate,
   }: Props = $props();
 
   // The controller's snapshot is a plain value, so the view subscribes and
@@ -454,6 +457,16 @@
   });
 </script>
 
+<!-- It comes first, so Shift+Tab from the tree still lands on the last role
+  button. -->
+{#snippet fromTemplateButton()}
+  {#if oncreatefromtemplate !== undefined}
+    <Button variant="secondary" onclick={oncreatefromtemplate}>
+      Create from template
+    </Button>
+  {/if}
+{/snippet}
+
 <section aria-labelledby="hierarchy-heading" class="flex flex-col gap-3">
   <h2
     id="hierarchy-heading"
@@ -491,6 +504,7 @@
       </p>
     {/if}
     <div class="flex flex-wrap gap-3">
+      {@render fromTemplateButton()}
       {#each allowedRolesAt({ kind: "office" }, snapshot.tree) as role (role)}
         <Button onclick={() => openCreate(role)}>
           Create {roleKindText(role)}
@@ -499,6 +513,7 @@
     </div>
   {:else}
     <div class="flex flex-wrap gap-3">
+      {@render fromTemplateButton()}
       {#each allowedRolesAt(placeOf(snapshot.tree, selectedAgentId), snapshot.tree) as role (role)}
         <Button
           variant={role === "ceo" ? "primary" : "secondary"}

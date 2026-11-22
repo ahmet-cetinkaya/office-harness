@@ -14,13 +14,14 @@ import {
 } from "../../agent";
 import { createHoldController } from "../../hold";
 import { createNeedsYouController } from "../../needs-you";
+import { createTemplateController } from "../../template";
 
 export type OpenView = "panel" | "scene";
 
 /**
  * The panel's stores over one client: the office, the project choice, the
  * notification list with its OS notifications, the holds (0007), Needs you
- * (0008), and the last view (0003).
+ * (0008), the templates (0009), and the last view (0003).
  */
 export function createPanelStore(client: CoreClient) {
   const office = createOfficeStore(client, () => void notifications.load());
@@ -34,6 +35,7 @@ export function createPanelStore(client: CoreClient) {
     needsYou.hideOrigin,
     needsYou.showOrigin,
   );
+  const templates = createTemplateController(client);
   const hold = createHoldController(
     client,
     (agentId) =>
@@ -165,6 +167,7 @@ export function createPanelStore(client: CoreClient) {
     notifications,
     needsYou,
     hold,
+    templates,
     lastView,
     client,
   };

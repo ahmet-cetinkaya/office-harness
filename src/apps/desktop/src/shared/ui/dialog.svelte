@@ -44,7 +44,7 @@
   bind:this={dialog}
   aria-labelledby={titleId}
   oncancel={closeOnEscape}
-  class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-md border border-neutral-400 bg-white p-6 text-neutral-900 backdrop:bg-neutral-900/60"
+  class="m-auto max-h-[calc(100dvh-2rem)] w-[min(32rem,calc(100vw-2rem))] overflow-y-auto rounded-md border border-neutral-400 bg-white p-6 text-neutral-900 backdrop:bg-neutral-900/60"
 >
   <div class="flex flex-col gap-4">
     <h2 id={titleId} class="text-xl font-semibold">{title}</h2>
