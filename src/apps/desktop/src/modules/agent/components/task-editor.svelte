@@ -15,18 +15,32 @@
     onsave: (text: string) => Promise<FailureText>;
   }
 
+  const TASK_CHANGED_NOTICE =
+    "The task changed while you were editing. Saving replaces the new text with yours.";
+
   let { task, isBusy, onsave }: Props = $props();
 
   let isEditing = $state(false);
   let draft = $state("");
+  // The text the draft started from; a different text arriving while the
+  // editor is open (a directive, or a clear) is the user's to know about.
+  let openedText = $state<string | null>(null);
+  // The server publishes the new task before it answers the save, so the
+  // user's own text arrives while the editor is still open.
+  let isSaving = $state(false);
   let failure = $state<FailureText>(null);
   let editor = $state<HTMLElement | null>(null);
   let editButton = $state<HTMLButtonElement | null>(null);
 
   // No maxlength on the field: it counts UTF-16 units, the server counts
   // Unicode scalar values, so the server's refusal is the one rule.
+  const changedWhileEditing = $derived(
+    isEditing && !isSaving && (task?.text ?? null) !== openedText,
+  );
+
   async function startEditing(): Promise<void> {
     draft = task?.text ?? "";
+    openedText = task?.text ?? null;
     failure = null;
     isEditing = true;
     await tick();
@@ -41,7 +55,12 @@
 
   async function save(event: SubmitEvent): Promise<void> {
     event.preventDefault();
-    failure = await onsave(draft);
+    isSaving = true;
+    try {
+      failure = await onsave(draft);
+    } finally {
+      isSaving = false;
+    }
     if (failure === null) await stopEditing();
   }
 
@@ -66,6 +85,9 @@
         isMultiline
         bind:value={draft}
       />
+      <p role="status" class="text-sm text-neutral-900">
+        {#if changedWhileEditing}{TASK_CHANGED_NOTICE}{/if}
+      </p>
       <div class="flex flex-wrap gap-3">
         <Button type="submit" disabled={isBusy}>Save task</Button>
         <Button variant="secondary" onclick={stopEditing}>Cancel</Button>
