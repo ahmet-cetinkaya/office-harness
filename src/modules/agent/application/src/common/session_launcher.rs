@@ -6,7 +6,7 @@ use std::sync::Arc;
 use agent_domain::entities::{Agent, Session};
 use agent_domain::enums::StatusEvent;
 use agent_domain::errors::AgentError;
-use agent_domain::value_objects::{ExitResult, OfficeAdditions, SessionId};
+use agent_domain::value_objects::{AgentWorktree, ExitResult, OfficeAdditions, SessionId};
 
 use crate::common::command_line::split_command;
 use crate::common::continuation::adapter_of;
@@ -380,7 +380,7 @@ impl SessionLauncher {
 
     fn existing_working_folder(&self, agent: &Agent) -> Result<PathBuf, ApplicationError> {
         if let Some(worktree) = &agent.worktree {
-            require_linked_worktree(&worktree.folder)?;
+            require_linked_worktree(worktree)?;
         }
         let (field, folder) = match (&agent.working_folder, agent.project_id) {
             (Some(folder), _) => ("working folder", folder.clone()),
@@ -405,14 +405,14 @@ impl SessionLauncher {
 }
 
 /// Refuses the start of an agent whose worktree is gone or no longer linked
-/// to its repository (0010 FR-008).
-fn require_linked_worktree(folder: &Path) -> Result<(), ApplicationError> {
-    if is_linked_worktree(folder) {
+/// to its own repository (0010 FR-008).
+fn require_linked_worktree(worktree: &AgentWorktree) -> Result<(), ApplicationError> {
+    if is_linked_worktree(&worktree.folder, &worktree.repository) {
         return Ok(());
     }
     Err(ApplicationError::Invalid(format!(
         "the worktree folder is missing or broken: {}",
-        folder.display()
+        worktree.folder.display()
     )))
 }
 

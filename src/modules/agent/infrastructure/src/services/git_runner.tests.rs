@@ -104,6 +104,36 @@ mod with_a_stand_in_program {
         file
     }
 
+    const END_DEADLINE: Duration = Duration::from_secs(5);
+    const END_POLL: Duration = Duration::from_millis(10);
+
+    /// True once `pid` is gone or a zombie, polled up to a deadline: a killed
+    /// child whose parent already exited waits for the system to reap it,
+    /// and until then a signal check still finds it.
+    fn has_ended(pid: i32) -> bool {
+        let deadline = Instant::now() + END_DEADLINE;
+        while !is_gone_or_zombie(pid) {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            thread::sleep(END_POLL);
+        }
+        true
+    }
+
+    /// Linux shows a zombie's state in `/proc`; elsewhere a zombie counts as
+    /// running until it is reaped, which the polling waits for.
+    fn is_gone_or_zombie(pid: i32) -> bool {
+        const ZOMBIE_STATE: char = 'Z';
+        if nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_err() {
+            return true;
+        }
+        fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+            stat.rsplit_once(") ")
+                .is_some_and(|(_, fields)| fields.starts_with(ZOMBIE_STATE))
+        })
+    }
+
     fn runner_for(folder: &Path, script: &str, environment: &Environment) -> GitRunner {
         GitRunner::new(program(folder, script), environment)
     }
@@ -127,6 +157,7 @@ mod with_a_stand_in_program {
         assert!(!output.contains("GIT_DIR="), "{output}");
         assert!(!output.contains("GIT_WORK_TREE="), "{output}");
         assert!(output.contains("GIT_OPTIONAL_LOCKS=0"), "{output}");
+        assert!(output.contains("GIT_NO_LAZY_FETCH=1"), "{output}");
         let output = runner.write(temp.path(), &["x"]).expect("ran");
         assert!(!output.contains("GIT_OPTIONAL_LOCKS"), "{output}");
     }
@@ -194,18 +225,52 @@ mod with_a_stand_in_program {
             .trim()
             .parse()
             .expect("number");
-        thread::sleep(Duration::from_millis(100));
-        let alive = nix::sys::signal::kill(nix::unistd::Pid::from_raw(child), None).is_ok();
-        assert!(!alive, "the child {child} still runs");
+        assert!(has_ended(child), "the child {child} still runs");
     }
 
     #[test]
-    fn a_child_that_keeps_the_pipe_after_git_exits_is_ended_at_the_deadline() {
+    fn a_child_that_keeps_the_pipes_after_git_exits_is_ended_and_the_output_kept() {
         let temp = TempDir::new().expect("temp");
-        let runner = runner_for(temp.path(), "sleep 30 & echo out", &environment())
-            .with_timeouts(Duration::from_millis(500), Duration::from_millis(500));
+        let pid_file = temp.path().join("child.pid");
+        let script = format!("sleep 30 & echo $! > '{}'; echo out", pid_file.display());
+        let runner = runner_for(temp.path(), &script, &environment())
+            .with_timeouts(Duration::from_secs(20), Duration::from_secs(20));
         let started = Instant::now();
-        assert_eq!(runner.read(temp.path(), &["x"]), Err(GitFailure::Timeout));
+        assert_eq!(runner.read(temp.path(), &["x"]), Ok("out\n".to_owned()));
+        assert!(started.elapsed() < Duration::from_secs(5));
+        let child: i32 = fs::read_to_string(&pid_file)
+            .expect("pid")
+            .trim()
+            .parse()
+            .expect("number");
+        assert!(has_ended(child), "the child {child} still runs");
+    }
+
+    /// `setsid` leaves git's group, so ending the group cannot close the
+    /// pipe; the success still stands, because only stdout must end.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_helper_outside_the_group_that_keeps_stderr_does_not_turn_a_success_into_a_timeout() {
+        let temp = TempDir::new().expect("temp");
+        let pid_file = temp.path().join("helper.pid");
+        let script = format!(
+            "setsid sleep 30 >/dev/null </dev/null & echo $! > '{}'; echo out",
+            pid_file.display()
+        );
+        let runner = runner_for(temp.path(), &script, &environment())
+            .with_timeouts(Duration::from_secs(20), Duration::from_secs(20));
+        let started = Instant::now();
+        let answer = runner.read(temp.path(), &["x"]);
+        let helper: i32 = fs::read_to_string(&pid_file)
+            .expect("pid")
+            .trim()
+            .parse()
+            .expect("number");
+        let _ = nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(helper),
+            nix::sys::signal::Signal::SIGKILL,
+        );
+        assert_eq!(answer, Ok("out\n".to_owned()));
         assert!(started.elapsed() < Duration::from_secs(5));
     }
 

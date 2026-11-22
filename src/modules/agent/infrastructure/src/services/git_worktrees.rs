@@ -8,8 +8,10 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
+use agent_application::common::errors::PortError;
 use agent_application::common::interfaces::{
-    CreatedWorktree, WorktreeCreate, WorktreeError, WorktreeInfo, WorktreeManager, WorktreeStatus,
+    CreatedWorktree, FailureReporter, WorktreeCreate, WorktreeError, WorktreeInfo, WorktreeManager,
+    WorktreeStatus,
 };
 use agent_application::common::worktree_link::is_linked_worktree;
 use agent_domain::value_objects::{
@@ -26,6 +28,19 @@ const WORKTREE_RECORD_PREFIX: &str = "worktree ";
 const BARE_RECORD: &str = "bare";
 const BRANCH_RECORD_PREFIX: &str = "branch ";
 const SHOW_UNTRACKED_FILES: &str = "status.showUntrackedFiles=normal";
+/// Submodules count by their commit only, so git starts nothing inside one,
+/// where their own configuration would apply.
+const STATUS_ARGUMENTS: [&str; 5] = [
+    "status",
+    "--porcelain=v1",
+    "--untracked-files=all",
+    "--ignore-submodules=dirty",
+    "-z",
+];
+const FILTER_SECTION: &str = "filter.";
+/// Each filter driver's commands emptied and its required flag off: git then
+/// compares the plain file and runs no filter program.
+const FILTER_SWITCHES: [&str; 3] = ["clean=", "process=", "required=false"];
 const SHORT_ID_CHARS: usize = 8;
 const REPOSITORY_HASH_CHARS: usize = 8;
 /// `<repository>-<hash>/<short agent id>` below the worktrees folder.
@@ -53,6 +68,8 @@ pub struct GitWorktrees {
     root: PathBuf,
     source: RunnerSource,
     runner: OnceLock<Option<GitRunner>>,
+    /// Hears what an undo leaves behind, which no answer can carry.
+    failures: Option<Arc<dyn FailureReporter>>,
 }
 
 impl GitWorktrees {
@@ -62,6 +79,7 @@ impl GitWorktrees {
         root: PathBuf,
         environment: Arc<LoginEnvironment>,
         server_environment: Environment,
+        failures: Arc<dyn FailureReporter>,
     ) -> Self {
         Self {
             root: absolute(root),
@@ -70,6 +88,7 @@ impl GitWorktrees {
                 server_environment,
             },
             runner: OnceLock::new(),
+            failures: Some(failures),
         }
     }
 
@@ -80,7 +99,15 @@ impl GitWorktrees {
             root: absolute(root),
             source: RunnerSource::Fixed(runner),
             runner: OnceLock::new(),
+            failures: None,
         }
+    }
+
+    /// Reports what an undo leaves behind to `failures`; for tests.
+    #[must_use]
+    pub fn with_failures(mut self, failures: Arc<dyn FailureReporter>) -> Self {
+        self.failures = Some(failures);
+        self
     }
 
     fn runner(&self) -> Option<&GitRunner> {
@@ -157,14 +184,51 @@ impl GitWorktrees {
     }
 
     /// The undo of a create deletes the branch it just made, whatever it
-    /// points at. Best effort, as the whole undo.
-    fn undo_branch(&self, worktree: &AgentWorktree) {
-        if let Some(runner) = self.runner() {
-            let _ = runner.write(
+    /// points at. The answer names the branch when git did not confirm it
+    /// gone.
+    fn undo_branch(&self, worktree: &AgentWorktree) -> Option<String> {
+        let runner = self.runner()?;
+        let deleted = runner.write(
+            &worktree.repository,
+            &["branch", "-D", "--", &worktree.branch],
+        );
+        let Err(failure) = deleted else {
+            return None;
+        };
+        // An undo after a timeout may find no branch at all.
+        let is_gone = matches!(
+            runner.read(
                 &worktree.repository,
-                &["branch", "-D", "--", &worktree.branch],
-            );
+                &["rev-parse", "--verify", "--quiet", &worktree.branch_ref()],
+            ),
+            Err(GitFailure::Exit(_))
+        );
+        (!is_gone).then(|| {
+            format!(
+                "the branch {} was left behind: {}",
+                worktree.branch,
+                failure.reason()
+            )
+        })
+    }
+
+    /// Raises what an undo left behind as a storage alert: the answer
+    /// already carries the failure that began the undo.
+    fn report_leftovers(&self, worktree: &AgentWorktree, leftovers: &[String]) {
+        if leftovers.is_empty() {
+            return;
         }
+        let Some(failures) = &self.failures else {
+            return;
+        };
+        failures.report(&PortError::Storage {
+            message: format!(
+                "the undo of the worktree {} was not complete: {}",
+                worktree.folder.display(),
+                leftovers.join("; ")
+            ),
+            is_disk_failure: true,
+        });
     }
 
     /// `worktree remove` with `force` times `--force`, after the check that
@@ -177,14 +241,22 @@ impl GitWorktrees {
             )));
         }
         let runner = self.require_runner()?;
+        // Without `--force` git runs its own status in the folder, which
+        // would run the filters too.
+        let filter_switches = if force == 0 && worktree.folder.exists() {
+            linked_filter_switches(runner, worktree)?
+        } else {
+            Vec::new()
+        };
+        let mut arguments: Vec<&OsStr> = filter_switches.iter().map(OsStr::new).collect();
         // Git's own clean check follows `status.showUntrackedFiles`; with
         // `no` a plain remove would delete a new untracked file unasked.
-        let mut arguments = vec![
+        arguments.extend([
             OsStr::new("-c"),
             OsStr::new(SHOW_UNTRACKED_FILES),
             OsStr::new("worktree"),
             OsStr::new("remove"),
-        ];
+        ]);
         arguments.extend(std::iter::repeat_n(OsStr::new("--force"), force));
         arguments.extend([OsStr::new("--"), worktree.folder.as_os_str()]);
         // Deleting a large folder can take as long as checking it out.
@@ -228,9 +300,12 @@ impl GitWorktrees {
             // A refused branch was never made, and the name may be the
             // user's own; only a branch step ended mid-way is undone.
             if failure == GitFailure::Timeout {
-                self.undo_branch(&worktree);
+                self.report_leftovers(&worktree, self.undo_branch(&worktree).as_slice());
+                return Err(create_failure(&failure));
             }
-            return Err(create_failure(&failure));
+            // Another create may have taken the name since the info.
+            return Err(taken_since(runner, &info.top, request.agent_name, branch)
+                .unwrap_or_else(|| create_failure(&failure)));
         }
         let added = runner.checkout(
             &info.top,
@@ -280,17 +355,9 @@ impl WorktreeManager for GitWorktrees {
         // A folder inside a linked worktree belongs to the main one, which
         // outlives every linked worktree (another agent's included).
         let top = main_worktree(runner, Path::new(top)).unwrap_or_else(|| PathBuf::from(top));
-        let Ok(branch_list) = runner.read(
-            &top,
-            &["for-each-ref", "--format=%(refname)", "refs/heads/"],
-        ) else {
+        let Ok(branches) = branch_names(runner, &top) else {
             return Ok(None);
         };
-        let branches: Vec<String> = branch_list
-            .lines()
-            .filter_map(|line| line.strip_prefix(BRANCH_REF_PREFIX))
-            .map(str::to_owned)
-            .collect();
         let Some((base, base_is_branch)) = checked_out_base(runner, folder, &branches) else {
             // A repository with no commit yet has no base to start from.
             return Ok(None);
@@ -320,10 +387,7 @@ impl WorktreeManager for GitWorktrees {
         }
         check_ref_format(runner, request.folder, branch)?;
         if info.branches.iter().any(|existing| existing == branch) {
-            return Err(WorktreeError::Conflict(format!(
-                "the branch {branch} exists; the next free name is {}",
-                info.branch_name
-            )));
+            return Err(taken_branch(branch, &info.branch_name));
         }
         self.make(runner, &info, request, base, branch)
     }
@@ -342,22 +406,21 @@ impl WorktreeManager for GitWorktrees {
         let Some(runner) = self.runner() else {
             return unreachable;
         };
-        if folder_exists && !is_linked_worktree(&worktree.folder) {
-            // Without its `.git` link git would search upward and read some
-            // other repository.
+        if folder_exists && !is_linked_worktree(&worktree.folder, &worktree.repository) {
+            // Without its `.git` link to the repository git would search
+            // upward, or follow the link, and read some other repository.
             return unreachable;
         }
         let status = if folder_exists {
-            runner.read(
-                &worktree.folder,
-                &[
-                    "status",
-                    "--porcelain=v1",
-                    "--untracked-files=all",
-                    "--ignore-submodules=none",
-                    "-z",
-                ],
-            )
+            let Ok(switches) = filter_switches(runner, &worktree.folder) else {
+                return unreachable;
+            };
+            let arguments: Vec<&str> = switches
+                .iter()
+                .map(String::as_str)
+                .chain(STATUS_ARGUMENTS)
+                .collect();
+            runner.read(&worktree.folder, &arguments)
         } else {
             // The record can still be cleared through the repository.
             runner
@@ -439,17 +502,27 @@ impl WorktreeManager for GitWorktrees {
 
     fn discard(&self, worktree: &AgentWorktree) {
         // Each step is best effort: the undo removes what the create made,
-        // in whatever state the failure left it.
+        // in whatever state the failure left it, and then names what is
+        // still there.
         // A `worktree add` ended by a timeout leaves its new worktree
         // locked; only a double force removes a locked one.
         let _ = self.remove_record(worktree, DISCARD_FORCE);
         if self.is_really_owned(&worktree.folder) {
             let _ = std::fs::remove_dir_all(&worktree.folder);
             // A folder git could not remove leaves a record whose folder is
-            // now gone; the forced remove clears that one record.
+            // now gone; the forced remove clears that one record. A record
+            // still there keeps the branch, so the branch names it.
             let _ = self.remove_record(worktree, DISCARD_FORCE);
         }
-        self.undo_branch(worktree);
+        let mut leftovers = Vec::new();
+        if worktree.folder.exists() {
+            leftovers.push(format!(
+                "the folder {} was left behind",
+                worktree.folder.display()
+            ));
+        }
+        leftovers.extend(self.undo_branch(worktree));
+        self.report_leftovers(worktree, &leftovers);
     }
 }
 
@@ -475,6 +548,88 @@ fn main_worktree(runner: &GitRunner, top: &Path) -> Option<PathBuf> {
         .take_while(|line| !line.is_empty())
         .any(|line| line == BARE_RECORD);
     (!is_bare).then(|| PathBuf::from(path))
+}
+
+/// The repository's branch names.
+fn branch_names(runner: &GitRunner, top: &Path) -> Result<Vec<String>, GitFailure> {
+    let branch_list = runner.read(top, &["for-each-ref", "--format=%(refname)", "refs/heads/"])?;
+    Ok(branch_list
+        .lines()
+        .filter_map(|line| line.strip_prefix(BRANCH_REF_PREFIX))
+        .map(str::to_owned)
+        .collect())
+}
+
+fn taken_branch(branch: &str, next_free: &str) -> WorktreeError {
+    WorktreeError::Conflict(format!(
+        "the branch {branch} exists; the next free name is {next_free}"
+    ))
+}
+
+/// `Conflict` when `branch` exists now: another create took the name after
+/// this one read the branches (D5).
+fn taken_since(
+    runner: &GitRunner,
+    top: &Path,
+    agent_name: &str,
+    branch: &str,
+) -> Option<WorktreeError> {
+    let branches = branch_names(runner, top).ok()?;
+    branches
+        .iter()
+        .any(|existing| existing == branch)
+        .then(|| taken_branch(branch, &free_branch_name(agent_name, &branches)))
+}
+
+/// `-c` switches that turn off every filter driver the configuration of
+/// `folder` names, so a read runs no program an agent could write into the
+/// shared configuration (0010 D1 allows filters for `worktree add` only).
+///
+/// # Errors
+/// The reason, when the configuration cannot be read or names a driver
+/// that a switch cannot name.
+fn filter_switches(runner: &GitRunner, folder: &Path) -> Result<Vec<String>, String> {
+    let names = runner
+        .read(folder, &["config", "--list", "--name-only", "-z"])
+        .map_err(|failure| failure.reason())?;
+    let mut drivers: Vec<&str> = names.split('\0').filter_map(filter_driver).collect();
+    drivers.sort_unstable();
+    drivers.dedup();
+    if let Some(driver) = drivers.iter().find(|driver| driver.contains(['=', '\n'])) {
+        return Err(format!("the filter driver {driver:?} cannot be turned off"));
+    }
+    Ok(drivers
+        .iter()
+        .flat_map(|driver| {
+            FILTER_SWITCHES.iter().flat_map(move |switch| {
+                [
+                    "-c".to_owned(),
+                    format!("{FILTER_SECTION}{driver}.{switch}"),
+                ]
+            })
+        })
+        .collect())
+}
+
+/// `filter_switches` of a worktree folder still linked to its repository;
+/// the configuration of another repository says nothing about this one.
+fn linked_filter_switches(
+    runner: &GitRunner,
+    worktree: &AgentWorktree,
+) -> Result<Vec<String>, WorktreeError> {
+    if !is_linked_worktree(&worktree.folder, &worktree.repository) {
+        return Err(WorktreeError::Failed(format!(
+            "the worktree folder is missing or broken: {}",
+            worktree.folder.display()
+        )));
+    }
+    filter_switches(runner, &worktree.folder).map_err(WorktreeError::Failed)
+}
+
+/// The driver of a `filter.<driver>.<key>` name; the driver may hold dots.
+fn filter_driver(name: &str) -> Option<&str> {
+    let (driver, _) = name.strip_prefix(FILTER_SECTION)?.rsplit_once('.')?;
+    Some(driver)
 }
 
 /// The branch checked out in `folder`, or its commit when detached. `None`
