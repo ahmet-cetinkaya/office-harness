@@ -1,11 +1,11 @@
 ---
-status: draft
+status: shipped
 capability: office
-plan: specs/changes/0016-agent-file-browser/PLAN.md
+plan: specs/changes/archive/0016-agent-file-browser/PLAN.md
 supersedes:
 ---
 
-<!-- Draft for the spec review gate. Only the owner's approval, given through the review gate, changes the status. -->
+<!-- Approved under the owner's spec delegation on 2026-11-23; shipped in PR #122. -->
 
 # 0016: Read-only file browser of an agent
 
