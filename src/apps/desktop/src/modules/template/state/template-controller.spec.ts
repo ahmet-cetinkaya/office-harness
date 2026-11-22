@@ -24,6 +24,7 @@ const BODY = {
     startup_prompt: null,
   },
   role: null,
+  own_worktree: false,
 };
 const TEMPLATE = {
   id: "t1",
@@ -278,5 +279,6 @@ function readBody() {
     working_folder: null,
     additions: { flags: [], env: [], startup_prompt: null },
     role: null,
+    own_worktree: false,
   };
 }

@@ -11,6 +11,7 @@ fn agent(pattern: &str, command: &str) -> AgentBody {
         working_folder: None,
         additions: AdditionsBody::default(),
         role: None,
+        own_worktree: false,
     }
 }
 

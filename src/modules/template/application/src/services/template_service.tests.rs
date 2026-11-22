@@ -4,7 +4,10 @@ use serde_json::json;
 use template_domain::{EnvVariable, MemberEntry, TeamBody, TemplateError, TemplateRole};
 
 use super::*;
-use crate::test_support::{agent_body, agent_template_body, service};
+use crate::common::models::AgentDefinition;
+use crate::test_support::{
+    FakeAgents, FixedClock, MemoryStore, agent_body, agent_template_body, definition, service,
+};
 
 fn team_body() -> TemplateBody {
     TemplateBody::Team(TeamBody {
@@ -134,6 +137,7 @@ fn a_body_copied_from_an_agent_gets_the_default_pattern_and_the_agents_values() 
     assert_eq!(body.command, "claude --model opus");
     assert_eq!(body.working_folder.as_deref(), Some("/work"));
     assert_eq!(body.role, None::<TemplateRole>);
+    assert!(!body.own_worktree);
     assert_eq!(service.list().expect("list"), []);
 }
 
@@ -218,4 +222,39 @@ fn a_refused_file_saves_nothing_and_names_the_template_and_the_reason() {
     assert!(text.contains("template \"Bad\""), "{text}");
     assert!(text.contains("the CLI command is empty"), "{text}");
     assert_eq!(service.list().expect("list"), []);
+}
+
+#[test]
+fn a_body_copied_from_an_agent_with_its_own_worktree_keeps_the_choice() {
+    let service = TemplateService::new(
+        Arc::new(MemoryStore::default()),
+        Arc::new(FakeAgents(AgentDefinition {
+            own_worktree: true,
+            ..definition()
+        })),
+        Arc::new(FixedClock),
+    );
+
+    let body = service.body_from_agent(AgentId::generate()).expect("body");
+
+    assert!(body.own_worktree);
+}
+
+#[test]
+fn the_own_worktree_choice_survives_an_export_and_an_import() {
+    let service = service();
+    let mut body = agent_body("r-{n}");
+    body.own_worktree = true;
+    service
+        .save(None, "Reviewer", TemplateBody::Agent(body))
+        .expect("save");
+    let text = service.export(None).expect("export");
+    let fresh = self::service();
+
+    let imported = fresh.confirm_import(&text).expect("import");
+
+    let TemplateBody::Agent(agent) = &imported[0].body else {
+        panic!("not an agent");
+    };
+    assert!(agent.own_worktree);
 }

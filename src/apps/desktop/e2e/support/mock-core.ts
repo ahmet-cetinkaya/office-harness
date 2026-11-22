@@ -836,6 +836,22 @@ export async function installMockCore(
       return numbered.replaceAll("{n}", String(n));
     };
     /** One agent made from a body, with its additions, as the bridge makes it. */
+    /** The pre-check of a creation: an entry with the choice needs its folder
+     * in a git repository, or nothing is created (0010 FR-009). */
+    const refuseOwnWorktreeOutsideRepository = (
+      entries: Body[],
+      projectId: unknown,
+    ) => {
+      const project = office.projects.find((known) => known.id === projectId);
+      const isOutside = entries.some(
+        (entry) =>
+          entry.own_worktree === true &&
+          repositoryOf({
+            folder: entry.working_folder ?? project?.folder,
+          }) === undefined,
+      );
+      if (isOutside) refuse("invalid", "own worktree needs a git repository");
+    };
     const createFromBody = (body: Body, name: string, projectId: unknown) => {
       const project = office.projects.find((known) => known.id === projectId);
       const folder = body.working_folder ?? project?.folder ?? null;
@@ -845,6 +861,7 @@ export async function installMockCore(
         command: body.command,
         working_folder: folder,
         project_id: projectId,
+        own_worktree: body.own_worktree === true,
       });
       office.additions[agent.id] = {
         flags: structuredClone(body.additions?.flags ?? []),
@@ -1046,6 +1063,7 @@ export async function installMockCore(
                 startup_prompt: additions.startup_prompt,
               },
               role: roleOfAgent(agent.id),
+              own_worktree: Boolean(agent.worktree),
             },
           };
         }
@@ -1114,6 +1132,10 @@ export async function installMockCore(
             ),
           );
           const projectId = fields.project_id ?? null;
+          refuseOwnWorktreeOutsideRepository(
+            [body.lead, ...(body.members as Body[]).map((m) => m.entry)],
+            projectId,
+          );
           const lead = createFromBody(leadPlan.entry, leadPlan.name, projectId);
           const members = memberPlans.map((plan) =>
             createFromBody(plan.entry, plan.name, projectId),

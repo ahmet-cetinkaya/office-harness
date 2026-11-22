@@ -210,9 +210,11 @@ async fn export_then_import_into_a_fresh_office_keeps_everything_but_env_values(
         "startup_prompt": "Start with the open change.",
     });
     body["role"] = json!("member");
+    body["own_worktree"] = json!(true);
     save(&mut client, "Worker", "agent", body).await;
     let mut team = team_body(&first, 3);
     team["lead"]["additions"] = json!({"env": [{"name": "LEAD_KEY", "value": SECRET_VALUE}]});
+    team["members"][0]["entry"]["own_worktree"] = json!(true);
     save(&mut client, "Squad", "team", team).await;
     let exported = ok(&mut client, "template.export", json!({})).await;
     let text = exported["text"].as_str().expect("text").to_owned();
@@ -237,6 +239,25 @@ async fn export_then_import_into_a_fresh_office_keeps_everything_but_env_values(
         without_env_values(&imported["templates"])
     );
     assert!(!imported.to_string().contains(SECRET_VALUE));
+    assert_own_worktree_choices(&imported["templates"]);
+}
+
+/// The own worktree choice (0010 FR-009) comes back from an import as it was
+/// saved: on for the agent template and the members, off for the lead.
+fn assert_own_worktree_choices(templates: &Value) {
+    let body_of = |name: &str| {
+        templates
+            .as_array()
+            .expect("templates")
+            .iter()
+            .find(|template| template["name"] == name)
+            .expect("template")["body"]
+            .clone()
+    };
+    assert_eq!(body_of("Worker")["own_worktree"], true);
+    let squad = body_of("Squad");
+    assert_eq!(squad["lead"]["own_worktree"], false);
+    assert_eq!(squad["members"][0]["entry"]["own_worktree"], true);
 }
 
 /// Each template as `{name, kind, body}` with every env value null, in the

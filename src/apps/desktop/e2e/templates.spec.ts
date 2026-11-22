@@ -41,6 +41,7 @@ function agentBody(overrides: Record<string, unknown> = {}) {
     working_folder: WORK_FOLDER,
     additions: { flags: [], env: [], startup_prompt: null },
     role: null,
+    own_worktree: false,
     ...overrides,
   };
 }
@@ -679,4 +680,115 @@ test("an agent's details show every saved variable, even two with one name", asy
     "MODE=fast",
     "MODE=slow",
   ]);
+});
+
+test("a member entry's own worktree box is set by keyboard, saved with the template, and shown before a create", async ({
+  page,
+}) => {
+  await openOffice(page, { agents: [agent()] });
+  await openTemplates(page);
+  await activateButton(page, "New template");
+  const dialog = page.getByRole("dialog", { name: "New template" });
+  await dialog.getByLabel("Template name").fill("Squad");
+  await dialog.getByLabel("Kind").selectOption("team");
+  await dialog.getByLabel("Lead: command").fill("claude");
+  await dialog.getByLabel("Lead: working folder").fill(WORK_FOLDER);
+  await dialog.getByLabel("Member entry 1: command").fill("claude");
+  await dialog.getByLabel("Member entry 1: working folder").fill(WORK_FOLDER);
+  const lead = dialog.getByRole("checkbox", { name: "Lead: own worktree" });
+  const member = dialog.getByRole("checkbox", {
+    name: "Member entry 1: own worktree",
+  });
+  await expect(lead).not.toBeChecked();
+  await expect(member).not.toBeChecked();
+
+  await member.focus();
+  await page.keyboard.press("Space");
+
+  await expect(member).toBeChecked();
+  await expect(lead).not.toBeChecked();
+  await expectNoSeriousViolations(page);
+  await activate(page, dialog.getByRole("button", { name: "Save template" }));
+  await expect(dialog).toBeHidden();
+  const saved = (await recordedCalls(page)).find(
+    (call) => call.args.kind === "template.save",
+  );
+  expect(saved?.args.fields).toMatchObject({
+    body: {
+      lead: { own_worktree: false },
+      members: [{ entry: { own_worktree: true } }],
+    },
+  });
+
+  await activateButton(page, "Back to the panel");
+  await activateButton(page, "Create from template");
+  const create = page.getByRole("dialog", { name: "Create from template" });
+  await create
+    .getByLabel("Template")
+    .selectOption({ label: "Squad (Team template)" });
+  await expect(create.getByText("Own worktree")).toHaveCount(2);
+  await expect(create.getByText("yes", { exact: true })).toHaveCount(1);
+  await expectNoSeriousViolations(page);
+});
+
+test("the import preview shows the own worktree choice", async ({ page }) => {
+  const importText = JSON.stringify({
+    format: "office-harness-templates",
+    version: 1,
+    templates: [
+      {
+        name: "Worktree agent",
+        kind: "agent",
+        body: { body_version: 1, ...agentBody({ own_worktree: true }) },
+      },
+    ],
+  });
+  await openOffice(page, { agents: [agent()] }, { importText });
+  await openTemplates(page);
+
+  await activateButton(page, "Import templates");
+
+  const dialog = page.getByRole("dialog", { name: "Import preview" });
+  await expect(dialog.getByText("Own worktree")).toBeVisible();
+  await expect(dialog.getByText("yes", { exact: true })).toBeVisible();
+  await expectNoSeriousViolations(page);
+});
+
+test("a team whose members choose an own worktree outside a repository creates nothing and says why", async ({
+  page,
+}) => {
+  const template: TemplateSeed = {
+    ...SQUAD_TEMPLATE,
+    body: {
+      ...SQUAD_TEMPLATE.body,
+      members: [
+        {
+          entry: agentBody({
+            name_pattern: "{team}-member-{n}",
+            own_worktree: true,
+          }),
+          count: 2,
+        },
+      ],
+    },
+  };
+  await openOffice(page, { templates: [CEO_TEMPLATE, template] });
+  await createFromTemplate(page, "CEO (Agent template)", null);
+
+  await activateButton(page, "Create from template");
+  const dialog = page.getByRole("dialog", { name: "Create from template" });
+  await dialog
+    .getByLabel("Template")
+    .selectOption({ label: "Squad (Team template)" });
+  await dialog.getByLabel("Team name").fill("api");
+  await activate(page, dialog.getByRole("button", { name: "Create team" }));
+
+  await expect(dialog.getByRole("alert")).toContainText(
+    "own worktree needs a git repository",
+  );
+  await expectNoSeriousViolations(page);
+  await page.keyboard.press("Escape");
+  expect(await page.getByRole("treeitem", { name: /^api-lead/ }).count()).toBe(
+    0,
+  );
 });

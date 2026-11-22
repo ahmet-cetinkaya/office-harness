@@ -87,6 +87,7 @@ fn saving_and_deleting_a_template_adds_no_action_record_entry() {
         working_folder: None,
         additions: AdditionsBody::default(),
         role: None,
+        own_worktree: false,
     });
 
     let saved = service.save(None, "Reviewer", body).expect("save");

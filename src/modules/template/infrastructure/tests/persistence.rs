@@ -46,6 +46,7 @@ fn agent(pattern: &str, env_value: Option<&str>) -> AgentBody {
             startup_prompt: Some("go".to_owned()),
         },
         role: None,
+        own_worktree: false,
     }
 }
 
