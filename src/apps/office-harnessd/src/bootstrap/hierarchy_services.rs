@@ -89,8 +89,9 @@ pub fn build_hierarchy_services(
     run_migrations(&mut guard, LEDGER_TABLE, SCRIPTS, &[])?;
     drop(guard);
     let places = AgentPlaces::new();
-    let store: Arc<dyn HierarchyStore> =
-        Arc::new(HierarchyRepository::new(connection.handle(), places));
+    let repository = HierarchyRepository::new(connection.handle(), places);
+    repair_parentless_leads(&repository, log);
+    let store: Arc<dyn HierarchyStore> = Arc::new(repository);
     // The agent handlers and the hierarchy handlers each hold a subtree use
     // case over the same store and the same agent ports, so both answers
     // read the same tree and end agents the same way.
@@ -212,6 +213,19 @@ fn build_hold_service(
     )
     .map_err(|error| StartupError::Holds(error.to_string()))?;
     Ok(Arc::new(service))
+}
+
+/// An office saved before 0002 A5 was fixed can hold a CEO and leads with
+/// no parent; they move under the CEO at start. A failure is logged and
+/// leaves the tree as it was, because the tree still shows those teams.
+fn repair_parentless_leads(repository: &HierarchyRepository, log: &ServerLog) {
+    match repository.repair_parentless_leads() {
+        Ok(0) => {}
+        Ok(moved) => log.info(&format!("{moved} team leads moved under the CEO (0002 A5)")),
+        Err(error) => log.error(&format!(
+            "the team leads were not moved under the CEO: {error}"
+        )),
+    }
 }
 
 /// A hold of an agent that was deleted while the server was down would never

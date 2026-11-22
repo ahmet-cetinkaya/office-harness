@@ -49,6 +49,17 @@ impl HierarchyRepository {
         work(&mut connection).map_err(HierarchyApplicationError::Storage)
     }
 
+    /// Moves the leads that have no parent under the only CEO, for an office
+    /// saved before 0002 A5 was fixed. The server runs it once at each
+    /// start; it changes nothing when there is no lead to move.
+    ///
+    /// # Errors
+    /// `Storage` on a SQLite error.
+    pub fn repair_parentless_leads(&self) -> Result<usize, HierarchyApplicationError> {
+        let places = &self.places;
+        self.locked(|connection| places.adopt_parentless_leads_into_the_only_ceo(connection))
+    }
+
     fn read_team(row: &Row<'_>) -> rusqlite::Result<Team> {
         let id: String = row.get(0)?;
         let name: String = row.get(1)?;
@@ -206,6 +217,11 @@ impl HierarchyStore for HierarchyRepository {
                 .transaction()
                 .map_err(|error| error.to_string())?;
             places.write_place(&transaction, agent_id, role, parent_agent_id, team_id)?;
+            // In the same transaction: a CEO and the leads it adopts are
+            // written together or not at all.
+            if role == Some(Role::Ceo) {
+                places.adopt_parentless_leads(&transaction, agent_id)?;
+            }
             if let Some(team) = team_id {
                 transaction
                     .execute(
