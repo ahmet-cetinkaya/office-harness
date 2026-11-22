@@ -30,11 +30,11 @@ Errors:
 No fields. Result, in start order (members and agents outside the tree, then leads, then the CEO):
 
 ```
-{ agents: [ { agent_id, last_session: session?, can_continue: bool, reason?, held: bool } ] }
+{ agents: [ { agent_id, last_session: session?, can_continue: bool, reason?, held: bool, after_unclean_stop: bool } ] }
 session := the session.list entry shape (id, started_at in Unix ms, ...)
 ```
 
-`reason` says why the last session cannot be continued. Only `interrupted` agents are listed.
+`reason` says why the last session cannot be continued. `after_unclean_stop` is true when the last session's `exit_result` is `lost`. Only `interrupted` agents are listed.
 
 ### `resume.start`
 
@@ -65,5 +65,6 @@ Every user client receives it.
 ## Changed shapes
 
 - Action entries (`agent.actions`, `office.actions`, `action.recorded`): a new field `detail`, a string or null. It is set only on a `start` that began a new session instead of a continue (spec FR-007), with the reason. A fallback start is `start` with actor `office`; a new session started at once because the CLI cannot continue is `start` with actor `user`.
+- Sessions (`session.list`, `resume.plan`): `exit_result` may be `"lost"`, for a session that was still open when the server stopped uncleanly (set at the next server start). A clean stop still gives `"interrupted"`. A `lost` session can be continued like an `interrupted` one.
 - Holds: `set_by: "office"` with a `reason` can now also come from a failed resume.
 - `notification` entries, `notification.created`, and Needs-you items: `event` and `kind` may be `"resume_hold"`, with the reason as `detail`. Releasing the hold clears the Needs-you item, as for `auto_hold`.
