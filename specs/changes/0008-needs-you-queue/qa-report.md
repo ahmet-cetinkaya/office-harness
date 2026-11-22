@@ -70,7 +70,7 @@ Paths are relative to the repository root. `N` is `src/modules/notification`, `H
 | SC-002 | PASS (automated) | `NE`, `five presses from a focused terminal open the five terminals in order and empty the list`. Corrected during the 2026-11-22 run: the first version expected focus in the terminal of the exited agent Ed. The terminal of a non-running agent is read-only and takes no focus (0001 terminal view, `terminal-view.svelte`, about line 211). Per Efe's D5 clarification (2026-11-22), the jump now puts focus on the terminal view heading ("Terminal, Ed") for an agent that is not running; the test asserts that for Ed and focus in the terminal for the running agents. See Plan deviations 7. |
 | SC-003 | PASS (automated) | Server: `NY`, `a_change_reaches_a_connected_client_within_two_seconds`, `a_wait_is_announced_after_the_quiet_period_and_within_two_seconds_of_it`. Desktop title: `NE`, `follows the dismissals in the panel`, `follows the jumps in the scene`. |
 | SC-004 | PASS (automated) | `NY`, `events_while_no_client_is_connected_list_with_their_first_event_times` (three events with no client; all three listed with their first event times). The 3 second bound after the app opens is not timed by a test. |
-| SC-005 | PASS (automated) | `NY`, `an_agent_that_keeps_writing_and_rings_no_bell_gets_no_item`. |
+| SC-005 | PASS (automated) | `NY`, `an_agent_that_keeps_writing_and_rings_no_bell_gets_no_item` (the agent writes every 100 ms in an office with a 2000 ms quiet period, watched for 3 s). |
 | US1, US2, US3 | PASS (automated) | The `NY` runs of FR-001 to FR-006 and SC-001, SC-003 to SC-005, and the Playwright runs in `NE` (`list`, `jump`, and `title` tests above). |
 | ACF-160 | PASS (automated) | The always-true `isTerminalShortcut` field is removed from the desktop shortcut table. `AS`, `every kind of entry leaves a focused terminal, the jump too`; the `bun test` and `svelte-check` runs are clean. |
 
@@ -126,3 +126,7 @@ An agent ran the first row in the real app and server on 2026-11-22 (Linux, KDE 
 | A real agent CLI that goes quiet, rings the bell, fails, and exits, then the jump | BLOCKED | The agent run above uses fake CLIs. |
 | The jump key on macOS (with `Fn`) and the window title on macOS | WAIVED | Owner, 2026-11-20: CI evidence suffices, as for 0003, 0005, and 0007. |
 | The jump key and the window title on Windows | WAIVED | Same decision. |
+
+## Updates
+
+- 2026-11-23: the SC-005 test failed once on macOS CI: a loaded runner stalled the busy agent's writes (or the PTY reader) for 400 ms, the old quiet period, so a waiting item appeared. The test office now uses a 2000 ms quiet period, 20 times the 100 ms write pause, and the watch is 3 s. SC-005 is stated per quiet period, so the criterion is unchanged; no retry was added.
