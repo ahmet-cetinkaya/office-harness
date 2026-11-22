@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use agent_domain::entities::{Agent, Session};
 use agent_domain::enums::StatusEvent;
-use agent_domain::errors::AgentError;
 use agent_domain::value_objects::{AgentWorktree, ExitResult, OfficeAdditions, SessionId};
 
 use crate::common::command_line::split_command;
@@ -15,7 +14,7 @@ use crate::common::interfaces::{
     AdditionsStore, AgentStore, CliAdapter, CliAdapters, Clock, FailureReporter, ProjectStore,
     SessionStore, SessionTracking, TerminalHost,
 };
-use crate::common::lookup::require_project;
+use crate::common::lookup::start_folder;
 use crate::common::models::{
     PrepareLaunch, PreparedLaunch, SessionCommand, SessionPlan, StartTerminal, TrackedSession,
     TrackingRequest,
@@ -382,14 +381,7 @@ impl SessionLauncher {
         if let Some(worktree) = &agent.worktree {
             require_linked_worktree(worktree)?;
         }
-        let (field, folder) = match (&agent.working_folder, agent.project_id) {
-            (Some(folder), _) => ("working folder", folder.clone()),
-            (None, Some(project_id)) => (
-                "project folder",
-                require_project(&*self.projects, project_id)?.folder,
-            ),
-            (None, None) => return Err(AgentError::NoWorkingFolderOrProject.into()),
-        };
+        let (field, folder) = start_folder(&*self.projects, agent)?;
         if folder.is_dir() {
             return Ok(folder);
         }
