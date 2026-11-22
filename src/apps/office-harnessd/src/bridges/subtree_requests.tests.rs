@@ -6,7 +6,7 @@ use hierarchy_application::HierarchyApplicationError;
 use hierarchy_application::commands::subtree::SubtreeHandler;
 use hierarchy_application::common::interfaces::{HierarchyStore, TreeExclusion, TreeSnapshot};
 use hierarchy_application::common::ports::{
-    SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover,
+    SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover, SubtreeWorktrees, WorktreeReport,
 };
 use hierarchy_domain::{Role, Team, TeamId, TeamName, TreeRow};
 use kernel::AgentId;
@@ -105,9 +105,36 @@ struct RecordingRemover {
 }
 
 impl SubtreeAgentRemover for RecordingRemover {
-    fn delete(&self, agent_id: AgentId) -> Result<(), SubtreeActionError> {
-        locked(&self.deleted).push(agent_id);
+    fn check(
+        &self,
+        _agent_id: AgentId,
+        _worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError> {
         Ok(())
+    }
+
+    fn prepare(
+        &self,
+        _agent_id: AgentId,
+        _worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError> {
+        Ok(())
+    }
+
+    fn delete(
+        &self,
+        agent_id: AgentId,
+        worktrees: &SubtreeWorktrees,
+    ) -> Result<WorktreeReport, SubtreeActionError> {
+        locked(&self.deleted).push(agent_id);
+        Ok(WorktreeReport {
+            deleted_branches: if worktrees.remove {
+                vec![agent_id.to_string()]
+            } else {
+                Vec::new()
+            },
+            ..WorktreeReport::default()
+        })
     }
 }
 
@@ -216,6 +243,7 @@ fn a_stale_delete_count_becomes_the_wire_conflict() {
             &json!({ "include_descendants": true, "descendant_count": 3 }),
         ),
         ceo,
+        &DeleteWorktrees::Keep,
     );
 
     let (code, message) = failure_of(result);
@@ -239,8 +267,18 @@ fn a_confirmed_delete_reports_the_deleted_agents() {
             &json!({ "include_descendants": true, "descendant_count": 2 }),
         ),
         ceo,
+        &DeleteWorktrees::Remove(std::collections::HashMap::new()),
     );
 
-    assert_eq!(result, SubtreeResult::Deleted(vec![member, lead, ceo]));
+    assert_eq!(
+        result,
+        SubtreeResult::Deleted {
+            agents: vec![member, lead, ceo],
+            worktrees: WorktreeOutcome {
+                deleted_branches: vec![member.to_string(), lead.to_string(), ceo.to_string()],
+                ..WorktreeOutcome::default()
+            },
+        }
+    );
     assert_eq!(deleted_order(&remover), [member, lead, ceo]);
 }

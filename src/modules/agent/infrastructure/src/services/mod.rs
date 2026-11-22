@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 mod cli_adapters;
+mod git_runner;
+mod git_worktrees;
 mod login_environment;
 #[cfg(unix)]
 mod login_shell;
@@ -9,5 +11,7 @@ mod program_lookup;
 mod registry_environment;
 
 pub use cli_adapters::{AttributionTiming, CliAdapterRegistry};
+pub use git_runner::GitRunner;
+pub use git_worktrees::GitWorktrees;
 pub use login_environment::{Environment, LoginEnvironment, ResolvedEnvironment};
 pub use program_lookup::find_program;

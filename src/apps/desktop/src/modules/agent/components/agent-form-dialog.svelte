@@ -6,7 +6,13 @@
   import SelectField from "$shared/ui/select-field.svelte";
   import TextField from "$shared/ui/text-field.svelte";
   import type { NewAgent, Project } from "../models/agent";
+  import type {
+    WorktreeInfo,
+    WorktreeQuery,
+    WorktreeSelection,
+  } from "../models/worktree";
   import type { FailureText } from "../state/office-controller";
+  import WorktreeField from "./worktree-field.svelte";
 
   interface Props {
     projects: Project[];
@@ -14,6 +20,7 @@
     /** The project the form starts with, or null for "No project". */
     initialProjectId?: string | null;
     onsubmit: (agent: NewAgent) => Promise<FailureText>;
+    onworktreeinfo: (query: WorktreeQuery) => Promise<WorktreeInfo>;
     onclose: () => void;
   }
 
@@ -22,6 +29,7 @@
     isBusy,
     initialProjectId = null,
     onsubmit,
+    onworktreeinfo,
     onclose,
   }: Props = $props();
 
@@ -34,6 +42,10 @@
   // svelte-ignore state_referenced_locally
   let projectId = $state(initialProjectId ?? NO_PROJECT);
   let failure = $state<FailureText>(null);
+  let worktree = $state<WorktreeSelection | null>(null);
+  // A refused create can name a branch that was taken meanwhile, so the
+  // choice reads the free name again.
+  let refusals = $state(0);
 
   const projectOptions = $derived([
     { value: NO_PROJECT, label: "No project" },
@@ -45,13 +57,14 @@
     if (workingFolder.trim() !== "")
       agent.working_folder = workingFolder.trim();
     if (projectId !== NO_PROJECT) agent.project_id = projectId;
-    return agent;
+    return { ...agent, ...worktree };
   }
 
   async function submit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     failure = await onsubmit(readAgent());
     if (failure === null) onclose();
+    else refusals += 1;
   }
 </script>
 
@@ -72,6 +85,14 @@
       label="Project"
       options={projectOptions}
       bind:value={projectId}
+    />
+    <WorktreeField
+      folder={workingFolder}
+      projectId={projectId === NO_PROJECT ? null : projectId}
+      {name}
+      refreshKey={refusals}
+      lookup={onworktreeinfo}
+      bind:selection={worktree}
     />
     {#if failure !== null}
       <FailureMessage lead="The agent was not created." message={failure} />

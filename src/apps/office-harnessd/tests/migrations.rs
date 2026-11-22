@@ -316,3 +316,34 @@ fn an_office_at_agent_version_five_upgrades_with_every_agent_and_no_task() {
         .expect("count");
     assert_eq!(agents_without_task, 2);
 }
+
+#[test]
+fn an_office_from_before_own_worktrees_keeps_every_agent_without_one() {
+    const WORKTREE_VERSION: usize = 7;
+    let mut connection = Connection::open_in_memory().expect("database");
+    run_migrations(
+        &mut connection,
+        LEDGER_TABLE,
+        &SCRIPTS[..WORKTREE_VERSION - 1],
+        &[],
+    )
+    .expect("version 6");
+    connection
+        .execute_batch(
+            "INSERT INTO agent_machines (id, name) VALUES ('m1', 'host');
+             INSERT INTO agent_agents (id, name, name_key, command, working_folder, machine_id, status, created_at)
+             VALUES ('a1', 'Ana', 'ana', 'claude', '/work', 'm1', 'stopped', 1);",
+        )
+        .expect("data at version 6");
+
+    run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, &[]).expect("forward");
+
+    let worktree: (Option<String>, String) = connection
+        .query_row(
+            "SELECT worktree_folder, name FROM agent_agents WHERE id = 'a1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("agent kept");
+    assert_eq!(worktree, (None, "Ana".to_owned()));
+}

@@ -10,7 +10,10 @@
     isActive,
     ProjectFormDialog,
     ProjectList,
+    WorktreeDeleteDialog,
     type Project,
+    type WorktreeChoice,
+    type WorktreeStatus,
   } from "../../agent";
   import { INITIAL_HIERARCHY, type HierarchyController } from "../../hierarchy";
   import {
@@ -165,14 +168,49 @@
   let projectToDelete = $state<Project | null>(null);
   let detailArea = $state<HTMLElement | null>(null);
 
-  // The deleted agent's controls are gone, so focus would fall to the page.
+  /** The agent whose delete waits on the worktree question (0010, FR-005). */
+  let worktreeQuestion = $state<{
+    agentId: string;
+    name: string;
+    statuses: WorktreeStatus[];
+  } | null>(null);
+
+  // An agent with a worktree is asked about it first; the dialog is also the
+  // delete confirmation, so the details skip their own for these agents.
   async function deleteAgent(agentId: string): Promise<void> {
-    await controller.deleteAgent(agentId);
+    const agent = office.agents.find((known) => known.id === agentId);
+    if (agent?.worktree) {
+      const statuses = await controller.worktreeStatus([agentId]);
+      if (statuses === null) return;
+      if (statuses.length > 0) {
+        worktreeQuestion = { agentId, name: agent.name, statuses };
+        return;
+      }
+    }
+    await removeAgent(agentId);
+  }
+
+  async function answerWorktrees(choice: WorktreeChoice): Promise<void> {
+    if (worktreeQuestion === null) return;
+    const { agentId } = worktreeQuestion;
+    worktreeQuestion = null;
+    const outcome = await removeAgent(agentId, choice);
+    if (outcome === "changed") await deleteAgent(agentId);
+  }
+
+  // The deleted agent's controls are gone, so focus would fall to the page.
+  async function removeAgent(
+    agentId: string,
+    choice?: WorktreeChoice,
+  ): Promise<"deleted" | "changed" | "refused"> {
+    const outcome = await controller.deleteAgent(agentId, choice);
     await tick();
-    if (office.agents.some((agent) => agent.id === agentId)) return;
+    if (office.agents.some((agent) => agent.id === agentId))
+      return outcome.kind;
     const headingId =
       office.agents.length > 0 ? AGENTS_HEADING_ID : EMPTY_HEADING_ID;
     document.getElementById(headingId)?.focus();
+    return outcome.kind;
   }
 
   function deleteProject(): void {
@@ -534,7 +572,17 @@
     isBusy={office.isBusy}
     initialProjectId={createAgentInProject}
     onsubmit={controller.createAgent}
+    onworktreeinfo={controller.worktreeInfo}
     onclose={closeAgentForm}
+  />
+{/if}
+{#if worktreeQuestion !== null}
+  <WorktreeDeleteDialog
+    title={`Delete ${worktreeQuestion.name}?`}
+    body="This removes the agent, its office additions, and its session list. A running session ends."
+    statuses={worktreeQuestion.statuses}
+    onanswer={(choice) => void answerWorktrees(choice)}
+    oncancel={() => (worktreeQuestion = null)}
   />
 {/if}
 {#if isSwitchingAgent}

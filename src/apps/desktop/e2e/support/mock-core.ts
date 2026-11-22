@@ -63,6 +63,25 @@ export interface OfficeSeed {
   /** Milliseconds the `agent.list` read waits before it answers, as an
    * office that is slow to load. Answers at once when left out. */
   agentListDelayMs?: number;
+  /** The git repositories the faked server knows, by their folder. A folder
+   * inside one answers `agent.worktree_info` as in a repository; any other
+   * folder answers as outside one (0010). */
+  repositories?: Record<
+    string,
+    {
+      base: string;
+      branches: string[];
+      /** False for a detached head, where `base` is the commit id. */
+      baseIsBranch?: boolean;
+      branchName: string;
+    }
+  >;
+  /** What `agent.worktree_status` reads for an agent's worktree, by agent id.
+   * A worktree left out has no changes and can be read. */
+  worktreeStates?: Record<
+    string,
+    { changedFiles?: number; reachable?: boolean; ownCommits?: number }
+  >;
   /** A refusal to answer with, by request type. The tree reads it too. */
   refusals?: Record<string, { code: string; message: string }>;
 }
@@ -482,6 +501,81 @@ export async function installMockCore(
       tree.unassigned = tree.unassigned.filter((agent) => !gone.has(agent.id));
     };
 
+    /** The repository a folder (or a project's folder) sits in, if any. */
+    const repositoryOf = (fields: Record<string, unknown>) => {
+      const project = office.projects.find(
+        (known) => known.id === fields.project_id,
+      );
+      const folder = String(fields.folder || project?.folder || "");
+      const key = Object.keys(mock.office?.repositories ?? {}).find(
+        (root) => folder === root || folder.startsWith(`${root}/`),
+      );
+      return key === undefined || mock.office?.repositories === undefined
+        ? undefined
+        : { root: key, folder, ...mock.office.repositories[key] };
+    };
+
+    /** One entry of `agent.worktree_status`. */
+    const worktreeStatusOf = (agent: Agent) => {
+      const worktree = agent.worktree;
+      if (!worktree) return undefined;
+      const state = mock.office?.worktreeStates?.[agent.id] ?? {};
+      const changedFiles = state.changedFiles ?? 0;
+      return {
+        agent_id: agent.id,
+        name: agent.name,
+        folder: worktree.folder,
+        branch: worktree.branch,
+        base: worktree.base,
+        folder_exists: true,
+        reachable: state.reachable ?? true,
+        changed_files: changedFiles,
+        status_hash: `hash-${agent.id}-${changedFiles}`,
+        own_commits: state.ownCommits ?? 0,
+        base_exists: true,
+      };
+    };
+
+    /** What a delete does to the worktrees of the agents it removes, deepest
+     * first, as the contract says. It refuses before anything is removed. */
+    const settleWorktrees = (
+      agentIds: string[],
+      fields: Record<string, unknown>,
+    ) => {
+      const result = {
+        deleted_branches: [] as string[],
+        kept_branches: [] as string[],
+        kept_folders: [] as string[],
+      };
+      const isRemove = fields.worktrees === "remove";
+      const confirmed = (fields.confirmed_status ?? {}) as Record<
+        string,
+        string
+      >;
+      const statuses = agentIds.flatMap((id) => {
+        const status = worktreeStatusOf(findAgent(id));
+        return status === undefined ? [] : [status];
+      });
+      for (const status of statuses) {
+        if (isRemove && confirmed[status.agent_id] !== status.status_hash) {
+          refuse(
+            "conflict",
+            `conflict: the worktree of ${status.name} changed; confirm again`,
+          );
+        }
+      }
+      for (const status of statuses) {
+        const isRemoved = isRemove && status.reachable;
+        if (!isRemoved) result.kept_folders.push(status.folder);
+        if (isRemoved && status.own_commits === 0) {
+          result.deleted_branches.push(status.branch);
+        } else {
+          result.kept_branches.push(status.branch);
+        }
+      }
+      return result;
+    };
+
     /** One new agent row, with its additions, as `agent.create` makes. */
     const createAgentRow = (fields: Record<string, unknown>): Agent => {
       if (!fields.name) refuse("invalid", "name is required");
@@ -496,7 +590,24 @@ export async function installMockCore(
         created_at: Date.now(),
         last_line: null,
         task: null,
+        worktree: null,
       };
+      if (fields.own_worktree === true) {
+        const repository = repositoryOf({
+          folder: fields.working_folder,
+          project_id: fields.project_id,
+        });
+        if (repository === undefined) {
+          refuse("invalid", "own worktree needs a git repository");
+        } else {
+          agent.worktree = {
+            repository: repository.root,
+            base: String(fields.base ?? repository.base),
+            branch: String(fields.branch_name ?? repository.branchName),
+            folder: `/data/worktrees/${agent.id}`,
+          };
+        }
+      }
       office.agents.push(agent);
       office.additions[agent.id] = {
         flags: [],
@@ -686,6 +797,23 @@ export async function installMockCore(
           record(agent.id, "create");
           return agent;
         }
+        case "agent.worktree_info": {
+          const repository = repositoryOf(fields);
+          if (repository === undefined) return { in_repository: false };
+          return {
+            in_repository: true,
+            base: repository.base,
+            base_is_branch: repository.baseIsBranch ?? true,
+            branches: repository.branches,
+            branch_name: repository.branchName,
+            subfolder: repository.folder.slice(repository.root.length + 1),
+          };
+        }
+        case "agent.worktree_status":
+          return (fields.agent_ids as string[]).flatMap((id) => {
+            const status = worktreeStatusOf(findAgent(id));
+            return status === undefined ? [] : [status];
+          });
         case "agent.start":
         case "agent.new_task": {
           const agent = findAgent(fields.agent_id);
@@ -733,6 +861,10 @@ export async function installMockCore(
           const agentId = String(fields.agent_id);
           findAgent(agentId);
           const descendants = descendantsOf(agentId);
+          const settled = settleWorktrees(
+            [...descendants].reverse().concat(agentId),
+            fields,
+          );
           if (descendants.length > 0) {
             const subject =
               descendants.length === 1 ? "descendant" : "descendants";
@@ -762,7 +894,7 @@ export async function installMockCore(
           pushEvent({ type: "agent.deleted", agent_id: agentId });
           treeChanged("agent.deleted");
           record(agentId, "delete");
-          return null;
+          return settled;
         }
         case "agent.additions.get": {
           const agent = findAgent(fields.agent_id);

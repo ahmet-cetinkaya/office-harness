@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use agent_application::commands::delete_agent::WorktreeOutcome;
+use agent_application::common::interfaces::WorktreeInfo;
 use agent_application::common::models::{AdditionsView, SessionView};
+use agent_application::queries::worktrees::WorktreeStatusView;
 use agent_domain::entities::{Agent, Project};
-use agent_domain::value_objects::{OfficeAdditions, TaskText};
+use agent_domain::value_objects::{AgentWorktree, OfficeAdditions, TaskText};
 use serde_json::{Value, json};
 
 #[must_use]
@@ -21,6 +24,64 @@ pub fn agent_json(agent: &Agent) -> Value {
         "created_at": agent.created_at.as_unix_millis(),
         "last_line": Value::Null,
         "task": task_json(agent.task.as_ref()),
+        "worktree": agent.worktree.as_ref().map_or(Value::Null, worktree_json),
+    })
+}
+
+/// `{repository, base, branch, folder}` of an own worktree (0010 FR-003).
+#[must_use]
+pub fn worktree_json(worktree: &AgentWorktree) -> Value {
+    json!({
+        "repository": worktree.repository.to_string_lossy(),
+        "base": worktree.base,
+        "branch": worktree.branch,
+        "folder": worktree.folder.to_string_lossy(),
+    })
+}
+
+/// The `agent.worktree_info` answer (0010 D4).
+#[must_use]
+pub fn worktree_info_json(info: Option<&WorktreeInfo>) -> Value {
+    info.map_or_else(
+        || json!({"in_repository": false}),
+        |info| {
+            json!({
+                "in_repository": true,
+                "base": info.base,
+                "base_is_branch": info.base_is_branch,
+                "branches": info.branches,
+                "branch_name": info.branch_name,
+                "subfolder": info.subfolder,
+            })
+        },
+    )
+}
+
+/// One `agent.worktree_status` entry (0010 D6).
+#[must_use]
+pub fn worktree_status_json(view: &WorktreeStatusView) -> Value {
+    json!({
+        "agent_id": view.agent.id.to_string(),
+        "name": view.agent.name.as_str(),
+        "folder": view.worktree.folder.to_string_lossy(),
+        "branch": view.worktree.branch,
+        "base": view.worktree.base,
+        "folder_exists": view.status.folder_exists,
+        "reachable": view.status.reachable,
+        "changed_files": view.status.changed_files,
+        "status_hash": view.status.status_hash,
+        "own_commits": view.status.own_commits,
+        "base_exists": view.status.base_exists,
+    })
+}
+
+/// The `agent.delete` answer: what happened to the worktrees (0010 FR-007).
+#[must_use]
+pub fn worktree_outcome_json(outcome: &WorktreeOutcome) -> Value {
+    json!({
+        "deleted_branches": outcome.deleted_branches,
+        "kept_branches": outcome.kept_branches,
+        "kept_folders": outcome.kept_folders,
     })
 }
 
