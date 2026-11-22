@@ -48,6 +48,8 @@
     ondelete: () => void;
     onsaveadditions: (additions: Additions) => Promise<FailureText>;
     onsavetask: (text: string) => Promise<FailureText>;
+    /** Opens the "save as template" dialog for this agent (0009). */
+    onsaveastemplate: () => void;
     onretry: () => void;
   }
 
@@ -71,6 +73,7 @@
     ondelete,
     onsaveadditions,
     onsavetask,
+    onsaveastemplate,
     onretry,
   }: Props = $props();
 
@@ -163,6 +166,9 @@
       </Button>
       <Button variant="secondary" onclick={isOnHold ? onrelease : onhold}>
         {isOnHold ? "Release agent" : "Hold agent"}
+      </Button>
+      <Button variant="secondary" onclick={onsaveastemplate}>
+        Save as template
       </Button>
       <Button
         variant="secondary"

@@ -15,12 +15,15 @@ use gethostname::gethostname;
 use notification_infrastructure::persistence::{
     LEDGER_TABLE as NOTIFICATION_LEDGER_TABLE, SCRIPTS as NOTIFICATION_SCRIPTS,
 };
+use template_infrastructure::persistence::{
+    LEDGER_TABLE as TEMPLATE_LEDGER_TABLE, SCRIPTS as TEMPLATE_SCRIPTS,
+};
 
 use super::{
     AccessServices, AgentServices, HierarchyServices, LoginSetup, NotificationServices, ServerLog,
-    StartupError, StorageAlerts, TerminalServices, build_access_services, build_agent_services,
-    build_hierarchy_services, build_notification_services, build_terminal_services, open_database,
-    run_migrations,
+    StartupError, StorageAlerts, TemplateServices, TerminalServices, build_access_services,
+    build_agent_services, build_hierarchy_services, build_notification_services,
+    build_template_services, build_terminal_services, open_database, run_migrations,
 };
 use crate::bridges::{AgentCalls, CallHelper, NeedsYouBridge, NotificationBridge, SystemClock};
 use crate::config::Config;
@@ -41,6 +44,7 @@ pub struct Services {
     pub agent: AgentServices,
     pub hierarchy: HierarchyServices,
     pub notification: NotificationServices,
+    pub template: TemplateServices,
     /// Writes the notification rows; the hold notifier shares it with the
     /// status stream (0007 D7).
     pub notification_bridge: NotificationBridge,
@@ -50,6 +54,23 @@ pub struct Services {
     /// The agent store as the bridge reads it, for the agent name a
     /// notification copies at creation.
     pub agent_bridge_store: Arc<dyn agent_application::common::interfaces::AgentStore>,
+}
+
+/// Runs each module's migrations, every module on its own ledger.
+///
+/// # Errors
+/// The first migration that fails.
+fn migrate_modules(connection: &mut rusqlite::Connection) -> Result<(), StartupError> {
+    run_migrations(connection, LEDGER_TABLE, SCRIPTS, PRE_MIGRATION_CHECKS)?;
+    run_migrations(connection, AUDIT_LEDGER_TABLE, AUDIT_SCRIPTS, &[])?;
+    run_migrations(
+        connection,
+        NOTIFICATION_LEDGER_TABLE,
+        NOTIFICATION_SCRIPTS,
+        &[],
+    )?;
+    run_migrations(connection, TEMPLATE_LEDGER_TABLE, TEMPLATE_SCRIPTS, &[])?;
+    Ok(())
 }
 
 /// Startup steps 3 to 6 with the user's real login shell.
@@ -81,14 +102,7 @@ pub fn start_with(
         ));
     }
     let mut connection = open_database(&config.database_path())?;
-    run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, PRE_MIGRATION_CHECKS)?;
-    run_migrations(&mut connection, AUDIT_LEDGER_TABLE, AUDIT_SCRIPTS, &[])?;
-    run_migrations(
-        &mut connection,
-        NOTIFICATION_LEDGER_TABLE,
-        NOTIFICATION_SCRIPTS,
-        &[],
-    )?;
+    migrate_modules(&mut connection)?;
 
     let connection = SharedConnection::new(connection);
     let agents = AgentRepository::new(connection.clone());
@@ -161,6 +175,12 @@ pub fn start_with(
         &notification_bridge,
         &needs_you_bridge,
     )?;
+    let template = build_template_services(
+        &connection,
+        Arc::clone(&agent_bridge_store),
+        &hierarchy,
+        &storage_alerts,
+    );
     Ok(Services {
         machine,
         agents,
@@ -173,6 +193,7 @@ pub fn start_with(
         agent,
         hierarchy,
         notification,
+        template,
         notification_bridge,
         needs_you_bridge,
         agent_bridge_store,

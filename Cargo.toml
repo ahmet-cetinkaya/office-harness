@@ -48,6 +48,8 @@ tauri = { version = "=2.12.5", features = [] }
 tauri-build = "=2.7.4"
 # OS notifications for the 0003 panel (research R7, plan D7).
 tauri-plugin-notification = "=2.8.1"
+# Save and open dialogs for the 0009 template files; used from Rust only (plan D6).
+tauri-plugin-dialog = "=2.8.4"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

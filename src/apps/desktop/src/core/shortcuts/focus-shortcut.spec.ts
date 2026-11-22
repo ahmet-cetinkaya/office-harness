@@ -18,6 +18,8 @@ function clientWithSetting(value: unknown): CoreClient {
     registerLoginStart: async () => {},
     loginStartStatus: async () => false,
     retryConnection: async () => {},
+    exportTemplatesFile: async () => "cancelled",
+    importTemplatesFile: async () => null,
   };
 }
 

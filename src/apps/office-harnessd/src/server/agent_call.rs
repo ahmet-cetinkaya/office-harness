@@ -22,8 +22,8 @@ use crate::bridges::take_recorded_events;
 
 /// The only request types an agent connection answers (0002, plan D3). Any
 /// other type is refused, so no agent reaches `terminal.*`, `agent.delete`,
-/// `team.*`, `hierarchy.*`, `server.*`, `settings.*`, `project.*`, or the
-/// additions of an agent.
+/// `team.*`, `hierarchy.*`, `server.*`, `settings.*`, `project.*`,
+/// `template.*`, or the additions of an agent.
 const ALLOWED_REQUESTS: [&str; 6] = [
     "agent.whoami",
     "agent.create",

@@ -8,6 +8,7 @@ mod channels;
 mod commands;
 mod connection;
 mod server_process;
+mod template_files;
 
 use connection::{Connection, DataFolder};
 use tauri::Manager;
@@ -24,6 +25,9 @@ fn main() {
     let result = tauri::Builder::default()
         // OS notifications for the agent events (0003, D7).
         .plugin(tauri_plugin_notification::init())
+        // The save and open dialogs for the template files (0009, D6). Only
+        // the two file commands use them; the webview gets no dialog permission.
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let connection = Connection::new(DataFolder::locate()?);
             app.manage(connection.clone());
@@ -43,6 +47,8 @@ fn main() {
             commands::register_login_start,
             commands::login_start_status,
             commands::set_window_title,
+            commands::export_templates_file,
+            commands::import_templates_file,
         ])
         .run(tauri::generate_context!());
     if let Err(error) = result {

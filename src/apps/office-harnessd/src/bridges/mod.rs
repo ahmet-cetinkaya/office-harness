@@ -4,6 +4,7 @@
 //! host joins them here.
 
 mod action_recorder;
+mod agent_definition_bridge;
 mod agent_line_bridge;
 mod agent_status_bridge;
 mod directive_bridges;
@@ -15,12 +16,16 @@ mod role_requests;
 mod saved_output;
 mod subtree_requests;
 mod system_clock;
+mod template_create;
+mod template_create_error;
+mod template_plan;
 mod terminal_events;
 mod terminal_host;
 mod terminal_launcher;
 mod typed_input;
 
 pub use action_recorder::{ActionRecorderBridge, take_recorded_events};
+pub use agent_definition_bridge::AgentDefinitionBridge;
 pub use agent_line_bridge::AgentLineBridge;
 pub use agent_status_bridge::{AgentStatusBridge, StatusOrder, StoppingFlag};
 pub use directive_bridges::{
@@ -37,6 +42,8 @@ pub use subtree_requests::{
     SubtreeRequestsBridge, delete_worktrees, subtree_worktrees, worktree_report,
 };
 pub use system_clock::{SteadyClock, SystemClock};
+pub use template_create::{CreatedAgent, DirectPlace, TeamCreation, TemplateCreateBridge};
+pub use template_create_error::TemplateCreateError;
 pub use terminal_events::{AgentTerminalEvent, HeldLine, TerminalEvents};
 pub use terminal_host::{AgentCalls, CallHelper, TerminalHostBridge};
 pub use terminal_launcher::{

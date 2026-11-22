@@ -6,6 +6,7 @@ use agent_application::common::interfaces::Clock;
 use hierarchy_application::common::ports::HoldClock;
 use kernel::Timestamp;
 use notification_application::common::interfaces::NotificationClock;
+use template_application::common::interfaces::TemplateClock;
 
 /// The wall clock.
 pub struct SystemClock;
@@ -17,6 +18,12 @@ impl Clock for SystemClock {
 }
 
 impl NotificationClock for SystemClock {
+    fn now(&self) -> Timestamp {
+        wall_now()
+    }
+}
+
+impl TemplateClock for SystemClock {
     fn now(&self) -> Timestamp {
         wall_now()
     }

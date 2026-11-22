@@ -22,6 +22,7 @@ use super::server_error::ServerError;
 use super::server_file::write_server_file;
 use super::server_options::ServerOptions;
 use super::server_state::ServerState;
+use super::template_requests::TemplateGateway;
 use super::terminal_requests::TerminalGateway;
 use crate::bootstrap::{ServerLog, Services};
 use crate::bridges::{AgentLineBridge, AgentStatusBridge};
@@ -35,6 +36,16 @@ pub struct Server {
     state: ServerState,
     shutdown: watch::Sender<bool>,
     announcement_path: PathBuf,
+}
+
+/// The user's `template.*` requests, over the template services.
+fn template_gateway(services: &Services) -> TemplateGateway {
+    TemplateGateway::new(
+        Arc::clone(&services.template.handlers),
+        Arc::clone(&services.template.create),
+        services.events.clone(),
+        services.storage_alerts.clone(),
+    )
 }
 
 impl Server {
@@ -130,6 +141,7 @@ impl Server {
             hierarchy_tree: Arc::clone(&services.hierarchy.tree),
             directive_journal: Arc::clone(&services.hierarchy.directive_journal),
             notification,
+            templates: template_gateway(services),
             events,
             restart: RestartSignal::default(),
             token_generations: services.access.token_store.subscribe(),

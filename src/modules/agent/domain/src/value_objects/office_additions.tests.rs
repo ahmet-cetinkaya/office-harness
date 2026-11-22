@@ -7,8 +7,8 @@ fn keeps_the_order_of_flags_and_entries() {
     let additions = OfficeAdditions::new(
         vec!["--b".to_owned(), "--a".to_owned()],
         vec![
-            EnvEntry::parse("Z", "1").expect("entry"),
-            EnvEntry::parse("A", "2").expect("entry"),
+            EnvEntry::parse("Z", Some("1")).expect("entry"),
+            EnvEntry::parse("A", Some("2")).expect("entry"),
         ],
         Some("hello".to_owned()),
     )

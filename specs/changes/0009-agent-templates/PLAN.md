@@ -126,7 +126,7 @@ Deliver spec 0009:
     - If one `remove` fails, the undo goes on with the rest and still deletes the team row. The answer gives the first failure's reason and names each agent left behind, as the role create does.
     - Each rolled-back agent leaves a Create entry and a Delete entry in the action record (PB-2). The record is not rewritten.
   - **Create undo mode (shared with 0010):** `AgentCreator::remove` is the undo of a create and is used only for that (role create and this batch). It discards without asking: it deletes the agent and everything the create made for it. From 0010 on, that includes the agent's new worktree and branch; `remove` never takes the user delete's `keep` default.
-  - **Events:** on success, one `agent.changed` per created agent and one `hierarchy.changed`, as the existing create paths send. On a rollback, none.
+  - **Events:** on success, one `agent.changed` per created agent and one `hierarchy.changed`, as the existing create paths send. On a rollback, no `agent.changed` and no `hierarchy.changed`; the `action.recorded` events of the Create and Delete entries are still sent, because those entries exist. When every write succeeded but an agent cannot be read back, the creation still answers success and sends its events (that agent has no `agent.changed`), and `storage.error` is raised.
   - **Partial state:** `snapshot` and `agent.list` do not take the tree exclusion, so another client can see an agent for a moment that is then rolled back. This is accepted: it is visible only during a failing batch, and the events above never announce it.
   - **Record:** each created agent is recorded by the existing create journal with the user as actor (PB-2).
   - Template changes are not recorded (A10).
@@ -271,7 +271,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
   - Export, then import into a fresh office through preview and confirm, reproduces every value except env values, and the text holds no env value (SC-002).
   - Preview saves nothing. A cancel (no confirm) saves nothing.
   - Editing and deleting a template change no agent or team (SC-004).
-  - A second client receives one `agent.changed` per created agent and one `hierarchy.changed`, and nothing for a failed creation.
+  - A second client receives one `agent.changed` per created agent and one `hierarchy.changed`, and no `agent.changed` or `hierarchy.changed` for a failed creation (its `action.recorded` events are sent).
   - An import `text` over 256 KiB is refused with `invalid`.
   - An import of a file whose env entry has a value saves "no value".
   - An agent connection asking for `template.list` is refused as not allowed.

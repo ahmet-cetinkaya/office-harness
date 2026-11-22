@@ -66,8 +66,9 @@ impl HierarchyStore for TeamStore {
         Ok(self.name_taken)
     }
 
-    fn save_team_and_place_lead(
+    fn save_team_and_place_lead_held(
         &self,
+        _exclusion: &TreeExclusion<'_>,
         team: &Team,
         _parent_agent_id: Option<AgentId>,
     ) -> Result<(), HierarchyApplicationError> {
@@ -80,7 +81,11 @@ impl HierarchyStore for TeamStore {
         Ok(())
     }
 
-    fn delete_team_and_unplace(&self, _team_id: TeamId) -> Result<(), HierarchyApplicationError> {
+    fn delete_team_and_unplace_held(
+        &self,
+        _exclusion: &TreeExclusion<'_>,
+        _team_id: TeamId,
+    ) -> Result<(), HierarchyApplicationError> {
         never_called()
     }
 

@@ -102,15 +102,15 @@ impl HierarchyStore for HierarchyRepository {
         })
     }
 
-    fn save_team_and_place_lead(
+    fn save_team_and_place_lead_held(
         &self,
+        _exclusion: &TreeExclusion<'_>,
         team: &Team,
         parent_agent_id: Option<AgentId>,
     ) -> Result<(), HierarchyApplicationError> {
         let places = &self.places;
-        // The exclusion joins the new placement to the count a subtree
-        // action took; the connection lock is always the inner one.
-        let _exclusion = self.tree_exclusion();
+        // The caller's exclusion joins the new placement to the count a
+        // subtree action took; the connection lock is always the inner one.
         self.locked(|connection| {
             connection
                 .execute(
@@ -146,9 +146,12 @@ impl HierarchyStore for HierarchyRepository {
         })
     }
 
-    fn delete_team_and_unplace(&self, team_id: TeamId) -> Result<(), HierarchyApplicationError> {
+    fn delete_team_and_unplace_held(
+        &self,
+        _exclusion: &TreeExclusion<'_>,
+        team_id: TeamId,
+    ) -> Result<(), HierarchyApplicationError> {
         let places = &self.places;
-        let _exclusion = self.tree_exclusion();
         self.locked(|connection| {
             let id = team_id.as_uuid_text();
             let members: Vec<String> = connection

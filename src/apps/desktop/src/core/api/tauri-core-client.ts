@@ -64,6 +64,9 @@ export function createTauriCoreClient(): CoreClient {
     registerLoginStart: () => call("register_login_start"),
     loginStartStatus: () => call("login_start_status"),
     retryConnection: () => call("retry_connection"),
+    exportTemplatesFile: (contents) =>
+      call("export_templates_file", { contents }),
+    importTemplatesFile: () => call("import_templates_file"),
   };
 }
 
