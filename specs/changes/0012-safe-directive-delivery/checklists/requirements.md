@@ -1,6 +1,6 @@
 # Requirements checklist: 0012-safe-directive-delivery
 
-Spec: `specs/changes/0012-safe-directive-delivery/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0007/`, and `0011/` reference was checked against the specs on `main` at 6e3d197.
+Spec: `specs/changes/0012-safe-directive-delivery/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0007/` (including FR-008), and `0011/` reference was checked against the specs on `main` at 6e3d197.
 
 ## Content quality
 
@@ -35,6 +35,7 @@ Spec: `specs/changes/0012-safe-directive-delivery/SPEC.md` · Status: draft · D
 | 2 | Hostile reader | The status "waiting for input" is also shown while a CLI asks a question (0001 A1), so a status gate alone would still type into a question. A text letter, not only Enter, can answer a choice list. A waiting directive could be typed after its sender lost the right to send it. Nothing bounded the queue. | FR-002 checks the screen and types neither text nor Enter. FR-005 withdraws on a tree change or a hold. FR-004 caps the queue at 20. |
 | 3 | Hostile reader on the fixed text | A false match could hold a directive forever. A server stop loses waiting directives. | FR-005 withdraws after 10 minutes with the reason (A3). A4 states the loss and that the acceptance stays in the record. |
 | 4 | Review guidance before the review | A quiet CLI showing a prompt the question check does not know still reads as waiting for input, so text and Enter would reach it. | FR-003: type the text, press Enter only when its end shows at the input line within 2 seconds, else leave it unsubmitted and record it. The Residual risk section states what stays open. |
+| 5 | Review r1 | A pasted startup prompt is office input and the CLI goes quiet, so a directive's Enter could submit it. "Never" in US1 overstated the guard. A normal stop left no record. A queue-full refusal could be read as a rate-limit refusal. | FR-002 holds directives while a startup prompt waits (A11). US1 and the Intent now promise no Enter, with the residual risk named; a paste placeholder counts (A9). FR-005 records a normal stop. A6 says a queue-full refusal does not count toward 0007/FR-008. |
 
 ## Notes
 
