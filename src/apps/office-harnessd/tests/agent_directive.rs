@@ -185,7 +185,7 @@ async fn a_lead_sends_a_directive_and_the_member_takes_it_as_one_input_with_ente
     office.clis.add(
         "member-cli",
         &format!(
-            "echo ready\nstty raw\ndd bs=1 count={DIRECTIVE_BYTES} of={} 2>/dev/null\nsleep 30",
+            "echo ready\nstty raw echo\ndd bs=1 count={DIRECTIVE_BYTES} of={} 2>/dev/null\nsleep 30",
             typed.display()
         ),
     );
@@ -588,25 +588,34 @@ async fn a_startup_prompt_that_waits_for_the_person_holds_directives() {
     office.serving.stop().await;
 }
 
+/// How long a test watches a terminal to see that nothing more arrives.
+const NOTHING_MORE_WAIT: std::time::Duration = std::time::Duration::from_millis(1500);
+
 #[tokio::test]
-async fn a_person_typing_in_the_terminal_holds_a_directive() {
+async fn a_half_typed_line_of_a_person_holds_a_directive_and_nothing_is_typed() {
     let office = Office::open().await;
-    let (_lead, member, token, server_file) = office_with(&office, Some(Role::Lead)).await;
+    let typed = office.records_path().join("typed");
+    let cli = format!("echo ready\nstty raw echo\ncat >> {}\n", typed.display());
+    let (_lead, member, token, server_file) =
+        office_with_member_cli(&office, Some(Role::Lead), &cli).await;
     let mut client = office.client().await;
     client.wait_for_status(&member, "waiting_for_input").await;
-    // "hi" as a person types it, without Enter.
-    let typed = client
+    // "hi" as a person types it, without Enter (0012 A5).
+    let half_typed = client
         .ask(
             "terminal.input",
             json!({"agent_id": member, "data": "aGk="}),
         )
         .await;
-    assert_eq!(typed["ok"], true, "{typed}");
+    assert_eq!(half_typed["ok"], true, "{half_typed}");
 
     let request = json!({"target_agent_id": member, "text": DIRECTIVE});
     let answer = answer_of(&send_directive(&token, &server_file, &request).await);
 
     assert_eq!(answer["result"]["delivery"], "waiting", "{answer}");
+    tokio::time::sleep(NOTHING_MORE_WAIT).await;
+    let received = fs::read_to_string(&typed).expect("typed");
+    assert_eq!(received, "hi");
     office.serving.stop().await;
 }
 

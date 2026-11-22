@@ -3,7 +3,7 @@
 ## Summary
 
 - **Date:** 2026-11-23.
-- **Build under test:** branch `feat/0012-safe-directive-delivery`, merge commit 05640c5 (implementation 82b8934 merged with `main` c07f21c), toolchain 1.100.0. The full gates below ran on that tree; the three repeated runs of the directive tests ran on 82b8934, before the merge.
+- **Build under test:** branch `feat/0012-safe-directive-delivery`, the commit that adds the unsent-text hold (A5 decision) on top of merge commit 05640c5 (`main` c07f21c), toolchain 1.100.0. The full gates below ran on that tree; the three repeated runs of the directive tests ran on 82b8934, before the merge.
 - **Overall status:** automated evidence stands for FR-001 to FR-005, the modified 0002/FR-010, and PB-1 to PB-5. The success criteria that name a count are proven with fewer directives than the count, so they are PARTIAL. Rows that need the real agent CLIs are BLOCKED. Nobody ran them.
 - **Status of this file:** the gate numbers come from runs on 2026-11-23. The CI result of the PR is not in this file.
 
@@ -27,11 +27,11 @@
 |---|---|---|
 | `cargo fmt --check` | workspace | PASS |
 | `cargo clippy --all-targets -D warnings` | workspace without `office-harness-desktop` | PASS (clean) |
-| `cargo test` | workspace without `office-harness-desktop`: 1203 passed, 0 failed (1182 before the merge) | PASS |
+| `cargo test` | workspace without `office-harness-desktop`: 1212 passed, 0 failed | PASS |
 | `tests/agent_directive.rs`, `tests/task_text.rs` | 13 and 14 tests, run 3 times in a row on 82b8934, once more in the merged workspace run | PASS (each time) |
 | `scripts/check-boundaries.sh` | repository | PASS (boundaries ok) |
 | Desktop checks (`bun test`, Playwright, `svelte-check`) | no desktop file changed | Not run |
-| CI | the PR | Not run yet |
+| CI | the PR at dc9aa61 | Ubuntu and Windows passed; macOS failed one test: BSD `stty raw` also turns echo off, so a fake CLI showed no text. The fake CLIs now ask for `stty raw echo`. CI on the new head is not in this file. |
 
 ## Requirements
 
@@ -40,7 +40,7 @@ Paths are relative to the repository root. `H` is `src/apps/office-harnessd`, `M
 | ID | Verdict | Evidence |
 |---|---|---|
 | FR-001 | PASS (automated) | `SDH`: `a_busy_target_queues_the_directive_and_types_nothing`, `ten_waiting_directives_are_typed_once_each_in_the_order_sent`, `the_next_directive_waits_the_settle_gap_after_one_was_typed`, `directives_sent_at_once_are_received_in_the_order_they_were_written`; `DQ`: `places_count_from_one_in_the_order_of_arrival`, `a_claimed_head_is_not_claimed_twice`, `the_next_delivery_waits_the_settle_gap`; `H/tests/task_text.rs`: `directives_at_once_leave_the_text_that_was_written_last` (three real directives, typed one after another). |
-| FR-002 | PASS (automated) | `DB`: `an_idle_member_with_a_clear_screen_is_ready`, `a_working_or_starting_member_is_busy`, `an_open_question_on_the_screen_keeps_the_member_busy`, `a_person_who_typed_keeps_the_member_busy`, `office_text_that_waits_for_the_person_keeps_the_member_busy`; `PI`: all five tests; `OQ`: all eight tests; `AD`: `a_directive_waits_while_a_question_shows_and_is_typed_after_it`, `a_person_typing_in_the_terminal_holds_a_directive`, `a_startup_prompt_that_waits_for_the_person_holds_directives`. |
+| FR-002 | PASS (automated) | `DB`: `an_idle_member_with_a_clear_screen_is_ready`, `a_working_or_starting_member_is_busy`, `an_open_question_on_the_screen_keeps_the_member_busy`, `a_person_who_typed_keeps_the_member_busy`, `office_text_that_waits_for_the_person_keeps_the_member_busy`; `PI`: all seven tests; `ID` (`M/terminal/domain/src/services/input_draft.tests.rs`): all seven tests; `OQ`: all eight tests; `AD`: `a_directive_waits_while_a_question_shows_and_is_typed_after_it`, `a_half_typed_line_of_a_person_holds_a_directive_and_nothing_is_typed`, `a_startup_prompt_that_waits_for_the_person_holds_directives`. |
 | FR-003 | PASS (automated) | `IL`: all nine tests; `DB`: `the_writer_pastes_the_text_and_presses_enter_once_it_shows`, `a_text_that_does_not_show_gets_no_enter_and_holds_the_next_directives`; `SDH`: `a_directive_whose_text_does_not_show_is_left_unsubmitted`, `a_waiting_directive_whose_text_does_not_show_is_recorded_unsubmitted`; `AD`: `a_text_that_does_not_show_gets_no_enter_and_holds_the_next_directive` (the member receives the text and no Enter; both records carry the reason). |
 | FR-004 | PASS (automated) | `SDH`: `a_busy_target_queues_the_directive_and_types_nothing` (places 1 and 2), `a_full_queue_refuses_the_next_directive_and_records_it`; `AD`: the answers `submitted`, `waiting` with `position: 1`, and `unsubmitted` in the tests above. |
 | FR-005 | PASS (automated) | `SDH`: `a_directive_that_waits_ten_minutes_is_withdrawn_untyped`, `a_target_that_stopped_withdraws_every_waiting_directive`, `a_target_moved_out_of_the_subtree_withdraws_the_waiting_directive`, `a_server_stop_withdraws_every_waiting_directive`, `hold_guard::a_hold_set_while_a_directive_waits_withdraws_it_and_counts_nothing`; `AD`: `a_waiting_directive_is_withdrawn_and_recorded_when_its_target_stops` (both records, with the text and the reason); `H/tests/agent_hold.rs`: `a_hundred_directives_deliver_at_most_the_limit_and_every_refusal_is_recorded` (the automatic hold withdraws the waiting directives). The normal-stop path at the server is wired in `H/src/bootstrap/interrupt_agents.rs`; no end-to-end test stops a server with directives waiting. |
@@ -57,11 +57,24 @@ Paths are relative to the repository root. `H` is `src/apps/office-harnessd`, `M
 |---|---|---|
 | SC-001 | PARTIAL (automated) | `AD`: `a_directive_waits_while_a_question_shows_and_is_typed_after_it` proves 0 bytes reached the member while the question showed, for one directive; `OQ` covers each question shape. 50 directives in a row were not run. |
 | SC-002 | PARTIAL (automated) | `AD`: `a_text_that_does_not_show_gets_no_enter_and_holds_the_next_directive` proves no Enter for one directive; `IL`: `a_question_that_does_not_echo_shows_nothing`. 20 directives were not run. |
-| SC-003 | PARTIAL (automated) | `PI`: `a_person_holds_directives_for_the_typing_pause` (held 1 ms before 30 s, free at 30 s); `AD`: `a_person_typing_in_the_terminal_holds_a_directive` (one directive). 20 directives over a real 30-second pause were not run. |
+| SC-003 | PARTIAL (automated) | `PI`: `a_person_holds_directives_for_the_typing_pause` (held 1 ms before 30 s, free at 30 s); `AD`: `a_half_typed_line_of_a_person_holds_a_directive_and_nothing_is_typed` (one directive). 20 directives over a real 30-second pause were not run. |
 | SC-004 | PASS (automated) | `SDH`: `ten_waiting_directives_are_typed_once_each_in_the_order_sent`. |
 | SC-005 | PASS (automated) | `SDH`: every withdrawal and unsubmitted test checks the entry, the text, and both agents; `AD`: `a_waiting_directive_is_withdrawn_and_recorded_when_its_target_stops`, `a_text_that_does_not_show_gets_no_enter_and_holds_the_next_directive`. |
 | SC-006 | PARTIAL (automated) | `AD`: `a_lead_sends_a_directive_and_the_member_takes_it_as_one_input_with_enter` answers `submitted` from the call itself; no test measures the 2-second bound. |
 | SC-007 | PARTIAL (automated) | `AD`: `a_startup_prompt_that_waits_for_the_person_holds_directives` and the second directive in `a_text_that_does_not_show_gets_no_enter_and_holds_the_next_directive` (one directive each). 10 directives were not run. |
+| SC-008 | PARTIAL (automated) | `PI`: `an_unsent_line_holds_directives_past_the_pause_until_it_is_sent_or_cleared` (held at ten times the pause, free after a line-clearing key); `AD`: `a_half_typed_line_of_a_person_holds_a_directive_and_nothing_is_typed` (the member receives only the person's `hi`). 10 directives were not run. |
+
+## Considered, not built
+
+A cross-check against the reference behavior (see the pull request) named these habits of its delivery queue. This change covers or answers each:
+
+| Habit | In 0012 |
+|---|---|
+| Wait until the CLI is idle | Covered: the target must wait for input (FR-002). |
+| Hold while the person has an unsent line | Covered: unsent person text holds delivery until it is sent or cleared (A5, SC-008). |
+| Never send Escape | Covered: the office writes only the paste and one Enter; no test path writes Escape, and A5 states it. |
+| A start-up grace before the first delivery | Not built: a new session is `starting`, then `working`, and reaches `waiting for input` only after the quiet period, which already acts as a grace; a startup prompt also holds the queue (A11). |
+| About 4.5 seconds between deliveries | Not built as a fixed gap: the next delivery waits 2 seconds (plan D8) and then for `waiting for input` again, which follows a full quiet period after the previous turn. |
 
 ## Checks a person must run
 

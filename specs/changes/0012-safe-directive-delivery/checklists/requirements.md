@@ -37,6 +37,7 @@ Spec: `specs/changes/0012-safe-directive-delivery/SPEC.md` · Status: draft · D
 | 4 | Review guidance before the review | A quiet CLI showing a prompt the question check does not know still reads as waiting for input, so text and Enter would reach it. | FR-003: type the text, press Enter only when its end shows at the input line within 2 seconds, else leave it unsubmitted and record it. The Residual risk section states what stays open. |
 | 5 | Review r1 | A pasted startup prompt is office input and the CLI goes quiet, so a directive's Enter could submit it. "Never" in US1 overstated the guard. A normal stop left no record. A queue-full refusal could be read as a rate-limit refusal. | FR-002 holds directives while a startup prompt waits (A11). US1 and the Intent now promise no Enter, with the residual risk named; a paste placeholder counts (A9). FR-005 records a normal stop. A6 says a queue-full refusal does not count toward 0007/FR-008. |
 | 6 | Review r2 | An unsubmitted directive stays in the input line, so the next directive's Enter would submit both. | One rule: pending office text, a startup prompt or an unsubmitted directive, holds the queue until a person input or the session's end (FR-002, A11). |
+| 7 | Decision after review r4 | A half-typed line of a person was held for 30 seconds only; the next directive's Enter would then send it. | A5 and FR-002: unsent person text, read from the person's keys, holds delivery until it is sent or cleared; no Escape, no clearing. SC-008. |
 
 ## Notes
 

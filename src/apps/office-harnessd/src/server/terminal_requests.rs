@@ -180,9 +180,9 @@ impl TerminalGateway {
         let body: InputRequest = parse_body(request)?;
         // Before the bytes go in, so a directive gate never reads a terminal
         // as untouched while a person's keys are on their way. The handler
-        // refuses an id that does not parse.
-        if let Ok(agent_id) = body.agent_id.parse::<AgentId>() {
-            self.person_input.stamp(agent_id);
+        // refuses an id or data that does not parse.
+        if let (Ok(agent_id), Ok(bytes)) = (body.agent_id.parse::<AgentId>(), body.bytes()) {
+            self.person_input.stamp(agent_id, &bytes);
         }
         let handlers = Arc::clone(&self.handlers);
         run_blocking(move || handlers.input(&body)).await?;

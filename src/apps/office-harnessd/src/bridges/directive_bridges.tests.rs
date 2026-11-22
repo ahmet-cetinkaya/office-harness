@@ -364,7 +364,7 @@ fn an_open_question_on_the_screen_keeps_the_member_busy() {
 fn a_person_who_typed_keeps_the_member_busy() {
     let runtime = RecordingRuntime::idle(AgentId::generate());
     let input = PersonInput::default();
-    input.stamp(runtime.running_for);
+    input.stamp(runtime.running_for, b"y\r");
     assert_eq!(
         readiness_of(AgentStatus::WaitingForInput, runtime, &input),
         Readiness::Busy
