@@ -38,7 +38,9 @@ pub use notification_bridge::NotificationBridge;
 pub use rate_limit_source::SettingsRateLimits;
 pub use role_requests::{AgentCreatorBridge, RoleRequestsBridge};
 pub use saved_output::{SavedOutputError, SavedOutputs};
-pub use subtree_requests::SubtreeRequestsBridge;
+pub use subtree_requests::{
+    SubtreeRequestsBridge, delete_worktrees, subtree_worktrees, worktree_report,
+};
 pub use system_clock::{SteadyClock, SystemClock};
 pub use template_create::{CreatedAgent, DirectPlace, TeamCreation, TemplateCreateBridge};
 pub use template_create_error::TemplateCreateError;

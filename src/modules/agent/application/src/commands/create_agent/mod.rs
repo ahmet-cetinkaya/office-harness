@@ -2,4 +2,6 @@
 
 mod create_agent_handler;
 
-pub use create_agent_handler::{CreateAgentHandler, CreateAgentRequest};
+pub use create_agent_handler::{
+    CreateAgentHandler, CreateAgentRequest, NEEDS_REPOSITORY, OwnWorktree,
+};

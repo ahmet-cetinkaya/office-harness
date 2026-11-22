@@ -16,6 +16,16 @@ import {
   type Project,
   type Session,
 } from "../models/agent";
+import {
+  deleteResultText,
+  KEEP_WORKTREES,
+  failedOutcome,
+  type DeleteOutcome,
+  type DeleteResult,
+  type WorktreeChoice,
+  type WorktreeQuery,
+  type WorktreeStatus,
+} from "../models/worktree";
 import { createAgentService } from "../services/agent-service";
 import {
   EVENT_ACTION_RECORDED,
@@ -416,17 +426,62 @@ export function createOfficeController(
         await refreshSessions(agentId);
       }),
 
-    deleteAgent: (agentId: string): Promise<void> =>
-      perform("The agent was not deleted.", async () => {
+    /** Deletes one agent. A failure shows as the notice; a worktree that
+     * changed after the question comes back as "changed" so the view asks
+     * again (0010, FR-006). */
+    deleteAgent: async (
+      agentId: string,
+      choice?: WorktreeChoice,
+    ): Promise<DeleteOutcome> => {
+      let outcome: DeleteOutcome = { kind: "refused", message: "" };
+      await perform("The agent was not deleted.", async () => {
         ownDeletes.add(agentId);
+        let result: DeleteResult;
         try {
-          await service.deleteAgent(agentId);
+          result = await service.deleteAgent(agentId, choice);
         } catch (rejection) {
           ownDeletes.delete(agentId);
-          throw rejection;
+          const failed = failedOutcome(rejection, choice ?? KEEP_WORKTREES);
+          outcome = failed;
+          if (failed.kind === "refused") throw rejection;
+          update({
+            notice: {
+              lead: "The agent was not deleted.",
+              message: failed.message,
+            },
+          });
+          return;
         }
         handleDeleted({ type: EVENT_AGENT_DELETED, agent_id: agentId });
-      }),
+        outcome = { kind: "deleted", result };
+        const text = deleteResultText(result);
+        if (text !== null)
+          update({ notice: { lead: "The agent was deleted.", message: text } });
+      });
+      return outcome;
+    },
+
+    /** The worktree request of a form (0010, FR-001). It rejects, and the
+     * form hides the choice. */
+    worktreeInfo: (query: WorktreeQuery) => service.worktreeInfo(query),
+
+    /** The worktrees among these agents, or null after a notice when the
+     * read failed. */
+    worktreeStatus: async (
+      agentIds: string[],
+    ): Promise<WorktreeStatus[] | null> => {
+      try {
+        return await service.worktreeStatus(agentIds);
+      } catch (rejection) {
+        update({
+          notice: {
+            lead: "The worktrees could not be read.",
+            message: describe(rejection),
+          },
+        });
+        return null;
+      }
+    },
 
     saveAdditions: (
       agentId: string,

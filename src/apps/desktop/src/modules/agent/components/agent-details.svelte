@@ -81,7 +81,10 @@
   const isRunning = $derived(isActive(agent.status));
 
   function ask(next: Confirmation): void {
-    if (needsConfirmation(next)) confirmation = next;
+    // The delete of an agent with a worktree asks its own question, which
+    // is also the confirmation (0010, FR-005).
+    const asksAboutWorktree = next.kind === "delete" && agent.worktree != null;
+    if (needsConfirmation(next) && !asksAboutWorktree) confirmation = next;
     else run(next);
   }
 
@@ -124,6 +127,14 @@
       {#if projectName !== null}
         <dt class="font-medium">Project</dt>
         <dd>{projectName}</dd>
+      {/if}
+      {#if agent.worktree}
+        <dt class="font-medium">Branch</dt>
+        <dd class="break-all">{agent.worktree.branch}</dd>
+        <dt class="font-medium">Base</dt>
+        <dd class="break-all">{agent.worktree.base}</dd>
+        <dt class="font-medium">Worktree folder</dt>
+        <dd class="break-all">{agent.worktree.folder}</dd>
       {/if}
     </dl>
     <TaskEditor task={agent.task ?? null} {isBusy} onsave={onsavetask} />

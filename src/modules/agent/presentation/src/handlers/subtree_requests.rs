@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use agent_application::commands::delete_agent::{DeleteWorktrees, WorktreeOutcome};
 use kernel::AgentId;
 use wire::{ErrorCode, Request};
 
@@ -11,8 +12,11 @@ pub enum SubtreeResult {
     /// One entry per stopped agent, the requested agent last (FR-007).
     Stopped(Vec<AgentId>),
     /// One entry per deleted agent, deepest first and the requested agent
-    /// last (FR-006).
-    Deleted(Vec<AgentId>),
+    /// last (FR-006), and what happened to their worktrees (0010 FR-007).
+    Deleted {
+        agents: Vec<AgentId>,
+        worktrees: WorktreeOutcome,
+    },
     /// The action ran on no agent: the wire code and message to answer.
     Failed { code: ErrorCode, message: String },
 }
@@ -28,5 +32,12 @@ pub trait SubtreeRequests: Send + Sync {
 
     /// Deletes one agent or, when the request confirms the fresh descendant
     /// count, its whole subtree (FR-006).
-    fn delete_subtree(&self, request: &Request, agent_id: AgentId) -> SubtreeResult;
+    /// `worktrees` is the request's own choice, already read, for every
+    /// deleted agent (0010).
+    fn delete_subtree(
+        &self,
+        request: &Request,
+        agent_id: AgentId,
+        worktrees: &DeleteWorktrees,
+    ) -> SubtreeResult;
 }

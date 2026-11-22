@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use agent_application::commands::create_agent::OwnWorktree;
 use agent_application::common::additions_input::AdditionsInput;
 use wire::ErrorCode;
 
@@ -45,4 +46,6 @@ pub struct RoleSeed {
     pub project_id: Option<String>,
     /// Absent means no additions.
     pub additions: Option<AdditionsInput>,
+    /// The user's own worktree choice (0010); agents never send one (A7).
+    pub worktree: Option<OwnWorktree>,
 }

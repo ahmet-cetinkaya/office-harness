@@ -57,9 +57,12 @@ impl HierarchyApplicationError {
         error.into_application()
     }
 
-    /// Maps a delete failure of one subtree member.
+    /// Maps a delete failure of one subtree member. The text is the agent
+    /// module's own message, so it carries no `conflict: ` prefix: the
+    /// worktree refusal reads the same on a subtree and a single delete
+    /// (0010 D6).
     #[must_use]
     pub fn from_delete(error: crate::common::ports::SubtreeActionError) -> Self {
-        error.into_application()
+        Self::ConflictInput(error.0)
     }
 }

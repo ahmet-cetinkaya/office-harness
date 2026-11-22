@@ -94,6 +94,8 @@ impl<'a> Planner<'a> {
                 .map(PathBuf::from),
             project_id: self.project_id,
             additions: Some(seed_additions(&body.additions)),
+            // A template holds no own worktree choice (0009 scope).
+            worktree: None,
         };
         for reason in self.creator.check(&seed) {
             self.add_reason(format!("{}: {reason}", seed.name));

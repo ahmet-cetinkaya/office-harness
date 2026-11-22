@@ -6,7 +6,7 @@ use super::*;
 use hierarchy_domain::{Role, TreeRow};
 
 use crate::common::interfaces::{TreeExclusion, TreeSnapshot};
-use crate::common::ports::SubtreeActionError;
+use crate::common::ports::{SubtreeActionError, SubtreeWorktrees, WorktreeReport};
 
 /// The name a test row carries: the id text, since these rules do not read
 /// names (only the CEO refusal does, and its test names its row itself).
@@ -124,15 +124,52 @@ impl SubtreeAgentEnder for RecordingEnder {
 struct RecordingRemover {
     calls: Calls,
     failing: Option<AgentId>,
+    /// The agent whose worktree check refuses.
+    stale: Option<AgentId>,
+    /// The agent whose worktree changes while it stops.
+    changes_at_stop: Option<AgentId>,
 }
 
 impl SubtreeAgentRemover for RecordingRemover {
-    fn delete(&self, agent_id: AgentId) -> Result<(), SubtreeActionError> {
+    fn check(
+        &self,
+        agent_id: AgentId,
+        _worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError> {
+        if self.stale == Some(agent_id) {
+            return Err(SubtreeActionError(
+                "the worktree of the member changed; confirm again".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn prepare(
+        &self,
+        agent_id: AgentId,
+        _worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError> {
+        if self.changes_at_stop == Some(agent_id) {
+            return Err(SubtreeActionError(
+                "the worktree of the member changed while it stopped".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn delete(
+        &self,
+        agent_id: AgentId,
+        _worktrees: &SubtreeWorktrees,
+    ) -> Result<WorktreeReport, SubtreeActionError> {
         self.calls.record(agent_id);
         if self.failing == Some(agent_id) {
             return Err(SubtreeActionError("the lead cannot be deleted".to_owned()));
         }
-        Ok(())
+        Ok(WorktreeReport {
+            kept_branches: vec![format!("office-harness/{}", name_of(agent_id))],
+            ..WorktreeReport::default()
+        })
     }
 }
 
@@ -179,6 +216,7 @@ fn request(
         agent_id,
         include_descendants,
         confirmed_descendants: confirmed,
+        worktrees: SubtreeWorktrees::default(),
     }
 }
 
@@ -201,7 +239,7 @@ fn a_stop_runs_member_first_and_the_requested_agent_last() {
     );
 
     let stopped = handler
-        .stop_subtree(request(family.ceo, true, Some(2)))
+        .stop_subtree(&request(family.ceo, true, Some(2)))
         .expect("stop");
 
     assert_eq!(stopped, [family.member, family.lead, family.ceo]);
@@ -222,10 +260,12 @@ fn a_delete_runs_member_first_and_the_requested_agent_last() {
     );
 
     let deleted = handler
-        .delete_subtree(request(family.ceo, true, Some(2)))
+        .delete_subtree(&request(family.ceo, true, Some(2)))
         .expect("delete");
 
-    assert_eq!(deleted, [family.member, family.lead, family.ceo]);
+    assert_eq!(deleted.deleted, [family.member, family.lead, family.ceo]);
+    // One report covers every deleted agent's worktree (0010 FR-005).
+    assert_eq!(deleted.worktrees.kept_branches.len(), 3);
     assert_eq!(
         remover.calls.order(),
         [family.member, family.lead, family.ceo]
@@ -246,14 +286,66 @@ fn a_failing_delete_deletes_no_agent_above_the_failed_one() {
     );
 
     let error = handler
-        .delete_subtree(request(family.ceo, true, Some(2)))
+        .delete_subtree(&request(family.ceo, true, Some(2)))
         .expect_err("the lead cannot be deleted");
 
-    assert!(
-        matches!(&error, HierarchyApplicationError::Conflict(text) if text.contains("the lead cannot be deleted"))
-    );
+    let HierarchyApplicationError::ConflictInput(text) = &error else {
+        panic!("{error:?}");
+    };
+    assert!(text.contains("the lead cannot be deleted"), "{text}");
+    // The member's kept branch is reported once, in the refusal.
+    let member_branch = format!("office-harness/{}", name_of(family.member));
+    assert!(text.contains(&member_branch), "{text}");
+    assert!(!text.contains(&name_of(family.lead)), "{text}");
     // The member went first; the root was never attempted, so it still exists.
     assert_eq!(remover.calls.order(), [family.member, family.lead]);
+}
+
+#[test]
+fn a_stale_worktree_on_one_member_refuses_before_any_delete() {
+    let family = family();
+    let remover = Arc::new(RecordingRemover {
+        stale: Some(family.lead),
+        ..Default::default()
+    });
+    let handler = handler(
+        &family.rows,
+        Arc::new(RecordingEnder::default()),
+        Arc::clone(&remover) as Arc<dyn SubtreeAgentRemover>,
+    );
+
+    let error = handler
+        .delete_subtree(&request(family.ceo, true, Some(2)))
+        .expect_err("stale");
+
+    assert!(
+        matches!(&error, HierarchyApplicationError::ConflictInput(text) if text.contains("confirm again"))
+    );
+    assert_eq!(remover.calls.order(), [] as [kernel::AgentId; 0]);
+}
+
+#[test]
+fn a_member_that_changes_its_worktree_at_its_stop_refuses_before_any_delete() {
+    let family = family();
+    let remover = Arc::new(RecordingRemover {
+        changes_at_stop: Some(family.lead),
+        ..Default::default()
+    });
+    let handler = handler(
+        &family.rows,
+        Arc::new(RecordingEnder::default()),
+        Arc::clone(&remover) as Arc<dyn SubtreeAgentRemover>,
+    );
+
+    let error = handler
+        .delete_subtree(&request(family.ceo, true, Some(2)))
+        .expect_err("changed at stop");
+
+    assert!(matches!(
+        &error,
+        HierarchyApplicationError::ConflictInput(_)
+    ));
+    assert_eq!(remover.calls.order().len(), 0);
 }
 
 #[test]
@@ -267,10 +359,10 @@ fn an_agent_without_descendants_deletes_alone_without_a_confirmation() {
     );
 
     let deleted = handler
-        .delete_subtree(request(agent_id, false, None))
+        .delete_subtree(&request(agent_id, false, None))
         .expect("delete");
 
-    assert_eq!(deleted, [agent_id]);
+    assert_eq!(deleted.deleted, [agent_id]);
     assert_eq!(remover.calls.order(), [agent_id]);
 }
 
@@ -370,7 +462,27 @@ struct GrowingRemover {
 }
 
 impl SubtreeAgentRemover for GrowingRemover {
-    fn delete(&self, agent_id: AgentId) -> Result<(), SubtreeActionError> {
+    fn check(
+        &self,
+        _agent_id: AgentId,
+        _worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError> {
+        Ok(())
+    }
+
+    fn prepare(
+        &self,
+        _agent_id: AgentId,
+        _worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError> {
+        Ok(())
+    }
+
+    fn delete(
+        &self,
+        agent_id: AgentId,
+        _worktrees: &SubtreeWorktrees,
+    ) -> Result<WorktreeReport, SubtreeActionError> {
         self.store.assert_exclusive();
         if self.calls.order().is_empty() {
             self.store
@@ -383,7 +495,7 @@ impl SubtreeAgentRemover for GrowingRemover {
                 .expect("place the second child");
         }
         self.calls.record(agent_id);
-        Ok(())
+        Ok(WorktreeReport::default())
     }
 }
 
@@ -414,10 +526,10 @@ fn a_delete_confirmed_on_one_tree_deletes_no_child_placed_after_its_count() {
     // holding the exclusion across both keeps the confirmed tree the one
     // that is deleted.
     let deleted = handler
-        .delete_subtree(request(ceo, true, Some(1)))
+        .delete_subtree(&request(ceo, true, Some(1)))
         .expect("delete");
 
-    assert_eq!(deleted, [lead, ceo]);
+    assert_eq!(deleted.deleted, [lead, ceo]);
     assert_eq!(remover.calls.order(), [lead, ceo]);
     assert!(
         !*locked(&store.exclusion_leaked),

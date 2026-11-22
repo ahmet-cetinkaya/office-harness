@@ -19,7 +19,7 @@ use agent_application::commands::stop_agent::StopAgentHandler;
 use agent_application::common::action_journal::ActionJournal;
 use agent_application::common::interfaces::{
     AdditionsStore, AgentStore, CliAdapters, Clock, ProjectStore, SessionStore, SettingsStore,
-    TerminalHost,
+    TerminalHost, WorktreeManager,
 };
 use agent_application::common::session_ender::SessionEnder;
 use agent_application::common::session_launcher::{LauncherServices, SessionLauncher};
@@ -28,6 +28,7 @@ use agent_application::queries::get_settings::GetSettingsHandler;
 use agent_application::queries::list_agents::ListAgentsHandler;
 use agent_application::queries::list_projects::ListProjectsHandler;
 use agent_application::queries::list_sessions::ListSessionsHandler;
+use agent_application::queries::worktrees::{WorktreeInfoHandler, WorktreeStatusHandler};
 use agent_domain::value_objects::MachineId;
 use agent_infrastructure::persistence::{
     AdditionsRepository, AgentRepository, ProjectRepository, SessionRepository, SettingsRepository,
@@ -92,6 +93,7 @@ struct Wiring {
     terminals: Arc<dyn TerminalHost>,
     journal: ActionJournal,
     alerts: StorageAlerts,
+    worktrees: Arc<dyn WorktreeManager>,
 }
 
 /// Joins the agent use cases to the SQLite stores, the terminal, the clock,
@@ -130,6 +132,7 @@ pub fn build_agent_services(
         journal: ActionJournal::new(recorder, Arc::clone(&clock)),
         alerts: alerts.clone(),
         clock,
+        worktrees: Arc::clone(&terminal.worktrees),
     };
     AgentServices {
         handlers: Arc::new(AgentHandlers::new(use_cases(&wiring, machine_id))),
@@ -186,13 +189,15 @@ fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
             Arc::clone(&wiring.clock),
             journal.clone(),
             machine_id,
-        ),
+        )
+        .with_worktrees(Arc::clone(&wiring.worktrees)),
         delete_agent: DeleteAgentHandler::new(
             Arc::clone(&wiring.agents),
             Arc::clone(&wiring.settings),
             Arc::clone(&wiring.terminals),
             journal.clone(),
-        ),
+        )
+        .with_worktrees(Arc::clone(&wiring.worktrees)),
         start_agent: StartAgentHandler::new(
             Arc::clone(&wiring.agents),
             launcher.clone(),
@@ -242,5 +247,13 @@ fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
         list_projects: ListProjectsHandler::new(Arc::clone(&wiring.projects)),
         set_setting: SetSettingHandler::new(Arc::clone(&wiring.settings)),
         get_settings: GetSettingsHandler::new(Arc::clone(&wiring.settings)),
+        worktree_info: WorktreeInfoHandler::new(
+            Arc::clone(&wiring.projects),
+            Some(Arc::clone(&wiring.worktrees)),
+        ),
+        worktree_status: WorktreeStatusHandler::new(
+            Arc::clone(&wiring.agents),
+            Some(Arc::clone(&wiring.worktrees)),
+        ),
     }
 }

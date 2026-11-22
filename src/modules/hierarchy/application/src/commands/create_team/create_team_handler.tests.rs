@@ -143,6 +143,7 @@ fn request() -> CreateTeamWithLeadRequest {
             working_folder: None,
             project_id: None,
             additions: None,
+            worktree: None,
         },
     }
 }
