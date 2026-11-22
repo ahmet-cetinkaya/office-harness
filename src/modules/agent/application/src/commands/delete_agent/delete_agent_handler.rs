@@ -143,12 +143,10 @@ impl DeleteAgentHandler {
         let (Some(worktree), DeleteWorktrees::Remove(confirmed)) = (&agent.worktree, choice) else {
             return Ok(());
         };
-        // A stopped agent writes nothing after `check` read its worktree,
-        // and the delete reads it once more; another read here would only
-        // hold the status lock longer.
-        if !self.stop_if_running(&agent)? {
-            return Ok(());
-        }
+        // Read again even for an agent that was already stopped: the user
+        // or a running member may have changed its worktree during the stop
+        // loop, and a refusal here comes before the first delete.
+        self.stop_if_running(&agent)?;
         require_confirmed_after_stop(&agent, &self.status(worktree), confirmed)
     }
 
