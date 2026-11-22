@@ -92,3 +92,8 @@ Implementation notes. None of them defers or changes a requirement.
 - **Holds checked where the queue is.** A report for the person passes the hold gate in `SendReportHandler`; a report to a parent passes it in `SendDirectiveHandler::send_report`, after the room checks, so a no-room refusal takes no rate slot (FR-010).
 - **A failed Needs you write does not refuse the report.** The contract's `internal` row names a tree read failure only; a failed notification or item write raises the storage alert, as for every attention event (contract amended).
 - **Commits.** T6 tests are two commits (person path, parent path), and the desktop has its own commit.
+- **Refused text in visible form (final review L1).** A refused report is journaled with its text in visible form, so a bidirectional format character cannot reorder the record; `a_refused_report_is_journaled_in_visible_form`. A refused directive keeps the 0012 escape of C0 and C1 only.
+
+## Known limits
+
+- **One rate slot in a race (final review L2).** The room check runs before the hold guard. When another report fills the parent's report share between the room check and the push, the push refuses with the no-room reason after the guard already took one slot of the reports limit. The window is the time between two calls under the same queue; at most one slot is spent per such race.

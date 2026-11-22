@@ -157,6 +157,8 @@ struct Recorder {
     directives: Mutex<Vec<(AgentId, Option<String>)>>,
     /// Set when the typed text must not show at the input line.
     hides_text: Mutex<bool>,
+    /// The texts the refusals were journaled with.
+    refused_texts: Mutex<Vec<String>>,
 }
 
 impl ReportJournal for Recorder {
@@ -168,7 +170,8 @@ impl ReportJournal for Recorder {
         });
     }
 
-    fn refused(&self, sender: AgentId, parent: Option<AgentId>, _text: &str, reason: &str) {
+    fn refused(&self, sender: AgentId, parent: Option<AgentId>, text: &str, reason: &str) {
+        locked(&self.refused_texts).push(text.to_owned());
         locked(&self.entries).push(Entry::Refused {
             sender,
             parent,
@@ -664,4 +667,20 @@ fn a_report_that_does_not_show_at_the_input_line_is_recorded_as_unsubmitted() {
         parent: Some(id(LEAD)),
         reason: UNSUBMITTED.to_owned(),
     }));
+}
+
+#[test]
+fn a_refused_report_is_journaled_in_visible_form() {
+    let harness = harness();
+    *locked(&harness.targets.stopped) = Some(id(LEAD));
+
+    let refused = harness
+        .handler
+        .handle(&report(MEMBER, "\u{202e}evil \u{1b}[2J", false));
+
+    assert!(refused.is_err());
+    assert_eq!(
+        *locked(&harness.recorder.refused_texts),
+        vec!["\\u202Eevil ␛[2J".to_owned()]
+    );
 }
