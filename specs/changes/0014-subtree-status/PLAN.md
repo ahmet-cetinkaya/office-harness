@@ -57,9 +57,10 @@ Paths: `H` = `src/apps/office-harnessd`, `M` = `src/modules`. Read on `main` at 
 - **D2 Walk:** a new `descendants_in_tree_order(tree, agent_id) -> Vec<&TreeRow>` beside `descendants_of`: depth first, parent before children, children in row order, each agent once (a hand-made cycle ends the walk), the agent itself excluded.
 - **D3 Last output time:** `TerminalRuntime::quiet_for(agent_id) -> Option<Duration>`, the time since the running child's last output, or since its start when it wrote nothing, `None` when it does not run. No default body: every runtime answers; the five fakes return `None`. The gateway turns it into Unix ms with `SystemClock`: `now - quiet`.
 - **D4 Entry builder:** `H/src/server/subtree_status.rs` with a pure `subtree_entries(rows, caller, agents, waiting, holds, last_output_at) -> Vec<Value>` and `task_line(text) -> String`. Each entry is a `json!` of the nine contract fields, nothing copied from `agent_json`. Descendants that the tree names but the agent store does not hold are skipped (a delete between the two reads).
-- **D5 Task line:** the text up to the first `\r` or `\n`, cut by `truncated` at 80 characters; `…` is added also when lines follow, so a shortened text always shows it (0011/FR-001). Characters are Unicode scalar values (spec A9).
+- **D5 Task line and visible form:** the text up to the first `\r` or `\n`, cut by `truncated` at 80 characters; `…` is added also when lines follow, so a shortened text always shows it (0011/FR-001). Characters are Unicode scalar values (spec A9). After the cut, `visible_text` maps C0 to control pictures, DEL to `␡`, and C1 and the bidirectional format characters to `\uXXXX`, the mapping of the desktop's `task-text.ts`; it applies to `name` and `task.line` (contract "Visible form").
 - **D6 Gateway method:** `AgentGateway::subtree_status(&self, caller, holds: &[Hold]) -> Result<Value, String>` reads the snapshot, the agents, and the Needs you list, then calls the builder. `answer_subtree` in `agent_call.rs` refuses any field (`invalid`, recorded), takes `state.hold_service.list()`, runs the method on the blocking pool, and answers `internal` with a recorded refusal on a read failure. A success writes no record entry and publishes no event.
 - **D7 Holds and limits:** the read never calls `guard_office_request` (spec A2).
+- **D10 No ordering locks (spec A11):** D6 takes none of the locks that order office changes: `TreeQuery::store_snapshot` reads without the tree exclusion, and the status order and the task order of `AgentGateway::run` are not taken, because the read does not go through `run`. It takes only short locks that every read takes: the database connection for the tree, agent, and Needs you reads (`NeedsYouUseCases::list` does not take the Needs you turn lock), the hold service's state while `list()` copies the holds (as `hold.list` does), and each running session's core while `quiet_for` reads one `Instant`.
 - **D8 Refusal text:** `NOT_ALLOWED` becomes "an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants"; the `agent_hold.rs` check keeps its prefix.
 - **D9 Constitution check:** AGPL header on new files; no new dependency; module boundaries kept (the builder lives in the server app, which already joins the modules); no code from any other project.
 
@@ -80,7 +81,7 @@ SPEC.md, `checklists/requirements.md`, `contracts/subtree-protocol.md`, this pla
 
 ### T3: Entry builder and gateway (D1, D4 to D8; FR-001 to FR-005)
 
-`subtree_status.rs` with unit tests: exact field set per entry (no `last_line`, `command`, `working_folder`, `machine_id`, `worktree`, `additions`), parent-first order, `held` through an ancestor and through the office hold, `needs_you`, `task` null and set, `task_line` at 80 and 81 characters, with a second line, with `\r\n`. `AgentGateway::subtree_status`, `answer_subtree`, the allow list, `NOT_ALLOWED`. **Accept:** unit tests pass; `ALLOWED_REQUESTS` has 7 entries.
+`subtree_status.rs` with unit tests: exact field set per entry (no `last_line`, `command`, `working_folder`, `machine_id`, `worktree`, `additions`), parent-first order, `held` through an ancestor and through the office hold, `needs_you`, `task` null and set, `task_line` at 80 and 81 characters, with a second line, with `\r\n`; `visible_text` for U+001B, U+007F, U+009B, U+202E, U+2066, a plain line feed in a name, and plain text unchanged. `AgentGateway::subtree_status`, `answer_subtree`, the allow list, `NOT_ALLOWED`. **Accept:** unit tests pass; `ALLOWED_REQUESTS` has 7 entries.
 
 ### T4: Integration tests (SC-001 to SC-007, FR-004, FR-005, PB-3)
 
@@ -91,7 +92,7 @@ New `H/tests/agent_subtree_status.rs` with the real server and helper:
 - SC-004 and FR-004: under an office hold 10 reads answer; released, 30 reads, then `directive.send` is accepted and `hold.list` shows no hold.
 - SC-005: 30 placed agents under a running CEO; the helper call returns within 2 seconds.
 - SC-006: 10 reads with `agent_id`, `target_agent_id`, or `branch` naming a sibling or an ancestor: `invalid`, each refusal in the caller's record, and no entry data in the answer.
-- SC-007: the user sets a member's task text `"\u001b[31mred\nsecond"`; the helper's stdout holds no `0x1b` byte and the line is the first line with `…`.
+- SC-007: the user sets a member's task text `"\u001b[31m\u009b\u202ered\nsecond"`; the helper's stdout holds none of U+001B, U+009B, U+202E as themselves, and the line is `␛[31m\u009B\u202Ered…`.
 - FR-005 and PB-3: the reader's record does not grow on answered reads; a member's Needs you item stays after the read; the task text and status are unchanged.
 **Accept:** the file passes 3 times in a row locally (flake guard as in PR 56).
 

@@ -48,9 +48,10 @@ A parent agent sends directives down the tree (0002), but it cannot see what its
   | A descendant's CLI output carries instructions that steer the reader (prompt injection), or a secret it printed. | No terminal content crosses (FR-003). |
   | An agent reads a sibling, an ancestor, or another branch. | The office picks the descendants from the tree at the moment of the read; the request cannot name an agent (FR-002, SC-001, SC-006). |
   | A descendant lead writes a directive whose text later reaches the CEO as its member's task line. | Only one line of at most 80 characters crosses, as data (FR-003, SC-007). This is the remaining upward text path; the reader treats it as data. |
-  | An escape code in a name or a task line acts on the reader's terminal. | Text travels encoded, never as raw control bytes (Edge cases, SC-007). |
+  | A control character, an escape code, or a bidirectional format character in a name or a task line acts on the reader's terminal or reorders the text it reads. | Each one is shown as a visible symbol, as 0011's display does (Edge cases, SC-007). |
   | A field added to agents later leaks through the read. | The answer names its fields one by one (FR-003). |
   | A looping reader floods the action record. | Answered reads are not recorded (FR-005, A3). |
+| A looping reader slows the office down. | A read takes no lock that orders office changes, so it blocks no other action (A11). |
 
 - **Residual risk:** an agent CLI runs as the user's OS user and can read the office's files directly; the read rule prevents mistakes, not a hostile agent (A8).
 
@@ -127,7 +128,7 @@ None: this change adds no screen to the desktop app. The reading agent gets the 
 - **SC-004:** While the office is on hold, 100% of 10 reads are answered. With no hold, after 30 reads within 60 seconds, the reader's next directive is not refused by a rate limit, and 0 automatic holds occur.
 - **SC-005:** With 30 agents in the office, a read answers within 2 seconds.
 - **SC-006:** In 10 attempts to point a read at a sibling, an ancestor, or an agent of another branch, 100% are refused and recorded, and 0 answers hold data of that agent.
-- **SC-007:** A descendant whose task text holds a terminal escape code and a second line: the reader's answer holds only the first line, and 0 raw control bytes reach the reader's terminal.
+- **SC-007:** A descendant whose task text holds an escape character (U+001B), a one-byte control sequence introducer (U+009B), a right-to-left override (U+202E), and a second line: the reader's answer holds only the first line, and 0 control or bidirectional format characters reach the reader as themselves.
 
 ## Edge cases
 
@@ -137,7 +138,7 @@ None: this change adds no screen to the desktop app. The reading agent gets the 
 | A descendant is stopped, exited, failed, interrupted, or never started. | Empty | Its entry shows that status and no last output time. |
 | A descendant has no task text. | Empty | Its entry shows no task line. |
 | A descendant's task text has 8,192 characters or several lines. | Boundary | The entry carries only the task line: the first line, up to 80 characters, with an ellipsis when shortened (FR-003). |
-| A task line or a name holds control characters or terminal escape codes. | Boundary | The answer carries them encoded as data, never as raw bytes, so nothing is applied to the reader's terminal (0011/FR-006). |
+| A task line or a name holds control characters, terminal escape codes, or bidirectional format characters. | Boundary | The answer shows each such character as a visible symbol, as 0011's display does, so nothing is applied to the reader's terminal and the text keeps its order (0011/FR-006). |
 | A descendant has not written any output yet in its current session. | Boundary | Its last output time is the time its session started. |
 | The request names an agent, or carries any other input. | Invalid | The office refuses it, tells the agent the reason, and records the refusal (FR-005). A read takes no input, so it can never point at an agent outside the subtree. |
 | The request names an actor or a caller. | Unauthorized | The office refuses it and records the refusal, as for every agent request (0002). |
@@ -161,6 +162,7 @@ None: this change adds no screen to the desktop app. The reading agent gets the 
 - **A8:** Like the 0002 descendant rule, the read rule prevents mistakes. It is not a security boundary against a hostile agent that runs as the same OS user (0002 A8, 0001 A7).
 - **A9:** The task line counts characters as the text stores them, so a character built from several parts can count as more than one. The reader is an agent, not a person, so the line does not need the on-screen count of 0011 A3.
 - **A10:** The read uses the descendant rule as the office applies it today (0002/FR-008). A known gap: 0002 A5 says that existing team leads move under a CEO created later, but the office does not yet store that move, so the CEO cannot act on those leads and does not see them in a read. A separate change fixes the gap; this change does not.
+- **A11:** A read's cost grows with the size of the office only. It answers from stored state (the tree, the agents, Needs you, the holds) and from each running session's last output time in memory; it reads no terminal content and takes no lock that orders office changes. A looping reader therefore costs processor time but never blocks a create, a delete, a directive, or a start.
 
 ## Clarifications
 
