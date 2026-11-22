@@ -161,6 +161,14 @@ impl AgentStore for NoAgents {
     fn delete(&self, _id: AgentId) -> Result<(), PortError> {
         Ok(())
     }
+
+    fn update_task(
+        &self,
+        _id: AgentId,
+        _task: Option<&agent_domain::value_objects::TaskText>,
+    ) -> Result<(), PortError> {
+        Ok(())
+    }
 }
 
 fn attention_of(kind: AttentionKind) -> AttentionEvent {
