@@ -6,7 +6,7 @@
 use std::ffi::OsStr;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use agent_application::common::errors::PortError;
 use agent_application::common::interfaces::{
@@ -18,11 +18,10 @@ use agent_domain::value_objects::{
     AgentWorktree, base_ref, free_branch_name, is_commit_id, is_office_branch_name,
 };
 
-use crate::services::git_runner::{GitFailure, GitRunner};
-use crate::services::login_environment::{Environment, LoginEnvironment};
-use crate::services::program_lookup::find_program;
+use crate::services::git_runner::{
+    GitFailure, GitRunner, LazyGitRunner, absolute, filter_switches,
+};
 
-const GIT_PROGRAM: &str = "git";
 const BRANCH_REF_PREFIX: &str = "refs/heads/";
 const WORKTREE_RECORD_PREFIX: &str = "worktree ";
 const BARE_RECORD: &str = "bare";
@@ -37,10 +36,6 @@ const STATUS_ARGUMENTS: [&str; 5] = [
     "--ignore-submodules=dirty",
     "-z",
 ];
-const FILTER_SECTION: &str = "filter.";
-/// Each filter driver's commands emptied and its required flag off: git then
-/// compares the plain file and runs no filter program.
-const FILTER_SWITCHES: [&str; 3] = ["clean=", "process=", "required=false"];
 const SHORT_ID_CHARS: usize = 8;
 const REPOSITORY_HASH_CHARS: usize = 8;
 /// `<repository>-<hash>/<short agent id>` below the worktrees folder.
@@ -52,42 +47,26 @@ const DATA_FOLDER_INSIDE: &str = "the office data folder is inside this reposito
 const DISCARD_FORCE: usize = 2;
 const BRANCH_NAME_SHAPE: &str = "branch_name must be office-harness/ and a name of a-z, 0-9 and -";
 
-/// Where the git runner comes from: built once, on first use, because the
-/// login environment takes a login shell to read.
-enum RunnerSource {
-    Login {
-        environment: Arc<LoginEnvironment>,
-        server_environment: Environment,
-    },
-    Fixed(Option<GitRunner>),
-}
-
 /// `WorktreeManager` over the system git program. Worktrees live under
 /// `root`, which is outside every repository it serves.
 pub struct GitWorktrees {
     root: PathBuf,
-    source: RunnerSource,
-    runner: OnceLock<Option<GitRunner>>,
+    runner: Arc<LazyGitRunner>,
     /// Hears what an undo leaves behind, which no answer can carry.
     failures: Option<Arc<dyn FailureReporter>>,
 }
 
 impl GitWorktrees {
-    /// Finds git on the login environment's `PATH` on first use.
+    /// Runs git through `runner`, which the file view shares.
     #[must_use]
     pub fn new(
         root: PathBuf,
-        environment: Arc<LoginEnvironment>,
-        server_environment: Environment,
+        runner: Arc<LazyGitRunner>,
         failures: Arc<dyn FailureReporter>,
     ) -> Self {
         Self {
             root: absolute(root),
-            source: RunnerSource::Login {
-                environment,
-                server_environment,
-            },
-            runner: OnceLock::new(),
+            runner,
             failures: Some(failures),
         }
     }
@@ -97,8 +76,7 @@ impl GitWorktrees {
     pub fn with_runner(root: PathBuf, runner: Option<GitRunner>) -> Self {
         Self {
             root: absolute(root),
-            source: RunnerSource::Fixed(runner),
-            runner: OnceLock::new(),
+            runner: Arc::new(LazyGitRunner::fixed(runner)),
             failures: None,
         }
     }
@@ -111,18 +89,7 @@ impl GitWorktrees {
     }
 
     fn runner(&self) -> Option<&GitRunner> {
-        self.runner
-            .get_or_init(|| {
-                let runner = match &self.source {
-                    RunnerSource::Fixed(runner) => runner.clone(),
-                    RunnerSource::Login {
-                        environment,
-                        server_environment,
-                    } => login_runner(&self.root, environment, server_environment),
-                }?;
-                runner.is_supported().then_some(runner)
-            })
-            .as_ref()
+        self.runner.get()
     }
 
     fn require_runner(&self) -> Result<&GitRunner, WorktreeError> {
@@ -533,16 +500,6 @@ impl WorktreeManager for GitWorktrees {
     }
 }
 
-fn login_runner(
-    root: &Path,
-    environment: &LoginEnvironment,
-    server_environment: &Environment,
-) -> Option<GitRunner> {
-    let login = environment.resolve(server_environment).variables;
-    let program = find_program(GIT_PROGRAM, &login, root)?;
-    Some(GitRunner::new(program, &login))
-}
-
 /// The main worktree of the repository that holds `top`; `None` for a bare
 /// repository, whose linked worktree is then the top.
 fn main_worktree(runner: &GitRunner, top: &Path) -> Option<PathBuf> {
@@ -599,36 +556,6 @@ fn taken_since(
         .then(|| taken_branch(branch, &free_branch_name(agent_name, &branches)))
 }
 
-/// `-c` switches that turn off every filter driver the configuration of
-/// `folder` names, so a read runs no program an agent could write into the
-/// shared configuration (0010 D1 allows filters for `worktree add` only).
-///
-/// # Errors
-/// The reason, when the configuration cannot be read or names a driver
-/// that a switch cannot name.
-fn filter_switches(runner: &GitRunner, folder: &Path) -> Result<Vec<String>, String> {
-    let names = runner
-        .read(folder, &["config", "--list", "--name-only", "-z"])
-        .map_err(|failure| failure.reason())?;
-    let mut drivers: Vec<&str> = names.split('\0').filter_map(filter_driver).collect();
-    drivers.sort_unstable();
-    drivers.dedup();
-    if let Some(driver) = drivers.iter().find(|driver| driver.contains(['=', '\n'])) {
-        return Err(format!("the filter driver {driver:?} cannot be turned off"));
-    }
-    Ok(drivers
-        .iter()
-        .flat_map(|driver| {
-            FILTER_SWITCHES.iter().flat_map(move |switch| {
-                [
-                    "-c".to_owned(),
-                    format!("{FILTER_SECTION}{driver}.{switch}"),
-                ]
-            })
-        })
-        .collect())
-}
-
 /// `filter_switches` of a worktree folder still linked to its repository;
 /// the configuration of another repository says nothing about this one.
 fn linked_filter_switches(
@@ -642,12 +569,6 @@ fn linked_filter_switches(
         )));
     }
     filter_switches(runner, &worktree.folder).map_err(WorktreeError::Failed)
-}
-
-/// The driver of a `filter.<driver>.<key>` name; the driver may hold dots.
-fn filter_driver(name: &str) -> Option<&str> {
-    let (driver, _) = name.strip_prefix(FILTER_SECTION)?.rsplit_once('.')?;
-    Some(driver)
 }
 
 /// The branch checked out in `folder`, or its commit when detached. `None`
@@ -701,12 +622,6 @@ fn create_failure(failure: &GitFailure) -> WorktreeError {
         "the worktree could not be created: {}",
         failure.reason()
     ))
-}
-
-fn absolute(root: PathBuf) -> PathBuf {
-    // A relative data folder would make the hooks path relative to each
-    // worktree and put new worktrees inside the repository.
-    std::path::absolute(&root).unwrap_or(root)
 }
 
 /// The canonical form of `path`, built from its nearest existing ancestor,
