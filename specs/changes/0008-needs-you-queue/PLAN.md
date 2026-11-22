@@ -83,6 +83,7 @@ Deliver spec 0008. Needs you lists exactly the agents that wait for the user, in
 - **D5 Jump shortcut:** a 12th table entry `Ctrl+Shift+F11`, kind `jump`. With ACF-160 every entry leaves the terminal, so the `isTerminalShortcut` field and the `pressedTerminalShortcut` filter are removed, and the terminal passes every table key out (0001/FR-017 as modified by 0008).
   - Panel: `handleAppKeys` handles `jump` by opening the top item's agent through the same `openAgent` path as the 0003 switcher (A2).
   - Scene: a window keydown listener in `scene-view.svelte` handles only `jump`, by calling `openDesk(topAgentId)` (FR-010). Other app shortcuts in the scene stay as today.
+  - Focus (clarification by Efe, 2026-11-22, owner away): focus lands in the terminal when the agent runs, else on the terminal view heading, whose accessible name is "Terminal, <agent name>". A read-only terminal cannot take focus (0001).
   - Empty list: the view stays, and the live region says "No agent needs you" (FR-008).
   - Fast presses (US2: "Pressing it again goes to the next one"): after a jump the desktop removes the opened agent's item from its local list at once, so a second press before `needs_you.changed` comes back opens the next item.
   - The jump's per-OS fallback is not shipped yet, as `README.md:41` says for F1 to F10. A later release can move it into the 0003 fallback family with the agent shortcuts (A1).

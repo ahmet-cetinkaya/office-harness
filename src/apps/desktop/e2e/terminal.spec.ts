@@ -109,7 +109,7 @@ test("the focus shortcut leaves the terminal and is the only key held back", asy
 
   await expect(input).not.toBeFocused();
   await expect(
-    page.getByRole("heading", { name: "Terminal", exact: true }),
+    page.getByRole("heading", { name: /^Terminal, / }),
   ).toBeFocused();
   const sent = (await terminalRequests(page)).filter(
     (request) => request.kind === "terminal.input",
@@ -239,9 +239,9 @@ test("a deleted agent closes the terminal with a message", async ({ page }) => {
   );
 
   await expect(page.getByText("The agent was deleted.")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Terminal", exact: true }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: /^Terminal, / })).toHaveCount(
+    0,
+  );
   await expect
     .poll(async () =>
       (await terminalRequests(page)).some(
