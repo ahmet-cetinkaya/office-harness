@@ -190,6 +190,12 @@ impl TerminalSession {
         locked(&self.lifecycle).exit_code.is_some()
     }
 
+    /// The time since the child's last output, or since the start when it
+    /// wrote nothing yet.
+    pub fn quiet_for(&self) -> Duration {
+        locked(&self.core).last_output.elapsed()
+    }
+
     /// # Errors
     /// `NotRunning` when the child is gone, or `Io` when the resize fails.
     pub fn attach(
