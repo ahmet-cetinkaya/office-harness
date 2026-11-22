@@ -444,6 +444,14 @@ async fn an_unsupported_command_or_field_is_refused_and_recorded() {
         "{refused}"
     );
 
+    // An agent never asks for an own worktree (0010 A7): the field is
+    // outside the create allowlist, so nothing reaches git.
+    let own_worktree = json!({"name": "Dee", "command": "echo hi", "own_worktree": true});
+    let refused = refusal_of(&agent_call_as(&credential, &server_file, &own_worktree).await);
+    assert_eq!(refused["error"]["code"], "invalid", "{refused}");
+    let message = refused["error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains("own_worktree"), "{refused}");
+
     // `agent.delete` is outside the allowlist: refused and recorded.
     let delete = json!({"agent_id": member});
     let delete_call = {
@@ -472,9 +480,34 @@ async fn an_unsupported_command_or_field_is_refused_and_recorded() {
         .iter()
         .filter(|entry| entry["action"] == "refused")
         .count();
-    assert!(recorded >= 2, "{entries:?}");
+    assert!(recorded >= 3, "{entries:?}");
 
     office.serving.stop().await;
+}
+
+/// The answer of a refused agent call.
+fn refusal_of(output: &std::process::Output) -> Value {
+    assert!(!output.status.success(), "{output:?}");
+    serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).expect("json")
+}
+
+/// Runs `agent-call agent.create` with an agent's own credential.
+async fn agent_call_as(credential: &str, server_file: &str, body: &Value) -> std::process::Output {
+    let (credential, server_file, body) = (
+        credential.to_owned(),
+        server_file.to_owned(),
+        body.to_string(),
+    );
+    tokio::task::spawn_blocking(move || {
+        std::process::Command::new(HELPER)
+            .args(["agent-call", "agent.create", &body])
+            .env("OFFICE_HARNESS_AGENT_TOKEN", credential)
+            .env("OFFICE_HARNESS_SERVER_FILE", server_file)
+            .output()
+            .expect("helper")
+    })
+    .await
+    .expect("helper task")
 }
 
 /// Places one agent through the same store the server built, as

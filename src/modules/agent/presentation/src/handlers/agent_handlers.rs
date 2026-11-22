@@ -10,7 +10,7 @@ use agent_application::commands::create_agent::{
 use agent_application::commands::create_project::{
     CreateProjectHandler, CreateProjectRequest as CreateProject,
 };
-use agent_application::commands::delete_agent::DeleteAgentHandler;
+use agent_application::commands::delete_agent::{DeleteAgentHandler, DeleteWorktrees};
 use agent_application::commands::delete_project::DeleteProjectHandler;
 use agent_application::commands::set_office_additions::SetOfficeAdditionsHandler;
 use agent_application::commands::set_setting::SetSettingHandler;
@@ -24,6 +24,7 @@ use agent_application::queries::get_settings::GetSettingsHandler;
 use agent_application::queries::list_agents::ListAgentsHandler;
 use agent_application::queries::list_projects::ListProjectsHandler;
 use agent_application::queries::list_sessions::ListSessionsHandler;
+use agent_application::queries::worktrees::{WorktreeInfoHandler, WorktreeStatusHandler};
 use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{ProjectId, SessionId, SettingKey};
 use kernel::AgentId;
@@ -34,13 +35,14 @@ use super::handler_error::HandlerError;
 use super::role_requests::{RoleRequests, RoleResult};
 use super::subtree_requests::{SubtreeRequests, SubtreeResult};
 use crate::contracts::{
-    AdditionsRequest, AgentIdRequest, CreateAgentRequest, CreateProjectRequest, ProjectIdRequest,
-    RolePlacement, SessionIdRequest, SettingKeyRequest, SettingRequest, TaskTextRequest,
+    AdditionsRequest, AgentIdRequest, CreateAgentRequest, CreateProjectRequest, DeleteAgentRequest,
+    ProjectIdRequest, RolePlacement, SessionIdRequest, SettingKeyRequest, SettingRequest,
+    TaskTextRequest, WorktreeInfoRequest, WorktreeStatusRequest,
 };
 use crate::mappings::{
     additions_changed_event, additions_json, agent_changed_event, agent_deleted_event, agent_json,
     agent_status_event, agent_task_event, project_changed_event, project_json, session_json,
-    setting_json,
+    setting_json, worktree_info_json, worktree_outcome_json, worktree_status_json,
 };
 
 const PROJECT_CREATED: &str = "created";
@@ -68,6 +70,8 @@ pub struct AgentUseCases {
     pub list_projects: ListProjectsHandler,
     pub set_setting: SetSettingHandler,
     pub get_settings: GetSettingsHandler,
+    pub worktree_info: WorktreeInfoHandler,
+    pub worktree_status: WorktreeStatusHandler,
 }
 
 /// The answer to one request, the events that every client gets because of
@@ -186,6 +190,8 @@ impl AgentHandlers {
             "agent.list" => self.list_agents(),
             "agent.create" => self.create_agent(request),
             "agent.delete" => self.delete_agent(request),
+            "agent.worktree_info" => self.worktree_info(request),
+            "agent.worktree_status" => self.worktree_status(request),
             "agent.start" => self.start_agent(request),
             "agent.stop" => self.stop_agent(request),
             "agent.new_task" => self.start_new_task(request),
@@ -247,6 +253,7 @@ impl AgentHandlers {
             working_folder: body.working_folder.map(PathBuf::from),
             project_id,
             additions: body.additions,
+            worktree: body.worktree,
         })?;
         Ok(Success::result(agent_json(&agent)).with_event(agent_changed_event(&agent)))
     }
@@ -272,6 +279,7 @@ impl AgentHandlers {
             working_folder: body.working_folder.clone(),
             project_id: body.project_id.clone(),
             additions: body.additions.clone(),
+            worktree: body.worktree.clone(),
         };
         match roles.create_role_agent(
             &seed,
@@ -292,12 +300,39 @@ impl AgentHandlers {
     }
 
     fn delete_agent(&self, request: &Request) -> Result<Success, HandlerError> {
-        let agent_id = parse_agent_id(request)?;
+        let body = DeleteAgentRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        let agent_id: AgentId = parse_id("agent_id", &body.agent_id)?;
         if let Some(subtree) = self.subtree.get() {
-            return subtree_delete(subtree.as_ref(), request, agent_id);
+            return subtree_delete(subtree.as_ref(), request, agent_id, &body.worktrees);
         }
-        self.use_cases.delete_agent.handle(agent_id)?;
-        Ok(Success::done().with_event(agent_deleted_event(agent_id)))
+        let outcome = self
+            .use_cases
+            .delete_agent
+            .handle(agent_id, &body.worktrees)?;
+        Ok(Success::result(worktree_outcome_json(&outcome))
+            .with_event(agent_deleted_event(agent_id)))
+    }
+
+    fn worktree_info(&self, request: &Request) -> Result<Success, HandlerError> {
+        let body = WorktreeInfoRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        let project_id = body
+            .project_id
+            .as_deref()
+            .map(|text| parse_id::<ProjectId>("project_id", text))
+            .transpose()?;
+        let info = self.use_cases.worktree_info.handle(
+            body.folder.map(PathBuf::from),
+            project_id,
+            &body.name,
+        )?;
+        Ok(Success::result(worktree_info_json(info.as_ref())))
+    }
+
+    fn worktree_status(&self, request: &Request) -> Result<Success, HandlerError> {
+        let body = WorktreeStatusRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        let views = self.use_cases.worktree_status.handle(&body.agent_ids)?;
+        let entries = views.iter().map(worktree_status_json).collect();
+        Ok(Success::result(Value::Array(entries)))
     }
 
     fn start_agent(&self, request: &Request) -> Result<Success, HandlerError> {
@@ -418,9 +453,10 @@ fn subtree_delete(
     subtree: &dyn SubtreeRequests,
     request: &Request,
     agent_id: AgentId,
+    worktrees: &DeleteWorktrees,
 ) -> Result<Success, HandlerError> {
     subtree_outcome(
-        subtree.delete_subtree(request, agent_id),
+        subtree.delete_subtree(request, agent_id, worktrees),
         agent_deleted_event,
     )
 }
@@ -433,13 +469,14 @@ fn subtree_outcome(
 ) -> Result<Success, HandlerError> {
     match result {
         SubtreeResult::Failed { code, message } => Err(HandlerError::with_code(code, message)),
-        SubtreeResult::Stopped(ids) | SubtreeResult::Deleted(ids) => {
-            let events = ids.into_iter().map(event_of).collect();
-            Ok(Success {
-                result: Value::Null,
-                events,
-            })
-        }
+        SubtreeResult::Stopped(ids) => Ok(Success {
+            result: Value::Null,
+            events: ids.into_iter().map(event_of).collect(),
+        }),
+        SubtreeResult::Deleted { agents, worktrees } => Ok(Success {
+            result: worktree_outcome_json(&worktrees),
+            events: agents.into_iter().map(event_of).collect(),
+        }),
     }
 }
 

@@ -62,6 +62,19 @@ pub struct WorktreeStatus {
 }
 
 impl WorktreeStatus {
+    /// The state of a worktree nothing can read: it is always kept.
+    #[must_use]
+    pub fn unreachable(worktree: &AgentWorktree) -> Self {
+        Self {
+            folder_exists: worktree.folder.is_dir(),
+            reachable: false,
+            changed_files: 0,
+            status_hash: String::new(),
+            own_commits: None,
+            base_exists: false,
+        }
+    }
+
     /// The branch holds nothing the base lacks, so deleting it loses no
     /// commit (FR-007).
     #[must_use]

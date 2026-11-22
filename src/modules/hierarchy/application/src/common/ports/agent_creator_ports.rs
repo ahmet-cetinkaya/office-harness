@@ -17,6 +17,14 @@ pub struct SeedAdditions {
     pub startup_prompt: Option<String>,
 }
 
+/// The own worktree choice of a seeded create (0010), mirrored like the
+/// additions. Absent fields take the folder's base and the free branch name.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SeedWorktree {
+    pub base: Option<String>,
+    pub branch_name: Option<String>,
+}
+
 /// What creating an agent needs. This mirrors the agent module's
 /// `CreateAgentRequest`: that type is public, but it lives in the agent
 /// module's application crate, which the hierarchy does not depend on, so
@@ -30,6 +38,8 @@ pub struct AgentSeed {
     pub project_id: Option<ProjectId>,
     /// Absent means no additions.
     pub additions: Option<SeedAdditions>,
+    /// Present asks for the agent's own branch and worktree (0010).
+    pub worktree: Option<SeedWorktree>,
 }
 
 /// Why the agent module refused. The kinds follow its error contract, so a
@@ -61,6 +71,10 @@ pub trait AgentCreator: Send + Sync {
     /// The agent module's failure when the agent cannot be created.
     fn create(&self, seed: AgentSeed) -> Result<AgentId, CreatorError>;
 
+    /// The undo of `create`: deletes the agent and everything its create
+    /// made, its own worktree and branch included, without asking (the
+    /// create undo mode, 0010 D5).
+    ///
     /// # Errors
     /// The agent module's failure when the agent cannot be removed.
     fn remove(&self, agent_id: AgentId) -> Result<(), CreatorError>;

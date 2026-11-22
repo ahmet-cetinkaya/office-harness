@@ -11,6 +11,7 @@ use std::sync::{Arc, OnceLock};
 use agent_application::common::interfaces::{
     CreatedWorktree, WorktreeCreate, WorktreeError, WorktreeInfo, WorktreeManager, WorktreeStatus,
 };
+use agent_application::common::worktree_link::is_linked_worktree;
 use agent_domain::value_objects::{
     AgentWorktree, base_ref, free_branch_name, is_commit_id, is_office_branch_name,
 };
@@ -58,7 +59,7 @@ impl GitWorktrees {
         server_environment: Environment,
     ) -> Self {
         Self {
-            root,
+            root: absolute(root),
             source: RunnerSource::Login {
                 environment,
                 server_environment,
@@ -71,7 +72,7 @@ impl GitWorktrees {
     #[must_use]
     pub fn with_runner(root: PathBuf, runner: Option<GitRunner>) -> Self {
         Self {
-            root,
+            root: absolute(root),
             source: RunnerSource::Fixed(runner),
             runner: OnceLock::new(),
         }
@@ -128,11 +129,10 @@ impl GitWorktrees {
                 .all(|component| !matches!(component, Component::ParentDir))
     }
 
+    /// Refuses a worktrees folder inside the repository before anything is
+    /// written there (A1, PB-2).
     fn ensure_outside(&self, top: &Path) -> Result<(), WorktreeError> {
-        std::fs::create_dir_all(&self.root).map_err(|error| {
-            WorktreeError::Failed(format!("the worktrees folder cannot be made: {error}"))
-        })?;
-        let (Ok(root), Ok(top)) = (self.root.canonicalize(), top.canonicalize()) else {
+        let (Some(root), Ok(top)) = (canonical_existing(&self.root), top.canonicalize()) else {
             return Err(WorktreeError::Failed(
                 "the worktrees folder cannot be read".to_owned(),
             ));
@@ -140,7 +140,9 @@ impl GitWorktrees {
         if root.starts_with(&top) {
             return Err(WorktreeError::Invalid(DATA_FOLDER_INSIDE.to_owned()));
         }
-        Ok(())
+        std::fs::create_dir_all(&self.root).map_err(|error| {
+            WorktreeError::Failed(format!("the worktrees folder cannot be made: {error}"))
+        })
     }
 
     /// `worktree remove` with `force` times `--force`, after the check that
@@ -188,12 +190,18 @@ impl GitWorktrees {
             branch: branch.to_owned(),
             folder,
         };
-        runner
-            .write(
-                &info.top,
-                &["branch", "--no-track", "--", branch, &base_ref(base)],
-            )
-            .map_err(|failure| create_failure(&failure))?;
+        let branched = runner.write(
+            &info.top,
+            &["branch", "--no-track", "--", branch, &base_ref(base)],
+        );
+        if let Err(failure) = branched {
+            // A refused branch was never made, and the name may be the
+            // user's own; only a branch step ended mid-way is undone.
+            if failure == GitFailure::Timeout {
+                let _ = self.delete_branch(&worktree);
+            }
+            return Err(create_failure(&failure));
+        }
         let added = runner.checkout(
             &info.top,
             &[
@@ -209,7 +217,7 @@ impl GitWorktrees {
             return Err(create_failure(&failure));
         }
         let working_folder = subfolder_of(&worktree.folder, &info.subfolder);
-        if !working_folder.is_dir() {
+        if !is_inside(&working_folder, &worktree.folder) {
             self.discard(&worktree);
             return Err(WorktreeError::Invalid(format!(
                 "the folder {} does not exist in {base}",
@@ -301,6 +309,11 @@ impl WorktreeManager for GitWorktrees {
         let Some(runner) = self.runner() else {
             return unreachable;
         };
+        if folder_exists && !is_linked_worktree(&worktree.folder) {
+            // Without its `.git` link git would search upward and read some
+            // other repository.
+            return unreachable;
+        }
         let status = if folder_exists {
             runner.read(
                 &worktree.folder,
@@ -409,11 +422,15 @@ fn checked_out_base(
 
 /// The client's base, which must be one the info listed (D3).
 fn chosen_base<'a>(info: &'a WorktreeInfo, base: Option<&str>) -> Result<&'a str, WorktreeError> {
-    let Some(base) = base else {
-        return Ok(&info.base);
-    };
+    let base = base.unwrap_or(&info.base);
     if !info.base_is_branch && base == info.base {
         return Ok(&info.base);
+    }
+    if is_commit_id(base) {
+        // `base_ref` would pass such a name as a commit id.
+        return Err(WorktreeError::Invalid(format!(
+            "base is a branch named like a commit id; pick another base: {base}"
+        )));
     }
     info.branches
         .iter()
@@ -436,6 +453,35 @@ fn create_failure(failure: &GitFailure) -> WorktreeError {
         "the worktree could not be created: {}",
         failure.reason()
     ))
+}
+
+fn absolute(root: PathBuf) -> PathBuf {
+    // A relative data folder would make the hooks path relative to each
+    // worktree and put new worktrees inside the repository.
+    std::path::absolute(&root).unwrap_or(root)
+}
+
+/// The canonical form of `path`, built from its nearest existing ancestor,
+/// so nothing has to be created to compare it.
+fn canonical_existing(path: &Path) -> Option<PathBuf> {
+    let mut missing = Vec::new();
+    let mut existing = path;
+    while !existing.exists() {
+        missing.push(existing.file_name()?);
+        existing = existing.parent()?;
+    }
+    let mut canonical = existing.canonicalize().ok()?;
+    canonical.extend(missing.iter().rev());
+    Some(canonical)
+}
+
+/// A folder that exists and, with every link followed, stays inside
+/// `worktree`: a tracked symbolic link must not start the agent elsewhere.
+fn is_inside(folder: &Path, worktree: &Path) -> bool {
+    match (folder.canonicalize(), worktree.canonicalize()) {
+        (Ok(folder), Ok(worktree)) => folder.is_dir() && folder.starts_with(worktree),
+        _ => false,
+    }
 }
 
 /// The worktree plus the `/`-separated subfolder git reported.

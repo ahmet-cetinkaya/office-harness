@@ -200,6 +200,8 @@ pub fn subtree_request(request: &Request, agent_id: AgentId) -> SubtreeRequest {
             .get("descendant_count")
             .and_then(Value::as_u64)
             .and_then(|count| usize::try_from(count).ok()),
+        // The agent handlers read the worktree choice and add it (0010).
+        worktrees: hierarchy_application::common::ports::SubtreeWorktrees::default(),
     }
 }
 
@@ -273,6 +275,7 @@ fn lead_seed(
             .map(std::path::PathBuf::from),
         project_id,
         additions: None,
+        worktree: None,
     })
 }
 

@@ -10,7 +10,8 @@ use std::time::Duration;
 use agent_domain::entities::{AdditionsRecord, Agent, Project, Session};
 use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{
-    AgentCommand, DisplayName, ExitResult, MachineId, ProjectId, SessionId, Settings, TaskText,
+    AgentCommand, AgentWorktree, DisplayName, ExitResult, MachineId, ProjectId, SessionId,
+    Settings, TaskText,
 };
 use kernel::{AgentId, Timestamp};
 
@@ -26,8 +27,9 @@ use crate::commands::stop_agent::StopAgentHandler;
 use crate::common::action_journal::ActionJournal;
 use crate::common::errors::{PortError, TerminalHostError};
 use crate::common::interfaces::{
-    ActionRecorder, AdditionsStore, AgentStore, CliAdapter, CliAdapters, Clock, FailureReporter,
-    ProjectStore, SessionStore, SessionTracking, SettingsStore, TerminalHost,
+    ActionRecorder, AdditionsStore, AgentStore, CliAdapter, CliAdapters, Clock, CreatedWorktree,
+    FailureReporter, ProjectStore, SessionStore, SessionTracking, SettingsStore, TerminalHost,
+    WorktreeCreate, WorktreeError, WorktreeInfo, WorktreeManager, WorktreeStatus,
 };
 use crate::common::models::{
     AgentActionEntry, PrepareLaunch, PreparedLaunch, SessionCommand, SessionPlan, StartTerminal,
@@ -564,6 +566,20 @@ impl Office {
         ActionJournal::new(self.recorder.clone(), Arc::new(FixedClock))
     }
 
+    /// The create use case with the fake worktree service attached.
+    #[must_use]
+    pub fn create_agent_with(&self, worktrees: &Arc<FakeWorktrees>) -> CreateAgentHandler {
+        self.create_agent()
+            .with_worktrees(Arc::clone(worktrees) as Arc<dyn WorktreeManager>)
+    }
+
+    /// The delete use case with the fake worktree service attached.
+    #[must_use]
+    pub fn delete_agent_with(&self, worktrees: &Arc<FakeWorktrees>) -> DeleteAgentHandler {
+        self.delete_agent()
+            .with_worktrees(Arc::clone(worktrees) as Arc<dyn WorktreeManager>)
+    }
+
     #[must_use]
     pub fn create_agent(&self) -> CreateAgentHandler {
         CreateAgentHandler::new(
@@ -702,5 +718,118 @@ impl Office {
         agent.status = status;
         self.agents.insert(&agent).expect("insert");
         agent
+    }
+}
+
+/// A clean, reachable worktree whose branch has no own commits.
+#[must_use]
+pub fn clean_status(hash: &str) -> WorktreeStatus {
+    WorktreeStatus {
+        folder_exists: true,
+        reachable: true,
+        changed_files: 0,
+        status_hash: hash.to_owned(),
+        own_commits: Some(0),
+        base_exists: true,
+    }
+}
+
+/// The git worktree service as a script: it records each call, answers the
+/// statuses queued in `statuses` one by one (the last one repeats), and
+/// fails what the test asks it to.
+pub struct FakeWorktrees {
+    pub folder: PathBuf,
+    calls: Mutex<Vec<String>>,
+    statuses: Mutex<Vec<WorktreeStatus>>,
+    pub create_error: Mutex<Option<WorktreeError>>,
+    pub remove_fails: Mutex<bool>,
+}
+
+impl FakeWorktrees {
+    #[must_use]
+    pub fn new(folder: &Path) -> Arc<Self> {
+        Arc::new(Self {
+            folder: folder.to_path_buf(),
+            calls: Mutex::new(Vec::new()),
+            statuses: Mutex::new(vec![clean_status("h0")]),
+            create_error: Mutex::new(None),
+            remove_fails: Mutex::new(false),
+        })
+    }
+
+    #[must_use]
+    pub fn calls(&self) -> Vec<String> {
+        locked(&self.calls).clone()
+    }
+
+    pub fn queue_statuses(&self, statuses: Vec<WorktreeStatus>) {
+        *locked(&self.statuses) = statuses;
+    }
+
+    fn record(&self, call: &str) {
+        locked(&self.calls).push(call.to_owned());
+    }
+
+    /// The worktree the fake makes for an agent.
+    #[must_use]
+    pub fn worktree(&self) -> AgentWorktree {
+        AgentWorktree {
+            repository: absolute_folder("repo"),
+            base: "main".to_owned(),
+            branch: "office-harness/ana".to_owned(),
+            folder: self.folder.clone(),
+        }
+    }
+}
+
+impl WorktreeManager for FakeWorktrees {
+    fn info(&self, folder: &Path, agent_name: &str) -> Result<Option<WorktreeInfo>, WorktreeError> {
+        self.record("info");
+        Ok(Some(WorktreeInfo {
+            top: folder.to_path_buf(),
+            subfolder: String::new(),
+            base: "main".to_owned(),
+            base_is_branch: true,
+            branches: vec!["main".to_owned()],
+            branch_name: format!("office-harness/{}", agent_name.to_lowercase()),
+        }))
+    }
+
+    fn create(&self, request: &WorktreeCreate<'_>) -> Result<CreatedWorktree, WorktreeError> {
+        self.record(&format!("create {}", request.folder.display()));
+        if let Some(error) = locked(&self.create_error).clone() {
+            return Err(error);
+        }
+        Ok(CreatedWorktree {
+            worktree: self.worktree(),
+            working_folder: self.folder.join("sub"),
+        })
+    }
+
+    fn status(&self, _worktree: &AgentWorktree) -> WorktreeStatus {
+        self.record("status");
+        let mut statuses = locked(&self.statuses);
+        if statuses.len() > 1 {
+            statuses.remove(0)
+        } else {
+            statuses[0].clone()
+        }
+    }
+
+    fn remove(&self, _worktree: &AgentWorktree, force: bool) -> Result<(), WorktreeError> {
+        self.record(if force { "remove --force" } else { "remove" });
+        if *locked(&self.remove_fails) {
+            return Err(WorktreeError::Failed("git refused".to_owned()));
+        }
+        Ok(())
+    }
+
+    fn delete_branch(&self, _worktree: &AgentWorktree) -> Result<(), WorktreeError> {
+        self.record("branch -D");
+        Ok(())
+    }
+
+    fn discard(&self, _worktree: &AgentWorktree) {
+        self.record("discard");
     }
 }

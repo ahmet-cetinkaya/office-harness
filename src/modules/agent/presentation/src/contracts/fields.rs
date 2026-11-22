@@ -15,6 +15,17 @@ impl Fields<'_> {
     }
 
     /// # Errors
+    /// The field is present but is not true or false. A `null` counts as
+    /// absent.
+    pub fn optional_bool(&self, name: &str) -> Result<Option<bool>, String> {
+        match self.0.get(name) {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::Bool(flag)) => Ok(Some(*flag)),
+            Some(_) => Err(format!("{name} must be true or false")),
+        }
+    }
+
+    /// # Errors
     /// The field is present but is not text. A `null` counts as absent.
     pub fn optional_text(&self, name: &str) -> Result<Option<String>, String> {
         match self.0.get(name) {

@@ -16,6 +16,7 @@ const LOCK_FILE: &str = "server.lock";
 const LOG_FILE: &str = "server.log";
 const TOKEN_FILE: &str = "token";
 const OUTPUT_FOLDER: &str = "output";
+const WORKTREES_FOLDER: &str = "worktrees";
 
 /// Where the server keeps its state.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,6 +74,13 @@ impl Config {
     #[must_use]
     pub fn output_folder_path(&self) -> PathBuf {
         self.data_folder.join(OUTPUT_FOLDER)
+    }
+
+    /// The own worktrees of agents live here, outside every repository
+    /// (0010 D2).
+    #[must_use]
+    pub fn worktrees_folder_path(&self) -> PathBuf {
+        self.data_folder.join(WORKTREES_FOLDER)
     }
 
     #[must_use]

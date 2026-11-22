@@ -183,6 +183,7 @@ fn seed(name: &str) -> AgentSeed {
         working_folder: None,
         project_id: None,
         additions: None,
+        worktree: None,
     }
 }
 
@@ -792,6 +793,7 @@ fn the_seed_round_trips_every_field_into_the_created_agent() {
         working_folder: Some(std::path::PathBuf::from("/tmp/office")),
         project_id: Some(kernel::ProjectId::generate()),
         additions: Some(additions.clone()),
+        worktree: None,
     };
     let creator = Arc::new(CapturingCreator {
         captured: Mutex::new(None),
