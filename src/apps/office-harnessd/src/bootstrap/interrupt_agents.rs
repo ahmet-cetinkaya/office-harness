@@ -6,13 +6,16 @@ use std::sync::atomic::Ordering;
 use agent_presentation::agent_status_event;
 use tokio::task::spawn_blocking;
 
+use super::directive_delivery::withdraw_waiting_directives;
 use super::{ServerLog, Services};
 
 /// Ends the running agents before the server stops (FR-004): each child is
 /// stopped, and the agent and its session become `interrupted`. Every client
 /// that is still connected hears about it. A child that cannot be ended is
-/// logged, and the others still end.
+/// logged, and the others still end. Waiting directives are withdrawn first,
+/// with the server stop as the reason (0012/FR-005).
 pub async fn interrupt_running_agents(services: &Services, log: &ServerLog) {
+    withdraw_waiting_directives(&services.hierarchy.send_directive, &services.events, log).await;
     let handler = services.agent.interrupt_agents.clone();
     let order = std::sync::Arc::clone(&services.agent.status_order);
     let stopping = std::sync::Arc::clone(&services.agent.stopping);

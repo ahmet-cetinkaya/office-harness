@@ -15,7 +15,7 @@ use terminal_infrastructure::services::{PortableTerminalRuntime, RuntimeSettings
 use terminal_presentation::handlers::TerminalHandlers;
 
 use super::StorageAlerts;
-use crate::bridges::{TerminalEvents, TerminalLauncher};
+use crate::bridges::{PersonInput, TerminalEvents, TerminalLauncher};
 use crate::config::Config;
 
 /// The terminal module, wired: the PTY runtime, the `terminal.*` handlers,
@@ -31,6 +31,8 @@ pub struct TerminalServices {
     /// The read-only view of an agent's folder (0016). It shares the git
     /// runner of the worktrees.
     pub file_view: Arc<dyn FileView>,
+    /// What people type into each terminal, for the directive gate (0012).
+    pub person_input: PersonInput,
 }
 
 /// The environment a launched agent starts from: the server's own, and the
@@ -98,6 +100,7 @@ pub fn build_terminal_services(
         file_view: Arc::new(LocalFileView::new(git)),
         runtime,
         events,
+        person_input: PersonInput::default(),
     })
 }
 

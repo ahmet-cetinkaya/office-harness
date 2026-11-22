@@ -376,6 +376,13 @@ async fn a_looping_agent_is_limited_then_held_and_the_owner_is_told_exactly_once
     assert_eq!(hold_entry["actor"], "office", "{hold_entry}");
 }
 
+/// True for the entry of a directive that left the queue untyped (0012).
+fn is_withdrawal(entry: &Value) -> bool {
+    entry["result"]
+        .as_str()
+        .is_some_and(|result| result.starts_with("withdrawn before typing"))
+}
+
 #[tokio::test]
 async fn a_hundred_directives_deliver_at_most_the_limit_and_every_refusal_is_recorded() {
     let mut setup = setup().await;
@@ -406,9 +413,12 @@ async fn a_hundred_directives_deliver_at_most_the_limit_and_every_refusal_is_rec
 
     let member = setup.member.clone();
     let entries = setup.actions_of(&member).await;
+    // The automatic hold also withdraws the accepted directives that still
+    // wait for the member, each with its own entry (0012/FR-005); this test
+    // counts the attempts at sending.
     let directives: Vec<&Value> = entries
         .iter()
-        .filter(|entry| entry["action"] == "directive")
+        .filter(|entry| entry["action"] == "directive" && !is_withdrawal(entry))
         .collect();
     assert_eq!(directives.len(), SC001_DIRECTIVES);
     let actor = json!(format!("agent:{}", setup.lead));
@@ -420,13 +430,17 @@ async fn a_hundred_directives_deliver_at_most_the_limit_and_every_refusal_is_rec
     assert_eq!(refused, SC001_DIRECTIVES - DEFAULT_DIRECTIVE_LIMIT);
 
     // FR-010: the sender's own record lists each limit and hold refusal too
-    // (ACF-168), with the same reasons as the answers.
+    // (ACF-168), with the same reasons as the answers. Withdrawals of
+    // waiting directives are recorded there as well (0012/FR-005) and are
+    // left out here, as above.
     let lead = setup.lead.clone();
     let sender_refusals: Vec<String> = setup
         .actions_of(&lead)
         .await
         .iter()
-        .filter(|entry| entry["action"] == "directive" && entry["result"] != "ok")
+        .filter(|entry| {
+            entry["action"] == "directive" && entry["result"] != "ok" && !is_withdrawal(entry)
+        })
         .map(|entry| entry["result"].as_str().unwrap_or_default().to_owned())
         .collect();
     assert_eq!(

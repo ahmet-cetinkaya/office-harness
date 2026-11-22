@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use kernel::AgentId;
-use terminal_domain::value_objects::{OutputKey, TerminalSize};
+use terminal_domain::value_objects::{OutputKey, ScreenView, TerminalSize};
 
 use crate::common::errors::TerminalRuntimeError;
 use crate::common::interfaces::OutputSubscriber;
@@ -69,6 +69,13 @@ pub trait TerminalRuntime: Send + Sync {
     /// The run of the agent's latest start, also after its child exited, or
     /// `None` when it never started.
     fn current_run(&self, agent_id: AgentId) -> Option<RunId>;
+
+    /// The visible rows of the agent's screen and its cursor row, or `None`
+    /// when it is not running. A runtime without a screen copy reads as
+    /// `None`, which a caller treats as "cannot tell".
+    fn screen(&self, _agent_id: AgentId) -> Option<ScreenView> {
+        None
+    }
 
     /// How long the running child has written nothing: since its last output,
     /// or since its start when it wrote nothing yet. `None` when it does not

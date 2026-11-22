@@ -146,3 +146,14 @@ fn the_cursor_line_is_the_row_where_the_cursor_stands() {
             .starts_with("Terminate batch job (Y/N)?")
     );
 }
+
+#[test]
+fn the_screen_view_holds_the_visible_rows_and_the_cursor_row() {
+    let mut screen = emulator(20, 3);
+    screen.process(b"old\r\nquestion? (y/n)\r\n> typed");
+    let view = screen.screen_view();
+    assert_eq!(view.rows.len(), 3);
+    assert_eq!(view.rows[1], "question? (y/n)");
+    assert_eq!(view.cursor_row, 2);
+    assert_eq!(view.rows[view.cursor_row], "> typed");
+}
