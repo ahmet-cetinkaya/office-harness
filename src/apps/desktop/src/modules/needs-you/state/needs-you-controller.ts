@@ -35,6 +35,8 @@ const EVENT_NEEDS_YOU_CHANGED = "needs_you.changed";
 const EVENT_RESYNC = "client.resync";
 const NOT_FOUND = "not_found";
 const TICK_MS = 1_000;
+/** How long a taken item stays hidden while the server has not answered. */
+const PENDING_TAKE_MS = 5_000;
 
 /**
  * Owns the Needs you list. It reads `needs_you.list` on load and replaces its
@@ -49,6 +51,9 @@ export function createNeedsYouController(client: CoreClient) {
   // Everything the server sent, including items that are hidden.
   let received: NeedsYouItem[] = [];
   const readOnArrival = new Set<string>();
+  // Agents the jump took, with the time the hiding ends. A list that comes
+  // before the server handled the read still holds them (D5, fast presses).
+  const pendingTakes = new Map<string, number>();
   const listeners = new Set<(snapshot: NeedsYouSnapshot) => void>();
   // An event is newer than any read that is still out, so it ends that read's
   // right to publish.
@@ -60,10 +65,31 @@ export function createNeedsYouController(client: CoreClient) {
   }
 
   function isShown(item: NeedsYouItem): boolean {
+    if (pendingTakes.has(item.agent_id)) return false;
     return (
       item.origin_notification_id === null ||
       !readOnArrival.has(item.origin_notification_id)
     );
+  }
+
+  /** Ends the hiding of an agent once the server list no longer has it. */
+  function forgetTaken(serverItems: NeedsYouItem[]): void {
+    const agentIds = new Set(serverItems.map((item) => item.agent_id));
+    for (const agentId of pendingTakes.keys()) {
+      if (!agentIds.has(agentId)) pendingTakes.delete(agentId);
+    }
+  }
+
+  /** Ends the hiding that timed out, so a failed read cannot hide for good. */
+  function expireTakes(): void {
+    const now = Date.now();
+    let hasExpired = false;
+    for (const [agentId, until] of pendingTakes) {
+      if (until > now) continue;
+      pendingTakes.delete(agentId);
+      hasExpired = true;
+    }
+    if (hasExpired) replace(received, false);
   }
 
   function originsOf(items: NeedsYouItem[]): Set<string> {
@@ -100,6 +126,12 @@ export function createNeedsYouController(client: CoreClient) {
     });
   }
 
+  /** Makes the server's list the list; its items end the taken hiding. */
+  function adopt(serverItems: NeedsYouItem[], isAnnounced: boolean): void {
+    forgetTaken(serverItems);
+    replace(serverItems, isAnnounced);
+  }
+
   function withoutAgent(agentId: string): NeedsYouItem[] {
     return received.filter((item) => item.agent_id !== agentId);
   }
@@ -111,14 +143,17 @@ export function createNeedsYouController(client: CoreClient) {
     }
     if (event.type !== EVENT_NEEDS_YOU_CHANGED) return;
     newestRead++;
-    replace(readItems(event), true);
+    adopt(readItems(event), true);
   }
 
   async function load(): Promise<void> {
     const readId = ++newestRead;
     try {
       const items = await service.list();
-      if (readId === newestRead) replace(items, false);
+      if (readId !== newestRead) return;
+      // A resync is not a count change: the standing announcement is stale.
+      publish({ announcement: null });
+      adopt(items, false);
     } catch {
       // A failed read keeps the list it has; the next load tells the truth.
     }
@@ -153,7 +188,10 @@ export function createNeedsYouController(client: CoreClient) {
 
     /** Moves the wait times on; returns the stop function. */
     startTicking(intervalMs = TICK_MS): () => void {
-      const timer = setInterval(() => publish({ now: Date.now() }), intervalMs);
+      const timer = setInterval(() => {
+        expireTakes();
+        publish({ now: Date.now() });
+      }, intervalMs);
       return () => clearInterval(timer);
     },
 
@@ -167,9 +205,19 @@ export function createNeedsYouController(client: CoreClient) {
     },
 
     /**
+     * The read on arrival failed, so the server keeps the item: it shows
+     * again, because the user has not seen that agent's event.
+     */
+    showOrigin(notificationId: string): void {
+      readOnArrival.delete(notificationId);
+      replace(received, false);
+    },
+
+    /**
      * Takes the item at the top whose agent still exists, for the jump
-     * (FR-007). The item leaves the local list at once, so a second press
-     * before the server's event comes takes the next one (D5). With no such
+     * (FR-007). The item leaves the local list at once and stays out until a
+     * server list no longer has it, so a second press before the server's
+     * event comes takes the next one (D5). With no such
      * item the view stays and the live region says so (FR-008).
      */
     takeTop(isKnownAgent: (agentId: string) => boolean): string | null {
@@ -179,6 +227,7 @@ export function createNeedsYouController(client: CoreClient) {
         return null;
       }
       replace(withoutAgent(top.agent_id), true);
+      pendingTakes.set(top.agent_id, Date.now() + PENDING_TAKE_MS);
       return top.agent_id;
     },
 

@@ -40,24 +40,21 @@ function takesTableKey(text: string): boolean {
 
 /**
  * Reads the user's shortcut. The terminal must always have a way out, so an
- * unreadable or unparsable setting gives the default.
+ * unparsable setting gives the default. A failed read rejects, so that the
+ * caller can tell the default it gets from the one the user stored.
  */
 export async function loadFocusShortcut(
   client: CoreClient,
 ): Promise<FocusShortcut> {
-  try {
-    const setting = (await client.sendRequest("settings.get", {
-      key: FOCUS_SHORTCUT_SETTING,
-    })) as { value?: unknown } | null | undefined;
-    const text = typeof setting?.value === "string" ? setting.value : "";
-    // A stored value the server's validator would refuse (an app-table
-    // combination) must not eat the table's keys; the terminal keeps its
-    // default way out.
-    if (takesTableKey(text)) return defaultShortcut();
-    return fromText(text) ?? defaultShortcut();
-  } catch {
-    return defaultShortcut();
-  }
+  const setting = (await client.sendRequest("settings.get", {
+    key: FOCUS_SHORTCUT_SETTING,
+  })) as { value?: unknown } | null | undefined;
+  const text = typeof setting?.value === "string" ? setting.value : "";
+  // A stored value the server's validator would refuse (an app-table
+  // combination) must not eat the table's keys; the terminal keeps its
+  // default way out.
+  if (takesTableKey(text)) return defaultShortcut();
+  return fromText(text) ?? defaultShortcut();
 }
 
 let shared: Promise<FocusShortcut> | null = null;
@@ -65,14 +62,22 @@ let shared: Promise<FocusShortcut> | null = null;
 /**
  * The focus shortcut, loaded once for the whole app (0008 D6): the terminal,
  * the panel, the scene, and the Needs you section all read this one copy. A
- * change of the setting applies at the next app start.
+ * change of the setting applies at the next app start. A failed load is not
+ * kept: the caller gets the default for now and the next call reads again,
+ * so one failed read cannot replace the user's stored key for good.
  */
 export function sharedFocusShortcut(
   client: CoreClient,
 ): Promise<FocusShortcut> {
-  shared ??= loadFocusShortcut(client).then((focus) => {
-    setCurrentFocusShortcut(focus.shortcut);
-    return focus;
-  });
-  return shared;
+  if (shared === null) {
+    const attempt = loadFocusShortcut(client).then((focus) => {
+      setCurrentFocusShortcut(focus.shortcut);
+      return focus;
+    });
+    shared = attempt;
+    attempt.catch(() => {
+      if (shared === attempt) shared = null;
+    });
+  }
+  return shared.catch(defaultShortcut);
 }

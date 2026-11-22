@@ -32,6 +32,7 @@ export function createPanelStore(client: CoreClient) {
       openView === "panel" ? office.snapshot.selectedAgentId : sceneOpenAgentId,
     () => document.hasFocus(),
     needsYou.hideOrigin,
+    needsYou.showOrigin,
   );
   const hold = createHoldController(
     client,

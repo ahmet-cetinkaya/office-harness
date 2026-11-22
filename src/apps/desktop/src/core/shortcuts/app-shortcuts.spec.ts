@@ -4,13 +4,15 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   APP_SHORTCUT_TABLE,
   DEFAULT_FOCUS_SHORTCUT,
-  isAppShortcut,
   parseShortcut,
   isJumpUnbound,
   pressedAppShortcut,
   setCurrentFocusShortcut,
   type ShortcutEvent,
 } from "./index";
+import { appShortcutNamed } from "./app-shortcuts";
+
+const isAppShortcut = (text: string) => appShortcutNamed(text) !== null;
 
 function keyEvent(overrides: Partial<ShortcutEvent>): ShortcutEvent {
   return {
@@ -170,7 +172,7 @@ describe("app shortcut table", () => {
     expect(isAppShortcut(DEFAULT_FOCUS_SHORTCUT)).toBe(false);
   });
 
-  test("isAppShortcut compares combinations, not spellings", () => {
+  test("appShortcutNamed compares combinations, not spellings", () => {
     expect(isAppShortcut("ctrl + shift + f1")).toBe(true);
     expect(isAppShortcut("Shift+Ctrl+F1")).toBe(true);
     expect(isAppShortcut("Ctrl+Shift+F12")).toBe(false);
