@@ -85,6 +85,28 @@ impl AgentPlaces {
             .map_err(|error| error.to_string())
     }
 
+    /// The start-up repair of 0002 A5 for an office made before the fix:
+    /// when exactly one CEO exists, every team lead without a parent moves
+    /// under it. Running it again changes nothing. Answers how many leads
+    /// moved.
+    ///
+    /// # Errors
+    /// A SQLite error.
+    pub fn adopt_parentless_leads_into_the_only_ceo(
+        &self,
+        connection: &Connection,
+    ) -> Result<usize, String> {
+        connection
+            .execute(
+                "UPDATE agent_agents \
+                 SET parent_agent_id = (SELECT id FROM agent_agents WHERE role = ?1) \
+                 WHERE role = ?2 AND parent_agent_id IS NULL \
+                 AND (SELECT COUNT(*) FROM agent_agents WHERE role = ?1) = 1",
+                params![Role::Ceo.as_str(), Role::Lead.as_str()],
+            )
+            .map_err(|error| error.to_string())
+    }
+
     /// Whether the place columns exist yet (migration 0004 has run).
     ///
     /// # Errors
