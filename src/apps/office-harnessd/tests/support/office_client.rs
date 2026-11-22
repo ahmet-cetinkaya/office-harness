@@ -17,7 +17,9 @@ use super::running_office::{ServingOffice, serve_office_with};
 use super::wire_client::WireClient;
 
 const QUIET_PERIOD_MS: u64 = 400;
-const WAIT_LIMIT: Duration = Duration::from_secs(20);
+/// Generous, because a wait returns as soon as its condition holds: a cold
+/// CI runner can take more than 20 s for the first helper process (ACF-184).
+const WAIT_LIMIT: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(25);
 /// A batch file's `echo` ends the value with a line ending; a shell's `printf`
 /// does not.
