@@ -534,7 +534,14 @@ fn a_forced_remove_of_a_missing_folder_clears_only_its_own_record() {
         .remove(&first.worktree, true)
         .expect("record cleared");
     let records = worktree_records(&fixture);
-    assert!(!records.contains(&*first.worktree.folder.to_string_lossy()));
+    // Git records the real path (`/private/var` on macOS), so compare the
+    // canonical form of the folder that still exists.
+    let kept_parent = second.worktree.folder.parent().expect("parent");
+    let gone = kept_parent
+        .canonicalize()
+        .expect("parent exists")
+        .join(first.worktree.folder.file_name().expect("name"));
+    assert!(!records.contains(&*gone.to_string_lossy()), "{records}");
     assert_eq!(records.matches("worktree ").count(), 2, "{records}");
 }
 
@@ -566,4 +573,97 @@ fn a_missing_repository_reads_as_unreachable() {
     fs::rename(&fixture.repository, &moved).expect("moved");
     let status = fixture.worktrees.status(&made.worktree);
     assert!(!status.reachable);
+}
+
+#[test]
+fn a_relative_worktrees_folder_is_made_absolute() {
+    let worktrees = GitWorktrees::with_runner(PathBuf::from("relative-data"), None);
+    assert!(worktrees.root.is_absolute());
+    assert!(
+        worktrees
+            .folder_for(Path::new("/r"), "12345678-x")
+            .is_absolute()
+    );
+}
+
+#[test]
+fn without_git_on_the_login_path_the_folder_is_not_in_a_repository() {
+    let fixture = fixture();
+    let empty = fixture.home.join("empty-bin");
+    fs::create_dir_all(&empty).expect("folder");
+    let environment = [("PATH".to_owned(), empty.to_string_lossy().into_owned())]
+        .into_iter()
+        .collect();
+    let worktrees = GitWorktrees::new(
+        fixture.root.clone(),
+        Arc::new(LoginEnvironment::fixed(environment)),
+        Environment::new(),
+    );
+    assert_eq!(worktrees.info(&fixture.repository, "x"), Ok(None));
+}
+
+#[test]
+fn a_branch_named_like_a_commit_id_is_refused_as_base() {
+    let fixture = fixture();
+    let hex = "a".repeat(40);
+    git(&fixture.home, &fixture.repository, &["branch", &hex]);
+    let error = fixture
+        .worktrees
+        .create(&WorktreeCreate {
+            folder: &fixture.repository,
+            agent_id: AgentId::generate(),
+            agent_name: "x",
+            base: Some(&hex),
+            branch_name: None,
+        })
+        .expect_err("refused");
+    assert!(matches!(error, WorktreeError::Invalid(_)), "{error:?}");
+    assert_nothing_left(&fixture);
+}
+
+#[test]
+fn a_worktree_without_its_git_link_reads_as_unreachable() {
+    let fixture = fixture();
+    let made = created(&fixture, "x");
+    fs::remove_file(made.worktree.folder.join(".git")).expect("link removed");
+    let status = fixture.worktrees.status(&made.worktree);
+    assert!(status.folder_exists && !status.reachable);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_subfolder_that_is_a_link_out_of_the_worktree_in_the_base_is_refused() {
+    let fixture = fixture();
+    git(
+        &fixture.home,
+        &fixture.repository,
+        &["checkout", "--quiet", "-b", "evil"],
+    );
+    git(
+        &fixture.home,
+        &fixture.repository,
+        &["rm", "--quiet", "-r", "sub"],
+    );
+    std::os::unix::fs::symlink("../..", fixture.repository.join("sub")).expect("link");
+    commit_all(&fixture.home, &fixture.repository, "link");
+    git(
+        &fixture.home,
+        &fixture.repository,
+        &["checkout", "--quiet", "main"],
+    );
+    let error = fixture
+        .worktrees
+        .create(&WorktreeCreate {
+            folder: &fixture.repository.join("sub"),
+            agent_id: AgentId::generate(),
+            agent_name: "x",
+            base: Some("evil"),
+            branch_name: None,
+        })
+        .expect_err("refused");
+    assert_eq!(
+        error,
+        WorktreeError::Invalid("the folder sub does not exist in evil".to_owned())
+    );
+    assert_nothing_left(&fixture);
 }

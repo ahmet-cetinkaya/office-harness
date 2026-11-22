@@ -68,10 +68,31 @@ mod with_a_stand_in_program {
 
     use super::*;
 
+    const PROBE: &str = "--probe";
+    const PROBE_ATTEMPTS: usize = 100;
+
+    /// A stand-in git. Another test thread that forks while the script is
+    /// open for writing makes the first runs fail with "text file busy", so
+    /// the helper runs a harmless probe until the script starts.
     fn program(folder: &Path, script: &str) -> PathBuf {
         let file = folder.join("git");
-        fs::write(&file, format!("#!/bin/sh\n{script}\n")).expect("script");
+        fs::write(
+            &file,
+            format!("#!/bin/sh\n[ \"$1\" = \"{PROBE}\" ] && exit 0\n{script}\n"),
+        )
+        .expect("script");
         fs::set_permissions(&file, fs::Permissions::from_mode(0o755)).expect("runnable");
+        let starts = (0..PROBE_ATTEMPTS).any(|_| {
+            let started = std::process::Command::new(&file)
+                .arg(PROBE)
+                .status()
+                .is_ok();
+            if !started {
+                thread::sleep(Duration::from_millis(10));
+            }
+            started
+        });
+        assert!(starts, "the stand-in git never started");
         file
     }
 
@@ -169,6 +190,16 @@ mod with_a_stand_in_program {
         thread::sleep(Duration::from_millis(100));
         let alive = nix::sys::signal::kill(nix::unistd::Pid::from_raw(child), None).is_ok();
         assert!(!alive, "the child {child} still runs");
+    }
+
+    #[test]
+    fn a_child_that_keeps_the_pipe_after_git_exits_is_ended_at_the_deadline() {
+        let temp = TempDir::new().expect("temp");
+        let runner = runner_for(temp.path(), "sleep 30 & echo out", &environment())
+            .with_timeouts(Duration::from_millis(500), Duration::from_millis(500));
+        let started = Instant::now();
+        assert_eq!(runner.read(temp.path(), &["x"]), Err(GitFailure::Timeout));
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]

@@ -7,11 +7,13 @@ use kernel::AgentId;
 
 use crate::common::errors::HierarchyApplicationError;
 use crate::common::interfaces::HierarchyStore;
-use crate::common::ports::{SubtreeAgentEnder, SubtreeAgentRemover};
+use crate::common::ports::{
+    SubtreeAgentEnder, SubtreeAgentRemover, SubtreeWorktrees, WorktreeReport,
+};
 
 /// What `agent.stop` and `agent.delete` carry when they reach a subtree
 /// (FR-006, FR-007).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct SubtreeRequest {
     pub agent_id: AgentId,
     /// Stop or delete the descendants in the same action.
@@ -19,6 +21,16 @@ pub struct SubtreeRequest {
     /// What the client showed in its confirmation. The server re-counts and
     /// refuses a stale number.
     pub confirmed_descendants: Option<usize>,
+    /// What a delete does with the agents' own worktrees (0010).
+    pub worktrees: SubtreeWorktrees,
+}
+
+/// The agents a subtree delete removed and what became of their worktrees.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubtreeDeletion {
+    /// Deepest first, the requested agent last.
+    pub deleted: Vec<AgentId>,
+    pub worktrees: WorktreeReport,
 }
 
 /// Stops or deletes an agent and, when asked, its whole subtree, deepest
@@ -61,7 +73,7 @@ impl SubtreeHandler {
     /// the client asked; the error of the first agent that cannot be stopped.
     pub fn stop_subtree(
         &self,
-        request: SubtreeRequest,
+        request: &SubtreeRequest,
     ) -> Result<Vec<AgentId>, HierarchyApplicationError> {
         let _tree = self.store.tree_exclusion();
         let stopped = self.affected(request)?;
@@ -79,27 +91,42 @@ impl SubtreeHandler {
     /// the deletes keeps the confirmed count and the deleted set one tree:
     /// no placement can join in between and be missed.
     ///
+    /// Every agent's worktree confirmation is checked before the first
+    /// delete, so one question covers the whole subtree (0010 FR-005).
+    ///
     /// # Errors
     /// `Conflict` when the agent still has descendants and the request does
-    /// not confirm their fresh count; the error of the first agent that
-    /// cannot be deleted. The agents deleted before that step stay deleted.
+    /// not confirm their fresh count, or a worktree changed since the user
+    /// confirmed it; the error of the first agent that cannot be deleted.
+    /// The agents deleted before that step stay deleted.
     pub fn delete_subtree(
         &self,
-        request: SubtreeRequest,
-    ) -> Result<Vec<AgentId>, HierarchyApplicationError> {
+        request: &SubtreeRequest,
+    ) -> Result<SubtreeDeletion, HierarchyApplicationError> {
         let _tree = self.store.tree_exclusion();
         let deleted = self.affected_for_delete(request)?;
         for agent in &deleted {
             self.remover
-                .delete(*agent)
+                .check(*agent, &request.worktrees)
                 .map_err(HierarchyApplicationError::from_delete)?;
         }
-        Ok(deleted)
+        let mut worktrees = WorktreeReport::default();
+        for agent in &deleted {
+            let report = self
+                .remover
+                .delete(*agent, &request.worktrees)
+                .map_err(HierarchyApplicationError::from_delete)?;
+            worktrees.extend(report);
+        }
+        Ok(SubtreeDeletion { deleted, worktrees })
     }
 
     /// The agents a stop affects: the agent plus its descendants when asked,
     /// after the count check.
-    fn affected(&self, request: SubtreeRequest) -> Result<Vec<AgentId>, HierarchyApplicationError> {
+    fn affected(
+        &self,
+        request: &SubtreeRequest,
+    ) -> Result<Vec<AgentId>, HierarchyApplicationError> {
         if !request.include_descendants {
             return Ok(vec![request.agent_id]);
         }
@@ -123,7 +150,7 @@ impl SubtreeHandler {
     /// left without its parent (FR-006).
     fn affected_for_delete(
         &self,
-        request: SubtreeRequest,
+        request: &SubtreeRequest,
     ) -> Result<Vec<AgentId>, HierarchyApplicationError> {
         let descendants = self.descendants(request.agent_id)?;
         if descendants.is_empty() {

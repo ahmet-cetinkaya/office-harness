@@ -5,6 +5,7 @@ mod events;
 
 pub use entities::{
     additions_json, agent_json, project_json, session_json, setting_json, task_json,
+    worktree_info_json, worktree_json, worktree_outcome_json, worktree_status_json,
 };
 pub use events::{
     additions_changed_event, agent_changed_event, agent_deleted_event, agent_line_event,

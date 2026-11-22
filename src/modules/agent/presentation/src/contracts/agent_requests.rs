@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::collections::HashMap;
+
+use agent_application::commands::create_agent::OwnWorktree;
+use agent_application::commands::delete_agent::DeleteWorktrees;
 use agent_application::common::additions_input::AdditionsInput;
+use kernel::AgentId;
 use serde_json::{Map, Value};
 
 use super::{Fields, read_additions};
@@ -23,6 +28,8 @@ pub struct CreateAgentRequest {
     pub project_id: Option<String>,
     pub additions: Option<AdditionsInput>,
     pub role: Option<RolePlacement>,
+    /// The own worktree choice (0010); `None` without `own_worktree: true`.
+    pub worktree: Option<OwnWorktree>,
 }
 
 impl CreateAgentRequest {
@@ -43,7 +50,107 @@ impl CreateAgentRequest {
                 None | Some(Value::Null) => None,
                 Some(value) => Some(read_role(value)?),
             },
+            worktree: read_own_worktree(&fields)?,
         })
+    }
+}
+
+/// `own_worktree`, `base`, and `branch_name` (0010 D5). The two names are
+/// taken only with the choice on, so a stray one never acts on its own.
+fn read_own_worktree(fields: &Fields<'_>) -> Result<Option<OwnWorktree>, String> {
+    let base = fields.optional_text("base")?;
+    let branch_name = fields.optional_text("branch_name")?;
+    if fields.optional_bool("own_worktree")? == Some(true) {
+        return Ok(Some(OwnWorktree { base, branch_name }));
+    }
+    match (&base, &branch_name) {
+        (None, None) => Ok(None),
+        (Some(_), _) => Err("base is only taken with own_worktree".to_owned()),
+        (None, Some(_)) => Err("branch_name is only taken with own_worktree".to_owned()),
+    }
+}
+
+/// `agent.worktree_info` (0010 D4).
+#[derive(Debug)]
+pub struct WorktreeInfoRequest {
+    pub folder: Option<String>,
+    pub project_id: Option<String>,
+    pub name: String,
+}
+
+impl WorktreeInfoRequest {
+    /// # Errors
+    /// The text names the field at fault.
+    pub fn read(body: &Map<String, Value>) -> Result<Self, String> {
+        let fields = Fields(body);
+        Ok(Self {
+            folder: fields.optional_text("folder")?,
+            project_id: fields.optional_text("project_id")?,
+            name: fields.required_text("name")?,
+        })
+    }
+}
+
+/// `agent.worktree_status` (0010 D6).
+#[derive(Debug)]
+pub struct WorktreeStatusRequest {
+    pub agent_ids: Vec<AgentId>,
+}
+
+impl WorktreeStatusRequest {
+    /// # Errors
+    /// The text names the field at fault.
+    pub fn read(body: &Map<String, Value>) -> Result<Self, String> {
+        let Some(Value::Array(ids)) = body.get("agent_ids") else {
+            return Err("agent_ids must be a list of agent ids".to_owned());
+        };
+        let agent_ids = ids
+            .iter()
+            .map(|id| id.as_str().and_then(AgentId::from_uuid_text))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| "agent_ids must be a list of agent ids".to_owned())?;
+        Ok(Self { agent_ids })
+    }
+}
+
+/// `agent.delete`: the agent and the worktree choice (0010 D6).
+#[derive(Debug)]
+pub struct DeleteAgentRequest {
+    pub agent_id: String,
+    pub worktrees: DeleteWorktrees,
+}
+
+impl DeleteAgentRequest {
+    /// # Errors
+    /// The text names the field at fault.
+    pub fn read(body: &Map<String, Value>) -> Result<Self, String> {
+        let fields = Fields(body);
+        let worktrees = match fields.optional_text("worktrees")?.as_deref() {
+            None | Some("keep") => DeleteWorktrees::Keep,
+            Some("remove") => DeleteWorktrees::Remove(read_confirmed_status(body)?),
+            Some(_) => return Err("worktrees must be keep or remove".to_owned()),
+        };
+        Ok(Self {
+            agent_id: fields.required_text("agent_id")?,
+            worktrees,
+        })
+    }
+}
+
+/// `confirmed_status`: the status hash the question showed, per agent id.
+fn read_confirmed_status(body: &Map<String, Value>) -> Result<HashMap<AgentId, String>, String> {
+    const SHAPE: &str = "confirmed_status must map agent ids to status hashes";
+    match body.get("confirmed_status") {
+        None | Some(Value::Null) => Ok(HashMap::new()),
+        Some(Value::Object(entries)) => entries
+            .iter()
+            .map(|(id, hash)| {
+                let id = AgentId::from_uuid_text(id).ok_or_else(|| SHAPE.to_owned())?;
+                let hash = hash.as_str().ok_or_else(|| SHAPE.to_owned())?;
+                Ok((id, hash.to_owned()))
+            })
+            .collect(),
+        Some(_) => Err(SHAPE.to_owned()),
     }
 }
 

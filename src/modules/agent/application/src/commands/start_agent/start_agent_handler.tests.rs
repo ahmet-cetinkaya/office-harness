@@ -121,6 +121,83 @@ fn a_missing_folder_refuses_the_start_and_names_it() {
     assert!(office.recorder.entries()[0].failure.is_some());
 }
 
+/// An agent whose working folder is a worktree: `folder` holds a `.git`
+/// file naming `git_folder`.
+fn agent_in_worktree(
+    office: &Office,
+    folder: &std::path::Path,
+    git_folder: &std::path::Path,
+) -> agent_domain::entities::Agent {
+    std::fs::create_dir_all(folder).expect("worktree");
+    std::fs::write(
+        folder.join(".git"),
+        format!("gitdir: {}\n", git_folder.display()),
+    )
+    .expect("link");
+    let mut agent = office.add_agent("Ana", "claude", folder, AgentStatus::Stopped);
+    office.agents.delete(agent.id).expect("delete");
+    agent.worktree = Some(agent_domain::value_objects::AgentWorktree {
+        repository: folder.to_path_buf(),
+        base: "main".to_owned(),
+        branch: "office-harness/ana".to_owned(),
+        folder: folder.to_path_buf(),
+    });
+    office.agents.insert(&agent).expect("insert");
+    agent
+}
+
+#[test]
+fn a_worktree_with_a_broken_git_link_refuses_the_start() {
+    let office = Office::new();
+    let temp = tempfile::TempDir::new().expect("temp");
+    let worktree = temp.path().join("wt");
+    let agent = agent_in_worktree(&office, &worktree, &temp.path().join("moved-repository"));
+
+    let error = office.start_agent().handle(agent.id).expect_err("broken");
+
+    assert_eq!(
+        error,
+        ApplicationError::Invalid(format!(
+            "the worktree folder is missing or broken: {}",
+            worktree.display()
+        ))
+    );
+    assert_eq!(office.terminals.started().len(), 0);
+}
+
+#[test]
+fn a_deleted_worktree_folder_refuses_the_start() {
+    let office = Office::new();
+    let temp = tempfile::TempDir::new().expect("temp");
+    let worktree = temp.path().join("wt");
+    let git_folder = temp.path().join("git");
+    std::fs::create_dir_all(&git_folder).expect("git folder");
+    let agent = agent_in_worktree(&office, &worktree, &git_folder);
+    std::fs::remove_dir_all(&worktree).expect("deleted by hand");
+
+    let error = office.start_agent().handle(agent.id).expect_err("missing");
+
+    assert!(matches!(&error, ApplicationError::Invalid(text)
+        if text.starts_with("the worktree folder is missing or broken")));
+}
+
+#[test]
+fn a_linked_worktree_starts_and_a_new_task_keeps_the_same_folder() {
+    let office = Office::new();
+    let temp = tempfile::TempDir::new().expect("temp");
+    let worktree = temp.path().join("wt");
+    let git_folder = temp.path().join("git");
+    std::fs::create_dir_all(&git_folder).expect("git folder");
+    let agent = agent_in_worktree(&office, &worktree, &git_folder);
+
+    office.start_agent().handle(agent.id).expect("start");
+    office.start_new_task().handle(agent.id).expect("new task");
+
+    let started = office.terminals.started();
+    assert_eq!(started.len(), 2);
+    assert!(started.iter().all(|start| start.working_folder == worktree));
+}
+
 #[test]
 fn a_running_agent_cannot_start_again() {
     let office = Office::new();
