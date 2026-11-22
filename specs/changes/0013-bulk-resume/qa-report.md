@@ -106,3 +106,7 @@ Paths are relative to the repository root. `H` is `src/apps/office-harnessd`, `M
 
 - The office does not find or end CLI processes left over after an unclean stop (spec A5, research R1 and R3). A follow-up change can store each session's process id, start time, and command and end only the processes whose three values still match.
 - A CLI that refuses a continue but keeps running is not detected (spec A4).
+
+## Updates
+
+- 2026-11-23: PB-6 said the focused-terminal exception does not apply to the `resume_hold` notification, but the desktop exempted only `auto_hold`: a hold after a failed resume was marked read on arrival while its agent's terminal was open and the window focused. One predicate, `isNeverReadOnArrival`, now lists both kinds. New tests: `a failed resume's hold stays unread and pings the OS even for the open and focused agent (0013 PB-6)` (unit, and a `resume_hold` push in the existing read-on-arrival test), and `a hold after a failed resume stays unread while its terminal is open (0013 PB-6)` (e2e, `hold.spec.ts`). Each unit test fails without the change.

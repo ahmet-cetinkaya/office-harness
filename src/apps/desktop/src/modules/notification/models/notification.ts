@@ -21,8 +21,18 @@ const EVENT_TEXT: Record<string, string> = {
   bell: "rang the bell",
 };
 
-export const EVENT_AUTO_HOLD = "auto_hold";
+const EVENT_AUTO_HOLD = "auto_hold";
 const EVENT_RESUME_HOLD = "resume_hold";
+/** Holds are never on screen: the owner must see them (0007, 0013/PB-6). */
+const EVENTS_NEVER_READ_ON_ARRIVAL: readonly string[] = [
+  EVENT_AUTO_HOLD,
+  EVENT_RESUME_HOLD,
+];
+
+/** Whether the focused-terminal exception must not mark this event read. */
+export function isNeverReadOnArrival(event: string): boolean {
+  return EVENTS_NEVER_READ_ON_ARRIVAL.includes(event);
+}
 /** How many refusals by one limit put an agent on hold (0007 D7). */
 const AUTO_HOLD_REFUSALS = 3;
 
