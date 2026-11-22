@@ -170,7 +170,13 @@ export interface NotificationSeed {
   agent_id: string;
   agent_name: string;
   event:
-    "exited" | "failed" | "waiting_for_input" | "bell" | "auto_hold" | "report";
+    | "exited"
+    | "failed"
+    | "waiting_for_input"
+    | "bell"
+    | "auto_hold"
+    | "resume_hold"
+    | "report";
   detail?: string | null;
   created_at: number;
   read_at: number | null;
