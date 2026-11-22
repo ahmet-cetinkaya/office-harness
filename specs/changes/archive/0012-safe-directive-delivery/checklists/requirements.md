@@ -1,6 +1,6 @@
 # Requirements checklist: 0012-safe-directive-delivery
 
-Spec: `specs/changes/0012-safe-directive-delivery/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0007/` (including FR-008), and `0011/` reference was checked against the specs on `main` at 6e3d197.
+Spec: `specs/changes/archive/0012-safe-directive-delivery/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0007/` (including FR-008), and `0011/` reference was checked against the specs on `main` at 6e3d197.
 
 ## Content quality
 

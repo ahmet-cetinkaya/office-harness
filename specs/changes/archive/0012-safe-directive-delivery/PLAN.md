@@ -1,6 +1,6 @@
 ---
-status: approved
-spec: specs/changes/0012-safe-directive-delivery/SPEC.md
+status: completed
+spec: specs/changes/archive/0012-safe-directive-delivery/SPEC.md
 commits: per-task
 ---
 

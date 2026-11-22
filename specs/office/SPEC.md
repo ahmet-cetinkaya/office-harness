@@ -20,10 +20,11 @@ Archived change specs merged here:
 - [0003-panel-practicality](../changes/archive/0003-panel-practicality/SPEC.md)
 - [0005-office-scene](../changes/archive/0005-office-scene/SPEC.md)
 - [0007-hold-and-limits](../changes/archive/0007-hold-and-limits/SPEC.md)
+- [0012-safe-directive-delivery](../changes/archive/0012-safe-directive-delivery/SPEC.md)
 - [0013-bulk-resume](../changes/archive/0013-bulk-resume/SPEC.md)
 - [0014-subtree-status](../changes/archive/0014-subtree-status/SPEC.md)
 
-Changes 0008 to 0011 merge in when they are archived. 0004, 0006, 0012, and changes after 0014 are not merged.
+Changes 0008 to 0011 merge in when they are archived. 0004, 0006, and changes after 0014 are not merged.
 
 ## How to read this file
 
@@ -40,6 +41,7 @@ Modified requirements:
 | 0001/FR-017 | 0003 | Change 0001, Requirements |
 | 0002/FR-008 | 0014 | Change 0002, Requirements |
 | 0002/FR-009 | 0007 | Change 0002, Requirements |
+| 0002/FR-010 | 0012 | Change 0002, Requirements |
 | 0003/FR-006 (in part) | 0007 | Change 0003, Requirements |
 | 0003/FR-008 (in part) | 0005 | Change 0003, Requirements |
 
@@ -130,8 +132,7 @@ With 12 or more agents, a flat set of terminals is hard to follow. This change o
 - **0002/FR-008** (US1, US2): THE SYSTEM SHALL let a running agent, from inside its own session, create, start, and stop agents, start new tasks, send directives, and read the state of agents only within its own descendants and only for the roles that FR-001 allows. (modified by 0014)
   - Amended by 0015 (`specs/changes/0015-upward-reports/SPEC.md`): a running agent also sends reports, only to its own parent or to the person, with no field that names another agent (0015/FR-002).
 - **0002/FR-009** (US1, US2, US3): IF an agent asks for an action on an agent that is not its descendant, for a role or action that 0002/FR-008 does not allow, for an action while it, its target, or the office is on hold, or for an action beyond a rate limit, THEN THE SYSTEM SHALL refuse the action, tell the agent the reason in the answer to its request, and record the refusal. (modified by 0007)
-- **0002/FR-010** (US2): WHEN a parent agent sends a directive, THE SYSTEM SHALL enter the directive text into the target agent's terminal as one unbroken input followed by Enter.
-  - Amended by 0012 (`specs/changes/0012-safe-directive-delivery/SPEC.md`): the text goes in as one paste only when the target waits for input, no person typed there in the last 30 seconds or left unsent text there, no text the office typed without Enter waits there, and the screen shows no open question; until then the directive waits in the target's queue. Enter follows only when the text, or the CLI's paste placeholder, shows at the input line (0012/FR-001 to FR-003).
+- **0002/FR-010** (US2): WHEN a parent agent sends a directive, THE SYSTEM SHALL enter the directive text into the target agent's terminal as one unbroken input, at the time that 0012/FR-001 and 0012/FR-002 allow, followed by Enter when 0012/FR-003 allows it. (modified by 0012)
 - **0002/FR-011** (US1, US2): THE SYSTEM SHALL add directives and refused actions to the action record and SHALL record a named agent as the actor of each action that an agent takes.
 
 ### Preserved behaviors
@@ -329,6 +330,55 @@ The rate limits and their defaults, each counted over a rolling 60 seconds:
 | Starts, stops, and new tasks by one agent | 10 | One restart round of a 5-member team fits twice. |
 
 Amended by 0015: a fifth limit, "reports sent by one agent", 5 per 60 seconds, counts reports (0015/FR-006).
+
+## Change 0012: Safe directive delivery
+
+### Intent
+
+A parent agent's directive was typed into the target's terminal at once, with Enter, whenever the target ran. When the target's CLI showed a question for a person, the Enter or a letter of the text could answer it, and nobody saw it. This change puts each directive in a queue per target and types it only when the target waits for input, no person types or has unsent text there, no text the office typed without Enter waits there, and the screen shows no question that the office recognises. Enter follows only after the text, or the CLI's placeholder for it, shows at the input line. The sender learns whether its directive was submitted, waits, or was left unsubmitted, and a directive that cannot be typed in time is withdrawn and recorded. This change modifies 0002/FR-010 and amends 0011 (the task line shows the last submitted directive). What the screen checks cannot cover is under Residual risk in the change spec.
+
+### Requirements
+
+- **0012/FR-001** (US1): THE SYSTEM SHALL keep one queue of directives per target and SHALL type the directives of a queue one at a time, in the order it accepted them, each only after the previous one left the queue and the conditions of 0012/FR-002 hold again.
+- **0012/FR-002** (US1): THE SYSTEM SHALL type a directive only WHILE the target waits for input, no person input reached the target's terminal in the last 30 seconds, no unsent person text waits at its input line, no pending office text (a startup prompt or an unsubmitted directive) waits in the target's current session, and the bottom lines of the target's screen show no open question (a yes-or-no choice, a choice list with a selection mark, or a request for permission or approval); otherwise THE SYSTEM SHALL keep the directive in the queue.
+- **0012/FR-003** (US1): WHEN the system has typed a directive, THE SYSTEM SHALL press Enter only IF the end of the directive's text, or a new paste placeholder, appears at the input line of the target's screen within 2 seconds, and otherwise SHALL press no Enter, leave the typed text in the terminal, and record the directive as unsubmitted with the reason in the sender's and the target's action records.
+- **0012/FR-004** (US2): WHEN the system accepts a directive, THE SYSTEM SHALL answer the sender that the directive was submitted, that it waits with its place in the target's queue, or that it was left unsubmitted; IF 20 directives already wait for the target, THEN THE SYSTEM SHALL refuse the directive, say that the target's queue is full, and record the refusal.
+- **0012/FR-005** (US2): IF a waiting directive was not typed within 10 minutes, its target stopped running, the target is no longer the sender's descendant, a hold would now refuse the directive (0007/FR-002, 0007/FR-004), or the background server stops normally, THEN THE SYSTEM SHALL withdraw the directive without typing it and SHALL record the withdrawal with the directive text and the reason in the sender's and the target's action records.
+
+This change modified: 0002/FR-010. The final text is under the change that owns each id.
+
+### Preserved behaviors
+
+- **0012/PB-1:** The checks at sending stay as they are, with their refusals and records: the target must be a running descendant, the text must follow the directive rules (0002/FR-009, 0002/FR-011), and holds and rate limits apply (0007).
+- **0012/PB-2:** An accepted directive is recorded once in the target's action record, with the sender as the actor (0002/FR-011). A directive that waits is accepted.
+- **0012/PB-3:** The task line shows the text of the last directive that was submitted (0011/FR-002). A directive that waits, was withdrawn, or was left unsubmitted does not change it.
+- **0012/PB-4:** The office writes nothing into a CLI's configuration (0001/FR-021). Both screen checks read only the screen copy that the office keeps.
+- **0012/PB-5:** Person input reaches the terminal at once and unchanged (0001); the queue never holds it back.
+
+### Key entities
+
+| Entity | Represents | Key attributes | Identity and relationships |
+|---|---|---|---|
+| Waiting directive | A directive the office accepted and has not typed yet. | sender, target, text, time accepted, place in the queue | Belongs to one target's queue until it is typed or withdrawn. Lives only while the background server runs; a normal stop withdraws it (0012/FR-005), and a crash drops it without a withdrawal entry. |
+
+### Success criteria
+
+- **0012/SC-001:** Of 50 directives sent to an agent whose screen shows a permission question, 0 characters are typed into its terminal while the question shows.
+- **0012/SC-002:** Of 20 directives sent to an agent that shows an unrecognised question and does not echo input, 0 are followed by Enter.
+- **0012/SC-003:** Of 20 directives sent while a person types into the target's terminal, 0 are typed earlier than 30 seconds after the person's last input.
+- **0012/SC-004:** 10 directives sent in a row to one working agent are each typed exactly once, 100% in the order they were sent.
+- **0012/SC-005:** 100% of withdrawn and unsubmitted directives have an entry with the text and the reason in the sender's and the target's action records.
+- **0012/SC-006:** A directive sent to an agent that waits for input and echoes input, with no open question and no person input in the last 30 seconds, is submitted within 2 seconds of sending.
+- **0012/SC-007:** Of 10 directives sent to an agent with pending office text, a pasted startup prompt or an unsubmitted directive, 0 are typed before a person input reaches that terminal.
+- **0012/SC-008:** Of 10 directives sent while a person's half-typed line waits unsent, 0 are typed until the person sends or clears the line.
+
+### Notes from Deviations
+
+- **One delivery per target, not one write lock for all.** A delivery can wait up to 2 seconds for the input line, so the handler marks one delivery per target. Directives to other targets go on meanwhile, and writes and receipts of one target keep their order.
+- **Readiness has three answers.** The handler needs only ready, busy, or gone, so the reasons a target is busy are not carried.
+- **Input-line check by count.** The check counts how often the text's end, and a paste placeholder, show at the input line before and after typing, so a line that already held the same text elsewhere does not count.
+- **Commits.** The hierarchy change and the server change do not build apart, so their code and tests are one commit, and the documents are another.
+- **Gap found after ship (2026-11-23).** 0012/FR-002 is not met for an unnumbered choice list, such as the start question of `claude` in a new folder: the office typed the directive after the quiet period, without Enter (0012/FR-003 held). A follow-up change fixes it.
 
 ## Change 0013: Resume all interrupted agents
 
