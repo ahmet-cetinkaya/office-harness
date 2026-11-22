@@ -104,11 +104,13 @@ impl Server {
             events.clone(),
             services.storage_alerts.clone(),
             Arc::clone(&services.agent.status_order),
+            Arc::clone(&services.agent.task_order),
             Arc::clone(&services.agent.stopping),
             services.terminal.events.clone(),
             Arc::clone(&services.terminal.runtime),
             Arc::clone(&services.hierarchy.tree),
             holds.clone(),
+            services.needs_you_bridge.clone(),
         );
         let hierarchy = HierarchyGateway::new(
             Arc::clone(&services.hierarchy.handlers),
@@ -118,7 +120,7 @@ impl Server {
         );
         let notification = NotificationGateway::new(
             Arc::new(services.notification.handlers.clone()),
-            events.clone(),
+            services.needs_you_bridge.clone(),
         );
         let (shutdown, stopping) = watch::channel(false);
         let state = ServerState {

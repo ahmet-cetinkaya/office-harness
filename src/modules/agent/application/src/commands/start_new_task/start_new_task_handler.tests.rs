@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use agent_domain::enums::AgentStatus;
-use agent_domain::value_objects::ExitResult;
+use agent_domain::value_objects::{ExitResult, TaskSource, TaskText};
 use tempfile::TempDir;
 
 use super::*;
@@ -129,4 +129,79 @@ fn a_new_task_after_the_child_ended_on_its_own_closes_that_session_and_starts_th
     assert_eq!(outcome.failure, None);
     assert_eq!(office.sessions.all().len(), 2);
     assert_eq!(office.terminals.started().len(), 2);
+}
+
+fn give_task(office: &Office, agent: &agent_domain::entities::Agent) {
+    let task = TaskText::from_input(
+        "Fix the login test",
+        kernel::Timestamp::from_unix_millis(5),
+        TaskSource::Directive,
+    )
+    .expect("valid")
+    .expect("some");
+    office
+        .agents
+        .update_task(agent.id, Some(&task))
+        .expect("task");
+}
+
+fn task_of(office: &Office, agent: &agent_domain::entities::Agent) -> Option<TaskText> {
+    office
+        .agents
+        .find(agent.id)
+        .expect("find")
+        .expect("agent")
+        .task
+}
+
+#[test]
+fn a_new_task_clears_the_task_text_after_the_session_started() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    let agent = office.add_agent("Ana", "claude", folder.path(), AgentStatus::Stopped);
+    give_task(&office, &agent);
+
+    let outcome = office.start_new_task().handle(agent.id).expect("new task");
+
+    assert_eq!(outcome.agent.task, None);
+    assert_eq!(task_of(&office, &agent), None);
+}
+
+#[test]
+fn a_new_task_whose_command_cannot_start_keeps_the_task_text() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    let agent = office.add_agent("Broken", "nonesuch", folder.path(), AgentStatus::Stopped);
+    office.terminals.make_unstartable("nonesuch");
+    give_task(&office, &agent);
+
+    let outcome = office.start_new_task().handle(agent.id).expect("accepted");
+
+    assert!(outcome.failure.is_some());
+    assert!(task_of(&office, &agent).is_some());
+}
+
+#[test]
+fn starting_and_continuing_keep_the_task_text() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    let agent = office.add_agent("Ana", "claude", folder.path(), AgentStatus::Stopped);
+    give_task(&office, &agent);
+
+    let first = office.start_agent().handle(agent.id).expect("start");
+    assert!(task_of(&office, &agent).is_some());
+    office
+        .end_session()
+        .handle(agent.id, &ExitResult::Code(0))
+        .expect("end");
+    office
+        .agents
+        .update_status(agent.id, AgentStatus::Exited)
+        .expect("status");
+    office
+        .continue_session()
+        .handle(first.session.id)
+        .expect("continue");
+
+    assert!(task_of(&office, &agent).is_some());
 }

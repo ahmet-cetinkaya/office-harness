@@ -80,6 +80,11 @@ No other `notification.*` event exists: a read changes no visible state for othe
 
 See `specs/changes/0007-hold-and-limits/contracts/hold-protocol.md`.
 
+## Additive change by 0008
+
+- The new requests `needs_you.list` and `needs_you.dismiss` and the event `needs_you.changed` are defined in `specs/changes/0008-needs-you-queue/contracts/needs-you-protocol.md`.
+- `notification.read` and `notification.read_agent` now also clear the matching needs-you items, and the server then sends `needs_you.changed`. Their requests and answers keep the shapes above.
+
 ## Changed validation: `settings.set` with key `focus_shortcut`
 
 A value that equals one of the fixed agent or switcher shortcuts (`Ctrl+Shift+F1` to `Ctrl+Shift+F9`, `Ctrl+Shift+F10`) is refused with `conflict`, and the message names the conflicting combination (D8, spec edge case). The agent and switcher shortcuts are fixed by this spec, so the server holds the same table the desktop app shows; the desktop client checks before it sends, and the server is the authority that a stale client cannot talk out of.

@@ -6,9 +6,14 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use kernel::{AgentId, Timestamp};
+use notification_application::common::interfaces::NeedsYouStore;
 use notification_application::queries::list_notifications::LIST_LIMIT;
-use notification_domain::{Notification, NotificationEvent, NotificationId};
-use notification_infrastructure::persistence::{NotificationRepository, SCRIPTS};
+use notification_domain::{
+    AttentionEvent, AttentionKind, NeedsYouItem, Notification, NotificationEvent, NotificationId,
+};
+use notification_infrastructure::persistence::{
+    NeedsYouRepository, NotificationRepository, SCRIPTS,
+};
 use rusqlite::Connection;
 
 const NOW: Timestamp = Timestamp::from_unix_millis(1_700_000_000_000);
@@ -24,10 +29,14 @@ fn memory_office() -> NotificationRepository {
 }
 
 fn migrated(connection: Connection) -> NotificationRepository {
+    NotificationRepository::new(Arc::new(Mutex::new(migrated_connection(connection))))
+}
+
+fn migrated_connection(connection: Connection) -> Connection {
     for script in SCRIPTS {
         connection.execute_batch(script).expect("migrate");
     }
-    NotificationRepository::new(Arc::new(Mutex::new(connection)))
+    connection
 }
 
 fn row(agent_id: AgentId, name: &str, event: NotificationEvent, created_at: i64) -> Notification {
@@ -244,4 +253,98 @@ fn a_row_stays_listed_when_no_agent_row_exists_anywhere() {
 
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].agent_name, "Deleted Ana");
+}
+
+fn waiting_item(agent_id: AgentId, first_event_at: i64) -> NeedsYouItem {
+    NeedsYouItem {
+        agent_id,
+        first_event_at: Timestamp::from_unix_millis(first_event_at),
+        latest: AttentionEvent {
+            kind: AttentionKind::WaitingForInput,
+            detail: Some("5000".to_owned()),
+            at: Timestamp::from_unix_millis(first_event_at + 5),
+        },
+        origin: Some(NotificationId::generate()),
+    }
+}
+
+#[test]
+fn needs_you_items_survive_closing_and_reopening_the_database() {
+    let database = tempfile::tempdir().expect("folder");
+    let path = database.path().join("office.db");
+    let stored = waiting_item(AgentId::generate(), 10);
+    {
+        let connection = Connection::open(&path).expect("open database");
+        let repository =
+            NeedsYouRepository::new(Arc::new(Mutex::new(migrated_connection(connection))));
+        repository.save(&stored).expect("save");
+    }
+
+    let reopened = NeedsYouRepository::new(Arc::new(Mutex::new(
+        Connection::open(&path).expect("reopen database"),
+    )));
+
+    assert_eq!(reopened.list().expect("list"), vec![stored]);
+}
+
+#[test]
+fn saving_a_second_item_of_one_agent_replaces_the_first() {
+    let connection = migrated_connection(Connection::open_in_memory().expect("open"));
+    let repository = NeedsYouRepository::new(Arc::new(Mutex::new(connection)));
+    let agent = AgentId::generate();
+    repository.save(&waiting_item(agent, 10)).expect("save");
+    let replacement = waiting_item(agent, 20);
+    repository.save(&replacement).expect("save again");
+
+    assert_eq!(repository.list().expect("list"), vec![replacement]);
+}
+
+#[test]
+fn an_item_is_removed_by_agent_and_by_origin() {
+    let connection = migrated_connection(Connection::open_in_memory().expect("open"));
+    let repository = NeedsYouRepository::new(Arc::new(Mutex::new(connection)));
+    let by_agent = waiting_item(AgentId::generate(), 10);
+    let by_origin = waiting_item(AgentId::generate(), 20);
+    repository.save(&by_agent).expect("save");
+    repository.save(&by_origin).expect("save");
+    let origin = by_origin.origin.expect("origin");
+
+    assert!(repository.remove(by_agent.agent_id).expect("remove"));
+    assert!(!repository.remove(by_agent.agent_id).expect("remove again"));
+    assert!(
+        repository
+            .remove_by_origin(origin)
+            .expect("remove by origin")
+    );
+    assert_eq!(repository.list().expect("list"), []);
+}
+
+#[test]
+fn a_database_at_notification_0002_upgrades_with_every_row_intact() {
+    let handle = Arc::new(Mutex::new(Connection::open_in_memory().expect("open")));
+    let (up_to_0002, from_0003) = SCRIPTS.split_at(2);
+    for script in up_to_0002 {
+        handle
+            .lock()
+            .expect("lock")
+            .execute_batch(script)
+            .expect("migrate to 0002");
+    }
+    let repository = NotificationRepository::new(Arc::clone(&handle));
+    let mut read_row = row(AgentId::generate(), "Ana", NotificationEvent::Failed, 10);
+    read_row.mark_read(NOW);
+    let held = row(AgentId::generate(), "Raj", NotificationEvent::AutoHold, 20)
+        .with_detail("the limit".to_owned());
+    repository.insert(&read_row).expect("insert");
+    repository.insert(&held).expect("insert");
+
+    for script in from_0003 {
+        handle
+            .lock()
+            .expect("lock")
+            .execute_batch(script)
+            .expect("migrate to 0003");
+    }
+
+    assert_eq!(repository.list().expect("list"), vec![held, read_row]);
 }

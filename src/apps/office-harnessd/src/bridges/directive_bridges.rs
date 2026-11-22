@@ -1,19 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::fmt::Write as _;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use agent_application::common::action_journal::ActionJournal;
 use agent_application::common::actor_scope::ActorScope;
-use agent_application::common::interfaces::AgentStore;
+use agent_application::common::interfaces::{AgentStore, Clock};
 use agent_application::common::models::AgentAction;
-use hierarchy_application::common::ports::{DirectiveJournal, DirectiveTarget, DirectiveWriter};
+use agent_domain::value_objects::{TaskSource, TaskText};
+use agent_presentation::agent_task_event;
+use hierarchy_application::common::ports::{
+    DirectiveJournal, DirectiveReceipt, DirectiveTarget, DirectiveWriter,
+};
 use hierarchy_domain::DIRECTIVE_MAX_CHARS;
 use kernel::{Actor, AgentId};
 use sha2::{Digest, Sha256};
 use terminal_application::common::interfaces::TerminalRuntime;
 
+use super::SystemClock;
 use crate::bootstrap::StorageAlerts;
+use crate::server::EventHub;
 
 /// The longest text the journal keeps: the directive bound itself, so the
 /// journal never holds more than a directive may carry.
@@ -80,6 +86,63 @@ impl DirectiveWriter for DirectiveWriterBridge {
         self.runtime
             .write_input(agent_id, typed.as_bytes())
             .map_err(|error| error.to_string())
+    }
+}
+
+/// Held while a task text is stored and its `agent.task` event is published,
+/// so that clients see the events in the order the texts were stored (0011).
+///
+/// Lock order: `write_order` (the directive handler) or `StatusOrder` (the
+/// agent gateway) comes first, and this lock is always the innermost. Nothing
+/// that takes either of those runs while this one is held.
+pub type TaskOrder = Arc<Mutex<()>>;
+
+/// Keeps the text of a received directive as the target's task text (0011,
+/// FR-002) and publishes `agent.task` to every client. The time is the
+/// server clock at receipt. A failed store write is the bridge's to report:
+/// the directive is already in the terminal, so it still answers Ok.
+pub struct DirectiveReceiptBridge {
+    agents: Arc<dyn AgentStore>,
+    events: EventHub,
+    alerts: StorageAlerts,
+    task_order: TaskOrder,
+}
+
+impl DirectiveReceiptBridge {
+    #[must_use]
+    pub fn new(
+        agents: Arc<dyn AgentStore>,
+        events: EventHub,
+        alerts: StorageAlerts,
+        task_order: TaskOrder,
+    ) -> Self {
+        Self {
+            agents,
+            events,
+            alerts,
+            task_order,
+        }
+    }
+}
+
+impl DirectiveReceipt for DirectiveReceiptBridge {
+    fn received(&self, target: AgentId, text: &str) {
+        // The send handler already refused blank and over-long texts, so a
+        // text that gives no task here has nothing to keep.
+        let Ok(Some(task)) = TaskText::from_input(text, SystemClock.now(), TaskSource::Directive)
+        else {
+            return;
+        };
+        let _in_order = self
+            .task_order
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        match self.agents.update_task(target, Some(&task)) {
+            Ok(()) => self.events.publish(&agent_task_event(target, Some(&task))),
+            Err(error) => self
+                .alerts
+                .report_disk_failure(&format!("the task text failed: {error}")),
+        }
     }
 }
 

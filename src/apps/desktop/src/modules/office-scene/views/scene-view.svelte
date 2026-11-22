@@ -10,6 +10,11 @@
   import { tick } from "svelte";
   import { shownStatusText, isActive, type OfficeStore } from "../../agent";
   import { INITIAL_HIERARCHY, type HierarchyController } from "../../hierarchy";
+  import {
+    focusHeadingUnlessRunning,
+    type NeedsYouController,
+  } from "../../needs-you";
+  import { pressedAppShortcut } from "../../../core/shortcuts";
   import { TerminalView } from "../../terminal";
   import { ALL_PROJECTS, ProjectSwitcher } from "../../panel";
   import Button from "$shared/ui/button.svelte";
@@ -34,6 +39,8 @@
     openAgentId?: string | null;
     /** A click on the desk that is already open: its rows are read again. */
     onreopen: (agentId: string) => void;
+    /** The Needs you list, whose top agent the jump shortcut opens (0008 D5). */
+    needsYou: NeedsYouController;
   }
 
   let {
@@ -43,6 +50,7 @@
     onProjectChoice,
     openAgentId = $bindable(null),
     onreopen,
+    needsYou,
   }: Props = $props();
 
   const office = $derived(store.snapshot);
@@ -282,6 +290,40 @@
       });
     }
   }
+
+  // --- Needs you (0008 D5, FR-010): the scene has no other app shortcut, so
+  // this window listener handles the jump only. The panel's selection and
+  // project choice stay as they are.
+  function jumpToTopDesk(event: KeyboardEvent): void {
+    if (event.repeat || pressedAppShortcut(event)?.kind !== "jump") return;
+    event.preventDefault();
+    const agentId = needsYou.takeTop((id) =>
+      office.agents.some((agent) => agent.id === id),
+    );
+    if (agentId === null) return;
+    openDesk(agentId);
+    const agent = office.agents.find((known) => known.id === agentId);
+    void focusHeadingUnlessRunning(
+      sceneRoot,
+      agent !== undefined && isActive(agent.status),
+    );
+  }
+
+  $effect(() => {
+    window.addEventListener("keydown", jumpToTopDesk);
+    return () => window.removeEventListener("keydown", jumpToTopDesk);
+  });
+
+  // A count change speaks through the scene's one live region.
+  // An announcement that stood before this view mounted was spoken already.
+  $effect(() => {
+    let lastAnnouncement = needsYou.snapshot.announcement;
+    return needsYou.subscribe((next) => {
+      if (next.announcement === lastAnnouncement) return;
+      lastAnnouncement = next.announcement;
+      if (next.announcement !== null) announce(next.announcement);
+    });
+  });
 
   /** The focus shortcut hands focus back to the desk that opened it (D5). */
   function leaveTerminalToDesk(): void {
