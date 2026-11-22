@@ -575,6 +575,9 @@ test("a shortcut reaches a live terminal with output within one second (SC-002)"
   const started = Date.now();
   await page.keyboard.press("Control+Shift+F1");
   await expect(terminalInput(page, "Ada")).toBeFocused();
+  // The details have one more action button (0016), which can put the
+  // terminal below the fold, where xterm pauses its rendering.
+  await page.locator(".xterm").scrollIntoViewIfNeeded();
   await expect(page.locator(".xterm-rows")).toContainText("saved output", {
     timeout: 1_000,
   });

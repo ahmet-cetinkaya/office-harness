@@ -66,6 +66,11 @@ pub enum AgentError {
         shortcut: &'static str,
         reserved_for: &'static str,
     },
+    #[error("{field} {reason}")]
+    InvalidFilePath {
+        field: &'static str,
+        reason: &'static str,
+    },
     #[error("an agent that is {from} cannot take the event {event}")]
     InvalidTransition {
         from: AgentStatus,

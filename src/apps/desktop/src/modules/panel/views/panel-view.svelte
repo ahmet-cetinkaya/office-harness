@@ -44,6 +44,7 @@
     rowOf,
     type NeedsYouSnapshot,
   } from "../../needs-you";
+  import { FileViewDialog } from "../../files";
   import { interruptedCount, ResumeAction } from "../../resume";
   import { SaveAsTemplateDialog, TemplatesView } from "../../template";
   import {
@@ -182,6 +183,8 @@
   let isShowingTemplates = $state(false);
   /** The agent that the "save as template" dialog reads, or null when closed. */
   let templateSourceAgentId = $state<string | null>(null);
+  /** The agent whose file view is open (0016), or null. */
+  let filesAgentId = $state<string | null>(null);
   let templatesButton = $state<HTMLButtonElement | null>(null);
   let projectToDelete = $state<Project | null>(null);
   let detailArea = $state<HTMLElement | null>(null);
@@ -589,6 +592,7 @@
                     controller.saveAdditions(agentId, additions)}
                   onsavetask={(text) => controller.saveTask(agentId, text)}
                   onsaveastemplate={() => (templateSourceAgentId = agentId)}
+                  onbrowsefiles={() => (filesAgentId = agentId)}
                   onretry={controller.retryDetails}
                 />
               {/key}
@@ -639,6 +643,15 @@
     agentId={sourceId}
     agentName={nameOfAgent(sourceId)}
     onclose={() => (templateSourceAgentId = null)}
+  />
+{/if}
+{#if filesAgentId !== null}
+  {@const browsedId = filesAgentId}
+  <FileViewDialog
+    {client}
+    agentId={browsedId}
+    agentName={nameOfAgent(browsedId)}
+    onclose={() => (filesAgentId = null)}
   />
 {/if}
 {#if worktreeQuestion !== null}

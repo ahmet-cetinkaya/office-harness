@@ -50,6 +50,8 @@
     onsavetask: (text: string) => Promise<FailureText>;
     /** Opens the "save as template" dialog for this agent (0009). */
     onsaveastemplate: () => void;
+    /** Opens the read-only file view of this agent (0016). */
+    onbrowsefiles: () => void;
     onretry: () => void;
   }
 
@@ -74,6 +76,7 @@
     onsaveadditions,
     onsavetask,
     onsaveastemplate,
+    onbrowsefiles,
     onretry,
   }: Props = $props();
 
@@ -167,6 +170,7 @@
       <Button variant="secondary" onclick={isOnHold ? onrelease : onhold}>
         {isOnHold ? "Release agent" : "Hold agent"}
       </Button>
+      <Button variant="secondary" onclick={onbrowsefiles}>Browse files</Button>
       <Button variant="secondary" onclick={onsaveastemplate}>
         Save as template
       </Button>

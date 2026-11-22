@@ -8,11 +8,12 @@ use std::ffi::OsStr;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
+use std::sync::{Arc, OnceLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::services::login_environment::Environment;
+use crate::services::login_environment::{Environment, LoginEnvironment};
+use crate::services::program_lookup::find_program;
 
 /// `core.hooksPath` for every run: a device, never a folder that anyone can
 /// fill, so git finds no hook file there.
@@ -34,7 +35,8 @@ pub const DISABLED_HOOK_EVENTS: [&str; 4] = [
 pub const READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// `worktree add` checks out every file and runs checkout filters.
 pub const CHECKOUT_TIMEOUT: Duration = Duration::from_secs(120);
-const STDOUT_LIMIT_BYTES: usize = 1024 * 1024;
+pub const STDOUT_LIMIT_BYTES: usize = 1024 * 1024;
+const GIT_PROGRAM: &str = "git";
 const STDERR_LIMIT_BYTES: usize = 64 * 1024;
 const REASON_MAX_CHARS: usize = 500;
 const READ_CHUNK_BYTES: usize = 8 * 1024;
@@ -139,7 +141,22 @@ impl GitRunner {
         folder: &Path,
         arguments: &[A],
     ) -> Result<String, GitFailure> {
-        self.run(folder, arguments, self.read_timeout, true)
+        self.read_bytes(folder, arguments, STDOUT_LIMIT_BYTES)
+            .map(|output| lossy_text(&output))
+    }
+
+    /// Like `read`, but the raw standard output, at most `stdout_limit`
+    /// bytes: more is `OutputTooLarge`.
+    ///
+    /// # Errors
+    /// See `GitFailure`.
+    pub fn read_bytes<A: AsRef<OsStr>>(
+        &self,
+        folder: &Path,
+        arguments: &[A],
+        stdout_limit: usize,
+    ) -> Result<Vec<u8>, GitFailure> {
+        self.run(folder, arguments, self.read_timeout, true, stdout_limit)
     }
 
     /// Runs a command that changes the repository's git data.
@@ -151,7 +168,14 @@ impl GitRunner {
         folder: &Path,
         arguments: &[A],
     ) -> Result<String, GitFailure> {
-        self.run(folder, arguments, self.read_timeout, false)
+        self.run(
+            folder,
+            arguments,
+            self.read_timeout,
+            false,
+            STDOUT_LIMIT_BYTES,
+        )
+        .map(|output| lossy_text(&output))
     }
 
     /// Runs `worktree add` or `worktree remove`, which may take long on a
@@ -164,7 +188,14 @@ impl GitRunner {
         folder: &Path,
         arguments: &[A],
     ) -> Result<String, GitFailure> {
-        self.run(folder, arguments, self.checkout_timeout, false)
+        self.run(
+            folder,
+            arguments,
+            self.checkout_timeout,
+            false,
+            STDOUT_LIMIT_BYTES,
+        )
+        .map(|output| lossy_text(&output))
     }
 
     fn run<A: AsRef<OsStr>>(
@@ -173,7 +204,8 @@ impl GitRunner {
         arguments: &[A],
         timeout: Duration,
         is_read: bool,
-    ) -> Result<String, GitFailure> {
+        stdout_limit: usize,
+    ) -> Result<Vec<u8>, GitFailure> {
         let mut command = self.command(folder, is_read);
         command.args(arguments);
         let deadline = Instant::now() + timeout;
@@ -183,7 +215,7 @@ impl GitRunner {
         let stdout = child
             .stdout
             .take()
-            .map(|pipe| bounded_reader(pipe, STDOUT_LIMIT_BYTES));
+            .map(|pipe| bounded_reader(pipe, stdout_limit));
         let stderr = child
             .stderr
             .take()
@@ -205,7 +237,7 @@ impl GitRunner {
         if stdout_overflow {
             return Err(GitFailure::OutputTooLarge);
         }
-        Ok(String::from_utf8_lossy(&stdout).into_owned())
+        Ok(stdout)
     }
 
     fn command(&self, folder: &Path, is_read: bool) -> Command {
@@ -232,6 +264,136 @@ impl GitRunner {
         own_process_group(&mut command);
         command
     }
+}
+
+fn lossy_text(output: &[u8]) -> String {
+    String::from_utf8_lossy(output).into_owned()
+}
+
+/// Where the git runner comes from: built once, on first use, because the
+/// login environment takes a login shell to read.
+enum RunnerSource {
+    Login {
+        environment: Arc<LoginEnvironment>,
+        server_environment: Environment,
+    },
+    Fixed(Option<GitRunner>),
+}
+
+/// The git runner of the office, found on first use and shared by every
+/// service that runs git (0016 D9). `None` when git is missing or too old.
+pub struct LazyGitRunner {
+    /// A folder git must not be found in, as `find_program` takes it.
+    lookup_folder: PathBuf,
+    source: RunnerSource,
+    runner: OnceLock<Option<GitRunner>>,
+}
+
+impl LazyGitRunner {
+    /// Finds git on the login environment's `PATH` on first use.
+    #[must_use]
+    pub fn login(
+        lookup_folder: PathBuf,
+        environment: Arc<LoginEnvironment>,
+        server_environment: Environment,
+    ) -> Self {
+        Self::from_source(
+            lookup_folder,
+            RunnerSource::Login {
+                environment,
+                server_environment,
+            },
+        )
+    }
+
+    /// Uses `runner`, or no git at all for `None`; for tests.
+    #[must_use]
+    pub fn fixed(runner: Option<GitRunner>) -> Self {
+        Self::from_source(PathBuf::new(), RunnerSource::Fixed(runner))
+    }
+
+    fn from_source(lookup_folder: PathBuf, source: RunnerSource) -> Self {
+        Self {
+            lookup_folder,
+            source,
+            runner: OnceLock::new(),
+        }
+    }
+
+    /// The runner, or `None` without a usable git.
+    #[must_use]
+    pub fn get(&self) -> Option<&GitRunner> {
+        self.runner
+            .get_or_init(|| {
+                let runner = match &self.source {
+                    RunnerSource::Fixed(runner) => runner.clone(),
+                    RunnerSource::Login {
+                        environment,
+                        server_environment,
+                    } => login_runner(&self.lookup_folder, environment, server_environment),
+                }?;
+                runner.is_supported().then_some(runner)
+            })
+            .as_ref()
+    }
+}
+
+fn login_runner(
+    lookup_folder: &Path,
+    environment: &LoginEnvironment,
+    server_environment: &Environment,
+) -> Option<GitRunner> {
+    let login = environment.resolve(server_environment).variables;
+    let program = find_program(GIT_PROGRAM, &login, lookup_folder)?;
+    Some(GitRunner::new(program, &login))
+}
+
+/// A path that does not depend on the working folder of the process.
+#[must_use]
+pub fn absolute(path: PathBuf) -> PathBuf {
+    // A relative folder would make the hooks path relative to each
+    // worktree and put new worktrees inside the repository.
+    std::path::absolute(&path).unwrap_or(path)
+}
+
+const FILTER_SECTION: &str = "filter.";
+/// Each filter driver's commands emptied and its required flag off: git then
+/// compares the plain file and runs no filter program.
+const FILTER_SWITCHES: [&str; 4] = ["clean=", "smudge=", "process=", "required=false"];
+/// `-c` switches that turn off every filter driver the configuration of
+/// `folder` names, so a read runs no program an agent could write into the
+/// shared configuration (0010 D1 allows filters for `worktree add` only).
+///
+/// # Errors
+/// The reason, when the configuration cannot be read or names a driver
+/// that a switch cannot name.
+pub fn filter_switches(runner: &GitRunner, folder: &Path) -> Result<Vec<String>, String> {
+    let names = runner
+        .read(folder, &["config", "--list", "--name-only", "-z"])
+        .map_err(|failure| failure.reason())?;
+    let mut drivers: Vec<&str> = names.split('\0').filter_map(filter_driver).collect();
+    drivers.sort_unstable();
+    drivers.dedup();
+    if let Some(driver) = drivers.iter().find(|driver| driver.contains(['=', '\n'])) {
+        return Err(format!("the filter driver {driver:?} cannot be turned off"));
+    }
+    Ok(drivers
+        .iter()
+        .flat_map(|driver| {
+            FILTER_SWITCHES.iter().flat_map(move |switch| {
+                [
+                    "-c".to_owned(),
+                    format!("{FILTER_SECTION}{driver}.{switch}"),
+                ]
+            })
+        })
+        .collect())
+}
+
+/// The driver of a `filter.<driver>.<key>` name; the driver may hold dots.
+fn filter_driver(name: &str) -> Option<&str> {
+    let (driver, _) = name.strip_prefix(FILTER_SECTION)?.rsplit_once('.')?;
+    Some(driver)
 }
 
 /// The user's environment without any variable that would change which
