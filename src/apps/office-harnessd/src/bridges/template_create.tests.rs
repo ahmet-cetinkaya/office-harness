@@ -15,7 +15,7 @@ use std::time::Duration;
 use agent_application::common::errors::PortError;
 use agent_domain::entities::Project;
 use agent_domain::enums::AgentStatus;
-use agent_domain::value_objects::DisplayName;
+use agent_domain::value_objects::{DisplayName, TaskText};
 use hierarchy_application::common::errors::HierarchyApplicationError;
 use hierarchy_application::common::ports::CreatorError;
 use hierarchy_application::common::ports::CreatorErrorKind;
@@ -955,6 +955,10 @@ impl AgentStore for UnreadableAgents {
 
     fn delete(&self, id: AgentId) -> Result<(), PortError> {
         self.0.delete(id)
+    }
+
+    fn update_task(&self, id: AgentId, task: Option<&TaskText>) -> Result<(), PortError> {
+        self.0.update_task(id, task)
     }
 }
 
