@@ -75,7 +75,7 @@ The recent output lives outside the database, in one file per session (`output/<
 | id | Integer | Primary key. |
 | actor | `user` in 0001 | A4. 0002 adds agent actors. |
 | target_agent_id | Agent | Kept after the agent is deleted, so that the history stays readable. |
-| action | `create`, `start`, `stop`, `delete`, `new_task`, or `continue` | FR-011. |
+| action | `create`, `start`, `stop`, `delete`, `new_task`, or `continue` in 0001. Later changes added `team_create`, `team_delete`, `directive`, `refused` (0002), `hold`, `release` (0007), and `task_text` (0011). The full set of 13 is `ActionKind` in `src/modules/audit/domain/src/action_kind.rs`. | FR-011. |
 | result | `ok`, or an error text | |
 | at | Time | |
 
@@ -94,6 +94,8 @@ starting|working|waiting for input ──user stop──▶ stopped
 starting|working|waiting for input ──server stops──▶ interrupted (set at the next server start)
 exited|failed|stopped|interrupted ──start or new task──▶ starting
 ```
+
+The text `waiting for input` is the display text. The stored and wire value is `waiting_for_input`; the other six values are the same word in both places (`src/modules/agent/domain/src/enums/agent_status.rs`).
 
 A new agent that has never run shows `stopped`. Only an explicit start or a new task moves an agent out of `interrupted` (FR-004).
 

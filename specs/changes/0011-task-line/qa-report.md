@@ -48,7 +48,7 @@ Paths are relative to the repository root. `H` is `src/apps/office-harnessd`, `D
 
 | ID | Verdict | Evidence |
 |---|---|---|
-| FR-001 | PASS (automated) | `D/src/modules/agent/models/task-text.spec.ts`: `taskLine` (first line, exactly 80 graphemes whole, 81 cut with an ellipsis, an emoji as one grapheme), `taskAge` (0, 59, 60, 125 minutes), `taskRowText`. `D/e2e/task-line.spec.ts`: `a pushed task shows in the row and in its accessible name`, `a long task stops at 80 characters with an ellipsis`. |
+| FR-001 | PASS (automated) | `D/src/modules/agent/models/task-text.spec.ts`: `taskLine` (first line, exactly 80 graphemes whole, 81 cut with an ellipsis, a text with more lines marked with an ellipsis, blank later lines not marked, an emoji as one grapheme), `taskAge` (0, 59, 60, 125 minutes), `taskRowText`. `D/e2e/task-line.spec.ts`: `a pushed task shows in the row and in its accessible name`, `a long task stops at 80 characters with an ellipsis`. |
 | FR-002 | PASS (automated) | `a_directive_sets_the_task_and_every_client_gets_agent_task_without_line_or_status`; `a_refused_directive_changes_no_task_text`. |
 | FR-003 | PASS (automated) | Server: `the_user_sets_edits_and_clears_the_task_text_and_every_client_gets_it`, `a_task_text_of_the_limit_is_accepted_and_one_past_it_is_refused`, `an_agent_connection_may_not_set_a_task_text`. Desktop: `D/e2e/task-line.spec.ts`, `a task is set, edited, and cleared by keyboard` (the record shows the entry), `8,193 characters show the refusal and keep the editor open`, `Cancel leaves the task as it was`. |
 | FR-004 | PASS (automated) | `a_new_task_clears_the_text_and_start_and_continue_keep_it`. Desktop: `D/e2e/task-line.spec.ts`, `a new task clears the line`. |
@@ -90,9 +90,8 @@ Paths are relative to the repository root. `H` is `src/apps/office-harnessd`, `D
 ## Known gaps (open only)
 
 1. **The mock core is not the server.** The desktop tests prove the webview against the contract's shapes. The real server and the real app were not run together by an agent here.
-2. **No unit test covers `withTask` and the controller's `saveTask` on their own.** The Playwright tests cover them through the screen.
-3. **The age ticks once a minute and is proven only at its first reading** ("0 min ago"). No test waits a minute.
-4. **The security pass** of the plan (`secure-engineering`, light) is not recorded here. The server enforces the length cap (`a_task_text_of_the_limit_is_accepted_and_one_past_it_is_refused`), refuses the agent connection (`an_agent_connection_may_not_set_a_task_text`), and the display never applies control codes (FR-006 rows); the review itself was not run in this task.
+2. **The age ticks once a minute and is proven only at its first reading** ("0 min ago"). No test waits a minute.
+3. **The security pass** of the plan (`secure-engineering`, light) is not recorded here. The server enforces the length cap (`a_task_text_of_the_limit_is_accepted_and_one_past_it_is_refused`), refuses the agent connection (`an_agent_connection_may_not_set_a_task_text`), and the display never applies control codes (FR-006 rows); the review itself was not run in this task.
 
 ## Plan deviations
 
@@ -116,3 +115,8 @@ No hands-on row has been run. All rows stay BLOCKED until a person runs them.
 | A real agent CLI that prints output and changes its title for 5 minutes keeps its task line (SC-002) | BLOCKED | Nobody has run it. |
 | The task line in the real app on Linux, with a real directive between two agents | BLOCKED | Nobody has run it. |
 | The same on macOS and Windows | WAIVED (owner, 2026-11-20) | CI evidence on the three OSes suffices; nobody ran a hands-on pass. |
+
+## Updates
+
+- 2026-11-23 (ACF-191): closed the gap "no unit test covers `withTask` and the controller's `saveTask` on their own". Commit 8536c55 added them: `D/src/modules/agent/state/office-events.spec.ts` (`withTask`) and `D/src/modules/agent/state/office-controller.spec.ts` (`saveTask`).
+- 2026-11-23 (ACF-191): the task line now adds the ellipsis when the task text has more lines with text after the first line, as US1 scenario 2 and FR-001 say. Before, it added it only for a first line over 80 graphemes. Tests: `task-text.spec.ts` and the e2e `an escape code shows as visible symbols on one line`, which now expects the ellipsis.

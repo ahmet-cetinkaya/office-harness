@@ -259,6 +259,10 @@ impl TerminalRuntime for RunOnly {
     fn current_run(&self, _agent_id: AgentId) -> Option<RunId> {
         self.0
     }
+
+    fn quiet_for(&self, _agent_id: AgentId) -> Option<Duration> {
+        None
+    }
 }
 
 fn agent_named(name: &str) -> Agent {

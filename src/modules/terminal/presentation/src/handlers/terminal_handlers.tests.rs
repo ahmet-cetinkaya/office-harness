@@ -63,6 +63,10 @@ impl TerminalRuntime for FakeRuntime {
         None
     }
 
+    fn quiet_for(&self, _agent_id: AgentId) -> Option<Duration> {
+        None
+    }
+
     fn is_running(&self, _agent_id: AgentId) -> bool {
         true
     }

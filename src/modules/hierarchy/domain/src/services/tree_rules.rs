@@ -163,6 +163,38 @@ pub fn descendants_of(tree: &[TreeRow], agent_id: AgentId) -> Vec<AgentId> {
     levels.iter().rev().flatten().copied().collect()
 }
 
+/// The descendants of an agent with each one right after its parent, so a
+/// reader can rebuild the tree from the list (0014 FR-002). Children keep the
+/// order of the rows. The agent itself is not in the list, and each agent is
+/// visited once, so a hand-made cycle in the rows cannot extend the walk.
+#[must_use]
+pub fn descendants_in_tree_order(tree: &[TreeRow], agent_id: AgentId) -> Vec<&TreeRow> {
+    let mut seen = HashSet::from([agent_id]);
+    let mut ordered = Vec::new();
+    let mut pending = unseen_children(tree, agent_id, &mut seen);
+    while let Some(row) = pending.pop() {
+        ordered.push(row);
+        pending.extend(unseen_children(tree, row.agent_id, &mut seen));
+    }
+    ordered
+}
+
+/// The children of `parent` that the walk has not seen, now marked seen, in
+/// reverse row order: the walk pops from the end, so they come out in row
+/// order.
+fn unseen_children<'rows>(
+    tree: &'rows [TreeRow],
+    parent: AgentId,
+    seen: &mut HashSet<AgentId>,
+) -> Vec<&'rows TreeRow> {
+    let mut children: Vec<&TreeRow> = tree
+        .iter()
+        .filter(|row| row.parent_agent_id == Some(parent) && seen.insert(row.agent_id))
+        .collect();
+    children.reverse();
+    children
+}
+
 /// Whether `agent_id` is a descendant of `ancestor_id` (FR-008, FR-009).
 /// The walk is capped at the row count: an honest chain never needs more
 /// steps than there are rows, so the cap turns a hand-made cycle into a

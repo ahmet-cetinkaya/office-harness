@@ -183,6 +183,10 @@ mod runs {
         fn current_run(&self, _agent_id: AgentId) -> Option<RunId> {
             Some(self.0)
         }
+
+        fn quiet_for(&self, _agent_id: AgentId) -> Option<Duration> {
+            None
+        }
     }
 
     fn bridge_for(

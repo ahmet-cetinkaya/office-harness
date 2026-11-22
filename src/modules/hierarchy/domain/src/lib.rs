@@ -18,6 +18,7 @@ pub use services::hold::{Hold, HoldRefusal, HoldScope, HoldSetter, hold_refusal}
 pub use services::rate_limits::{LimitKind, LimitRefusal, RATE_WINDOW_SECONDS, RateLimits};
 pub use services::rate_windows::{AgentAction, RateWindows};
 pub use services::tree_rules::{
-    Placement, TreeRow, check_placement, descendants_of, is_descendant_of, resolved_parent,
+    Placement, TreeRow, check_placement, descendants_in_tree_order, descendants_of,
+    is_descendant_of, resolved_parent,
 };
 pub use value_objects::{Role, TeamName, parse_role};

@@ -172,7 +172,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 - **Files:** `specs/changes/0010-agent-worktree/{data-model.md,contracts/worktree-protocol.md}`.
 - **Work:** the four columns, the folder layout, the branch name rule, the git commands used, and the D4 to D6 requests, fields, codes, and answers.
 - **Depends on:** none.
-- **Acceptance:** every FR names its message or column; style as `0007-hold-and-limits/contracts/hold-protocol.md`.
+- **Acceptance:** every FR names its message or column; style as `specs/changes/archive/0007-hold-and-limits/contracts/hold-protocol.md`.
 
 ### T2: Git runner and worktree manager (FR-001, FR-002, FR-004, FR-007 mechanics)
 
