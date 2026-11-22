@@ -984,3 +984,76 @@ fn an_undo_that_leaves_the_branch_behind_raises_an_alert() {
     );
     assert!(!made.worktree.folder.exists());
 }
+
+#[test]
+fn a_read_reaches_no_transport_even_when_the_configuration_allows_every_one() {
+    let fixture = fixture();
+    for key in ["protocol.allow", "protocol.file.allow"] {
+        git(
+            &fixture.home,
+            &fixture.repository,
+            &["config", key, "always"],
+        );
+    }
+    let runner = fixture.worktrees.require_runner().expect("git");
+    let url = format!("file://{}", fixture.repository.display());
+
+    let failure = runner
+        .read(&fixture.repository, &["ls-remote", &url])
+        .expect_err("refused");
+
+    assert!(
+        failure.reason().contains("transport 'file' not allowed"),
+        "{failure:?}"
+    );
+}
+
+/// git refuses a plain remove of a worktree with a populated submodule
+/// before its own clean check, so the submodule's configuration, which the
+/// filter switches do not cover, is never read.
+#[cfg(unix)]
+#[test]
+fn a_plain_remove_of_a_worktree_with_a_submodule_is_refused_before_its_filter_runs() {
+    let fixture = fixture();
+    let made = created(&fixture, "x");
+    let submodule = made.worktree.folder.join("sm");
+    fs::create_dir_all(&submodule).expect("submodule folder");
+    git(
+        &fixture.home,
+        &submodule,
+        &["init", "--quiet", "--initial-branch=main"],
+    );
+    fs::write(submodule.join("s.txt"), "s\n").expect("file");
+    commit_all(&fixture.home, &submodule, "s");
+    git(&fixture.home, &made.worktree.folder, &["add", "sm"]);
+    let marker = fixture.home.join("submodule-filter-ran");
+    let clean = format!("touch '{}'; cat", marker.display());
+    git(
+        &fixture.home,
+        &submodule,
+        &["config", "filter.planted.clean", &clean],
+    );
+    let info = submodule.join(".git").join("info");
+    fs::create_dir_all(&info).expect("info folder");
+    fs::write(info.join("attributes"), "* filter=planted\n").expect("attributes");
+    touch_unchanged(&submodule.join("s.txt"));
+
+    let error = fixture
+        .worktrees
+        .remove(&made.worktree, false)
+        .expect_err("refused");
+
+    assert!(
+        matches!(&error, WorktreeError::Failed(reason) if reason.contains("submodules")),
+        "{error:?}"
+    );
+    assert!(!marker.exists());
+    assert!(made.worktree.folder.exists());
+    // A plain git status with submodules does run the planted filter.
+    git(
+        &fixture.home,
+        &made.worktree.folder,
+        &["status", "--porcelain"],
+    );
+    assert!(marker.exists());
+}

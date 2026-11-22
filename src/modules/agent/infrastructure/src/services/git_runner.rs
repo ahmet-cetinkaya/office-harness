@@ -58,6 +58,10 @@ const NO_OPTIONAL_LOCKS: (&str, &str) = ("GIT_OPTIONAL_LOCKS", "0");
 /// Read commands never fetch a missing object: in a partial clone that
 /// fetch runs the transport the repository's configuration names.
 const NO_LAZY_FETCH: (&str, &str) = ("GIT_NO_LAZY_FETCH", "1");
+/// `GIT_NO_LAZY_FETCH` needs git 2.44. On every supported git, an allow
+/// list that names no transport refuses each one, whatever the
+/// configuration allows; no transport name holds a `/`.
+const NO_TRANSPORT: (&str, &str) = ("GIT_ALLOW_PROTOCOL", "none/");
 
 /// Why a git run failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -222,7 +226,8 @@ impl GitRunner {
         if is_read {
             command
                 .env(NO_OPTIONAL_LOCKS.0, NO_OPTIONAL_LOCKS.1)
-                .env(NO_LAZY_FETCH.0, NO_LAZY_FETCH.1);
+                .env(NO_LAZY_FETCH.0, NO_LAZY_FETCH.1)
+                .env(NO_TRANSPORT.0, NO_TRANSPORT.1);
         }
         own_process_group(&mut command);
         command
