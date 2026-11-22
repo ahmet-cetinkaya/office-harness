@@ -2,7 +2,7 @@
 
 office-harness is a self-hosted control room for AI agent CLIs. A background server, `office-harnessd`, runs your agents in pseudo-terminals and keeps them running while the desktop app is closed. The desktop app shows every agent with its status and attaches to the live terminal of any agent. The server runs only on your machine, accepts only local clients that have the office token, and sends no office data to any outside service. It never writes the configuration files of the CLIs that it runs.
 
-For the product goals, see [docs/PRD.md](docs/PRD.md). For the design, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). For the behavior that this release gives, see [specs/changes/0001-office-server-and-terminal/SPEC.md](specs/changes/0001-office-server-and-terminal/SPEC.md) and, for the agent hierarchy, [specs/changes/0002-agent-hierarchy/SPEC.md](specs/changes/0002-agent-hierarchy/SPEC.md).
+For the product goals, see [docs/PRD.md](docs/PRD.md). For the design, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). For the behavior that this release gives, see [specs/changes/0001-office-server-and-terminal/SPEC.md](specs/changes/0001-office-server-and-terminal/SPEC.md) and, for the agent hierarchy, [specs/changes/archive/0002-agent-hierarchy/SPEC.md](specs/changes/archive/0002-agent-hierarchy/SPEC.md).
 
 ## Install
 
@@ -38,7 +38,7 @@ The exact wording of these OS notices depends on the OS version. The macOS and W
 
 The app has no screen to change the focus shortcut. The server stores it as the setting `focus_shortcut`. The default value is `Ctrl+Shift+F12`. A value is modifiers joined with `+`, then one key, for example `Ctrl+Alt+F11`. A client can change it with the `settings.set` request (see [the client protocol](specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md)). The app loads the setting once, when it starts, so a change applies at the next app start.
 
-The agent and switcher shortcuts are fixed: `Ctrl+Shift+F1` to `Ctrl+Shift+F9` open the first nine agents of the list, `Ctrl+Shift+F10` opens the agent switcher, and `Ctrl+Shift+F11` jumps to the agent at the top of Needs you (see below). On most macOS keyboards the F-keys send media commands by default, so the shortcuts work there only while you hold `Fn` (or after you turn on "Use F1, F2, etc. keys as standard function keys"). If you cannot change that setting, a macOS build of a later release can move the shortcuts to the fallback family `Cmd+Alt+1` to `Cmd+Alt+9` (agents) and `Cmd+Alt+0` (switcher), which no webview or macOS default takes; that fallback is not shipped yet, and the jump key has no entry in it yet, so on macOS it also works only while you hold `Fn`. On KDE Plasma the default family is not verified until a hands-on QA pass; if a distribution binds it globally, the same `Cmd`/`Ctrl+Alt` fallback applies. The full fallback table is in [the panel-practicality spec](specs/changes/0003-panel-practicality/SPEC.md).
+The agent and switcher shortcuts are fixed: `Ctrl+Shift+F1` to `Ctrl+Shift+F9` open the first nine agents of the list, `Ctrl+Shift+F10` opens the agent switcher, and `Ctrl+Shift+F11` jumps to the agent at the top of Needs you (see below). On most macOS keyboards the F-keys send media commands by default, so the shortcuts work there only while you hold `Fn` (or after you turn on "Use F1, F2, etc. keys as standard function keys"). If you cannot change that setting, a macOS build of a later release can move the shortcuts to the fallback family `Cmd+Alt+1` to `Cmd+Alt+9` (agents) and `Cmd+Alt+0` (switcher), which no webview or macOS default takes; that fallback is not shipped yet, and the jump key has no entry in it yet, so on macOS it also works only while you hold `Fn`. On KDE Plasma the default family is not verified until a hands-on QA pass; if a distribution binds it globally, the same `Cmd`/`Ctrl+Alt` fallback applies. The full fallback table is in [the panel-practicality spec](specs/changes/archive/0003-panel-practicality/SPEC.md).
 
 ## Needs you
 
@@ -64,7 +64,7 @@ Stopping or deleting an agent that has agents under it affects them too. A confi
 
 Deleting a team removes the team only. Its lead and members keep their agents and show outside the hierarchy afterwards.
 
-A client reaches the hierarchy over the protocol: the `team.create`, `team.delete`, `hierarchy.tree`, and `hierarchy.descendants` requests, and `agent.stop` and `agent.delete` extended with an `include_descendants` field; deleting an agent that has agents under it also carries `descendant_count`, the number that a confirmation showed. The shapes are in [the hierarchy protocol](specs/changes/0002-agent-hierarchy/contracts/hierarchy-protocol.md).
+A client reaches the hierarchy over the protocol: the `team.create`, `team.delete`, `hierarchy.tree`, and `hierarchy.descendants` requests, and `agent.stop` and `agent.delete` extended with an `include_descendants` field; deleting an agent that has agents under it also carries `descendant_count`, the number that a confirmation showed. The shapes are in [the hierarchy protocol](specs/changes/archive/0002-agent-hierarchy/contracts/hierarchy-protocol.md).
 
 ## Templates
 
@@ -123,7 +123,7 @@ A limit is a whole number from 1 to 1000. Choose "Limits" in the panel header to
 
 **Office record.** The "Office record" list in the panel header, beside the office hold control, shows the entries that have no agent: each office hold and release. A hold or release of one agent shows in that agent's details. The user is the actor of a hold or release that you take. The office is the actor of an automatic hold.
 
-The holds and the limits are a brake against mistakes and loops. They are not a security boundary: an agent CLI runs as your OS user and can act outside the office. The shapes of the requests are in [the hold protocol](specs/changes/0007-hold-and-limits/contracts/hold-protocol.md).
+The holds and the limits are a brake against mistakes and loops. They are not a security boundary: an agent CLI runs as your OS user and can act outside the office. The shapes of the requests are in [the hold protocol](specs/changes/archive/0007-hold-and-limits/contracts/hold-protocol.md).
 
 ## The task line
 

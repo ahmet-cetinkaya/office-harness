@@ -121,7 +121,7 @@ Checked by running only `--version` and `--help` for the four CLIs (no session w
 **Effects on the design:**
 - Three of the four CLIs accept an id that office-harness chooses at start. Only `codex` needs attribution, which removes most of the ambiguity risk in R3.
 - **Unverified, checked by hand in T7(g):**
-  - whether `gemini --resume` accepts a UUID (otherwise the adapter maps the UUID to an index through `--list-sessions`, read-only);
+  - whether `gemini --resume` accepts a UUID. **Still open on 2026-11-23.** The adapter passes the UUID and has no index mapping (`cli_adapters/gemini.rs:32`); a mapping through `--list-sessions` (read-only) is not built;
   - whether `claude` and `opencode` stay interactive with an initial prompt.
 - **Checked by hand (2026-11-23, `opencode` 2.2.5 on Linux):** a plain UUID stops `opencode` at once with `Expected a string starting with "ses"`. `--session ses_` followed by the UUID's 32 hex digits starts a new session with that id, and the same `--session` value continues it.
 - **Sandbox note:** `opencode --version` fails when its log folder is not writable, but works with temporary XDG folders. This does not affect office-harness, because office-harness runs the CLI with the user's own environment.
@@ -151,7 +151,7 @@ Checked by running only `--version` and `--help` for the four CLIs (no session w
   - `rusqlite` 0.43.0 was published today. If it breaks the T2 build, T2 falls back to the previous minor version and records why.
   - The xterm addons declare no peer dependency. T2 checks that they load with xterm 6.
 
-## R8: Stopping a CLI that npm installed on Windows (2026-11-16)
+## R9: Stopping a CLI that npm installed on Windows (2026-11-16)
 
 **Question:** npm installs `claude`, `codex`, `gemini`, and `opencode` on Windows as `.cmd` shims. The server runs a shim through `cmd.exe` and stops an agent with Ctrl+C. `cmd.exe` then asks "Terminate batch job (Y/N)?" and waits, so every stop takes the full grace period (A3, 10 seconds by default). The automated Windows tests found this. How does a stop end quickly and end the whole tree?
 

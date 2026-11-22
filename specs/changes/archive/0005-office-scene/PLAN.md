@@ -1,6 +1,6 @@
 ---
 status: approved (in the MVP, built after 0003)
-spec: specs/changes/0005-office-scene/SPEC.md
+spec: specs/changes/archive/0005-office-scene/SPEC.md
 commits: per-task
 ---
 
@@ -106,7 +106,7 @@ Paths are relative to `src/apps/desktop/src/` unless they start at the repositor
 
 ### T1: Research against the merged code (no product code)
 
-- **Files:** `specs/changes/0005-office-scene/research.md`.
+- **Files:** `specs/changes/archive/0005-office-scene/research.md`.
 - **Work:**
   - R1: the merged 0003 last-view code: the exact files under `M/panel/state/`, the `last_view` JSON shape and its validator rules, and the write throttle. Record the `view` field extension of D6 with the exact key order and size impact. Verify that the validator ignores an unknown key in the stored view, or record the rollback limit in "Rollback".
   - R2: the merged 0003 panel: the project switcher component path and its public-face export, the switcher's name match function (which the scene search reuses for FR-007), how the panel embeds `TerminalView`, and how it receives the focus-leave shortcut from the terminal.
@@ -189,7 +189,7 @@ Paths are relative to `src/apps/desktop/src/` unless they start at the repositor
 
 ### T7: QA report and final verification
 
-- **Files:** `specs/changes/0005-office-scene/qa-report.md`.
+- **Files:** `specs/changes/archive/0005-office-scene/qa-report.md`.
 - **Work:** run the checks in "Final verification", write one verdict per SC (SC-001 to SC-007) with the evidence, and list the hands-on rows.
 - **Depends on:** T6.
 - **Acceptance:** SC-002 (50 status changes and 50 line changes within 2 seconds), SC-003 (50 samples of both views), SC-004 (with 100 agents in 10 projects the scene opens in under 2 seconds and a user finds and opens a named agent within 15 seconds), SC-005 (0 pointer actions), SC-006 (20 trials), 0003/SC-006 (the panel shows the last view within 3 seconds for both views), and SC-007 (0 moving elements) are measured by the automated e2e runs against the mock core. SC-001 (a named desk found and opened in under 10 seconds with 12 agents) is the same e2e measurement plus one hands-on row against a real server. The hands-on rows (real server, screen reader pass, 200% zoom) are recorded as BLOCKED until a person runs them, never as PASS.
@@ -210,13 +210,13 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 | Commit | Task | Stages | Proposed message |
 |---|---|---|---|
 | 0 | spec | the docs PR | `docs(spec-0005): approve office scene` |
-| 1 | T1 | `specs/changes/0005-office-scene/research.md` | `docs(spec-0005): verify scene research against the merged panel` |
+| 1 | T1 | `specs/changes/archive/0005-office-scene/research.md` | `docs(spec-0005): verify scene research against the merged panel` |
 | 2 | T2 | `src/apps/desktop/src/modules/office-scene/` | `feat(desktop): model floors and departments for the scene` |
 | 3 | T3 | `src/apps/desktop/src/modules/office-scene/`, `src/apps/desktop/src/app.svelte`, `src/apps/desktop/src/modules/panel/index.ts`, `src/apps/desktop/e2e/support/mock-core.ts` | `feat(desktop): add the office scene view` |
 | 4 | T4 | `src/apps/desktop/src/modules/office-scene/`, `src/apps/desktop/src/modules/panel/state/`, `src/apps/desktop/src/app.svelte` | `feat(desktop): open terminals from desks and restore the scene` |
 | 5 | T5 | `src/apps/desktop/src/modules/office-scene/` | `feat(desktop): make the scene keyboard and reader complete` |
 | 6 | T6 | `README.md`, `docs/ARCHITECTURE.md` | `docs: describe the office scene` |
-| 7 | T7 | `specs/changes/0005-office-scene/qa-report.md` | `test(spec-0005): record QA results` |
+| 7 | T7 | `specs/changes/archive/0005-office-scene/qa-report.md` | `test(spec-0005): record QA results` |
 
 ## QA and evidence
 

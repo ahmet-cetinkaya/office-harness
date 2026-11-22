@@ -1,6 +1,6 @@
 ---
 status: approved (god, 2026-11-19; Efe gate)
-spec: specs/changes/0007-hold-and-limits/SPEC.md
+spec: specs/changes/archive/0007-hold-and-limits/SPEC.md
 commits: per-task
 ---
 
@@ -52,7 +52,7 @@ Deliver spec 0007: the owner holds and releases the office or one agent with one
   - Actor: `src/kernel/src/actor.rs` (`User`, `Agent(AgentId)`).
   - Notifications: `M/notification/domain/src/enums/notification_event.rs` (`Exited`, `Failed`, `WaitingForInput`, `Bell`); host bridge `H/bridges/notification_bridge.rs`.
   - Desktop: shortcuts `D/core/shortcuts/app-shortcuts.ts`; panel `D/modules/panel/components/agent-row.svelte`; details `D/modules/agent/components/agent-details.svelte`; record `D/modules/audit/components/action-record.svelte`; notifications `D/modules/notification/`; e2e mock core `src/apps/desktop/e2e/support/mock-core.ts`. The app has no settings screen today (README: the focus shortcut is set by `settings.set`).
-  - Contracts: `specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md`, `specs/changes/0002-agent-hierarchy/contracts/hierarchy-protocol.md`, `specs/changes/0003-panel-practicality/contracts/panel-protocol.md`.
+  - Contracts: `specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md`, `specs/changes/archive/0002-agent-hierarchy/contracts/hierarchy-protocol.md`, `specs/changes/archive/0003-panel-practicality/contracts/panel-protocol.md`.
 - **0004 overlap (Efe LOW-7 on #63):** 0004 also modifies 0003/FR-006 (no `waiting for input` notification for meeting participants). The two changes are compatible; T6's notification code keeps 0004's exception when 0004 is built, and 0004's plan starts from the 0007 wording of 0003/FR-006.
 - **Floor rules:** one build or test at a time on the floor; ask god for the build slot (`CARGO_BUILD_JOBS=4`, `--test-threads=4`). Local lint needs the pinned toolchain (`$HOME/.rustup/toolchains/1.100.0-x86_64-unknown-linux-gnu/bin` first in `PATH`); workspace-wide runs fail locally on `libdbus-sys` (desktop crate), so local Rust checks run per crate (`-p office-harnessd -p hierarchy-* -p agent-* -p audit-* -p notification-* -p kernel`) and CI covers the workspace. Efe reviews each PR at its exact head sha; god merges. Nothing is pushed to `main`.
 
@@ -64,10 +64,10 @@ Deliver spec 0007: the owner holds and releases the office or one agent with one
 - **D3 Limit kinds:** `directive` (directives sent by one agent, default 10), `directive_target` (directives one agent sends to one target, default 3), `create` (agents created by one agent, 5), `lifecycle` (`agent.start`, `agent.stop`, `agent.new_task` by one agent, 10). A directive counts in both directive windows; the refusal names the first limit it exceeds. Reason text: `the limit "<name>" allows <n> per 60 seconds`.
 - **D4 Settings:** four new `SettingKey`s, `limit_directives_per_agent`, `limit_directives_per_target`, `limit_creates_per_agent`, `limit_lifecycle_per_agent`, whole numbers from 1 to 1000; other values refused with "a limit is a whole number of at least 1 and at most 1000" (it contains the spec edge case's wording; the upper bound keeps a typo from turning the limit off). `GuardAgentAction` reads them through a hierarchy port `RateLimitSource`, bridged in `H/bridges/` to the agent settings query, on each action, so a change applies to the next action (FR-009).
 - **D5 Storage:** migration `0002_holds.sql`: `hierarchy_holds(scope TEXT PRIMARY KEY, set_by TEXT NOT NULL, reason TEXT, since INTEGER NOT NULL)`, `scope` is `office` or the agent id. Writes go through the existing tree-write mutex. A failed write returns an error and the in-memory state does not change (edge case "cannot be stored"). Rate windows and the tracker are memory only (edge case "restart within a window").
-- **D6 Record:** `Actor::Office` joins `kernel::Actor` (text `office`); `ActionKind` gains `Hold` and `Release`; `ActionRecord.target_agent_id` becomes `Option<AgentId>` (`None` for the office hold), through an audit migration that rebuilds the table with a nullable column and copies every row. Refusals keep `ActionKind::Refused` with the D3 or hold reason. `action.list` without an agent id returns the office-level entries.
+- **D6 Record:** `Actor::Office` joins `kernel::Actor` (text `office`); `ActionKind` gains `Hold` and `Release`; `ActionRecord.target_agent_id` becomes `Option<AgentId>` (`None` for the office hold), through an audit migration that rebuilds the table with a nullable column and copies every row. Refusals keep `ActionKind::Refused` with the D3 or hold reason. The office-level entries come from the request `office.actions` (no fields), not from `action.list` (a name that no request has; the per-agent request is `agent.actions`). Changed on shipping; see the SPEC Deviations.
 - **D7 Notification:** `NotificationEvent::AutoHold`, created once when `GuardAgentAction` moves an agent from not held to held by the office (FR-008, SC-004). The notification carries the triggering limit's name in a new optional `detail` field (notification migration, a nullable column; the four 0003 events leave it empty), and the desktop text is `<agent> was put on hold after 3 refusals by the limit "<name>"` (spec UX step 4 and the Automatic hold state name the agent and the limit). It follows 0003's rules (unread until read) through MODIFIED 0003/FR-006, except that the focused-terminal exception (b) does not apply: it always sends the OS notification.
 - **D8 Protocol:** user client requests `hold.set {agent_id?}`, `hold.release {agent_id?}` (no `agent_id` means the office), `hold.list` → `{office: hold|null, agents: [hold]}`, and event `hold.changed`. Refused codes: `conflict` for "already held" or "not held", `internal` for a failed store write. The agent connection never answers `hold.*` (not in `ALLOWED_REQUESTS`). T1 writes the contract.
-- **D9 Hold shortcut (open, needs a yes or no):** `Ctrl+Shift+H` holds or releases the office while focus is in the panel outside a terminal; with a terminal focused, the user presses the focus shortcut first (2 keys). This is what the spec states (A9, SC-005) and keeps 0003's terminal passthrough unchanged. The alternative adds `Ctrl+Shift+H` to the terminal's app shortcuts so SC-005 holds from a focused terminal too; that changes 0003's MODIFIED 0001/FR-017 and needs a small 0003 amendment and a matching edit of A9 and SC-005. Recommended: the alternative, because a looping agent is exactly when the owner sits in a terminal. T7 builds the default and switches with one table row if the answer is yes.
+- **D9 Hold shortcut (decided 2026-11-19: alternative b, see the SPEC Deviations; the text below is the first draft):** `Ctrl+Shift+H` holds or releases the office while focus is in the panel outside a terminal; with a terminal focused, the user presses the focus shortcut first (2 keys). This is what the spec states (A9, SC-005) and keeps 0003's terminal passthrough unchanged. The alternative adds `Ctrl+Shift+H` to the terminal's app shortcuts so SC-005 holds from a focused terminal too; that changes 0003's MODIFIED 0001/FR-017 and needs a small 0003 amendment and a matching edit of A9 and SC-005. Recommended: the alternative, because a looping agent is exactly when the owner sits in a terminal. T7 builds the default and switches with one table row if the answer is yes.
 - **D10 Delete:** when the user deletes agents (0001, 0002/FR-006), the host removes their holds through a bridge in the same request; at startup the server also drops holds of agents that no longer exist, so no hold remains for a missing agent.
 - **D11 Desktop:** the panel header shows "Office on hold" as text with the release action, or a "Hold office" action; agent rows and details show "on hold" as text and hold or release actions; a "Limits" dialog edits the four values with their defaults and validation; an "Office record" list of the office-level entries opens from the panel header beside the office hold control (A11); the hold state changes are announced in the existing live region. No new visuals beyond these controls (spec Design rule).
 - **Constitution check:** module boundaries hold (no new cross-module dependency; bridges in `H/bridges/`, `scripts/check-boundaries.sh` passes); no file in a CLI's configuration is touched (PB-3); every new action is keyboard-reachable with visible focus and text states (PB-4); no other project's name in the repository.
@@ -93,15 +93,15 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 
 ### T1: Design artifacts (no product code)
 
-- **Files:** `specs/changes/0007-hold-and-limits/{data-model.md,contracts/hold-protocol.md}`.
-- **Work:** (a) data model: the hold table, the audit migration (nullable target, `office` actor), the four setting keys, the notification event. (b) Contract: `hold.set`, `hold.release`, `hold.list`, `hold.changed`, the refusal reasons of D3 and D2 as agent-call answers, `action.list` without an agent id, the new setting keys.
+- **Files:** `specs/changes/archive/0007-hold-and-limits/{data-model.md,contracts/hold-protocol.md}`.
+- **Work:** (a) data model: the hold table, the audit migration (nullable target, `office` actor), the four setting keys, the notification event. (b) Contract: `hold.set`, `hold.release`, `hold.list`, `hold.changed`, the refusal reasons of D3 and D2 as agent-call answers, `office.actions` (no fields), the new setting keys.
 - **Depends on:** none.
 - **Acceptance:** every FR has its message or table named; the contract lists codes and shapes in the style of `hierarchy-protocol.md`; Efe can review it with the p1 PR.
 
 ### T2: Office actor, hold kinds, optional target (FR-010)
 
 - **Files:** `src/kernel/src/actor.rs`, `M/audit/{domain,infrastructure}/`, every exhaustive `match` on `Actor` (compiler-led), `D/modules/audit/`.
-- **Work:** (a) `Actor::Office`, text `office`, parse and print. (b) `ActionKind::{Hold, Release}`. (c) `target_agent_id: Option<AgentId>` and the audit migration that rebuilds the table and copies all rows. (d) `action.list` without an agent id returns office-level entries. (e) Desktop record labels `office`, `hold`, `release`.
+- **Work:** (a) `Actor::Office`, text `office`, parse and print. (b) `ActionKind::{Hold, Release}`. (c) `target_agent_id: Option<AgentId>` and the audit migration that rebuilds the table and copies all rows. (d) the request `office.actions` returns office-level entries. (e) Desktop record labels `office`, `hold`, `release`.
 - **Depends on:** T1.
 - **Acceptance:** round-trip tests for the new actor and kinds; migration test: a database with 0001-0003 rows upgrades with every row intact and a `None` target insert works; `bun test` for the labels; fmt, clippy, per-crate tests, `scripts/check-boundaries.sh`.
 
@@ -142,7 +142,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 
 ### T8: Docs and QA (all criteria)
 
-- **Files:** `README.md` (hold, release, limits, shortcut), `specs/changes/0002-agent-hierarchy/contracts/hierarchy-protocol.md` (cross-reference to the new refusal reasons), `specs/changes/0007-hold-and-limits/qa-report.md`.
+- **Files:** `README.md` (hold, release, limits, shortcut), `specs/changes/archive/0002-agent-hierarchy/contracts/hierarchy-protocol.md` (cross-reference to the new refusal reasons), `specs/changes/archive/0007-hold-and-limits/qa-report.md`.
 - **Work:** document the user flow and the limits; record the QA rows for SC-001 to SC-005 and the edge cases with evidence; hands-on rows (screen reader pass, 200 percent zoom, a real CLI looping on directives) recorded as BLOCKED until a person runs them, never PASS.
 - **Depends on:** T7.
 - **Acceptance:** every Traceability row has evidence or a recorded gap; `rg` finds no other project's name.
@@ -161,14 +161,14 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 
 | Commit | Task | Stages | Proposed message |
 |---|---|---|---|
-| 1 | T1 | `specs/changes/0007-hold-and-limits/{data-model.md,contracts/}` | `docs(spec-0007): add the hold data model and protocol` |
+| 1 | T1 | `specs/changes/archive/0007-hold-and-limits/{data-model.md,contracts/}` | `docs(spec-0007): add the hold data model and protocol` |
 | 2 | T2 | `src/kernel/`, `M/audit/`, `D/modules/audit/`, compiler-led `match` sites | `feat(audit): record holds with the office as an actor` |
 | 3 | T3 | `M/hierarchy/domain/` | `feat(hierarchy): add the hold rule and rate windows` |
 | 4 | T4 | `M/hierarchy/application/`, `M/hierarchy/infrastructure/` | `feat(hierarchy): store holds and guard agent actions` |
 | 5 | T5 | `M/agent/`, `H/bridges/` | `feat(agent): add the rate limit settings` |
 | 6 | T6 | `H/`, `M/notification/` | `feat(server): gate agent calls on holds and limits` |
 | 7 | T7 | `D/`, `src/apps/desktop/e2e/` | `feat(desktop): hold the office or an agent and edit limits` |
-| 8 | T8 | `README.md`, `specs/changes/0002-agent-hierarchy/contracts/hierarchy-protocol.md`, `specs/changes/0007-hold-and-limits/qa-report.md` | `docs(spec-0007): document holds and record QA` |
+| 8 | T8 | `README.md`, `specs/changes/archive/0002-agent-hierarchy/contracts/hierarchy-protocol.md`, `specs/changes/archive/0007-hold-and-limits/qa-report.md` | `docs(spec-0007): document holds and record QA` |
 
 ## QA and evidence
 

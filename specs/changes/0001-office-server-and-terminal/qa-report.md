@@ -1,21 +1,21 @@
-# 0001 QA report (draft)
+# 0001 QA report
 
 ## Summary
 
 - **Date:** 2026-11-16.
 - **Build under test:** branch `feat/0001-office-server-and-terminal`.
-- **Overall status:** `blocked`. The run is complete only when every row is PASS or WAIVED (owner). The Linux hands-on rows are still BLOCKED, so the run is blocked.
+- **Overall status:** open: every row has a verdict except the opencode re-run of SC-002 after #114. SC-002 on Linux is FAIL at b56d2ad: `claude` passes all five steps, `codex` and `gemini` were not run (not signed in; accepted 2026-11-23 under the owner's waiver of person-only rows), and `opencode` failed because its session id was rejected. #114 fixed it on `main` at 6e3d197, and the re-run through the office is pending (after 03:00). SC-001, SC-003, and SC-007 on Linux are PASS (agent-run). SC-004 (machine restart) and SC-008 (new participant) on Linux are WAIVED (owner): not run by a person, accepted by owner 2026-11-22. The macOS and Windows rows are WAIVED (owner). The other rows are PASS (automated).
 - **Owner decision, 2026-11-16:** separate hands-on runs on macOS and Windows are not needed; the CI evidence on Linux, macOS, and Windows is enough. The macOS and Windows hands-on rows are WAIVED (owner), not PASS.
-- **Status of this file:** a draft. On 2026-11-19 an agent ran SC-001, SC-003, and SC-007 on Linux/KDE Wayland against the built app and server of `main` at f6dc663, with fake CLIs; those rows say "agent-run". The other Linux hands-on rows still need a person, a real CLI account, a restart, or a participant. No value in this file is an estimate. Raw evidence (screenshots, traces, logs, timing files) is kept outside the repository, in the QA agent's folder of the office hive (`hive/agents/celal-mwhvybh8/qa/evidence/`); repository readers cannot open it. The agent-run rows therefore states its own method, setup, and measured values. Run setup: debug builds of the desktop app and `office-harnessd`, WebDriver through `tauri-driver`, an isolated data and config folder per run with login start off, fake CLIs (shell scripts) in place of agent CLIs, and no change to system settings.
+- **Update, 2026-11-23 (ACF-106 archive):** the hands-on rows were re-run or waived on 2026-11-22 and 2026-11-23 against `main` at b56d2ad. This update changes no row verdict. A row keeps the verdict, the method, and the build that its own text names. SC-006 had no run from a second machine; the automated tests prove the loopback bind and the peer check only (see the SC-006 row).
+- **Status of this file:** a draft. On 2026-11-19 an agent ran SC-001, SC-003, and SC-007 on Linux/KDE Wayland against the built app and server of `main` at f6dc663, with fake CLIs; those rows say "agent-run". On 2026-11-23 an agent ran SC-002 on Linux with the real CLIs (main b56d2ad). The Linux rows that need a restart or a participant are WAIVED (owner). No value in this file is an estimate. Raw evidence (screenshots, traces, logs, timing files) is kept outside the repository, in the QA agent's folder of the office hive (`hive/agents/celal-mwhvybh8/qa/evidence/`); repository readers cannot open it. The agent-run rows therefore states its own method, setup, and measured values. Run setup: debug builds of the desktop app and `office-harnessd`, WebDriver through `tauri-driver`, an isolated data and config folder per run with login start off, fake CLIs (shell scripts) in place of agent CLIs, and no change to system settings.
 
 ### Verdict words
 
 | Verdict | Meaning |
 |---|---|
 | PASS (automated) | An automated test that runs in CI proves the criterion on that OS. The evidence column names the test. |
-| PENDING (Linux run) | A person can run the check on Linux. Nobody has run it yet. |
 | WAIVED (owner) | The owner decided that this hands-on check is not needed on this OS. It is not a PASS: nobody ran it. The evidence column names the automated tests that ran on that OS, if any. |
-| BLOCKED | The check needs a person on that OS, a real CLI account, a restart, a 60-minute wait, a network capture, or a human participant. It is not done. |
+| FAIL | The check ran and the behavior is wrong; a fix card or a fix is named. |
 
 ### Scope of the automated evidence
 
@@ -24,6 +24,8 @@
 - CI run 43780798038 at commit 264148efcbff1e7c7d2aee5127be0620f97590fc passed on Linux, macOS, and Windows. It ran every named test; `tests/sessions.rs` runs only on Linux and macOS (`#![cfg(unix)]`). The SC-005 and SC-009 tests moved to `tests/sessions_portable.rs`, which also runs on Windows; CI run 43787191028 at commit beb3d280d02980dad2e40c7011d675770e197aee ran both of them on Linux, macOS, and Windows and passed. A later commit that changes only this file does not change the tested code.
 
 ### What a person must run
+
+Status on 2026-11-23: SC-002 ran (FAIL for opencode, see its table; re-run pending). SC-004 and SC-008 are WAIVED (owner). The list below stays as the original plan.
 
 **On Linux** (the macOS and Windows runs are waived by the owner)
 
@@ -49,7 +51,7 @@
 
 | SC | OS | Method | Measured value | Verdict | Evidence |
 |---|---|---|---|---|---|
-| SC-002 | Linux | Four-CLI task script: start, prompt, approve a tool use with the keyboard, Ctrl+C, continue a previous session | Not measured | BLOCKED | Needs the real CLI accounts and a person at the keyboard. `gemini` may not run on every account type; record it. |
+| SC-002 | Linux | Four-CLI task script: start, prompt, approve a tool use with the keyboard, Ctrl+C, continue a previous session | `claude`: PASS, all five steps. `codex`: not run: CLI not signed in on this machine; `claude` passes every step; accepted 2026-11-23 under the owner's waiver of person-only rows. `gemini`: not run: CLI not signed in on this machine; `claude` passes every step; accepted 2026-11-23 under the owner's waiver of person-only rows. `opencode`: FAIL at b56d2ad (session id rejected); fixed by #114 on `main` at 6e3d197; re-run through the office pending (after 03:00) | FAIL (agent-run, Linux/KDE Wayland, 2026-11-23, b56d2ad) | Real server from main b56d2ad, clean environment (run R: only the desktop session variables, so each CLI used the owner's own login). The keys went through `terminal.input`, the same path as the app's terminal; the screen was read with a terminal emulator. Prompts were one tiny file write. `claude` (Claude Code 2.1.322): start, prompt (file `ohqa-claude.txt` made), approve a tool use with the keyboard (the owner's `claude` runs in auto mode, so a second agent with `--permission-mode default` showed the question and Enter on "1. Yes" approved it), Ctrl+C (two presses ended the CLI, the agent became exited), continue (`session.continue` started the same session, and it named `ohqa-claude.txt`). `codex` (0.153.4) and `gemini` (0.42.0): no sign-in on this machine (no `~/.codex/auth.json` and no `OPENAI_API_KEY`; no `~/.gemini/oauth_creds.json` and no `GEMINI_API_KEY` or `GOOGLE_API_KEY`), so the five steps could not start. The `codex` try started its browser sign-in flow once; nothing was signed in. `gemini` updated itself on launch; that was not undone. `opencode` (2.2.5) is signed in but stops at once with: Error: Expected a string starting with "ses" at ["sessionID"]. The app starts it with `--session <UUID>` (`cli_adapters/opencode.rs`), and opencode 2.2.5 accepts only ids that start with "ses". So opencode cannot start from the office, and continue fails the same way. Fix: #114 on `main` at 6e3d197 (the opencode session id). The re-run through the office is pending (after 03:00). Evidence: `qa/evidence/b-0001-SC-002/` in the QA agent folder (outside the repository). |
 | SC-002 | macOS | Same as Linux | Not measured | WAIVED (owner) | Waived by owner 2026-11-16, CI evidence on 3 OSes. |
 | SC-002 | Windows | Same as Linux | Not measured | WAIVED (owner) | Waived by owner 2026-11-16, CI evidence on 3 OSes. |
 
@@ -65,7 +67,7 @@
 
 | SC | OS | Method | Measured value | Verdict | Evidence |
 |---|---|---|---|---|---|
-| SC-004 | Linux | Restart the machine, log in, do not open the app, time the server start, then list the office | Not measured | BLOCKED | Needs a machine restart. The tests `definitions_and_settings_survive_a_restart` and `running_agents_become_interrupted_at_start_and_none_starts_by_itself` in `src/apps/office-harnessd/tests/startup.rs` cover the stored office and the `interrupted` status only, not the login start or the 60-second limit. |
+| SC-004 | Linux | Restart the machine, log in, do not open the app, time the server start, then list the office | Not measured | WAIVED (owner) | Not run by a person, accepted by owner 2026-11-22. The check needs a machine restart. The tests `definitions_and_settings_survive_a_restart` and `running_agents_become_interrupted_at_start_and_none_starts_by_itself` in `src/apps/office-harnessd/tests/startup.rs` cover the stored office and the `interrupted` status only, not the login start or the 60-second limit. |
 | SC-004 | macOS | Same as Linux | Not measured | WAIVED (owner) | Waived by owner 2026-11-16, CI evidence on 3 OSes. |
 | SC-004 | Windows | Same as Linux | Not measured | WAIVED (owner) | Waived by owner 2026-11-16, CI evidence on 3 OSes. |
 
@@ -97,7 +99,7 @@
 
 | SC | OS | Method | Measured value | Verdict | Evidence |
 |---|---|---|---|---|---|
-| SC-008 | Linux | Timed first use by a participant who has never used office-harness | Not measured | BLOCKED | Needs a human participant. The participant's name goes here when the run happens: (not recorded). |
+| SC-008 | Linux | Timed first use by a participant who has never used office-harness | Not measured | WAIVED (owner) | Not run by a person, accepted by owner 2026-11-22. The check needs a human participant. No participant name is recorded. |
 | SC-008 | macOS | Same as Linux | Not measured | WAIVED (owner) | Waived by owner 2026-11-16, CI evidence on 3 OSes. |
 | SC-008 | Windows | Same as Linux | Not measured | WAIVED (owner) | Waived by owner 2026-11-16, CI evidence on 3 OSes. |
 

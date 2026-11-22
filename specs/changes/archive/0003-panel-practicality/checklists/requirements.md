@@ -1,6 +1,6 @@
 # Requirements checklist: 0003-panel-practicality
 
-Spec: `specs/changes/0003-panel-practicality/SPEC.md` · Status: approved (overnight directive) · Date: 2026-11-17 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker.
+Spec: `specs/changes/archive/0003-panel-practicality/SPEC.md` · Status: approved (overnight directive) · Date: 2026-11-17 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker.
 
 ## Content quality
 

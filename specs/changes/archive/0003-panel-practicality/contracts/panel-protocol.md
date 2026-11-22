@@ -2,7 +2,7 @@
 
 Date: 2026-11-17. Extends the 0001 wire protocol (`src/shared/wire/src/`): a request is `{"id":<u32>,"type":"<name>",...}`, a response `{"id":<u32>,"ok":true,"result":...}` or `{"id":<u32>,"ok":false,"error":{"code":"<code>","message":"<text>"}}`, and an event is a text frame `{"type":"<name>",...}`. Error codes: `invalid`, `conflict`, `not_found`, `refused`, `internal`.
 
-This contract lists every new type of this change and nothing else. Where 0002 is merged, the agent snapshot below additionally carries `role` and `team`; those fields are 0002's, defined in `specs/changes/0002-agent-hierarchy/contracts/hierarchy-protocol.md`.
+This contract lists every new type of this change and nothing else. Where 0002 is merged, the agent snapshot below additionally carries `role` and `team`; those fields are 0002's, defined in `specs/changes/archive/0002-agent-hierarchy/contracts/hierarchy-protocol.md`.
 
 ## Changed response: `agent.list`
 
@@ -78,7 +78,7 @@ No other `notification.*` event exists: a read changes no visible state for othe
 - `event` may also be `"auto_hold"`: the office put an agent on hold after 3 limit refusals in 60 seconds.
 - A `notification` entry and the `notification.created` event carry an optional `detail` string. For `auto_hold` it is the name of the limit. For every other event it is absent or null.
 
-See `specs/changes/0007-hold-and-limits/contracts/hold-protocol.md`.
+See `specs/changes/archive/0007-hold-and-limits/contracts/hold-protocol.md`.
 
 ## Additive change by 0008
 
@@ -87,7 +87,9 @@ See `specs/changes/0007-hold-and-limits/contracts/hold-protocol.md`.
 
 ## Changed validation: `settings.set` with key `focus_shortcut`
 
-A value that equals one of the fixed agent or switcher shortcuts (`Ctrl+Shift+F1` to `Ctrl+Shift+F9`, `Ctrl+Shift+F10`) is refused with `conflict`, and the message names the conflicting combination (D8, spec edge case). The agent and switcher shortcuts are fixed by this spec, so the server holds the same table the desktop app shows; the desktop client checks before it sends, and the server is the authority that a stale client cannot talk out of.
+A value that equals one of the fixed shortcuts (`Ctrl+Shift+F1` to `Ctrl+Shift+F9` for the agents, `Ctrl+Shift+F10` for the switcher) is refused with `conflict`, and the message names the conflicting combination (D8, spec edge case). The agent and switcher shortcuts are fixed by this spec, so the server holds the same table the desktop app shows; the desktop client checks before it sends, and the server is the authority that a stale client cannot talk out of.
+
+Later changes added two entries to the same table: `Ctrl+Shift+F11` (jump to the agent that needs you, change 0008) and `Ctrl+Shift+H` (the office hold, change 0007). The table has 12 entries, and the server refuses all of them as a focus shortcut (`src/modules/agent/domain/src/value_objects/settings.rs:33`). A focus shortcut that was stored as `Ctrl+Shift+F11` before change 0008 stays valid, and the jump key is then off.
 
 ## What does not change
 
