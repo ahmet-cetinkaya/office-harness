@@ -2996,6 +2996,10 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "tempfile",
+ "template-application",
+ "template-domain",
+ "template-infrastructure",
+ "template-presentation",
  "terminal-application",
  "terminal-domain",
  "terminal-infrastructure",
@@ -4593,6 +4597,49 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "template-application"
+version = "0.1.0"
+dependencies = [
+ "kernel",
+ "serde_json",
+ "template-domain",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "template-domain"
+version = "0.1.0"
+dependencies = [
+ "kernel",
+ "serde_json",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
+name = "template-infrastructure"
+version = "0.1.0"
+dependencies = [
+ "kernel",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+ "template-application",
+ "template-domain",
+]
+
+[[package]]
+name = "template-presentation"
+version = "0.1.0"
+dependencies = [
+ "kernel",
+ "serde_json",
+ "template-application",
+ "template-domain",
+ "wire",
 ]
 
 [[package]]

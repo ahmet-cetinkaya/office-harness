@@ -183,11 +183,37 @@ fn set_additions(office: &Office, agent: AgentId, flags: &[&str], key: &str, pro
             agent,
             crate::common::additions_input::AdditionsInput {
                 flags: flags.iter().map(|flag| (*flag).to_owned()).collect(),
-                env: vec![(key.to_owned(), "value".to_owned())],
+                env: vec![(key.to_owned(), Some("value".to_owned()))],
                 startup_prompt: Some(prompt.to_owned()),
             },
         )
         .expect("additions");
+}
+
+#[test]
+fn a_variable_without_a_value_is_not_passed_and_an_empty_value_is() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    let agent = office.add_agent("Ana", "claude", folder.path(), AgentStatus::Stopped);
+    office
+        .set_additions()
+        .handle(
+            agent.id,
+            crate::common::additions_input::AdditionsInput {
+                flags: Vec::new(),
+                env: vec![
+                    ("NO_VALUE".to_owned(), None),
+                    ("EMPTY".to_owned(), Some(String::new())),
+                ],
+                startup_prompt: None,
+            },
+        )
+        .expect("additions");
+
+    office.start_agent().handle(agent.id).expect("start");
+
+    let environment = &office.terminals.started()[0].environment;
+    assert_eq!(environment, &[("EMPTY".to_owned(), String::new())]);
 }
 
 #[test]

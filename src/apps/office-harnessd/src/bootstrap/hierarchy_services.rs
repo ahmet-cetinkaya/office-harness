@@ -10,7 +10,7 @@ use hierarchy_application::commands::create_role_agent::CreateRoleAgentHandler;
 use hierarchy_application::commands::hold::HoldService;
 use hierarchy_application::commands::send_directive::SendDirectiveHandler;
 use hierarchy_application::commands::subtree::SubtreeHandler;
-use hierarchy_application::common::interfaces::HoldStore;
+use hierarchy_application::common::interfaces::{HierarchyStore, HoldStore};
 use hierarchy_application::common::ports::{
     AgentCreator, DirectiveJournal, HoldClock, HoldJournal, HoldNotifier, RateLimitSource,
     SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover,
@@ -48,6 +48,10 @@ pub struct HierarchyServices {
     /// The holds and the rate limits, one service for the agent-call gateway
     /// and the user's `hold.*` requests (0007).
     pub holds: Arc<HoldService>,
+    /// The hierarchy store and the agent creator, which the template create
+    /// bridge joins under the same tree exclusion (0009 D5).
+    pub store: Arc<dyn HierarchyStore>,
+    pub creator: Arc<dyn AgentCreator>,
 }
 
 /// Runs the hierarchy migrations and builds its services. The subtree ports
@@ -78,7 +82,7 @@ pub fn build_hierarchy_services(
     run_migrations(&mut guard, LEDGER_TABLE, SCRIPTS, &[])?;
     drop(guard);
     let places = AgentPlaces::new();
-    let store: Arc<dyn hierarchy_application::common::interfaces::HierarchyStore> =
+    let store: Arc<dyn HierarchyStore> =
         Arc::new(HierarchyRepository::new(connection.handle(), places));
     // The agent handlers and the hierarchy handlers each hold a subtree use
     // case over the same store and the same agent ports, so both answers
@@ -111,7 +115,7 @@ pub fn build_hierarchy_services(
     let tree = Arc::new(TreeQuery::new(Arc::clone(&store)));
     let handlers = Arc::new(HierarchyHandlers::new(HierarchyUseCases {
         tree: Arc::clone(&tree),
-        create_team: CreateTeamHandler::new(Arc::clone(&store)).with_creator(creator),
+        create_team: CreateTeamHandler::new(Arc::clone(&store)).with_creator(Arc::clone(&creator)),
         delete_team: DeleteTeamHandler::new(Arc::clone(&store)),
         place_agent: PlaceAgentHandler::new(Arc::clone(&store)),
         subtree: subtree(),
@@ -138,6 +142,8 @@ pub fn build_hierarchy_services(
         send_directive,
         directive_journal,
         holds,
+        store,
+        creator,
     })
 }
 

@@ -5,6 +5,9 @@
 use agent_infrastructure::persistence::{LEDGER_TABLE, PRE_MIGRATION_CHECKS, SCRIPTS};
 use office_harnessd::bootstrap::{StartupError, run_migrations};
 use rusqlite::Connection;
+use template_infrastructure::persistence::{
+    LEDGER_TABLE as TEMPLATE_LEDGER, SCRIPTS as TEMPLATE_SCRIPTS,
+};
 
 fn schema_dump(connection: &Connection) -> Vec<(String, String)> {
     let mut statement = connection
@@ -182,6 +185,32 @@ fn each_module_keeps_its_own_ledger() {
     .expect("terminal");
 
     assert_eq!(ledger_versions(&connection), all_versions());
+}
+
+#[test]
+fn an_office_from_before_templates_gains_the_template_table_and_keeps_its_agents() {
+    let mut connection = Connection::open_in_memory().expect("database");
+    run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, PRE_MIGRATION_CHECKS).expect("agent");
+    let agent_tables = schema_dump(&connection);
+
+    let applied =
+        run_migrations(&mut connection, TEMPLATE_LEDGER, TEMPLATE_SCRIPTS, &[]).expect("template");
+
+    assert_eq!(applied, TEMPLATE_SCRIPTS.len());
+    connection
+        .execute_batch(
+            "INSERT INTO template_templates (id, name, name_key, kind, body, updated_at) \
+             VALUES ('t1', 'T', 't', 'agent', '{}', 1)",
+        )
+        .expect("template table exists");
+    let kept: Vec<_> = schema_dump(&connection)
+        .into_iter()
+        .filter(|entry| agent_tables.contains(entry))
+        .collect();
+    assert_eq!(kept, agent_tables, "the agent tables are unchanged");
+    let again =
+        run_migrations(&mut connection, TEMPLATE_LEDGER, TEMPLATE_SCRIPTS, &[]).expect("again");
+    assert_eq!(again, 0);
 }
 
 #[test]

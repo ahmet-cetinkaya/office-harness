@@ -19,6 +19,7 @@ use super::hold_requests::HoldGateway;
 use super::notification_requests::NotificationGateway;
 use super::restart_signal::RestartSignal;
 use super::server_options::ServerOptions;
+use super::template_requests::TemplateGateway;
 use super::terminal_requests::TerminalGateway;
 use crate::bootstrap::ServerLog;
 
@@ -49,6 +50,9 @@ pub struct ServerState {
     /// case journals the attempts it runs.
     pub directive_journal: Arc<DirectiveJournalBridge>,
     pub notification: NotificationGateway,
+    /// The user's `template.*` requests. Only the user connection routes to
+    /// it; the agent connection never does (0009).
+    pub templates: TemplateGateway,
     pub events: EventHub,
     /// Raised by `server.restart`.
     pub restart: RestartSignal,

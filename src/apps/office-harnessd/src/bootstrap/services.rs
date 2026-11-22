@@ -15,12 +15,15 @@ use gethostname::gethostname;
 use notification_infrastructure::persistence::{
     LEDGER_TABLE as NOTIFICATION_LEDGER_TABLE, SCRIPTS as NOTIFICATION_SCRIPTS,
 };
+use template_infrastructure::persistence::{
+    LEDGER_TABLE as TEMPLATE_LEDGER_TABLE, SCRIPTS as TEMPLATE_SCRIPTS,
+};
 
 use super::{
     AccessServices, AgentServices, HierarchyServices, LoginSetup, NotificationServices, ServerLog,
-    StartupError, StorageAlerts, TerminalServices, build_access_services, build_agent_services,
-    build_hierarchy_services, build_notification_services, build_terminal_services, open_database,
-    run_migrations,
+    StartupError, StorageAlerts, TemplateServices, TerminalServices, build_access_services,
+    build_agent_services, build_hierarchy_services, build_notification_services,
+    build_template_services, build_terminal_services, open_database, run_migrations,
 };
 use crate::bridges::{AgentCalls, CallHelper, NotificationBridge, SystemClock};
 use crate::config::Config;
@@ -41,6 +44,7 @@ pub struct Services {
     pub agent: AgentServices,
     pub hierarchy: HierarchyServices,
     pub notification: NotificationServices,
+    pub template: TemplateServices,
     /// Writes the notification rows; the hold notifier shares it with the
     /// status stream (0007 D7).
     pub notification_bridge: NotificationBridge,
@@ -84,6 +88,12 @@ pub fn start_with(
         &mut connection,
         NOTIFICATION_LEDGER_TABLE,
         NOTIFICATION_SCRIPTS,
+        &[],
+    )?;
+    run_migrations(
+        &mut connection,
+        TEMPLATE_LEDGER_TABLE,
+        TEMPLATE_SCRIPTS,
         &[],
     )?;
 
@@ -144,6 +154,12 @@ pub fn start_with(
         &events,
         &notification_bridge,
     )?;
+    let template = build_template_services(
+        &connection,
+        Arc::clone(&agent_bridge_store),
+        &hierarchy,
+        &storage_alerts,
+    );
     Ok(Services {
         machine,
         agents,
@@ -156,6 +172,7 @@ pub fn start_with(
         agent,
         hierarchy,
         notification,
+        template,
         notification_bridge,
         agent_bridge_store,
     })

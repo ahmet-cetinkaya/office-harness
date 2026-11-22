@@ -3,6 +3,8 @@
 use std::sync::Arc;
 
 use agent_application::common::additions_input::AdditionsInput;
+use agent_application::common::command_line::split_command;
+use agent_domain::value_objects::{AgentCommand, DisplayName};
 use agent_presentation::{RoleRequests, RoleResult, RoleSeed};
 use hierarchy_application::commands::create_role_agent::{
     CreateRoleAgentHandler, CreateRoleAgentRequest,
@@ -169,6 +171,10 @@ impl AgentCreatorBridge {
 }
 
 impl AgentCreator for AgentCreatorBridge {
+    fn check(&self, seed: &AgentSeed) -> Vec<String> {
+        agent_rule_failures(seed)
+    }
+
     fn create(&self, seed: AgentSeed) -> Result<AgentId, CreatorError> {
         let agent = self
             .create
@@ -178,11 +184,7 @@ impl AgentCreator for AgentCreatorBridge {
                     command: seed.command,
                     working_folder: seed.working_folder,
                     project_id: seed.project_id,
-                    additions: seed.additions.map(|additions| AdditionsInput {
-                        flags: additions.flags,
-                        env: additions.env,
-                        startup_prompt: additions.startup_prompt,
-                    }),
+                    additions: seed.additions.map(additions_input),
                 },
             )
             .map_err(|error| agent_failure(&error))?;
@@ -194,6 +196,37 @@ impl AgentCreator for AgentCreatorBridge {
             .handle(agent_id)
             .map_err(|error| agent_failure(&error))
     }
+}
+
+fn additions_input(additions: SeedAdditions) -> AdditionsInput {
+    AdditionsInput {
+        flags: additions.flags,
+        env: additions.env,
+        startup_prompt: additions.startup_prompt,
+    }
+}
+
+/// Every create rule of the agent module that `seed` breaks, found with the
+/// module's own value objects and checks, so a pre-check never drifts from
+/// the create. The rules are independent, so each one reports on its own.
+fn agent_rule_failures(seed: &AgentSeed) -> Vec<String> {
+    let mut reasons = Vec::new();
+    if let Err(error) = DisplayName::parse("agent name", &seed.name) {
+        reasons.push(error.to_string());
+    }
+    match AgentCommand::parse(&seed.command) {
+        Ok(command) => {
+            if let Err(error) = split_command(&command) {
+                reasons.push(error.to_string());
+            }
+        }
+        Err(error) => reasons.push(error.to_string()),
+    }
+    let additions = additions_input(seed.additions.clone().unwrap_or_default());
+    if let Err(error) = additions.into_additions() {
+        reasons.push(error.to_string());
+    }
+    reasons
 }
 
 /// The agent module's refusal as the hierarchy's port carries it: the kind
