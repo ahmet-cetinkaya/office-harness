@@ -167,15 +167,22 @@ impl GitWorktrees {
                 .is_ok_and(|inside| inside.components().count() == OWNED_DEPTH)
     }
 
-    /// Refuses a worktrees folder inside the repository before anything is
-    /// written there (A1, PB-2).
-    fn ensure_outside(&self, top: &Path) -> Result<(), WorktreeError> {
+    /// Refuses a worktrees folder inside the repository, or inside any of
+    /// its linked worktrees, before anything is written there (A1, PB-2).
+    fn ensure_outside(&self, runner: &GitRunner, top: &Path) -> Result<(), WorktreeError> {
         let (Some(root), Ok(top)) = (canonical_existing(&self.root), top.canonicalize()) else {
             return Err(WorktreeError::Failed(
                 "the worktrees folder cannot be read".to_owned(),
             ));
         };
-        if root.starts_with(&top) {
+        let recorded = worktree_folders(runner, &top)
+            .map_err(|failure| WorktreeError::Failed(failure.reason()))?;
+        // A record whose folder is gone holds nothing, so it is skipped.
+        let is_inside_a_worktree = recorded
+            .iter()
+            .filter_map(|folder| folder.canonicalize().ok())
+            .any(|folder| root.starts_with(folder));
+        if root.starts_with(&top) || is_inside_a_worktree {
             return Err(WorktreeError::Invalid(DATA_FOLDER_INSIDE.to_owned()));
         }
         std::fs::create_dir_all(&self.root).map_err(|error| {
@@ -379,7 +386,7 @@ impl WorktreeManager for GitWorktrees {
         let info = self
             .info(request.folder, request.agent_name)?
             .ok_or_else(|| WorktreeError::Invalid(NEEDS_REPOSITORY.to_owned()))?;
-        self.ensure_outside(&info.top)?;
+        self.ensure_outside(runner, &info.top)?;
         let base = chosen_base(&info, request.base)?;
         let branch = request.branch_name.unwrap_or(&info.branch_name);
         if !is_office_branch_name(branch) {
@@ -548,6 +555,17 @@ fn main_worktree(runner: &GitRunner, top: &Path) -> Option<PathBuf> {
         .take_while(|line| !line.is_empty())
         .any(|line| line == BARE_RECORD);
     (!is_bare).then(|| PathBuf::from(path))
+}
+
+/// Every worktree folder of the repository that holds `top`, as git
+/// records them.
+fn worktree_folders(runner: &GitRunner, top: &Path) -> Result<Vec<PathBuf>, GitFailure> {
+    let records = runner.read(top, &["worktree", "list", "--porcelain"])?;
+    Ok(records
+        .lines()
+        .filter_map(|line| line.strip_prefix(WORKTREE_RECORD_PREFIX))
+        .map(PathBuf::from)
+        .collect())
 }
 
 /// The repository's branch names.

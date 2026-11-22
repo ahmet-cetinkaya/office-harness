@@ -9,6 +9,9 @@
 
 mod support;
 
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rusqlite::Connection;
@@ -574,4 +577,114 @@ async fn a_template_name_that_is_taken_is_a_conflict_and_an_unknown_id_is_not_fo
 
     assert_eq!(error_text(&taken).0, "conflict");
     assert_eq!(error_text(&missing).0, "not_found");
+}
+
+/// Every folder and file under `folders`, a file with its contents, so a
+/// test can tell that nothing there was created, changed, or deleted.
+fn entries_under(folders: &[&Path]) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
+    let mut entries = BTreeMap::new();
+    let mut pending: Vec<PathBuf> = folders.iter().map(|folder| folder.to_path_buf()).collect();
+    while let Some(folder) = pending.pop() {
+        for entry in fs::read_dir(&folder).expect("a readable folder") {
+            let path = entry.expect("a folder entry").path();
+            if path.is_dir() {
+                entries.insert(path.clone(), None);
+                pending.push(path);
+            } else {
+                let contents = fs::read(&path).expect("a readable file");
+                entries.insert(path, Some(contents));
+            }
+        }
+    }
+    entries
+}
+
+/// A1 and PB-3: agents made from templates are created, not started, and
+/// no template step writes a CLI's configuration, in the home folders the
+/// CLIs read or in the project folder.
+#[tokio::test]
+async fn template_work_starts_no_agent_and_writes_no_cli_configuration() {
+    let office = Office::open().await;
+    let fake_folders = office.clis.tool_folder().parent().expect("fake folders");
+    let watched = [fake_folders, office.work_folder.path()];
+    let before = entries_under(&watched);
+    let mut client = office.client().await;
+    let ceo = create_ceo(&mut client, &office).await;
+    let mut body = agent_body(&office, "worker-{n}");
+    body["additions"] = json!({
+        "flags": ["--fast"],
+        "env": [{"name": "API_KEY", "value": SECRET_VALUE}],
+        "startup_prompt": "Start with the open change.",
+    });
+    let agent_template = save(&mut client, "Worker", "agent", body).await;
+    let team_template = save(&mut client, "Squad", "team", team_body(&office, 2)).await;
+
+    ok(
+        &mut client,
+        "template.create_agent",
+        json!({"template_id": agent_template}),
+    )
+    .await;
+    ok(
+        &mut client,
+        "template.create_team",
+        json!({"template_id": team_template, "team_name": "Alpha", "parent_agent_id": ceo}),
+    )
+    .await;
+    ok(&mut client, "template.export", json!({})).await;
+
+    let agents = ok(&mut client, "agent.list", json!({})).await;
+    let agents = agents.as_array().expect("agents");
+    assert_eq!(agents.len(), 5, "the CEO, one worker, and a team of three");
+    for agent in agents {
+        assert_eq!(agent["status"], "stopped", "{agent}");
+    }
+    assert_eq!(entries_under(&watched), before);
+}
+
+fn action_record_count(office: &Office) -> i64 {
+    Connection::open(office.serving.office.config.database_path())
+        .expect("the office database")
+        .query_row("SELECT COUNT(*) FROM audit_actions", [], |row| row.get(0))
+        .expect("the action record")
+}
+
+/// A10: saving, editing, exporting, importing, and deleting templates write
+/// no action record; an agent created from one does (PB-2), which shows the
+/// count can move.
+#[tokio::test]
+async fn template_changes_write_no_action_record() {
+    let office = Office::open().await;
+    let mut client = office.client().await;
+    let before = action_record_count(&office);
+
+    let template_id = save(&mut client, "Worker", "agent", agent_body(&office, "w-{n}")).await;
+    ok(
+        &mut client,
+        "template.save",
+        json!({"template_id": template_id, "name": "Worker", "kind": "agent",
+               "body": agent_body(&office, "changed-{n}")}),
+    )
+    .await;
+    let exported = ok(&mut client, "template.export", json!({})).await;
+    ok(
+        &mut client,
+        "template.delete",
+        json!({"template_id": template_id}),
+    )
+    .await;
+    let text = json!({"text": exported["text"]});
+    ok(&mut client, "template.import.preview", text.clone()).await;
+    ok(&mut client, "template.import.confirm", text).await;
+    assert_eq!(action_record_count(&office), before);
+
+    let listed = ok(&mut client, "template.list", json!({})).await;
+    let imported = listed["templates"][0]["id"].clone();
+    ok(
+        &mut client,
+        "template.create_agent",
+        json!({"template_id": imported}),
+    )
+    .await;
+    assert_eq!(action_record_count(&office), before + 1);
 }

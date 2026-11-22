@@ -143,7 +143,12 @@ impl DeleteAgentHandler {
         let (Some(worktree), DeleteWorktrees::Remove(confirmed)) = (&agent.worktree, choice) else {
             return Ok(());
         };
-        self.stop_if_running(&agent)?;
+        // A stopped agent writes nothing after `check` read its worktree,
+        // and the delete reads it once more; another read here would only
+        // hold the status lock longer.
+        if !self.stop_if_running(&agent)? {
+            return Ok(());
+        }
         require_confirmed_after_stop(&agent, &self.status(worktree), confirmed)
     }
 
@@ -193,8 +198,12 @@ impl DeleteAgentHandler {
                 WorktreeStep::Keep(worktree)
             });
         };
-        require_confirmed(agent, &self.status(worktree), confirmed)?;
-        self.stop_if_running(agent)?;
+        let status = self.status(worktree);
+        require_confirmed(agent, &status, confirmed)?;
+        if !self.stop_if_running(agent)? {
+            // Nothing wrote between the read and now, so it is the last one.
+            return Ok(WorktreeStep::Remove(worktree, status));
+        }
         let status = self.status(worktree);
         require_confirmed_after_stop(agent, &status, confirmed)?;
         Ok(WorktreeStep::Remove(worktree, status))
@@ -257,14 +266,16 @@ impl DeleteAgentHandler {
         }
     }
 
-    fn stop_if_running(&self, agent: &Agent) -> Result<(), ApplicationError> {
+    /// Answers whether the agent was running, so a caller knows whether
+    /// its worktree may have changed since an earlier read.
+    fn stop_if_running(&self, agent: &Agent) -> Result<bool, ApplicationError> {
         if !agent.status.is_running() {
-            return Ok(());
+            return Ok(false);
         }
         let grace = Duration::from_millis(self.settings.load()?.stop_grace_ms);
         match self.terminals.stop(agent.id, grace) {
             // The child ended on its own a moment ago.
-            Ok(()) | Err(TerminalHostError::NotRunning) => Ok(()),
+            Ok(()) | Err(TerminalHostError::NotRunning) => Ok(true),
             Err(error) => Err(ApplicationError::Internal(error.to_string())),
         }
     }

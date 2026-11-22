@@ -73,7 +73,7 @@ Deliver spec 0010. In a git repository the owner can give a new agent its own br
   - It runs with no shell and arguments as a list. Path arguments always follow `--`.
   - Environment: the resolved login environment (`login_environment.rs`), minus every `GIT_*` variable, `GIT_ASKPASS` and `SSH_ASKPASS`, plus `LC_ALL=C`, `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never`. Read commands add `GIT_OPTIONAL_LOCKS=0`. So nothing in the server's environment can override `-C <dir>`.
   - stdin is null. On Windows the child gets `CREATE_NO_WINDOW`.
-  - Timeouts: 10 s for read commands, 120 s for `worktree add`. On a timeout the runner ends the whole process group (`killpg`, on its own group as `login_shell.rs` does) or, on Windows, the process tree, with the method of the terminal module's `process_tree.rs`. That code is repeated in the agent module, not imported, to keep the module boundary.
+  - Timeouts: 10 s for read commands, 120 s for `worktree add`. On a timeout the runner ends the whole process group (`killpg`, on its own group as `login_shell.rs` does) or, on Windows, the process tree, with the method of the terminal module's `process_tree.rs`. That method is `taskkill /T` with no job object (0001 SPEC, Deviations), and `/T` follows parent links only, so a helper whose parent already exited can outlive the timeout. "Ends the whole process tree" holds on Unix only until a Windows CI runner tests this path. That code is repeated in the agent module, not imported, to keep the module boundary.
   - After git exits, the runner waits at most 500 ms for each pipe, then ends the process group. A helper that keeps stderr open after a success does not make the success fail; only stdout that never ends is a timeout.
   - stdout is bounded to 1 MiB; more is a failure. stderr is trimmed to 500 characters for messages, after removing the `user:pass@` part of every URL in it.
   - Hooks are off: every command runs with `-c core.hooksPath=<data folder>/worktrees/.no-hooks`, an empty folder the office owns. So `post-checkout` and other repository hooks do not run.
@@ -123,6 +123,7 @@ Deliver spec 0010. In a git repository the owner can give a new agent its own br
     4. Remove: when the confirmed count is 0, plain `git worktree remove -- <folder>` (no `--force`), so git itself refuses a worktree that became dirty; with changes, `git worktree remove --force -- <folder>`. A missing folder uses `git worktree remove --force -- <folder>` too, which clears only that record (proven by a T2 test on git 2.22). A repository-wide `git worktree prune` is never run.
     5. `git branch -D -- <branch>` only when `own_commits` is 0 and the base exists. Otherwise the branch is kept and named. A branch checked out somewhere else fails to delete, and is then kept and named.
   - Fail closed: when the repository cannot be reached or `status` fails, the folder and the branch are kept and named, and the agent is still deleted.
+  - Lock scope: a delete holds the status lock, which also orders every start and stop in the office, from its first status read to the end of the removal. Step 2 is skipped for an agent that was not running, because nothing wrote since the read before it. So a single delete reads a stopped agent's worktree once and a running agent's twice. A subtree delete reads each stopped member twice (the check of the whole subtree, then its delete) and each running member three times (the check, after its stop, then its delete). One status read runs up to three git reads of at most 10 s each; the remove itself may take up to 120 s.
   - `keep` leaves folder and branch and names them once (A6).
   - The answer lists `{deleted_branches, kept_branches, kept_folders}`.
   - Subtree delete (one question for the whole subtree):
@@ -292,7 +293,7 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 - **Security pass** (`secure-engineering`: process execution and file deletion):
   - No shell; arguments as a list.
   - Branch names follow the D3 slug rule and pass `check-ref-format`. `base` is one of the listed refs, passed as `refs/heads/<name>` or a full commit id. Path arguments follow `--`.
-  - The child environment drops every `GIT_*` and askpass variable; stdin is null; stdout is bounded; a timeout ends the whole process tree.
+  - The child environment drops every `GIT_*` and askpass variable; stdin is null; stdout is bounded; a timeout ends the whole process tree (on Unix; see the T2 runner notes for Windows).
   - Paths stay under the data folder: the remove path is the stored folder, and it must be inside `worktrees/`, else it is refused. The worktrees folder must be outside the chosen repository.
   - The server stops the agent, counts and hashes again, and compares before any removal. A clean confirmation removes without `--force`. No repository-wide prune.
   - The agent connection cannot set `own_worktree`, `base`, or `branch_name`.

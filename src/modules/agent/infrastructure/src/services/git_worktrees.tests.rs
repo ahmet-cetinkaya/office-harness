@@ -340,6 +340,36 @@ fn the_data_folder_inside_the_repository_is_refused() {
     assert_eq!(error, WorktreeError::Invalid(DATA_FOLDER_INSIDE.to_owned()));
 }
 
+#[test]
+fn the_data_folder_inside_a_linked_worktree_is_refused() {
+    let fixture = fixture();
+    let linked = fixture.home.join("linked");
+    git(
+        &fixture.home,
+        &fixture.repository,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "side",
+            &linked.to_string_lossy(),
+        ],
+    );
+    let inside = GitWorktrees::with_runner(linked.join("data"), Some(runner(&fixture.home)));
+    let error = inside
+        .create(&WorktreeCreate {
+            folder: &fixture.repository,
+            agent_id: AgentId::generate(),
+            agent_name: "x",
+            base: None,
+            branch_name: None,
+        })
+        .expect_err("refused");
+    assert_eq!(error, WorktreeError::Invalid(DATA_FOLDER_INSIDE.to_owned()));
+    assert!(!linked.join("data").exists());
+}
+
 #[cfg(unix)]
 #[test]
 fn an_unwritable_worktrees_folder_fails_the_create_and_leaves_nothing() {
