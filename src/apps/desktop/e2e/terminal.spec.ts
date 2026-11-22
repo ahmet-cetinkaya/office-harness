@@ -250,3 +250,47 @@ test("a deleted agent closes the terminal with a message", async ({ page }) => {
     )
     .toBe(true);
 });
+
+const MEDIUM_WINDOW = { width: 960, height: 600 };
+const WIDE_WINDOW = { width: 1280, height: 800 };
+
+test("a medium window with a terminal open does not scroll sideways or clip the details", async ({
+  page,
+}) => {
+  await page.setViewportSize(WIDE_WINDOW);
+  await openTerminal(page);
+  await expect(page.locator(SCREEN)).toContainText("saved output");
+  const attach = (await terminalRequests(page)).find(
+    (request) => request.kind === "terminal.attach",
+  );
+
+  await page.setViewportSize(MEDIUM_WINDOW);
+
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    )
+    .toBe(true);
+  const folder = page.getByText("/work/ada", { exact: true });
+  const folderRight = await folder.evaluate(
+    (element) => element.getBoundingClientRect().right,
+  );
+  expect(folderRight).toBeLessThanOrEqual(MEDIUM_WINDOW.width);
+  const hostRight = await page
+    .getByRole("group", { name: "Live terminal of Ada" })
+    .evaluate((element) => element.getBoundingClientRect().right);
+  expect(hostRight).toBeLessThanOrEqual(MEDIUM_WINDOW.width);
+  // The narrower column makes the terminal refit and tell the PTY.
+  await expect
+    .poll(async () => {
+      const resize = (await terminalRequests(page))
+        .filter((request) => request.kind === "terminal.resize")
+        .at(-1);
+      return Number(resize?.fields.cols ?? Infinity);
+    })
+    .toBeLessThan(Number(attach?.fields.cols));
+});
