@@ -404,6 +404,7 @@
                   ondelete={() => void deleteAgent(agentId)}
                   onsaveadditions={(additions) =>
                     controller.saveAdditions(agentId, additions)}
+                  onsavetask={(text) => controller.saveTask(agentId, text)}
                   onretry={controller.retryDetails}
                 />
               {/key}
