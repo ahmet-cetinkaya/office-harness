@@ -175,4 +175,9 @@ impl TerminalRuntime for PortableTerminalRuntime {
     fn current_run(&self, agent_id: AgentId) -> Option<RunId> {
         self.sessions().get(&agent_id).map(|session| session.run())
     }
+
+    fn quiet_for(&self, agent_id: AgentId) -> Option<Duration> {
+        self.running_session(agent_id)
+            .map(|session| session.quiet_for())
+    }
 }
