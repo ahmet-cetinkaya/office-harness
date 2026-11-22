@@ -18,6 +18,7 @@ use office_harnessd::bootstrap;
 use office_harnessd::server::{Server, ServerOptions};
 use serde_json::{Value, json};
 use support::entries_under;
+use support::fake_cli::FakeClis;
 use support::office_client::{Client, Office, error_text};
 use support::wire_client::WireClient;
 
@@ -29,9 +30,15 @@ const EVENT_DEADLINE: Duration = Duration::from_secs(2);
 /// Keeps two events from sharing a millisecond, so the order by first event
 /// time does not fall to the name tie-break.
 const EVENT_SPACING: Duration = Duration::from_millis(10);
-/// How long the busy agent of SC-005 is watched, and the pause between its
-/// writes (shorter than the quiet period).
-const BUSY_WATCH: Duration = Duration::from_millis(1500);
+/// The quiet period of the busy agent's office in SC-005. The agent writes
+/// every 100 ms; each write starts a `sleep` process, and a loaded CI runner
+/// can stall that, or the PTY reader, for 400 ms (seen on macOS). A quiet
+/// period 20 times the write pause keeps the test about "keeps writing",
+/// not about the runner's scheduling.
+const BUSY_QUIET_PERIOD_MS: u64 = 2000;
+/// How long the busy agent is watched: longer than its quiet period, so a
+/// wrong item would have time to appear.
+const BUSY_WATCH: Duration = Duration::from_millis(3000);
 const BUSY_SCRIPT: &str =
     "i=0; while [ $i -lt 100 ]; do echo tick; sleep 0.1; i=$((i+1)); done; sleep 30";
 const AGENT_COUNT: usize = 30;
@@ -266,7 +273,7 @@ async fn events_while_no_client_is_connected_list_with_their_first_event_times()
 
 #[tokio::test]
 async fn an_agent_that_keeps_writing_and_rings_no_bell_gets_no_item() {
-    let office = Office::open().await;
+    let office = Office::open_with_quiet_period(FakeClis::new(), BUSY_QUIET_PERIOD_MS).await;
     office.clis.add("busy-cli", BUSY_SCRIPT);
     let mut client = office.client().await;
     let agent = client.create_agent(&office, "Ana", "busy-cli", None).await;
