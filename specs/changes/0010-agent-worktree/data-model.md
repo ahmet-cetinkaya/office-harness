@@ -1,0 +1,65 @@
+# Data model: own worktree per agent (0010)
+
+Date: 2026-11-22. Plan: `PLAN.md` decisions D1 to D7.
+
+## Agent worktree (agent module)
+
+Four nullable columns on `agent_agents`, migration `0007_agent_worktree.sql` of the agent ledger. The four are all set or all NULL; NULL means the agent has no own worktree (PB-1).
+
+| Column | Type | Rule |
+|---|---|---|
+| `worktree_repository` | TEXT | The top folder of the repository that holds the chosen folder (`git rev-parse --show-toplevel`). |
+| `worktree_base` | TEXT | The base: a local branch name, or the full commit id when the chosen folder was detached (A2). |
+| `worktree_branch` | TEXT | The agent's branch, `office-harness/<slug>` or `office-harness/<slug>-<n>` (D3). |
+| `worktree_folder` | TEXT | The worktree folder, under the office's worktrees folder (D2). |
+
+- The agent's `working_folder` is the worktree folder plus the chosen folder's subfolder in the repository (FR-002), so the start check and the CLI need no other change.
+- A base of 40 or 64 hex digits is a commit; any other base is a branch (`refs/heads/<base>`).
+- The columns survive a restart (PB-5, SC-005). A delete removes the row; a kept worktree is no longer stored (A6).
+
+Domain type: `AgentWorktree { repository, base, branch, folder }`, the field `Agent.worktree: Option<AgentWorktree>`.
+
+## Worktrees folder (server configuration)
+
+`<data folder>/worktrees/<repository folder name>-<8 hex of the repository path hash>/<first 8 characters of the agent id>`.
+
+- The worktrees folder must be outside the chosen repository; a data folder inside it refuses the create (A1).
+- `<data folder>/worktrees/.no-hooks` is an empty folder that every git command uses as `core.hooksPath`, so no repository hook runs (D1).
+- Every remove checks that the stored folder is inside the worktrees folder before it touches the disk.
+
+## Branch name (D3)
+
+The slug is the agent name lower-cased, every character outside `[a-z0-9-]` replaced by `-`, runs of `-` collapsed, leading and trailing `-` trimmed, and cut to 40 characters. An empty slug is `agent`. The branch is `office-harness/<slug>`; when that branch exists, the lowest free `office-harness/<slug>-<n>` with `n` from 2. The full name must pass `git check-ref-format --branch`.
+
+## Git commands
+
+All run as `git -c core.hooksPath=<no-hooks> -c core.fsmonitor=false -C <folder> ...`, with no shell, a null stdin, and the login environment without any `GIT_*`, `GIT_ASKPASS`, or `SSH_ASKPASS` variable, plus `LC_ALL=C`, `GIT_TERMINAL_PROMPT=0`, and `GCM_INTERACTIVE=never`. Read commands add `GIT_OPTIONAL_LOCKS=0`.
+
+| Purpose | Command | Timeout |
+|---|---|---|
+| Version (2.22 or newer) | `git version` | 10 s |
+| Repository and subfolder | `rev-parse --show-toplevel --show-prefix` | 10 s |
+| Base | `symbolic-ref --quiet HEAD`, else `rev-parse --verify HEAD^{commit}` | 10 s |
+| Local branches | `for-each-ref --format=%(refname) refs/heads/` | 10 s |
+| Branch name check | `check-ref-format --branch <name>` | 10 s |
+| Create the branch | `branch --no-track -- <branch> <refs/heads/base or commit>` | 10 s |
+| Create the worktree | `worktree add -- <folder> <branch>` | 120 s |
+| Change count | `status --porcelain=v1 --untracked-files=all --ignore-submodules=none` | 10 s |
+| Own commits | `rev-list --count <base ref>..refs/heads/<branch>` | 10 s |
+| Base exists | `rev-parse --verify --quiet <base ref>^{commit}` | 10 s |
+| Remove a clean worktree | `worktree remove -- <folder>` | 10 s |
+| Remove a changed or missing worktree | `worktree remove --force -- <folder>` | 10 s |
+| Delete the branch | `branch -D -- <branch>` | 10 s |
+
+A `worktree prune` is never run. The office writes no git configuration.
+
+## Status of one worktree (D6)
+
+| Field | Meaning |
+|---|---|
+| `changed_files` | The line count of the status command above: changed, added, deleted, and every untracked file; ignored files are not counted (A9). |
+| `status_hash` | A hash of the status output, hex. Valid within one server run. |
+| `own_commits` | Commits on the agent's branch that the base lacks; 0 when the base is gone. |
+| `base_exists` | The base branch or commit still exists. |
+| `folder_exists` | The worktree folder exists. |
+| `reachable` | The repository answers and the status could be read. |
