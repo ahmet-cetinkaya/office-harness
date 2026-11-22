@@ -27,16 +27,24 @@ const PERMISSION_PHRASES: [&str; 10] = [
 /// The marks a CLI puts before the selected entry of a choice list.
 const SELECTION_MARKS: [char; 7] = ['❯', '›', '▶', '►', '→', '●', '>'];
 
+/// The fewest entries a choice list without numbers has.
+const LEAST_CHOICES: usize = 2;
+
+/// The rows that may show below a choice list without numbers, such as a
+/// key hint, for the list to still end the screen.
+const ROWS_BELOW_A_CHOICE_LIST: usize = 1;
+
 /// True when the bottom of the screen shows a question that a key answers:
-/// a yes-or-no choice, a numbered choice list with a selection mark, or
-/// words that ask for permission or approval (0012/FR-002). A false match
-/// only delays a directive, so the markers lean toward matching.
+/// a yes-or-no choice, a choice list with a selection mark, or words that
+/// ask for permission or approval (0012/FR-002). A false match only delays
+/// a directive, so the markers lean toward matching.
 #[must_use]
 pub fn shows_open_question(screen: &ScreenView) -> bool {
     screen
         .bottom_rows(QUESTION_ROWS)
         .into_iter()
         .any(row_asks_a_question)
+        || ends_with_a_choice_list(&screen.rows)
 }
 
 fn row_asks_a_question(row: &str) -> bool {
@@ -50,12 +58,51 @@ fn row_asks_a_question(row: &str) -> bool {
 
 /// A selection mark, then a number with `.` or `)`, as in `❯ 1. Yes`.
 fn starts_a_selected_choice(row: &str) -> bool {
-    let Some(rest) = row.trim_start().strip_prefix(SELECTION_MARKS) else {
+    let Some(rest) = text_after_selection_mark(row) else {
         return false;
     };
-    let rest = rest.trim_start();
     let after_digits = rest.trim_start_matches(|character: char| character.is_ascii_digit());
     after_digits.len() < rest.len() && after_digits.starts_with(['.', ')'])
+}
+
+/// The row's text after a leading selection mark, as `Yes` in `❯ Yes`.
+fn text_after_selection_mark(row: &str) -> Option<&str> {
+    Some(row.trim_start().strip_prefix(SELECTION_MARKS)?.trim_start())
+}
+
+/// A choice list without numbers ends the screen, as `❯ No` over `  Yes`:
+/// one entry behind a selection mark and more entries on the rows right
+/// above or below it, each starting at the column where the marked entry's
+/// text starts. A blank row ends the list, and only a key hint may follow
+/// it, so a marked row with wrapped text in older output does not count.
+fn ends_with_a_choice_list(rows: &[String]) -> bool {
+    rows.iter().enumerate().any(|(index, row)| {
+        selected_choice_column(row)
+            .is_some_and(|column| choice_list_ends_the_screen(rows, index, column))
+    })
+}
+
+/// The column where the text of a marked entry starts, as 2 in `❯ No`.
+fn selected_choice_column(row: &str) -> Option<usize> {
+    let text = text_after_selection_mark(row).filter(|text| !text.is_empty())?;
+    Some(row.chars().count() - text.chars().count())
+}
+
+fn choice_list_ends_the_screen(rows: &[String], marked: usize, column: usize) -> bool {
+    let is_entry = |row: &&String| is_choice_at_column(row, column);
+    let above = rows[..marked].iter().rev().take_while(is_entry).count();
+    let below = rows[marked + 1..].iter().take_while(is_entry).count();
+    let rows_after = rows[marked + below + 1..]
+        .iter()
+        .filter(|row| !row.trim().is_empty())
+        .count();
+    above + 1 + below >= LEAST_CHOICES && rows_after <= ROWS_BELOW_A_CHOICE_LIST
+}
+
+/// A row with text that starts at `column` after spaces only.
+fn is_choice_at_column(row: &str, column: usize) -> bool {
+    let text = row.trim_start_matches(' ');
+    !text.trim().is_empty() && row.len() - text.len() == column
 }
 
 #[cfg(test)]
