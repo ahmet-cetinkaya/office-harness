@@ -4,6 +4,7 @@
 
 - **Date:** 2026-11-22.
 - **Build under test:** branch `feat/0008-p2-desktop` at the PR #92 r2 commit (the review fixes on top of 43198ad; Phase 2, desktop). Phase 1 (server) is PR #87, run at e62500f (r2).
+- **Umbrella gate (2026-11-22):** after the merge of main cbbe2a3 into `feat/0008-needs-you-queue` (3b67a4d): `cargo fmt --check` clean; `scripts/lint-rust.sh` (whole workspace) clean; `cargo test --workspace` 903 passed, 0 failed; `bun run tauri build --debug --no-bundle` ok; `bun test src` 260 passed; svelte-check 0 errors, 0 warnings; eslint and `prettier --check` clean; Playwright 179 passed; `scripts/check-boundaries.sh` ok.
 - **Overall status:** the automated evidence stands for every requirement, success criterion, and edge case, with the gaps named in Known gaps. The hands-on rows (screen reader pass, 200 percent zoom, the real window title on KDE, the real jump key on KDE) are BLOCKED: nobody has run them. macOS and Windows hands-on rows are WAIVED (owner, 2026-11-20, the same decision as 0003, 0005, and 0007: CI evidence suffices). No hands-on row is PASS.
 - **Status of this file:** the local gate results below were run on this branch on 2026-11-22. The test names were read from the repository on 2026-11-22. The desktop gates (`bun test`, `svelte-check`, `eslint`, `prettier`, Playwright) were run again after the PR #92 review fixes; the Rust and `tauri build` rows are from a3d4415, and no Rust file changed in those fixes.
 
@@ -114,14 +115,15 @@ Paths are relative to the repository root. `N` is `src/modules/notification`, `H
 
 ## Manual QA
 
-No agent or person has run these rows. Nothing below is PASS.
+An agent ran the first row in the real app and server on 2026-11-22 (Linux, KDE Plasma Wayland, umbrella tree after the merge of main cbbe2a3). No person has run any row; the person-only rows stay BLOCKED for the owner.
 
 | Check | Verdict | Note |
 |---|---|---|
+| Real app and server, keyboard only, with fake CLIs: four agents fail (exit 3), go quiet, ring the bell, and exit; then the app is closed and opened again; then the jump key is pressed four times | PASS (agent) | Through WebDriver key actions and the office protocol. The server order was failed, then the bell and the quiet agent by first event, then exited; the failed detail was "the command ended with exit code 3" and the exited detail null (FR-002, FR-003). The section showed "Needs you (4)" with the four rows and their wait times before and after the app restart (FR-006). Each jump showed its agent within about 1 second (SC-001): focus on the heading "Terminal, Fa" and "Terminal, Ex" for the agents that do not run, and in the terminals of Be and Qu for the running ones (FR-007, D5 clarification). After four jumps `needs_you.list` was empty and the section said "No agent needs you" (FR-004, FR-008). The native window title was not read (see the next rows). Raw evidence (`run.json`, `after-jumps.png`) is kept outside the repository in the QA agent's folder `qa/evidence/0008-needs-you/`. |
 | Screen reader pass: Needs you, the count announcement, dismiss, and the jump | BLOCKED | The automated checks are axe and the live-region text only. The spoken output is unproven. |
 | 200 percent zoom: the Needs you section, the collision line, and the scroll of a long list | BLOCKED | Only the two panel widths of the Playwright run are checked. |
 | The real window title on KDE Plasma, in the panel and in the scene | BLOCKED | The title text is a Rust unit test and the invoke is mocked in Playwright. |
 | The real jump key, `Ctrl+Shift+F11`, on KDE Plasma (a global binding of the desktop could take it) | BLOCKED | Playwright sends a synthetic key. If KDE binds the key, the `Cmd`/`Ctrl+Alt` fallback of the 0003 spec applies; it is not shipped. |
-| A real agent CLI that goes quiet, rings the bell, fails, and exits, then the jump | BLOCKED | The server runs use fake CLIs. |
+| A real agent CLI that goes quiet, rings the bell, fails, and exits, then the jump | BLOCKED | The agent run above uses fake CLIs. |
 | The jump key on macOS (with `Fn`) and the window title on macOS | WAIVED | Owner, 2026-11-20: CI evidence suffices, as for 0003, 0005, and 0007. |
 | The jump key and the window title on Windows | WAIVED | Same decision. |
