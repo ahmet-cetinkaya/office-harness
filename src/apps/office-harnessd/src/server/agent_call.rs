@@ -16,7 +16,9 @@ use tokio::task::spawn_blocking;
 use wire::{CLOSE_UNAUTHORIZED, ErrorCode, Request, Response};
 
 use super::connection::{CLOSE_GOING_AWAY, close_with, send_text};
+use super::event_hub::EventHub;
 use super::server_state::ServerState;
+use crate::bridges::take_recorded_events;
 
 /// The only request types an agent connection answers (0002, plan D3). Any
 /// other type is refused, so no agent reaches `terminal.*`, `agent.delete`,
@@ -122,8 +124,30 @@ async fn answer_request(state: &ServerState, grant: &AgentGrant, frame: &str) ->
     // Every refusal reaches the action record too (FR-008, FR-009), with the
     // caller as the actor.
     let reason = refusal_reason(&refusal, &request.kind);
-    state.directive_journal.refused(grant.agent_id, &reason);
+    journal_refusal(state, grant.agent_id, &reason);
     Response::failure(request.id, ErrorCode::Refused, reason)
+}
+
+/// Journals a refusal and publishes the entry it wrote.
+fn journal_refusal(state: &ServerState, caller: AgentId, reason: &str) {
+    recorded_and_published(&state.events, || {
+        state.directive_journal.refused(caller, reason);
+    });
+}
+
+/// Runs `work`, then publishes the `action.recorded` events it caused to
+/// every client. The recorder keeps them per thread, so the publish must run
+/// on the thread that recorded; the entries an earlier request on this
+/// thread left behind are dropped first, and only the entries of `work` go
+/// out. A request forwarded to the `AgentGateway` publishes its own, so it
+/// needs no wrap.
+fn recorded_and_published<T>(events: &EventHub, work: impl FnOnce() -> T) -> T {
+    drop(take_recorded_events());
+    let outcome = work();
+    for event in take_recorded_events() {
+        events.publish(&event);
+    }
+    outcome
 }
 
 /// The name of the first field the frame carries that the server fixes
@@ -160,20 +184,22 @@ async fn answer_directive(state: &ServerState, grant: &AgentGrant, request: &Req
     let (target, text) = match parse_directive(&request.fields) {
         Ok(parsed) => parsed,
         Err(message) => {
-            state.directive_journal.refused(grant.agent_id, &message);
+            journal_refusal(state, grant.agent_id, &message);
             return Response::failure(request.id, ErrorCode::Invalid, message);
         }
     };
     let sender = grant.agent_id;
     let handler = Arc::clone(&state.send_directive);
-    let journal = Arc::clone(&state.directive_journal);
+    let events = state.events.clone();
     let sent = spawn_blocking(move || {
         // Everything downstream, the journal included, reads the actor from
         // this scope, so the record names the calling agent (FR-011).
         let _actor = ActorScope::enter(Actor::Agent(sender));
-        handler
-            .handle(sender, target, &text)
-            .map_err(|error| (error.to_string(), wire_code(&error)))
+        recorded_and_published(&events, || {
+            handler
+                .handle(sender, target, &text)
+                .map_err(|error| (error.to_string(), wire_code(&error)))
+        })
     })
     .await;
     match sent {
@@ -185,7 +211,7 @@ async fn answer_directive(state: &ServerState, grant: &AgentGrant, request: &Req
         // gateway journals what it knows.
         Err(error) => {
             let message = format!("the request task failed: {error}");
-            journal.refused(sender, &message);
+            journal_refusal(state, sender, &message);
             Response::failure(request.id, ErrorCode::Internal, message)
         }
     }
@@ -233,14 +259,14 @@ async fn answer_office_request(
     // (the same shape as `parse_directive`, PR 40 LOW).
     if let Err(message) = refuse_extra_fields(&request.kind, &request.fields) {
         let message = truncated(&message, MAX_REFUSAL_TEXT_CHARS);
-        state.directive_journal.refused(caller, &message);
+        journal_refusal(state, caller, &message);
         return Response::failure(request.id, ErrorCode::Invalid, message);
     }
     let target = match target_of(request, caller) {
         Ok(target) => target,
         Err(message) => {
             let message = truncated(&message, MAX_REFUSAL_TEXT_CHARS);
-            state.directive_journal.refused(caller, &message);
+            journal_refusal(state, caller, &message);
             return Response::failure(request.id, ErrorCode::Invalid, message);
         }
     };
@@ -254,7 +280,7 @@ async fn answer_office_request(
             "agent {caller} asked for {:?} on itself",
             truncated(&request.kind, MAX_REFUSAL_TEXT_CHARS)
         ));
-        state.directive_journal.refused(caller, &reason);
+        journal_refusal(state, caller, &reason);
         return Response::failure(request.id, ErrorCode::Refused, reason);
     }
     // The gates run on a fresh snapshot, on the blocking pool, before the
@@ -284,12 +310,12 @@ async fn answer_office_request(
         ),
         Ok(Err(error)) => {
             let message = truncated(&error.to_string(), MAX_REFUSAL_TEXT_CHARS);
-            state.directive_journal.refused(caller, &message);
+            journal_refusal(state, caller, &message);
             return Response::failure(request.id, wire_code(&error), message);
         }
         Err(error) => {
             let message = format!("the request task failed: {error}");
-            state.directive_journal.refused(caller, &message);
+            journal_refusal(state, caller, &message);
             return Response::failure(request.id, ErrorCode::Internal, message);
         }
     };
@@ -299,7 +325,7 @@ async fn answer_office_request(
     let fields = match fields {
         Ok(fields) => fields,
         Err((code, message)) => {
-            state.directive_journal.refused(caller, &message);
+            journal_refusal(state, caller, &message);
             return Response::failure(request.id, code, message);
         }
     };
@@ -314,7 +340,6 @@ async fn answer_office_request(
         fields,
     };
     let gateway = state.agents.clone();
-    let journaled = Arc::clone(&state.directive_journal);
     let actor = caller;
     let answered = spawn_blocking(move || {
         // The gateway's handlers journal and record under the actor this
@@ -334,13 +359,13 @@ async fn answer_office_request(
             if request.kind == "agent.create"
                 && let Response::Failure { message, .. } = &response
             {
-                journaled.refused(caller, message);
+                journal_refusal(state, caller, message);
             }
             response
         }
         Err(error) => {
             let message = format!("the request task failed: {error}");
-            journaled.refused(caller, &message);
+            journal_refusal(state, caller, &message);
             Response::failure(request.id, ErrorCode::Internal, message)
         }
     }
@@ -357,7 +382,7 @@ fn refuse_outside_subtree(state: &ServerState, caller: AgentId, request: &Reques
         "agent {caller} asked for {:?} outside its subtree",
         truncated(&request.kind, MAX_REFUSAL_TEXT_CHARS)
     ));
-    state.directive_journal.refused(caller, &reason);
+    journal_refusal(state, caller, &reason);
     Response::failure(request.id, ErrorCode::Refused, reason)
 }
 
@@ -385,11 +410,12 @@ async fn guard_office_request(
         Ok(Err(refusal)) => refusal,
         Err(error) => {
             let message = format!("the request task failed: {error}");
-            state.directive_journal.refused(caller, &message);
+            journal_refusal(state, caller, &message);
             return Err(Response::failure(request.id, ErrorCode::Internal, message));
         }
     };
-    state.directive_journal.refused(
+    journal_refusal(
+        state,
         caller,
         &format!(
             "{} on {target}: {}",
