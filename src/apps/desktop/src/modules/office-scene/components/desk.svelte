@@ -33,7 +33,7 @@
   type="button"
   data-agent-id={agent.id}
   aria-label={entryName}
-  class="flex w-full flex-col items-start gap-1 rounded-md border border-neutral-400 bg-white px-3 py-2 text-left text-sm text-neutral-900 hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+  class="flex w-full flex-col items-start gap-1 rounded-md border border-neutral-500 bg-white px-3 py-2 text-left text-sm text-neutral-900 hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
   onkeydown={onnavigate}
   onclick={() => onopen?.(agent.id)}
 >
