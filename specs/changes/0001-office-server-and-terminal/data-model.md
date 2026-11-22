@@ -64,7 +64,7 @@ Each agent has exactly one row, and the row is deleted together with its agent.
 | continued_from | Session, optional | Set only when the user explicitly continues a session (FR-025). |
 | additions_snapshot | The office additions used at start | Proves FR-023 and SC-009. |
 | started_at, ended_at | Time | |
-| exit_result | Exit code, or `signal`, `spawn-error: <text>`, or `interrupted` | |
+| exit_result | Exit code, or `signal`, `spawn-error: <text>`, `interrupted`, or `lost` (amended by 0013) | `lost`: the session was still open when the server stopped uncleanly; the next server start ends it. A clean stop gives `interrupted`. |
 
 The recent output lives outside the database, in one file per session (`output/<session-id>.log`). It is capped at the recent-output limit (A2) and at 16 MiB, whichever comes first, because full-screen interfaces redraw without newlines. It has owner-only access.
 
@@ -96,3 +96,5 @@ exited|failed|stopped|interrupted ──start or new task──▶ starting
 ```
 
 A new agent that has never run shows `stopped`. Only an explicit start or a new task moves an agent out of `interrupted` (FR-004).
+
+> Amended by 0013: the user's "Resume interrupted" action is such an explicit start; it continues the last session or starts a new one (`specs/changes/0013-bulk-resume/SPEC.md`). After an unclean stop, the session that was open ends as `lost`, not `interrupted`; the agent still shows `interrupted`.

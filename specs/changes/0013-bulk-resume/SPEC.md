@@ -1,9 +1,11 @@
 ---
-status: draft
+status: approved
 capability: office
 plan: specs/changes/0013-bulk-resume/PLAN.md
 supersedes:
 ---
+
+<!-- Approved for coding on 2026-11-23 through Efe's review gate (r3 at a7df68d), under the owner's spec delegation. -->
 
 # 0013: Resume all interrupted agents
 

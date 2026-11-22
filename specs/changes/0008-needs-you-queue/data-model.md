@@ -10,7 +10,7 @@ Table `notification_needs_you`, migration `0003_needs_you.sql` of the notificati
 |---|---|---|
 | `agent_id` | TEXT PRIMARY KEY | The agent's id (UUID text). One row per agent (FR-001, Key entities). |
 | `first_event_at` | INTEGER NOT NULL | Unix milliseconds. The time of the first attention event that the user has not handled. It sets the wait time (FR-003). A new event does not change it. |
-| `latest_kind` | TEXT NOT NULL | One of: `failed`, `waiting_for_input`, `bell`, `auto_hold`, `exited` (FR-002, FR-003). |
+| `latest_kind` | TEXT NOT NULL | One of: `failed`, `waiting_for_input`, `bell`, `auto_hold`, `resume_hold` (amended by 0013), `exited` (FR-002, FR-003). |
 | `latest_detail` | TEXT | The detail of the latest event. NULL when the kind has none (see below). |
 | `latest_at` | INTEGER NOT NULL | Unix milliseconds. The time of the latest event. |
 | `origin` | TEXT | The id of the 0003 notification that made the item. NULL when no notification was made (a bell that 0003 coalesces, FR-001). The wire calls it `origin_notification_id`. An index on it serves the clear on read. |
@@ -30,6 +30,7 @@ Domain types: `NeedsYouItem { agent_id, first_event_at, latest: AttentionEvent {
 | `failed` | The `detail` of the `agent.status` frame exactly as the server writes it: "the command ended with exit code 2" for a command that ended with a non-zero code, or the launcher's error text for a start failure. | "failed" and the text |
 | `exited` | NULL. An exit with code 0 has no frame detail. | "exited" |
 | `auto_hold` | The limit name that held the agent. | "put on hold by the office, limit: <name>" |
+| `resume_hold` | The reason the resume failed (amended by 0013). | "was put on hold after its resume failed: <reason>" |
 | `bell` | NULL. | "bell" |
 
 The server stores the facts. The desktop writes the words from `latest_kind` and the stored text. It does not parse the text. The detail is never a guess about the agent's intent (0001 A1, 0003 A3). When a frame has no detail, `latest_detail` is NULL and the row shows the kind alone.
@@ -40,7 +41,7 @@ The order is not stored. A pure function sorts the rows at read time.
 
 | Step | Rule |
 |---|---|
-| 1 | Group rank by `latest_kind`: `failed` is 0. `waiting_for_input`, `bell`, `auto_hold` are 1. `exited` is 2. |
+| 1 | Group rank by `latest_kind`: `failed` is 0. `waiting_for_input`, `bell`, `auto_hold`, `resume_hold` are 1. `exited` is 2. |
 | 2 | Inside a group: `first_event_at` ascending (longest wait first). |
 | 3 | Same `first_event_at`: agent name, ascending. |
 
@@ -65,7 +66,7 @@ A waiting agent that then fails moves to group 0 and keeps its `first_event_at` 
 | Dismissed | The user dismisses the item. It marks no notification read and changes no status (A4). | `needs_you.dismiss {agent_id}` (FR-004) |
 | Status | The agent changes to `starting`, `working`, or `stopped`. | `agent.status` frame (FR-005) |
 | Deleted | The agent is deleted. | `agent.delete` request, and the startup drop of items whose agent is missing (FR-005) |
-| Hold released | The hold of the agent is released and `latest_kind` is `auto_hold`. | Hold journal `released` (FR-005) |
+| Hold released | The hold of the agent is released and `latest_kind` is `auto_hold` or `resume_hold` (amended by 0013). | Hold journal `released` (FR-005) |
 
 - An office hold release does not clear an `auto_hold` item. It releases no agent hold (0007 edge case).
 - `interrupted` neither adds nor clears an item (PB-3, edge case "server restarts").
