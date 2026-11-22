@@ -46,7 +46,7 @@ Every agent object in an `agent.*` answer (the `agent.list` rows, the `agent.cre
 
 ### `agent.create` — extended
 
-Optional `role` object: `{ kind: "ceo" | "lead" | "member", parent_agent_id: string?, team_id: string? }`. `kind: "ceo"` takes no parent or team. `kind: "lead"` requires `team_id` and no CEO parent (the team is its place; its parent becomes the CEO when one exists, else none); a team that already holds its lead refuses the create with `conflict`, and a lead placement names that team's lead. `kind: "member"` requires `parent_agent_id` of a lead and takes that lead's team. Refusal `refused` names the roles allowed at the given place (FR-003). Omitted `role` = 0001 behavior (PB-1).
+Optional `role` object: `{ kind: "ceo" | "lead" | "member", parent_agent_id: string?, team_id: string? }`. `kind: "ceo"` takes no parent or team. `kind: "lead"` requires `team_id` and no CEO parent (the team is its place; its parent becomes the CEO when one exists, else none); a team that already holds its lead refuses the create with `conflict`, and a lead placement names that team's lead. `kind: "member"` requires `parent_agent_id` of a lead and takes that lead's team. Refusal `refused` names the roles allowed at the given place (FR-003). Omitted `role` = 0001 behavior (PB-1). A member's or lead's project is its team's project (A6): a `project_id` that differs from the team's is `invalid`, and the team's own `project_id` or none is accepted. A member or lead of a team with no project gets none, so a `project_id` sent for it is `invalid` too.
 
 ### `agent.stop` / `agent.delete` — extended
 
@@ -61,6 +61,8 @@ The `auth` frame of an agent adds `agent_id`; its proof is the office proof keye
 ## New requests (agent caller, via `office-harnessd agent-call`)
 
 Same envelope, but the connection proves an agent call token instead of the office token, and the server fixes the actor to that agent. Allowed types: `agent.create` (with `role`, within its own descendants and the role rules), `agent.start`, `agent.new_task`, `agent.stop` (descendants only), `directive.send`. Any other type, including `agent.delete`, `team.*`, and `hierarchy.tree`, is `refused` with the reason recorded (FR-008, FR-009). The `role` object of an agent's `agent.create` follows the user rules above: `kind: "lead"` requires `team_id` of an existing team (the user's `team.create` makes one), `kind: "member"` takes no `team_id` of its own (its lead's team applies, A6), and a field `role` does not take is `invalid`.
+
+Every entry that a request on the agent connection writes, the record of a refusal included, is sent as `action.recorded` to every user client, so an agent's action shows in an open panel without a reload. A request that the agent connection forwards to the office gateway (`agent.create`, `agent.start`, `agent.new_task`, `agent.stop`) publishes its entries once, there.
 
 ### `directive.send`
 

@@ -330,6 +330,53 @@ fn a_member_without_a_folder_takes_its_teams_project() {
     assert_eq!(seeds[0].working_folder, None);
 }
 
+/// A6: a project that differs from the team's is refused, nothing is
+/// created, and the team's own project id passes.
+#[test]
+fn a_project_other_than_the_teams_is_refused_and_the_teams_own_passes() {
+    let family = lead_with_team();
+    let project = kernel::ProjectId::generate();
+    let team = hierarchy_domain::entities::Team::stored(
+        family.team,
+        hierarchy_domain::TeamName::parse("Backend").expect("name"),
+        Some(project),
+        family.lead,
+    );
+    let tree_writes = Mutex::new(());
+    let tree = TreeExclusion::new(&tree_writes);
+    let (handler, _store, creator) =
+        handler_over(family.rows, vec![team], false, RecordingCreator::default());
+    let with_project = |project_id| AgentSeed {
+        project_id: Some(project_id),
+        ..seed("Bo")
+    };
+
+    let error = handler
+        .handle(
+            request(
+                with_project(kernel::ProjectId::generate()),
+                Role::Member,
+                Some(family.lead),
+                None,
+            ),
+            &tree,
+        )
+        .expect_err("another project than the team's");
+    assert_eq!(
+        error,
+        HierarchyApplicationError::InvalidInput(PROJECT_IS_TEAMS_MESSAGE.to_owned())
+    );
+    assert_eq!(creator.made(), Vec::<AgentId>::new());
+
+    handler
+        .handle(
+            request(with_project(project), Role::Member, Some(family.lead), None),
+            &tree,
+        )
+        .expect("the team's own project");
+    assert_eq!(locked(&creator.seeds)[0].project_id, Some(project));
+}
+
 #[test]
 fn a_second_ceo_is_refused_and_creates_nothing() {
     let ceo = AgentId::generate();
