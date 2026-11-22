@@ -116,14 +116,14 @@ Checked by running only `--version` and `--help` for the four CLIs (no session w
 | `claude` 2.1.322 | `--session-id <uuid>` | `--resume <id>` | positional `"<prompt>"` | office-harness chooses it |
 | `codex` 0.153.4 | none | `codex resume <SESSION_ID>` | positional `"<prompt>"` | attribution (R3) |
 | `gemini` 0.42.0 | `--session-id <uuid>` | `--resume <index>`, where the index comes from `--list-sessions` | `-i "<prompt>"` | office-harness chooses it |
-| `opencode` 2.2.5 | `--session <id>` ("create if it does not exist") | `--session <id>` | `--prompt "<prompt>"` | office-harness chooses it |
+| `opencode` 2.2.5 | `--session ses_<id>` ("create if it does not exist"; the id must start with `ses`) | `--session <id>` | `--prompt "<prompt>"` | office-harness chooses it |
 
 **Effects on the design:**
 - Three of the four CLIs accept an id that office-harness chooses at start. Only `codex` needs attribution, which removes most of the ambiguity risk in R3.
 - **Unverified, checked by hand in T7(g):**
   - whether `gemini --resume` accepts a UUID (otherwise the adapter maps the UUID to an index through `--list-sessions`, read-only);
-  - the id format that `opencode` accepts;
   - whether `claude` and `opencode` stay interactive with an initial prompt.
+- **Checked by hand (2026-11-23, `opencode` 2.2.5 on Linux):** a plain UUID stops `opencode` at once with `Expected a string starting with "ses"`. `--session ses_` followed by the UUID's 32 hex digits starts a new session with that id, and the same `--session` value continues it.
 - **Sandbox note:** `opencode --version` fails when its log folder is not writable, but works with temporary XDG folders. This does not affect office-harness, because office-harness runs the CLI with the user's own environment.
 - **Evidence:** the help lines are quoted in the run's evidence file (local, not committed).
 

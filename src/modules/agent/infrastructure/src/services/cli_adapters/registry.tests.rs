@@ -45,12 +45,30 @@ fn each_adapter_builds_its_documented_new_session_command_line() {
     );
     assert_eq!(
         new_session_arguments("opencode", Some("say hi")),
-        ["--flag", "--session", "id-1"]
+        ["--flag", "--session", "ses_id1"]
     );
     assert_eq!(
         new_session_arguments("some-tool", Some("say hi")),
         ["--flag"]
     );
+}
+
+#[test]
+fn opencode_starts_and_records_a_session_id_in_its_own_ses_shape() {
+    // The session id shape that opencode 2.2.5 accepted in a hands-on run;
+    // a plain UUID stops it with "Expected a string starting with \"ses\"".
+    let plan = SessionPlan {
+        fixed_arguments: &[],
+        flags: &[],
+        startup_prompt: None,
+        proposed_cli_session_id: "c54938eb-c04e-4ff7-bd9c-06f1c9375f91",
+    };
+
+    let command = registry().for_program("opencode").new_session(&plan);
+
+    let accepted_id = "ses_c54938ebc04e4ff7bd9c06f1c9375f91";
+    assert_eq!(command.arguments, ["--session", accepted_id]);
+    assert_eq!(command.cli_session_id.as_deref(), Some(accepted_id));
 }
 
 #[test]
