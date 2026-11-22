@@ -29,7 +29,17 @@
     unreadCount,
     type NotificationSnapshot,
   } from "../../notification";
-  import { pressedAppShortcut } from "../../../core/shortcuts";
+  import {
+    INITIAL_NEEDS_YOU,
+    NeedsYouSection,
+    rowOf,
+    type NeedsYouSnapshot,
+  } from "../../needs-you";
+  import {
+    isJumpUnbound,
+    pressedAppShortcut,
+    sharedFocusShortcut,
+  } from "../../../core/shortcuts";
   import type { PanelStore } from "../state/panel-store.svelte";
   import AgentRow from "../components/agent-row.svelte";
   import AgentSwitcherDialog from "../components/agent-switcher-dialog.svelte";
@@ -79,13 +89,26 @@
    * does not show on the details of another agent. */
   let agentHoldFailure = $state<{ agentId: string; text: string } | null>(null);
 
-  // One live region speaks for both sources; the newest change replaces the
+  // Needs you is a plain value too, so it subscribes the same way. The tick
+  // moves its clock, and the effect's cleanup stops it with the view.
+  let needsYouSnapshot = $state<NeedsYouSnapshot>(INITIAL_NEEDS_YOU);
+  $effect(() => store.needsYou.subscribe((next) => (needsYouSnapshot = next)));
+  $effect(() => store.needsYou.startTicking());
+  // The shared focus shortcut loads once for the app; the collision line
+  // shows when it holds the jump key (0008 D6).
+  let isJumpOff = $state(false);
+  $effect(() => {
+    void sharedFocusShortcut(client).then(() => (isJumpOff = isJumpUnbound()));
+  });
+
+  // One live region speaks for the sources; the newest change replaces the
   // text. Each source publishes a new snapshot for reasons that are not a new
   // announcement (a read, a pending flag), and its old announcement stays in
   // it, so a source speaks only when its own announcement changed.
   let liveAnnouncement = $state<string | null>(null);
   let lastHoldAnnouncement: string | null = null;
   let lastNotificationAnnouncement: string | null = null;
+  let lastNeedsYouAnnouncement: string | null = null;
   $effect(() => {
     const next = holdSnapshot.announcement;
     if (next === lastHoldAnnouncement) return;
@@ -98,6 +121,12 @@
     lastNotificationAnnouncement = next;
     if (next !== null) liveAnnouncement = `Notification: ${next}`;
   });
+  $effect(() => {
+    const next = needsYouSnapshot.announcement;
+    if (next === lastNeedsYouAnnouncement) return;
+    lastNeedsYouAnnouncement = next;
+    if (next !== null) liveAnnouncement = next;
+  });
 
   const choice = $derived(
     effectiveChoice(office.projects, store.projectChoice),
@@ -106,6 +135,15 @@
   const emptyProject = $derived(isEmptyProject(office.projects, shown, choice));
   const notifications = $derived(notificationSnapshot);
   const unread = $derived(unreadCount(notifications.rows));
+
+  const needsYouRows = $derived(
+    needsYouSnapshot.items.flatMap((item) => {
+      const agent = office.agents.find((known) => known.id === item.agent_id);
+      if (agent === undefined) return [];
+      const project = projectNameOf(agent, office.projects);
+      return [rowOf(item, agent.name, project, needsYouSnapshot.now)];
+    }),
+  );
 
   const AGENTS_HEADING_ID = "panel-agents-heading";
   const EMPTY_HEADING_ID = "panel-empty-heading";
@@ -167,6 +205,17 @@
     }
   }
 
+  /**
+   * The jump opens the top item's agent through the same path as the
+   * switcher, so a project that the choice hides does not matter (0008 D5).
+   */
+  function jumpToTopAgent(): void {
+    const agentId = store.needsYou.takeTop((id) =>
+      office.agents.some((agent) => agent.id === id),
+    );
+    if (agentId !== null) openAgent(agentId);
+  }
+
   async function toggleOfficeHold(): Promise<void> {
     const failure =
       holds.office === null
@@ -205,6 +254,11 @@
     }
     if (pressed.kind === "switcher") {
       isSwitchingAgent = true;
+      return;
+    }
+    if (pressed.kind === "jump") {
+      event.preventDefault();
+      jumpToTopAgent();
       return;
     }
     if (pressed.position === null) return;
@@ -336,35 +390,43 @@
       </section>
     {:else}
       <div class="grid gap-6 md:grid-cols-[20rem_1fr]">
-        <section
-          aria-labelledby={AGENTS_HEADING_ID}
-          class="flex flex-col gap-2"
-        >
-          {#if side}
-            {@render side()}
-          {/if}
-          <h2
-            id={AGENTS_HEADING_ID}
-            tabindex="-1"
-            class="text-lg font-semibold text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+        <div class="flex flex-col gap-6">
+          <NeedsYouSection
+            rows={needsYouRows}
+            count={needsYouSnapshot.items.length}
+            isJumpUnbound={isJumpOff}
+            ondismiss={store.needsYou.dismiss}
+          />
+          <section
+            aria-labelledby={AGENTS_HEADING_ID}
+            class="flex flex-col gap-2"
           >
-            Agents
-          </h2>
-          <ul class="flex flex-col gap-2">
-            {#each shown as agent (agent.id)}
-              {@const isStopping = office.stoppingAgentIds.has(agent.id)}
-              <AgentRow
-                {agent}
-                projectName={projectNameOf(agent, office.projects)}
-                hierarchy={agentHierarchy(treeSnapshot.tree, agent.id)}
-                {isStopping}
-                isSelected={agent.id === office.selectedAgentId}
-                isOnHold={holdOfAgent(holds, agent.id) !== null}
-                onopen={openAgent}
-              />
-            {/each}
-          </ul>
-        </section>
+            {#if side}
+              {@render side()}
+            {/if}
+            <h2
+              id={AGENTS_HEADING_ID}
+              tabindex="-1"
+              class="text-lg font-semibold text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+            >
+              Agents
+            </h2>
+            <ul class="flex flex-col gap-2">
+              {#each shown as agent (agent.id)}
+                {@const isStopping = office.stoppingAgentIds.has(agent.id)}
+                <AgentRow
+                  {agent}
+                  projectName={projectNameOf(agent, office.projects)}
+                  hierarchy={agentHierarchy(treeSnapshot.tree, agent.id)}
+                  {isStopping}
+                  isSelected={agent.id === office.selectedAgentId}
+                  isOnHold={holdOfAgent(holds, agent.id) !== null}
+                  onopen={openAgent}
+                />
+              {/each}
+            </ul>
+          </section>
+        </div>
         <div bind:this={detailArea}>
           {#if office.selectedAgentId !== null && office.details !== null}
             {@const selected = office.agents.find(

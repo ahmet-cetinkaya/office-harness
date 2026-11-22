@@ -61,12 +61,14 @@ function observe(
   os: OsNotificationService,
   selected: () => string | null = () => null,
   windowFocused: () => boolean = () => false,
+  onReadOnArrival: (notificationId: string) => void = () => {},
 ) {
   const controller = createNotificationController(
     client,
     os,
     selected,
     windowFocused,
+    onReadOnArrival,
   );
   let last = controller.snapshot;
   controller.subscribe((next) => (last = next));
@@ -106,6 +108,33 @@ describe("notification controller", () => {
     expect(shown).toEqual([
       { agentId: "agent-ada", title: "Ada", body: "Ada exited" },
     ]);
+  });
+
+  test("a notification read on arrival is reported, and one that is not is not (0008 D8)", async () => {
+    const { client, push } = fakeClient(() => []);
+    const { os } = fakeOs();
+    const arrived: string[] = [];
+    const { controller } = observe(
+      client,
+      os,
+      () => "agent-ada",
+      () => true,
+      (notificationId) => arrived.push(notificationId),
+    );
+    await controller.load();
+
+    push({ type: "notification.created", notification: row({ id: "on" }) });
+    push({
+      type: "notification.created",
+      notification: row({ id: "off", agent_id: "agent-bo" }),
+    });
+    push({
+      type: "notification.created",
+      notification: row({ id: "hold", event: "auto_hold" }),
+    });
+    await settle();
+
+    expect(arrived).toEqual(["on"]);
   });
 
   test("the announcement clears on the next load, so each one is spoken once", async () => {
