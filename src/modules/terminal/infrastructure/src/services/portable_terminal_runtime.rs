@@ -15,7 +15,7 @@ use terminal_application::common::interfaces::{
 use terminal_application::common::models::{
     Attachment, RunId, SpawnTerminalRequest, SubscriptionId,
 };
-use terminal_domain::value_objects::{OutputKey, OutputLimits, TerminalSize};
+use terminal_domain::value_objects::{OutputKey, OutputLimits, ScreenView, TerminalSize};
 
 use crate::services::output_store::OutputStore;
 use crate::services::pty_host::spawn_in_pty;
@@ -174,5 +174,10 @@ impl TerminalRuntime for PortableTerminalRuntime {
 
     fn current_run(&self, agent_id: AgentId) -> Option<RunId> {
         self.sessions().get(&agent_id).map(|session| session.run())
+    }
+
+    fn screen(&self, agent_id: AgentId) -> Option<ScreenView> {
+        self.running_session(agent_id)
+            .map(|session| session.screen())
     }
 }
