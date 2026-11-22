@@ -53,6 +53,16 @@ impl InputDraft {
         for character in String::from_utf8_lossy(bytes).chars() {
             self.read(character);
         }
+        self.settle_lone_escape();
+    }
+
+    /// A terminal sends an Alt chord in one input, so an escape that ends an
+    /// input is a lone Escape key: the line stays held until the next Enter.
+    fn settle_lone_escape(&mut self) {
+        if self.escape == Escape::Started {
+            self.escape = Escape::None;
+            self.keep_unsent();
+        }
     }
 
     fn read(&mut self, character: char) {

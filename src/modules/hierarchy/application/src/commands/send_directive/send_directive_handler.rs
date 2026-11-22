@@ -22,6 +22,10 @@ const UNSUBMITTED: &str = "typed but not submitted: the text did not show at the
 /// The reason a directive that waited too long is withdrawn (0012/FR-005).
 const EXPIRED: &str = "not typed within 10 minutes";
 
+/// The refusal of a directive sent after a server stop withdrew the waiting
+/// ones (0012/FR-005).
+const STOPPING: &str = "the office server is stopping";
+
 /// What became of an accepted directive (0012/FR-004).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DirectiveOutcome {
@@ -105,7 +109,8 @@ impl SendDirectiveHandler {
     /// `Storage` when the tree cannot be read; `Invalid` naming the rule when
     /// the target is not a descendant, the text breaks the directive rules,
     /// or the target is not running; `Refused` with the reason when the
-    /// target's queue is full, or a hold or a rate limit stops it;
+    /// target's queue is full, a server stop has begun, or a hold or a rate
+    /// limit stops it;
     /// `Conflict` carrying the writer's own message when the text cannot be
     /// written.
     pub fn handle(
@@ -184,10 +189,10 @@ impl SendDirectiveHandler {
         }
     }
 
-    /// Withdraws every waiting directive with `reason`, as a normal server
-    /// stop does (0012/FR-005).
+    /// Withdraws every waiting directive with `reason` and refuses every
+    /// later one, as a normal server stop does (0012/FR-005).
     pub fn withdraw_all(&self, reason: &str) {
-        for directive in self.queue.drain_all() {
+        for directive in self.queue.close() {
             self.withdrawn(&directive, reason);
         }
     }
@@ -213,12 +218,19 @@ impl SendDirectiveHandler {
             }
             self.queue.release(target);
         }
-        let position = self.queue.push(WaitingDirective {
+        let Some(position) = self.queue.push(WaitingDirective {
             sender,
             target,
             text: text.to_owned(),
             accepted_at: self.clock.steady_now(),
-        });
+        }) else {
+            return Err(self.journaled(
+                sender,
+                target,
+                text,
+                HierarchyApplicationError::Refused(STOPPING.to_owned()),
+            ));
+        };
         self.journal.record(sender, target, text, None);
         Ok(DirectiveOutcome::Waiting { position })
     }
@@ -290,12 +302,19 @@ impl SendDirectiveHandler {
         match self.recheck(head) {
             Recheck::Unreadable => self.queue.release(target),
             Recheck::Refused(reason) => {
-                self.queue.take_head(target);
+                let taken = self.queue.take_head(head);
                 self.queue.release(target);
-                self.withdrawn(head, &reason);
+                // Not taken: a server stop withdrew it and recorded why.
+                if taken {
+                    self.withdrawn(head, &reason);
+                }
             }
             Recheck::Allowed => {
-                self.queue.take_head(target);
+                // Not taken: a server stop withdrew it, so it stays untyped.
+                if !self.queue.take_head(head) {
+                    self.queue.release(target);
+                    return;
+                }
                 match self.type_claimed(target, &head.text) {
                     Ok(Delivery::Submitted) => {}
                     Ok(Delivery::Unsubmitted) => {

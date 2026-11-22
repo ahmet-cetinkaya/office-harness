@@ -52,33 +52,47 @@ impl TargetQueue {
     }
 }
 
+/// The queue of every target, and whether a server stop closed them all.
+#[derive(Default)]
+struct Queues {
+    by_target: HashMap<AgentId, TargetQueue>,
+    /// Set by `close`: no directive enters after it, so none waits without
+    /// an outcome (0012/FR-005).
+    closed: bool,
+}
+
 /// The waiting directives of every target, oldest first per target. It lives
 /// in memory only (spec A4).
 #[derive(Default)]
 pub struct DirectiveQueue {
-    targets: Mutex<HashMap<AgentId, TargetQueue>>,
+    queues: Mutex<Queues>,
     work: Condvar,
 }
 
 impl DirectiveQueue {
-    fn locked(&self) -> MutexGuard<'_, HashMap<AgentId, TargetQueue>> {
-        self.targets.lock().unwrap_or_else(PoisonError::into_inner)
+    fn locked(&self) -> MutexGuard<'_, Queues> {
+        self.queues.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     #[must_use]
     pub fn waiting_count(&self, target: AgentId) -> usize {
         self.locked()
+            .by_target
             .get(&target)
             .map_or(0, |queue| queue.waiting.len())
     }
 
     /// Claims the delivery to `target` for a directive that has not entered
     /// the queue: only when nothing waits or is being delivered there and
-    /// the settle gap has passed, so a new directive never overtakes.
+    /// the settle gap has passed, so a new directive never overtakes; never
+    /// once the queue is closed.
     #[must_use]
     pub fn claim_empty(&self, target: AgentId, now: Timestamp) -> bool {
-        let mut targets = self.locked();
-        let queue = targets.entry(target).or_default();
+        let mut queues = self.locked();
+        if queues.closed {
+            return false;
+        }
+        let queue = queues.by_target.entry(target).or_default();
         let free = queue.waiting.is_empty() && !queue.delivering && queue.settled(now);
         if free {
             queue.delivering = true;
@@ -87,22 +101,25 @@ impl DirectiveQueue {
     }
 
     /// Adds a directive at the end of its target's queue and returns its
-    /// place, counted from 1.
-    pub fn push(&self, directive: WaitingDirective) -> usize {
-        let mut targets = self.locked();
-        let queue = targets.entry(directive.target).or_default();
+    /// place, counted from 1; `None` once the queue is closed.
+    pub fn push(&self, directive: WaitingDirective) -> Option<usize> {
+        let mut queues = self.locked();
+        if queues.closed {
+            return None;
+        }
+        let queue = queues.by_target.entry(directive.target).or_default();
         queue.waiting.push_back(directive);
         let position = queue.waiting.len();
-        drop(targets);
+        drop(queues);
         self.work.notify_all();
-        position
+        Some(position)
     }
 
     /// Takes the expired heads out and, when the target is free and settled,
-    /// claims the delivery of the next head.
+    /// claims the delivery of the next head. A closed queue holds no head.
     pub fn claim_head(&self, target: AgentId, now: Timestamp) -> HeadClaim {
-        let mut targets = self.locked();
-        let Some(queue) = targets.get_mut(&target) else {
+        let mut queues = self.locked();
+        let Some(queue) = queues.by_target.get_mut(&target) else {
             return HeadClaim::default();
         };
         let mut claim = HeadClaim::default();
@@ -120,17 +137,21 @@ impl DirectiveQueue {
         claim
     }
 
-    /// Takes the claimed head out of the queue; the claim stays until
-    /// `finish` or `release`.
-    pub fn take_head(&self, target: AgentId) -> Option<WaitingDirective> {
+    /// Takes the claimed head out of the queue and says whether it was
+    /// still there: a server stop may have withdrawn it since the claim. The
+    /// claim stays until `finish` or `release`.
+    #[must_use]
+    pub fn take_head(&self, claimed: &WaitingDirective) -> bool {
         self.locked()
-            .get_mut(&target)
-            .and_then(|queue| queue.waiting.pop_front())
+            .by_target
+            .get_mut(&claimed.target)
+            .and_then(|queue| queue.waiting.pop_front_if(|head| head == claimed))
+            .is_some()
     }
 
     /// Ends a claim after a delivery: the next one waits the settle gap.
     pub fn finish(&self, target: AgentId, now: Timestamp) {
-        if let Some(queue) = self.locked().get_mut(&target) {
+        if let Some(queue) = self.locked().by_target.get_mut(&target) {
             queue.delivering = false;
             queue.last_typed = Some(now);
         }
@@ -138,7 +159,7 @@ impl DirectiveQueue {
 
     /// Ends a claim that typed nothing.
     pub fn release(&self, target: AgentId) {
-        if let Some(queue) = self.locked().get_mut(&target) {
+        if let Some(queue) = self.locked().by_target.get_mut(&target) {
             queue.delivering = false;
         }
     }
@@ -146,13 +167,18 @@ impl DirectiveQueue {
     /// Takes every waiting directive of one target out of the queue.
     pub fn drain(&self, target: AgentId) -> Vec<WaitingDirective> {
         self.locked()
+            .by_target
             .get_mut(&target)
             .map_or_else(Vec::new, |queue| queue.waiting.drain(..).collect())
     }
 
-    /// Takes every waiting directive of every target out of the queue.
-    pub fn drain_all(&self) -> Vec<WaitingDirective> {
-        self.locked()
+    /// Closes the queue for a server stop and takes every waiting directive
+    /// of every target out: from now on nothing enters or is claimed.
+    pub fn close(&self) -> Vec<WaitingDirective> {
+        let mut queues = self.locked();
+        queues.closed = true;
+        queues
+            .by_target
             .values_mut()
             .flat_map(|queue| queue.waiting.drain(..))
             .collect()
@@ -162,6 +188,7 @@ impl DirectiveQueue {
     #[must_use]
     pub fn targets_with_waiting(&self) -> Vec<AgentId> {
         self.locked()
+            .by_target
             .iter()
             .filter(|(_, queue)| !queue.waiting.is_empty())
             .map(|(target, _)| *target)
@@ -171,14 +198,20 @@ impl DirectiveQueue {
     /// Blocks until a directive waits or `timeout` passes, and says whether
     /// one waits.
     pub fn wait_for_work(&self, timeout: Duration) -> bool {
-        let targets = self.locked();
-        let (targets, _) = self
+        let queues = self.locked();
+        let (queues, _) = self
             .work
-            .wait_timeout_while(targets, timeout, |targets| {
-                targets.values().all(|queue| queue.waiting.is_empty())
+            .wait_timeout_while(queues, timeout, |queues| {
+                queues
+                    .by_target
+                    .values()
+                    .all(|queue| queue.waiting.is_empty())
             })
             .unwrap_or_else(PoisonError::into_inner);
-        targets.values().any(|queue| !queue.waiting.is_empty())
+        queues
+            .by_target
+            .values()
+            .any(|queue| !queue.waiting.is_empty())
     }
 }
 
