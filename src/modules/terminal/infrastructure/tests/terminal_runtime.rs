@@ -8,7 +8,7 @@
 
 mod support;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use kernel::AgentId;
 use support::{
@@ -22,6 +22,9 @@ use terminal_domain::events::TerminalEvent;
 use terminal_infrastructure::services::OutputStore;
 
 const GRACE: Duration = Duration::from_millis(300);
+/// The runtime reports the last line at most once per this interval.
+const LINE_REPORT_INTERVAL: Duration = Duration::from_secs(1);
+const REPORT_INTERVAL_MARGIN: Duration = Duration::from_millis(100);
 
 #[cfg(unix)]
 #[test]
@@ -357,21 +360,32 @@ fn the_last_line_is_reported_when_it_changes_and_throttled_after() {
     let folder = TempDir::new().expect("temp folder");
     let (runtime, sink) = runtime_in(folder.path(), limits(1000));
     let agent = AgentId::generate();
+    let started = Instant::now();
     spawn_fixture(&runtime, agent, &["progress"]);
-    // The monitor reports the screen as it stands on its first tick, then at
-    // most once per second. The nine redraws all land inside that first
-    // window, so the newest text arrives in the second report at the latest.
+    // A slow runner can start the child late, so the redraws may straddle a
+    // report window. The test waits for the final text instead of assuming
+    // which window it lands in.
     wait_until("the last redraw to be reported", || {
         sink.lines().last() == Some(&"PROGRESS:9%".to_owned())
     });
+    let reports_at_final_line = sink.lines().len();
     // The screen no longer changes, so a whole report interval later there
     // is still no further report.
-    std::thread::sleep(Duration::from_millis(1100));
+    std::thread::sleep(LINE_REPORT_INTERVAL + REPORT_INTERVAL_MARGIN);
     let reports = sink.lines();
-    assert_eq!(reports.last(), Some(&"PROGRESS:9%".to_owned()));
+    assert_eq!(
+        reports.len(),
+        reports_at_final_line,
+        "an unchanged screen is not reported again: {reports:?}"
+    );
+    // The first report is immediate and each later one waits a full interval,
+    // so the count never outgrows the intervals that have elapsed.
+    let intervals_elapsed =
+        usize::try_from(started.elapsed().as_millis() / LINE_REPORT_INTERVAL.as_millis())
+            .expect("a small count");
     assert!(
-        reports.len() <= 2,
-        "the throttle holds the unchanged screen back: {reports:?}"
+        reports.len() <= intervals_elapsed + 1,
+        "the throttle holds back more than one report per interval: {reports:?}"
     );
     runtime.stop(agent, GRACE).expect("stop");
 }
