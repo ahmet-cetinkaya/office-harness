@@ -204,9 +204,13 @@ fn direct_place(place: &PlaceFields) -> Result<DirectPlace, TemplateCreateError>
     })
 }
 
-/// The agent as `agent.create` answers it, with the place it was given.
+/// The agent as `agent.create` answers it, with the place it was given. An
+/// agent whose read-back failed is named by its id and its planned name.
 fn created_agent_json(created: &CreatedAgent) -> Value {
-    let mut agent = agent_json(&created.agent);
+    let mut agent = created.agent.as_ref().map_or_else(
+        || json!({"id": created.id.to_string(), "name": created.name}),
+        agent_json,
+    );
     agent["role"] = created
         .role
         .map_or(Value::Null, |role| Value::from(role.as_str()));
@@ -233,7 +237,7 @@ fn team_creation_json(created: &TeamCreation) -> Value {
 /// The agent first, so a client knows it before the tree names it; the tree
 /// changes only when the agent got a place.
 fn created_agent_events(created: &CreatedAgent) -> Vec<Event> {
-    let mut events = vec![agent_changed_event(&created.agent)];
+    let mut events = changed_events(std::slice::from_ref(created));
     if created.role.is_some() {
         events.push(tree_event(CAUSE_AGENT_PLACED));
     }
@@ -241,11 +245,17 @@ fn created_agent_events(created: &CreatedAgent) -> Vec<Event> {
 }
 
 fn team_events(created: &TeamCreation) -> Vec<Event> {
-    let mut events: Vec<Event> = created
-        .agents
-        .iter()
-        .map(|created| agent_changed_event(&created.agent))
-        .collect();
+    let mut events = changed_events(&created.agents);
     events.push(tree_event(CAUSE_TEAM_CREATED));
     events
+}
+
+/// One `agent.changed` for each agent that was read back; the others reach a
+/// client through the tree event and its next agent list.
+fn changed_events(agents: &[CreatedAgent]) -> Vec<Event> {
+    agents
+        .iter()
+        .filter_map(|created| created.agent.as_ref())
+        .map(agent_changed_event)
+        .collect()
 }

@@ -34,6 +34,13 @@ describe("additions text", () => {
     });
   });
 
+  test("spaces around a bare NAME are not part of the name", () => {
+    expect(parseEnvironment("  API_KEY \t")).toEqual({
+      ok: true,
+      entries: [{ name: "API_KEY", value: null }],
+    });
+  });
+
   test("a line without a name is named in the message", () => {
     const parsed = parseEnvironment("=value");
     expect(parsed.ok).toBe(false);

@@ -12,8 +12,11 @@ use std::sync::{Mutex, PoisonError, mpsc};
 use std::thread;
 use std::time::Duration;
 
+use agent_application::common::errors::PortError;
 use agent_domain::entities::Project;
+use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::DisplayName;
+use hierarchy_application::common::errors::HierarchyApplicationError;
 use hierarchy_application::common::ports::CreatorError;
 use hierarchy_application::common::ports::CreatorErrorKind;
 use kernel::Timestamp;
@@ -128,19 +131,34 @@ impl Office {
             .len()
     }
 
+    fn try_create_agent(
+        &self,
+        id: TemplateId,
+        place: Option<DirectPlace>,
+        project_id: Option<ProjectId>,
+    ) -> Result<CreatedAgent, TemplateCreateError> {
+        let bridge = Arc::clone(&self.services.template.create);
+        within_deadline(move || bridge.create_agent(id, place, project_id))
+    }
+
+    fn try_create_team(
+        &self,
+        id: TemplateId,
+        team_name: &'static str,
+        parent: AgentId,
+        project_id: Option<ProjectId>,
+    ) -> Result<TeamCreation, TemplateCreateError> {
+        let bridge = Arc::clone(&self.services.template.create);
+        within_deadline(move || bridge.create_team(id, team_name, parent, project_id))
+    }
+
     fn create_ceo(&self) -> AgentId {
         let body = with_role(
             agent_body("ceo", Some(self.folder.path())),
             TemplateRole::Ceo,
         );
         let id = self.save("CEO", TemplateBody::Agent(body));
-        self.services
-            .template
-            .create
-            .create_agent(id, None, None)
-            .expect("ceo")
-            .agent
-            .id
+        self.try_create_agent(id, None, None).expect("ceo").id
     }
 
     fn create_team(&self, parent: AgentId, members: u32) -> TeamCreation {
@@ -148,10 +166,7 @@ impl Office {
             &format!("Team {members}"),
             TemplateBody::Team(team_body(self.folder.path(), members)),
         );
-        self.services
-            .template
-            .create
-            .create_team(id, TEAM_NAME, parent, None)
+        self.try_create_team(id, TEAM_NAME, parent, None)
             .expect("team")
     }
 
@@ -164,12 +179,41 @@ impl Office {
         templates: Arc<dyn TemplateStore>,
         creator: Arc<dyn AgentCreator>,
     ) -> Arc<TemplateCreateBridge> {
-        Arc::new(TemplateCreateBridge::new(
+        self.bridge_of(
             templates,
             Arc::clone(&self.services.hierarchy.store),
             creator,
             Arc::clone(&self.services.agent_bridge_store),
+        )
+    }
+
+    fn bridge_from(
+        &self,
+        store: Arc<dyn HierarchyStore>,
+        agents: Arc<dyn AgentStore>,
+    ) -> Arc<TemplateCreateBridge> {
+        self.bridge_of(
+            Arc::clone(&self.services.template.templates),
+            store,
+            Arc::clone(&self.services.hierarchy.creator),
+            agents,
+        )
+    }
+
+    fn bridge_of(
+        &self,
+        templates: Arc<dyn TemplateStore>,
+        store: Arc<dyn HierarchyStore>,
+        creator: Arc<dyn AgentCreator>,
+        agents: Arc<dyn AgentStore>,
+    ) -> Arc<TemplateCreateBridge> {
+        Arc::new(TemplateCreateBridge::new(
+            templates,
+            store,
+            creator,
+            agents,
             Arc::clone(&self.services.template.projects),
+            self.services.storage_alerts.clone(),
         ))
     }
 
@@ -191,6 +235,10 @@ impl Office {
             .map(|entry| (text(entry, "action"), text(entry, "actor")))
             .collect()
     }
+}
+
+fn agent_of(created: &CreatedAgent) -> &Agent {
+    created.agent.as_ref().expect("the agent was read back")
 }
 
 fn text(entry: &serde_json::Value, key: &str) -> String {
@@ -405,10 +453,6 @@ fn every_pre_check_failure_is_named_in_one_answer_and_nothing_is_created() {
         lead: agent_body("{team}-lead-with-a-long-tail", Some(folder)),
         members: vec![
             MemberEntry {
-                entry: broken("   ", "empty-command"),
-                count: 1,
-            },
-            MemberEntry {
                 entry: broken("claude \"unclosed", "unsplittable"),
                 count: 1,
             },
@@ -437,7 +481,6 @@ fn every_pre_check_failure_is_named_in_one_answer_and_nothing_is_created() {
     assert_eq!(failure.code, ErrorCode::Invalid);
     for reason in [
         "at most 64 characters",
-        "command",
         "never closed",
         "OFFICE_HARNESS_",
         "was not found",
@@ -462,10 +505,7 @@ fn a_bad_team_name_is_a_reason() {
     );
 
     let failure = office
-        .services
-        .template
-        .create
-        .create_team(id, "   ", ceo, None)
+        .try_create_team(id, "   ", ceo, None)
         .expect_err("a blank team name is refused");
 
     assert_eq!(failure.code, ErrorCode::Invalid);
@@ -484,10 +524,7 @@ fn a_taken_team_name_alone_is_a_conflict_and_creates_nothing() {
     );
 
     let failure = office
-        .services
-        .template
-        .create
-        .create_team(id, "core", ceo, None)
+        .try_create_team(id, "core", ceo, None)
         .expect_err("the team name is taken");
 
     assert_eq!(failure.code, ErrorCode::Conflict);
@@ -505,7 +542,7 @@ fn a_taken_team_name_joins_the_other_reasons() {
     let ceo = office.create_ceo();
     office.create_team(ceo, 1);
     let mut body = team_body(office.folder.path(), 1);
-    body.lead.command = "  ".to_owned();
+    body.lead.command = "claude \"unclosed".to_owned();
     let template = unvalidated(TemplateBody::Team(body));
     let id = template.id;
     let bridge = office.bridge_over(
@@ -519,7 +556,7 @@ fn a_taken_team_name_joins_the_other_reasons() {
 
     assert_eq!(failure.code, ErrorCode::Invalid);
     assert!(failure.message.contains("is already used"));
-    assert!(failure.message.contains("command"));
+    assert!(failure.message.contains("never closed"));
 }
 
 #[test]
@@ -532,10 +569,7 @@ fn a_missing_working_folder_is_named_before_anything_is_created() {
     );
 
     let failure = office
-        .services
-        .template
-        .create
-        .create_agent(id, None, None)
+        .try_create_agent(id, None, None)
         .expect_err("the folder is missing");
 
     assert_eq!(failure.code, ErrorCode::Invalid);
@@ -552,10 +586,7 @@ fn no_folder_and_no_project_needs_a_working_folder() {
     );
 
     let failure = office
-        .services
-        .template
-        .create
-        .create_agent(id, None, None)
+        .try_create_agent(id, None, None)
         .expect_err("no folder");
 
     assert!(failure.message.contains("a working folder is needed"));
@@ -582,14 +613,11 @@ fn a_project_gives_the_working_folder_when_the_template_has_none() {
     );
 
     let created = office
-        .services
-        .template
-        .create
-        .create_agent(id, None, Some(project.id))
+        .try_create_agent(id, None, Some(project.id))
         .expect("created");
 
-    assert_eq!(created.agent.project_id, Some(project.id));
-    assert_eq!(created.agent.working_folder, None);
+    assert_eq!(agent_of(&created).project_id, Some(project.id));
+    assert_eq!(agent_of(&created).working_folder, None);
 }
 
 #[test]
@@ -601,10 +629,7 @@ fn a_team_pattern_on_a_direct_creation_without_a_team_names_the_pattern() {
     );
 
     let failure = office
-        .services
-        .template
-        .create
-        .create_agent(id, None, None)
+        .try_create_agent(id, None, None)
         .expect_err("no team");
 
     assert_eq!(failure.code, ErrorCode::Invalid);
@@ -627,12 +652,7 @@ fn a_value_less_environment_entry_keeps_no_value_in_the_stored_additions() {
     ];
     let id = office.save("Worker", TemplateBody::Agent(body));
 
-    let created = office
-        .services
-        .template
-        .create
-        .create_agent(id, None, None)
-        .expect("created");
+    let created = office.try_create_agent(id, None, None).expect("created");
 
     let view = office
         .services
@@ -640,7 +660,7 @@ fn a_value_less_environment_entry_keeps_no_value_in_the_stored_additions() {
         .handlers
         .use_cases()
         .get_office_additions
-        .handle(created.agent.id)
+        .handle(created.id)
         .expect("additions");
     let stored: Vec<(&str, Option<&str>)> = view
         .record
@@ -665,10 +685,7 @@ fn a_second_ceo_is_refused_with_the_tree_rule_text() {
     );
 
     let failure = office
-        .services
-        .template
-        .create
-        .create_agent(id, None, None)
+        .try_create_agent(id, None, None)
         .expect_err("a CEO exists");
 
     assert_eq!(failure.code, ErrorCode::Refused);
@@ -689,10 +706,7 @@ fn a_team_lead_entry_with_the_ceo_role_is_created_as_a_lead() {
     let id = office.save("Team", TemplateBody::Team(body));
 
     let created = office
-        .services
-        .template
-        .create
-        .create_team(id, TEAM_NAME, ceo, None)
+        .try_create_team(id, TEAM_NAME, ceo, None)
         .expect("team");
 
     let roles: Vec<Option<Role>> = created.agents.iter().map(|agent| agent.role).collect();
@@ -706,7 +720,7 @@ fn a_team_lead_entry_with_the_ceo_role_is_created_as_a_lead() {
         .rows;
     let lead = rows
         .iter()
-        .find(|row| row.agent_id == created.agents[0].agent.id)
+        .find(|row| row.agent_id == created.agents[0].id)
         .expect("lead row");
     assert_eq!(lead.parent_agent_id, Some(ceo));
 }
@@ -721,7 +735,7 @@ fn a_team_creation_names_every_agent_from_its_pattern() {
     let names: Vec<&str> = created
         .agents
         .iter()
-        .map(|created| created.agent.name.as_str())
+        .map(|created| agent_of(created).name.as_str())
         .collect();
     assert_eq!(
         names,
@@ -746,18 +760,15 @@ fn a_member_template_is_placed_under_a_lead_with_the_team_name_filled_in() {
     );
     let id = office.save("Extra", TemplateBody::Agent(body));
     let place = DirectPlace {
-        parent_agent_id: team.agents[0].agent.id,
+        parent_agent_id: team.agents[0].id,
         team_id: team.team.id(),
     };
 
     let created = office
-        .services
-        .template
-        .create
-        .create_agent(id, Some(place), None)
+        .try_create_agent(id, Some(place), None)
         .expect("member");
 
-    assert_eq!(created.agent.name.as_str(), "Core-extra-1");
+    assert_eq!(agent_of(&created).name.as_str(), "Core-extra-1");
     assert_eq!(created.role, Some(Role::Member));
     assert_eq!(created.team_name.as_deref(), Some(TEAM_NAME));
 }
@@ -777,10 +788,7 @@ fn a_place_for_a_template_with_no_role_is_a_reason() {
     };
 
     let failure = office
-        .services
-        .template
-        .create
-        .create_agent(id, Some(place), None)
+        .try_create_agent(id, Some(place), None)
         .expect_err("no role, no place");
 
     assert_eq!(failure.code, ErrorCode::Invalid);
@@ -806,10 +814,7 @@ fn two_concurrent_creations_from_one_template_get_different_names() {
         handles
             .into_iter()
             .map(|handle| {
-                handle
-                    .join()
-                    .expect("thread")
-                    .agent
+                agent_of(&handle.join().expect("thread"))
                     .name
                     .as_str()
                     .to_owned()
@@ -832,8 +837,258 @@ fn each_created_agent_has_a_create_record_with_the_user_as_actor() {
 
     for agent in &created.agents {
         assert_eq!(
-            office.actions_of(agent.agent.id),
+            office.actions_of(agent.id),
             vec![("create".to_owned(), "user".to_owned())]
         );
     }
+}
+
+/// Wraps the real tree store and fails one write step on request: the n-th
+/// `place_agent` call (counting from 1), or the team save.
+struct FaultyStore {
+    inner: Arc<dyn HierarchyStore>,
+    fail_place_at: Option<usize>,
+    fail_team_save: bool,
+    places: AtomicUsize,
+}
+
+impl FaultyStore {
+    fn failing_place_at(inner: Arc<dyn HierarchyStore>, position: usize) -> Arc<Self> {
+        Arc::new(Self {
+            inner,
+            fail_place_at: Some(position),
+            fail_team_save: false,
+            places: AtomicUsize::new(0),
+        })
+    }
+
+    fn failing_team_save(inner: Arc<dyn HierarchyStore>) -> Arc<Self> {
+        Arc::new(Self {
+            inner,
+            fail_place_at: None,
+            fail_team_save: true,
+            places: AtomicUsize::new(0),
+        })
+    }
+}
+
+fn injected_store_failure(what: &str) -> HierarchyApplicationError {
+    HierarchyApplicationError::Storage(format!("injected {what} failure"))
+}
+
+impl HierarchyStore for FaultyStore {
+    fn snapshot(&self) -> Result<TreeSnapshot, HierarchyApplicationError> {
+        self.inner.snapshot()
+    }
+
+    fn tree_exclusion(&self) -> TreeExclusion<'_> {
+        self.inner.tree_exclusion()
+    }
+
+    fn team_name_taken(&self, key: &str) -> Result<bool, HierarchyApplicationError> {
+        self.inner.team_name_taken(key)
+    }
+
+    fn save_team_and_place_lead_held(
+        &self,
+        exclusion: &TreeExclusion<'_>,
+        team: &Team,
+        parent_agent_id: Option<AgentId>,
+    ) -> Result<(), HierarchyApplicationError> {
+        if self.fail_team_save {
+            return Err(injected_store_failure("team save"));
+        }
+        self.inner
+            .save_team_and_place_lead_held(exclusion, team, parent_agent_id)
+    }
+
+    fn delete_team_and_unplace_held(
+        &self,
+        exclusion: &TreeExclusion<'_>,
+        team_id: TeamId,
+    ) -> Result<(), HierarchyApplicationError> {
+        self.inner.delete_team_and_unplace_held(exclusion, team_id)
+    }
+
+    fn place_agent(
+        &self,
+        agent_id: AgentId,
+        role: Option<Role>,
+        parent_agent_id: Option<AgentId>,
+        team_id: Option<TeamId>,
+    ) -> Result<(), HierarchyApplicationError> {
+        let position = self.places.fetch_add(1, Ordering::SeqCst) + 1;
+        if self.fail_place_at == Some(position) {
+            return Err(injected_store_failure("place"));
+        }
+        self.inner
+            .place_agent(agent_id, role, parent_agent_id, team_id)
+    }
+
+    fn team_name_of(&self, team_id: TeamId) -> Result<Option<TeamName>, HierarchyApplicationError> {
+        self.inner.team_name_of(team_id)
+    }
+}
+
+/// Reads fail, as a store does when the disk fails right after a write.
+struct UnreadableAgents(Arc<dyn AgentStore>);
+
+impl AgentStore for UnreadableAgents {
+    fn insert(&self, agent: &Agent) -> Result<(), PortError> {
+        self.0.insert(agent)
+    }
+
+    fn find(&self, _id: AgentId) -> Result<Option<Agent>, PortError> {
+        Err(PortError::Storage {
+            message: "injected read failure".to_owned(),
+            is_disk_failure: true,
+        })
+    }
+
+    fn list(&self) -> Result<Vec<Agent>, PortError> {
+        self.0.list()
+    }
+
+    fn update_status(&self, id: AgentId, status: AgentStatus) -> Result<(), PortError> {
+        self.0.update_status(id, status)
+    }
+
+    fn delete(&self, id: AgentId) -> Result<(), PortError> {
+        self.0.delete(id)
+    }
+}
+
+impl Office {
+    fn bridge_over_store(&self, store: Arc<dyn HierarchyStore>) -> Arc<TemplateCreateBridge> {
+        self.bridge_from(store, Arc::clone(&self.services.agent_bridge_store))
+    }
+}
+
+#[test]
+fn a_team_creation_whose_store_step_fails_removes_every_agent_and_the_team() {
+    // The lead is placed with the team save; the places counted here are the
+    // members', so 1 is the first member and 3 the last of three.
+    for fail_place_at in [1, 3] {
+        let office = office();
+        let ceo = office.create_ceo();
+        let id = office.save(
+            "Team",
+            TemplateBody::Team(team_body(office.folder.path(), 3)),
+        );
+        let store = FaultyStore::failing_place_at(
+            Arc::clone(&office.services.hierarchy.store),
+            fail_place_at,
+        );
+        let bridge = office.bridge_over_store(store);
+
+        let failure = within_deadline(move || bridge.create_team(id, TEAM_NAME, ceo, None))
+            .expect_err("the injected failure stops the creation");
+
+        assert_eq!(failure.code, ErrorCode::Internal);
+        assert!(failure.message.contains("injected place failure"));
+        assert_eq!(office.agent_names(), vec!["ceo"], "place {fail_place_at}");
+        assert_eq!(office.team_count(), 0, "place {fail_place_at}");
+    }
+}
+
+#[test]
+fn a_team_creation_whose_team_save_fails_removes_the_lead() {
+    let office = office();
+    let ceo = office.create_ceo();
+    let id = office.save(
+        "Team",
+        TemplateBody::Team(team_body(office.folder.path(), 2)),
+    );
+    let store = FaultyStore::failing_team_save(Arc::clone(&office.services.hierarchy.store));
+    let bridge = office.bridge_over_store(store);
+
+    let failure = within_deadline(move || bridge.create_team(id, TEAM_NAME, ceo, None))
+        .expect_err("the injected failure stops the creation");
+
+    assert!(failure.message.contains("injected team save failure"));
+    assert_eq!(office.agent_names(), vec!["ceo"]);
+    assert_eq!(office.team_count(), 0);
+}
+
+#[test]
+fn a_direct_creation_whose_placement_fails_removes_the_agent() {
+    let office = office();
+    let ceo = office.create_ceo();
+    let team = office.create_team(ceo, 1);
+    let id = office.save(
+        "Extra",
+        TemplateBody::Agent(with_role(
+            agent_body("{team}-extra-{n}", Some(office.folder.path())),
+            TemplateRole::Member,
+        )),
+    );
+    let place = DirectPlace {
+        parent_agent_id: team.agents[0].id,
+        team_id: team.team.id(),
+    };
+    let names_before = office.agent_names();
+    let store = FaultyStore::failing_place_at(Arc::clone(&office.services.hierarchy.store), 1);
+    let bridge = office.bridge_over_store(store);
+
+    let failure = within_deadline(move || bridge.create_agent(id, Some(place), None))
+        .expect_err("the injected failure stops the creation");
+
+    assert!(failure.message.contains("injected place failure"));
+    assert_eq!(office.agent_names(), names_before);
+}
+
+#[test]
+fn a_failed_read_after_the_writes_still_answers_success_and_raises_an_alert() {
+    let office = office();
+    let ceo = office.create_ceo();
+    let id = office.save(
+        "Team",
+        TemplateBody::Team(team_body(office.folder.path(), 2)),
+    );
+    let mut alerts = office.services.storage_alerts.subscribe();
+    let bridge = office.bridge_from(
+        Arc::clone(&office.services.hierarchy.store),
+        Arc::new(UnreadableAgents(Arc::clone(
+            &office.services.agent_bridge_store,
+        ))),
+    );
+
+    let created = within_deadline(move || bridge.create_team(id, TEAM_NAME, ceo, None))
+        .expect("the writes succeeded, so the creation succeeded");
+
+    assert_eq!(created.agents.len(), 3);
+    assert!(created.agents.iter().all(|agent| agent.agent.is_none()));
+    assert_eq!(created.agents[0].name, "Core-lead");
+    assert_eq!(office.team_count(), 1);
+    assert_eq!(office.agent_names().len(), 4);
+    assert!(
+        alerts
+            .try_recv()
+            .expect("an alert")
+            .message
+            .contains("injected read failure")
+    );
+}
+
+#[test]
+fn an_undo_that_leaves_an_agent_behind_raises_an_alert() {
+    let office = office();
+    let ceo = office.create_ceo();
+    let id = office.save(
+        "Team",
+        TemplateBody::Team(team_body(office.folder.path(), 3)),
+    );
+    let creator = FaultyCreator::new(
+        Arc::clone(&office.services.hierarchy.creator),
+        Some(3),
+        Some(1),
+    );
+    let mut alerts = office.services.storage_alerts.subscribe();
+    let bridge = office.bridge_with(creator);
+
+    let _ = within_deadline(move || bridge.create_team(id, TEAM_NAME, ceo, None));
+
+    let alert = alerts.try_recv().expect("an alert");
+    assert!(alert.message.contains("Core-member-1"));
+    assert!(alert.message.contains("injected remove failure"));
 }

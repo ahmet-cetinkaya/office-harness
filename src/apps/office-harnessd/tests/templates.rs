@@ -11,6 +11,7 @@ mod support;
 
 use std::time::Duration;
 
+use rusqlite::Connection;
 use serde_json::{Value, json};
 use support::office_client::{Client, Office, error_text};
 use tokio::time::timeout;
@@ -395,6 +396,55 @@ async fn another_client_hears_each_created_agent_once_and_nothing_for_a_failed_c
     let after_failure = events_until(&mut watcher, "template.changed").await;
     assert_eq!(count_of(&after_failure, "agent.changed"), 0);
     assert_eq!(count_of(&after_failure, "hierarchy.changed"), 0);
+}
+
+/// Makes every team seat after the first fail to write, as a disk fault in
+/// the middle of a creation would: the lead is seated, the first member is not.
+fn fail_member_seats(office: &Office) {
+    let connection = Connection::open(office.serving.office.config.database_path())
+        .expect("the office database");
+    connection
+        .execute_batch(
+            "CREATE TRIGGER inject_member_failure BEFORE INSERT ON hierarchy_team_members \
+             WHEN (SELECT COUNT(*) FROM hierarchy_team_members) >= 1 \
+             BEGIN SELECT RAISE(ABORT, 'injected member failure'); END;",
+        )
+        .expect("the trigger");
+}
+
+#[tokio::test]
+async fn a_creation_that_fails_after_a_write_sends_only_the_records_of_its_entries() {
+    let office = Office::open().await;
+    let mut actor = office.client().await;
+    let mut watcher = office.client().await;
+    let ceo = create_ceo(&mut actor, &office).await;
+    let template_id = save(&mut actor, "Squad", "team", team_body(&office, 2)).await;
+    events_until(&mut watcher, "template.changed").await;
+    fail_member_seats(&office);
+
+    let failed = actor
+        .ask(
+            "template.create_team",
+            json!({"template_id": template_id, "team_name": "Alpha", "parent_agent_id": ceo}),
+        )
+        .await;
+    assert_eq!(failed["ok"], false);
+    assert!(error_text(&failed).1.contains("injected member failure"));
+    save(&mut actor, "Marker", "agent", agent_body(&office, "m-{n}")).await;
+    let heard = events_until(&mut watcher, "template.changed").await;
+
+    // The lead and the first member were created, then both were removed:
+    // a Create and a Delete entry for each, newest removal first.
+    let records: Vec<&str> = heard
+        .iter()
+        .filter(|event| event["type"] == "action.recorded")
+        .map(|event| event["entry"]["action"].as_str().expect("action"))
+        .collect();
+    assert_eq!(records, ["create", "create", "delete", "delete"]);
+    assert_eq!(count_of(&heard, "agent.changed"), 0);
+    assert_eq!(count_of(&heard, "hierarchy.changed"), 0);
+    assert_eq!(heard.len(), 5, "four records and the marker: {heard:?}");
+    assert_eq!(agent_names(&mut actor).await, ["Chief"]);
 }
 
 #[tokio::test]

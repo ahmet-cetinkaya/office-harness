@@ -13,6 +13,8 @@ use kernel::{AgentId, ProjectId};
 use template_application::common::interfaces::TemplateStore;
 use template_domain::{AgentBody, Template, TemplateBody, TemplateId, TemplateRole};
 
+use crate::bootstrap::StorageAlerts;
+
 use super::template_create_error::TemplateCreateError;
 use super::template_plan::Planner;
 
@@ -24,10 +26,14 @@ pub struct DirectPlace {
     pub team_id: TeamId,
 }
 
-/// One agent that a creation made, with the place it was given.
+/// One agent that a creation made, with the place it was given. `agent` is
+/// what the store read back after the writes; it is `None` when that read
+/// failed, because the agent exists all the same and the creation succeeded.
 #[derive(Debug, Clone)]
 pub struct CreatedAgent {
-    pub agent: Agent,
+    pub id: AgentId,
+    pub name: String,
+    pub agent: Option<Agent>,
     pub role: Option<Role>,
     pub team_name: Option<String>,
 }
@@ -81,6 +87,7 @@ pub struct TemplateCreateBridge {
     creator: Arc<dyn AgentCreator>,
     agents: Arc<dyn AgentStore>,
     projects: Arc<dyn ProjectStore>,
+    alerts: StorageAlerts,
 }
 
 impl TemplateCreateBridge {
@@ -91,6 +98,7 @@ impl TemplateCreateBridge {
         creator: Arc<dyn AgentCreator>,
         agents: Arc<dyn AgentStore>,
         projects: Arc<dyn ProjectStore>,
+        alerts: StorageAlerts,
     ) -> Self {
         Self {
             templates,
@@ -98,6 +106,7 @@ impl TemplateCreateBridge {
             creator,
             agents,
             projects,
+            alerts,
         }
     }
 
@@ -117,7 +126,14 @@ impl TemplateCreateBridge {
         let snapshot = self.snapshot()?;
         let plan = self.plan_direct(&body, place, project_id, &snapshot)?;
         let agent_id = self.apply_direct(&tree, &plan)?;
-        self.created_agent(agent_id, plan.place.map(|place| place.role), plan.team_name)
+        Ok(self.created_agent(
+            CreatedEntry {
+                id: agent_id,
+                name: plan.seed.name,
+            },
+            plan.place.map(|place| place.role),
+            plan.team_name,
+        ))
     }
 
     /// Creates a team, its lead under `parent_agent_id`, and its members, from
@@ -148,7 +164,7 @@ impl TemplateCreateBridge {
         };
         let plan = self.plan_team(&body, &request, &snapshot)?;
         let (team, created) = self.apply_team(&tree, &plan)?;
-        let agents = self.created_team_agents(&team, &created)?;
+        let agents = self.created_team_agents(&team, created);
         Ok(TeamCreation { team, agents })
     }
 
@@ -388,40 +404,53 @@ impl TemplateCreateBridge {
                 team_id.as_uuid_text()
             ));
         }
+        if !leftovers.is_empty() {
+            self.alerts.report_disk_failure(&leftovers.join("; "));
+        }
         failure.with_leftovers(&leftovers)
     }
 
+    /// The creation succeeded, so a read-back that fails must not undo that
+    /// answer: the agent is named from the plan, and the failure is raised as
+    /// a storage alert.
     fn created_agent(
         &self,
-        agent_id: AgentId,
+        entry: CreatedEntry,
         role: Option<Role>,
         team_name: Option<String>,
-    ) -> Result<CreatedAgent, TemplateCreateError> {
-        let agent = self
-            .agents
-            .find(agent_id)
-            .map_err(|error| TemplateCreateError::internal(error.to_string()))?
-            .ok_or_else(|| {
-                TemplateCreateError::internal(format!(
-                    "agent {agent_id} was not found after its create"
-                ))
-            })?;
-        Ok(CreatedAgent {
+    ) -> CreatedAgent {
+        let agent = self.read_back(entry.id);
+        CreatedAgent {
+            id: entry.id,
+            name: entry.name,
             agent,
             role,
             team_name,
-        })
+        }
     }
 
-    fn created_team_agents(
-        &self,
-        team: &Team,
-        created: &Created,
-    ) -> Result<Vec<CreatedAgent>, TemplateCreateError> {
+    fn read_back(&self, agent_id: AgentId) -> Option<Agent> {
+        match self.agents.find(agent_id) {
+            Ok(agent) => {
+                if agent.is_none() {
+                    self.alerts.report_disk_failure(&format!(
+                        "agent {agent_id} was not found after its create"
+                    ));
+                }
+                agent
+            }
+            Err(error) => {
+                self.alerts.report_disk_failure(&error.to_string());
+                None
+            }
+        }
+    }
+
+    fn created_team_agents(&self, team: &Team, created: Created) -> Vec<CreatedAgent> {
         let team_name = team.name().display();
         created
             .agents
-            .iter()
+            .into_iter()
             .enumerate()
             .map(|(position, entry)| {
                 let role = if position == 0 {
@@ -429,7 +458,7 @@ impl TemplateCreateBridge {
                 } else {
                     Role::Member
                 };
-                self.created_agent(entry.id, Some(role), Some(team_name.to_owned()))
+                self.created_agent(entry, Some(role), Some(team_name.to_owned()))
             })
             .collect()
     }
