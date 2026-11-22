@@ -13,6 +13,8 @@
     "allow-register-login-start",
     "allow-login-start-status",
     "allow-set-window-title",
+    "allow-export-templates-file",
+    "allow-import-templates-file",
     "notification:default"
   ]
 }

@@ -8,6 +8,7 @@ pub const START_FAILED: &str = "start_failed";
 pub const START_TIMEOUT: &str = "start_timeout";
 pub const LOGIN_START_FAILED: &str = "login_start_failed";
 pub const WINDOW_TITLE_FAILED: &str = "window_title_failed";
+pub const TEMPLATE_FILE_FAILED: &str = "template_file_failed";
 
 /// The failure of a command, as the webview receives it. The code is one of
 /// the server's error codes or one of the codes above, which the core raises

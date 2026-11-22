@@ -14,6 +14,8 @@ const WEBVIEW_COMMANDS: &[&str] = &[
     "register_login_start",
     "login_start_status",
     "set_window_title",
+    "export_templates_file",
+    "import_templates_file",
 ];
 
 fn main() {
