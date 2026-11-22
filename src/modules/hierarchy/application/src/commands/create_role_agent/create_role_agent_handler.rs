@@ -2,13 +2,17 @@
 
 use std::sync::Arc;
 
-use hierarchy_domain::entities::TeamId;
+use hierarchy_domain::entities::{Team, TeamId};
 use hierarchy_domain::{Placement, Role, check_placement, resolved_parent};
 use kernel::AgentId;
 
 use crate::common::errors::HierarchyApplicationError;
 use crate::common::interfaces::{HierarchyStore, TreeExclusion};
 use crate::common::ports::{AgentCreator, AgentSeed, CreatorError};
+
+/// Why a project that differs from the team's is refused (A6).
+const PROJECT_IS_TEAMS_MESSAGE: &str =
+    "a member's or lead's project is its team's project; send no project_id or the team's";
 
 /// What `agent.create` with a `role` object carries (FR-003): the agent's
 /// own fields as a seed, plus the place it asks for in the tree.
@@ -71,9 +75,10 @@ impl CreateRoleAgentHandler {
         };
         check_placement(&snapshot.rows, placement)
             .map_err(HierarchyApplicationError::from_place)?;
+        let seed = with_team_project(request.seed, &snapshot.teams, team_id)?;
         let agent_id = self
             .creator
-            .create(request.seed)
+            .create(seed)
             .map_err(CreatorError::into_application)?;
         match self.store.place_agent(
             agent_id,
@@ -116,6 +121,35 @@ impl CreateRoleAgentHandler {
         }
         placing
     }
+}
+
+/// The seed with its team's project, when the team has one: a member's or
+/// lead's project is its team's project, and an empty working folder then
+/// means that project's folder (A6, 0001 A6). Without this, a member
+/// created with no folder was refused for having neither. A project the
+/// client names that is not the team's is refused, so the client never
+/// believes the agent got a project that the server then replaced.
+fn with_team_project(
+    seed: AgentSeed,
+    teams: &[Team],
+    team_id: Option<TeamId>,
+) -> Result<AgentSeed, HierarchyApplicationError> {
+    let Some(team) = team_id.and_then(|id| teams.iter().find(|team| team.id() == id)) else {
+        return Ok(seed);
+    };
+    let team_project = team.project_id();
+    if seed
+        .project_id
+        .is_some_and(|sent| Some(sent) != team_project)
+    {
+        return Err(HierarchyApplicationError::InvalidInput(
+            PROJECT_IS_TEAMS_MESSAGE.to_owned(),
+        ));
+    }
+    Ok(AgentSeed {
+        project_id: team_project.or(seed.project_id),
+        ..seed
+    })
 }
 
 /// The team a member joins: its lead's team. A member without a lead, or

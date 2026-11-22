@@ -9,6 +9,10 @@ use agent_presentation::{AgentHandlers, Handled, REQUEST_PREFIXES};
 use audit_presentation::{ACTIONS_REQUEST, AuditHandlers};
 use hierarchy_application::TreeQuery;
 use hierarchy_application::queries::tree::RowPlace;
+use hierarchy_presentation::{
+    CAUSE_AGENT_PLACED, CAUSE_AGENT_UNPLACED, CAUSE_SUBTREE_DELETED, CAUSE_SUBTREE_STOPPED,
+    tree_event,
+};
 use kernel::AgentId;
 use serde_json::Value;
 use terminal_application::common::interfaces::TerminalRuntime;
@@ -26,6 +30,9 @@ use crate::bridges::{
 /// at a time, and apart from the status bridge, so that a delete never
 /// overtakes a slow start, and a stop never races an exit.
 const DELETE_REQUEST: &str = "agent.delete";
+
+const CREATE_REQUEST: &str = "agent.create";
+const STOP_REQUEST: &str = "agent.stop";
 
 const ORDERED_REQUESTS: [&str; 5] = [
     "agent.start",
@@ -141,6 +148,7 @@ impl AgentGateway {
         }
         // Drop what an earlier request on this thread left behind.
         drop(take_recorded_events());
+        let had_place = self.has_place(request);
         let Handled {
             mut response,
             events,
@@ -160,10 +168,50 @@ impl AgentGateway {
         if request.kind.starts_with(AGENT_PREFIX) {
             self.add_places(&mut response);
         }
-        for event in events.iter().chain(&take_recorded_events()) {
+        // The agent's own events go first, so a client knows a new agent
+        // before the tree names it.
+        let tree_change = tree_cause(request, &response, had_place).map(tree_event);
+        for event in events
+            .iter()
+            .chain(&tree_change)
+            .chain(&take_recorded_events())
+        {
             self.events.publish(event);
         }
         response
+    }
+
+    /// True when the agent that a delete names holds a place in the tree
+    /// before the delete runs; after it, the place is gone. A failed read
+    /// raises the storage alert and counts as no place.
+    ///
+    /// The read runs outside the tree exclusion, which the delete takes
+    /// inside the hierarchy module. A place change by another client between
+    /// the read and the delete can pick the wrong cause or skip the event.
+    /// That costs one missing or one extra re-read of the tree, which is
+    /// harmless, and a bridge to hold the exclusion across both steps would
+    /// cost more than the re-read it saves.
+    fn has_place(&self, request: &Request) -> bool {
+        if request.kind != DELETE_REQUEST {
+            return false;
+        }
+        let Some(agent_id) = request
+            .fields
+            .get("agent_id")
+            .and_then(Value::as_str)
+            .and_then(|id| AgentId::from_str(id).ok())
+        else {
+            return false;
+        };
+        match self.hierarchy.row_places() {
+            Ok(places) => places
+                .get(&agent_id)
+                .is_some_and(|place| place.role.is_some()),
+            Err(error) => {
+                self.raise(Some(&error.to_string()));
+                false
+            }
+        }
     }
 
     /// Fills `last_line` into every agent object the response carries, so
@@ -200,6 +248,34 @@ impl AgentGateway {
         if let Some(message) = disk_failure {
             self.storage_alerts.report_disk_failure(message);
         }
+    }
+}
+
+/// The `hierarchy.changed` cause of a successful agent request that
+/// changes the tree: a create with a `role` places the agent, a delete
+/// removes its place (or a whole subtree), a stop of a subtree changes the
+/// states the tree shows. A failed request changed nothing, and neither
+/// did a delete of an agent that had no place.
+fn tree_cause(request: &Request, response: &Response, had_place: bool) -> Option<&'static str> {
+    if !matches!(response, Response::Success { .. }) {
+        return None;
+    }
+    let covers_subtree = request
+        .fields
+        .get("include_descendants")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    match request.kind.as_str() {
+        CREATE_REQUEST => request
+            .fields
+            .get("role")
+            .is_some_and(|role| !role.is_null())
+            .then_some(CAUSE_AGENT_PLACED),
+        DELETE_REQUEST if !had_place => None,
+        DELETE_REQUEST if covers_subtree => Some(CAUSE_SUBTREE_DELETED),
+        DELETE_REQUEST => Some(CAUSE_AGENT_UNPLACED),
+        STOP_REQUEST => covers_subtree.then_some(CAUSE_SUBTREE_STOPPED),
+        _ => None,
     }
 }
 

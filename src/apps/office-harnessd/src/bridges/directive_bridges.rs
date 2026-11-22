@@ -84,9 +84,11 @@ impl DirectiveWriter for DirectiveWriterBridge {
 }
 
 /// Writes the directive attempts into the action record under the sender's
-/// actor, and owns a failed record write (the port's contract). A refusal
-/// keeps the text as it was sent, escaped and capped, so a hostile text can
-/// carry no control character into the record and cannot flood it (Efe r2).
+/// actor (a refusal in the sender's record and the target's, an accepted
+/// directive in the target's), and owns a failed record write (the port's
+/// contract). A refusal keeps the text as it was sent, escaped and capped,
+/// so a hostile text can carry no control character into the record and
+/// cannot flood it (Efe r2).
 #[derive(Clone)]
 pub struct DirectiveJournalBridge {
     journal: ActionJournal,
@@ -133,6 +135,13 @@ impl DirectiveJournal for DirectiveJournalBridge {
     fn record(&self, sender: AgentId, target: AgentId, text: &str, failure: Option<&str>) {
         let journaled = failure.map(|reason| refused_attempt(reason, Some(text)));
         self.record_entry(sender, target, AgentAction::Directive, journaled.as_deref());
+        if journaled.is_some() && sender != target {
+            // The owner decided that a refusal shows in the sender's record
+            // too (ACF-168): the sender asked for it, and its details must
+            // show what the office refused. An accepted directive stays
+            // on the target's record only.
+            self.record_entry(sender, sender, AgentAction::Directive, journaled.as_deref());
+        }
     }
 }
 
