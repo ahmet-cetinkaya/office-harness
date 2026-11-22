@@ -17,7 +17,12 @@
   import {
     createHierarchyController,
     HierarchyView,
+    INITIAL_HIERARCHY,
   } from "./modules/hierarchy";
+  import {
+    CreateFromTemplateDialog,
+    INITIAL_TEMPLATES,
+  } from "./modules/template";
   import FailureMessage from "$shared/ui/failure-message.svelte";
   import StatusPanel from "$shared/ui/status-panel.svelte";
   import Button from "$shared/ui/button.svelte";
@@ -85,6 +90,15 @@
     };
   });
 
+  // The create-from-template dialog opens beside the hierarchy's create
+  // buttons (0009 D8). The controllers' snapshots are plain values, so each
+  // subscribes into runes state.
+  let isCreatingFromTemplate = $state(false);
+  let templateSnapshot = $state(INITIAL_TEMPLATES);
+  $effect(() => panel.templates.subscribe((next) => (templateSnapshot = next)));
+  let treeSnapshot = $state(INITIAL_HIERARCHY);
+  $effect(() => hierarchy.subscribe((next) => (treeSnapshot = next)));
+
   onMount(() => {
     void connection.start();
     void panel.office.controller.watch();
@@ -92,6 +106,7 @@
     void panel.hold.watch();
     void panel.needsYou.watch();
     void hierarchy.watch();
+    void panel.templates.watch();
     void osNotificationTap();
   });
 
@@ -104,6 +119,7 @@
       void panel.hold.load();
       void panel.needsYou.load();
       void hierarchy.load();
+      void panel.templates.load();
       // The jump key is unbound while the focus shortcut holds it, in the
       // scene too, so the shared copy loads before any view needs it.
       void sharedFocusShortcut(client);
@@ -193,6 +209,7 @@
             projects={panel.office.snapshot.projects}
             selectedAgentId={panel.office.snapshot.selectedAgentId}
             onselect={panel.office.controller.select}
+            oncreatefromtemplate={() => (isCreatingFromTemplate = true)}
           />
         {/snippet}
       </PanelView>
@@ -205,6 +222,16 @@
         bind:openAgentId
         onreopen={(agentId) => void panel.notifications.readAgent(agentId)}
         needsYou={panel.needsYou}
+      />
+    {/if}
+    {#if isCreatingFromTemplate}
+      <CreateFromTemplateDialog
+        controller={panel.templates}
+        templates={templateSnapshot.templates}
+        tree={treeSnapshot.tree}
+        agents={panel.office.snapshot.agents}
+        projects={panel.office.snapshot.projects}
+        onclose={() => (isCreatingFromTemplate = false)}
       />
     {/if}
     <LoginStartPanel {client} />

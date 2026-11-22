@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-export type { CoreClient, ServerEvent } from "./core-client";
+export type { CoreClient, ExportOutcome, ServerEvent } from "./core-client";
 export {
   CORE_UNAVAILABLE,
   CoreRequestError,

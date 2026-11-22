@@ -37,6 +37,7 @@
     rowOf,
     type NeedsYouSnapshot,
   } from "../../needs-you";
+  import { SaveAsTemplateDialog, TemplatesView } from "../../template";
   import {
     isJumpUnbound,
     pressedAppShortcut,
@@ -162,6 +163,10 @@
   let isCreatingProject = $state(false);
   let isSwitchingAgent = $state(false);
   let isShowingNotifications = $state(false);
+  let isShowingTemplates = $state(false);
+  /** The agent that the "save as template" dialog reads, or null when closed. */
+  let templateSourceAgentId = $state<string | null>(null);
+  let templatesButton = $state<HTMLButtonElement | null>(null);
   let projectToDelete = $state<Project | null>(null);
   let detailArea = $state<HTMLElement | null>(null);
 
@@ -173,6 +178,22 @@
     const headingId =
       office.agents.length > 0 ? AGENTS_HEADING_ID : EMPTY_HEADING_ID;
     document.getElementById(headingId)?.focus();
+  }
+
+  const TEMPLATES_HEADING_ID = "templates-heading";
+
+  // The view swaps the panel's content, so focus follows the swap: to the
+  // new heading on the way in, and back to the button that opened it.
+  async function showTemplates(): Promise<void> {
+    isShowingTemplates = true;
+    await tick();
+    document.getElementById(TEMPLATES_HEADING_ID)?.focus();
+  }
+
+  async function leaveTemplates(): Promise<void> {
+    isShowingTemplates = false;
+    await tick();
+    templatesButton?.focus();
   }
 
   function deleteProject(): void {
@@ -230,6 +251,10 @@
     }
     openAgent(agentId);
     await focusHeadingUnlessRunning(detailArea, isAgentActive(agentId));
+  }
+
+  function nameOfAgent(agentId: string): string {
+    return office.agents.find((agent) => agent.id === agentId)?.name ?? "agent";
   }
 
   function isAgentActive(agentId: string): boolean {
@@ -335,6 +360,13 @@
         <Button variant="secondary" onclick={() => (isCreatingProject = true)}>
           New project
         </Button>
+        <Button
+          variant="secondary"
+          onclick={() => void showTemplates()}
+          bind:element={templatesButton}
+        >
+          Templates
+        </Button>
         <Button onclick={() => offerAgentForm(null)}>New agent</Button>
       </div>
       <div class="basis-full">
@@ -355,7 +387,12 @@
 
   <NotificationLiveRegion announcement={liveAnnouncement} />
 
-  {#if office.phase === "loading"}
+  {#if isShowingTemplates && office.phase === "ready"}
+    <TemplatesView
+      controller={store.templates}
+      onback={() => void leaveTemplates()}
+    />
+  {:else if office.phase === "loading"}
     <p role="status" class="text-neutral-700">Loading the office.</p>
   {:else if office.phase === "failed"}
     <FailureMessage
@@ -495,6 +532,7 @@
                   onsaveadditions={(additions) =>
                     controller.saveAdditions(agentId, additions)}
                   onsavetask={(text) => controller.saveTask(agentId, text)}
+                  onsaveastemplate={() => (templateSourceAgentId = agentId)}
                   onretry={controller.retryDetails}
                 />
               {/key}
@@ -535,6 +573,15 @@
     initialProjectId={createAgentInProject}
     onsubmit={controller.createAgent}
     onclose={closeAgentForm}
+  />
+{/if}
+{#if templateSourceAgentId !== null}
+  {@const sourceId = templateSourceAgentId}
+  <SaveAsTemplateDialog
+    controller={store.templates}
+    agentId={sourceId}
+    agentName={nameOfAgent(sourceId)}
+    onclose={() => (templateSourceAgentId = null)}
   />
 {/if}
 {#if isSwitchingAgent}

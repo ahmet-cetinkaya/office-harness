@@ -26,6 +26,8 @@ function fakeClient(overrides: Partial<CoreClient> = {}): CoreClient & {
     registerLoginStart: async () => {},
     loginStartStatus: async () => false,
     retryConnection: async () => {},
+    exportTemplatesFile: async () => "cancelled",
+    importTemplatesFile: async () => null,
     ...overrides,
     push: (state) => onState(state),
   };
