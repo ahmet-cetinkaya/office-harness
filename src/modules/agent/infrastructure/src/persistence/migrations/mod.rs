@@ -26,6 +26,7 @@ pub const SCRIPTS: &[&str] = &[
     // Plain columns with no foreign key, so it does not depend on the
     // hierarchy module's tables existing first.
     include_str!("0005_hierarchy_columns.sql"),
+    include_str!("0006_task_text.sql"),
 ];
 
 /// The data checks the server runs before it steps a database forward. Each

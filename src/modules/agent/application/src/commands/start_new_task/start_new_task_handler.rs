@@ -13,7 +13,8 @@ use crate::common::session_ender::SessionEnder;
 use crate::common::session_launcher::{LaunchKind, SessionLauncher, StartOutcome};
 
 /// Starts a new task (`agent.new_task`, FR-024): it ends a running session
-/// first, and always starts a new CLI session. The client confirms with the
+/// first, always starts a new CLI session, and clears the task text once
+/// that session has started (FR-004). The client confirms with the
 /// user before it sends the request.
 #[derive(Clone)]
 pub struct StartNewTaskHandler {
@@ -63,8 +64,16 @@ impl StartNewTaskHandler {
         if agent.status.is_running() {
             self.ender.stop_for_restart(&mut agent)?;
         }
-        self.launcher
-            .start(&mut agent, &LaunchKind::NewTask, prepared)
+        let mut outcome = self
+            .launcher
+            .start(&mut agent, &LaunchKind::NewTask, prepared)?;
+        // A failed launch keeps the task text: the agent never began the new
+        // task (0011 D3).
+        if outcome.failure.is_none() {
+            self.agents.update_task(agent.id, None)?;
+            outcome.agent.task = None;
+        }
+        Ok(outcome)
     }
 }
 

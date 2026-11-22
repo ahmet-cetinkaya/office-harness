@@ -97,6 +97,20 @@ A limit is a whole number from 1 to 1000. Choose "Limits" in the panel header to
 
 The holds and the limits are a brake against mistakes and loops. They are not a security boundary: an agent CLI runs as your OS user and can act outside the office. The shapes of the requests are in [the hold protocol](specs/changes/0007-hold-and-limits/contracts/hold-protocol.md).
 
+## The task line
+
+Each agent row can show one more line under the last output line: the last task the office gave the agent, with its age, for example `Task given 3 min ago: Fix the login form`. The line shows the first line of the text, at most 80 characters, with an ellipsis when it is cut. The age counts whole minutes ("0 min ago" to "59 min ago") and then hours ("2 h ago").
+
+**Where the text comes from.**
+- A directive that the office entered into the agent's terminal sets the text, from the time it arrived. A directive that the office refused sets nothing.
+- You can set, edit, or clear the text in the agent's details, in the "Task" section: choose "Set task" or "Edit task", type, and choose "Save task"; choose "Clear task" to remove it. The text can have at most 8,192 characters. Empty text clears it. This writes nothing to the terminal.
+- A new task (the "Start new task" action) clears the text. Starting an agent, continuing a session, and a restart of the server keep it.
+- The office never reads the text from terminal output, prompts, or window titles.
+
+**Safe display.** The row and the details show control characters and terminal escape codes as visible symbols (for example ESC shows as the symbol U+241B) and never apply them. The details show the full text. The scene's desks and the "Needs you" list do not show the task text.
+
+The shapes of the request and the event are in [the task protocol](specs/changes/0011-task-line/contracts/task-protocol.md).
+
 ## Start at login
 
 The server runs only while you are logged in. Agents end when you log out or shut the machine down. After the next login the server starts again, and the agents that were running show `interrupted`. No agent starts without your action.

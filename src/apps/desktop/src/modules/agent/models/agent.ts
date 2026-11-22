@@ -17,6 +17,14 @@ const ACTIVE_STATUSES: readonly string[] = [
   "waiting_for_input",
 ];
 
+/** The last task the office gave an agent, or a user set (0011). */
+export interface AgentTask {
+  text: string;
+  /** Unix ms, from the server clock. */
+  set_at: number;
+  source: "directive" | "user";
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -28,6 +36,8 @@ export interface Agent {
   created_at: number;
   /** The agent's last output line, plain text, or null before any output. */
   last_line: string | null;
+  /** Absent or null when the agent has no task text. */
+  task?: AgentTask | null;
 }
 
 export interface Project {

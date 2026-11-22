@@ -2,7 +2,7 @@
 
 use agent_application::common::models::{AdditionsView, SessionView};
 use agent_domain::entities::{Agent, Project};
-use agent_domain::value_objects::OfficeAdditions;
+use agent_domain::value_objects::{OfficeAdditions, TaskText};
 use serde_json::{Value, json};
 
 #[must_use]
@@ -20,6 +20,19 @@ pub fn agent_json(agent: &Agent) -> Value {
         "status": agent.status.as_str(),
         "created_at": agent.created_at.as_unix_millis(),
         "last_line": Value::Null,
+        "task": task_json(agent.task.as_ref()),
+    })
+}
+
+/// `{text, set_at, source}`, or `null` when the agent has no task text.
+#[must_use]
+pub fn task_json(task: Option<&TaskText>) -> Value {
+    task.map_or(Value::Null, |task| {
+        json!({
+            "text": task.text(),
+            "set_at": task.set_at().as_unix_millis(),
+            "source": task.source().as_str(),
+        })
     })
 }
 

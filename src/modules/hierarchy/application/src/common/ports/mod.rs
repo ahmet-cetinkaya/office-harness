@@ -8,6 +8,6 @@ mod subtree_ports;
 pub use agent_creator_ports::{
     AgentCreator, AgentSeed, CreatorError, CreatorErrorKind, SeedAdditions,
 };
-pub use directive_ports::{DirectiveJournal, DirectiveTarget, DirectiveWriter};
+pub use directive_ports::{DirectiveJournal, DirectiveReceipt, DirectiveTarget, DirectiveWriter};
 pub use hold_ports::{HoldClock, HoldJournal, HoldNotifier, RateLimitSource};
 pub use subtree_ports::{SubtreeActionError, SubtreeAgentEnder, SubtreeAgentRemover};

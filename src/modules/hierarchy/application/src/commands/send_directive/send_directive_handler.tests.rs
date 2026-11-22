@@ -6,6 +6,7 @@ use super::*;
 use hierarchy_domain::{Role, TreeRow};
 
 use crate::common::interfaces::{TreeExclusion, TreeSnapshot};
+use crate::common::ports::DirectiveReceipt;
 
 fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex
@@ -184,6 +185,28 @@ impl DirectiveJournal for RecordingJournal {
     }
 }
 
+/// Keeps every receipt in call order, and every write of the writer that
+/// shares its log, so a test can compare the two orders.
+#[derive(Default)]
+struct RecordingReceipt {
+    received: Mutex<Vec<Written>>,
+}
+
+impl RecordingReceipt {
+    fn received(&self) -> Vec<Written> {
+        locked(&self.received).clone()
+    }
+}
+
+impl DirectiveReceipt for RecordingReceipt {
+    fn received(&self, target: AgentId, text: &str) {
+        locked(&self.received).push(Written {
+            agent_id: target,
+            text: text.to_owned(),
+        });
+    }
+}
+
 /// ceo > lead > member, the smallest tree where a member is a descendant of
 /// a lead but not of another lead.
 struct Family {
@@ -222,11 +245,13 @@ struct Harness {
     handler: SendDirectiveHandler,
     writer: Arc<RecordingWriter>,
     journal: Arc<RecordingJournal>,
+    receipt: Arc<RecordingReceipt>,
 }
 
 fn harness_for(family: &Family, targets: ToggledTargets, writer: RecordingWriter) -> Harness {
     let writer = Arc::new(writer);
     let journal = Arc::new(RecordingJournal::default());
+    let receipt = Arc::new(RecordingReceipt::default());
     let handler = SendDirectiveHandler::new(
         Arc::new(FixedRows {
             rows: family.rows.clone(),
@@ -235,11 +260,13 @@ fn harness_for(family: &Family, targets: ToggledTargets, writer: RecordingWriter
         Arc::new(targets),
         writer.clone(),
         journal.clone(),
+        receipt.clone(),
     );
     Harness {
         handler,
         writer,
         journal,
+        receipt,
     }
 }
 
@@ -265,6 +292,10 @@ fn a_directive_to_a_running_descendant_is_written_and_journaled_clean() {
     assert_eq!(attempts[0].target, family.member);
     assert_eq!(attempts[0].text, "please deploy");
     assert_eq!(attempts[0].failure, None);
+    let received = harness.receipt.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].agent_id, family.member);
+    assert_eq!(received[0].text, "please deploy");
 }
 
 #[test]
@@ -430,6 +461,78 @@ fn a_writer_failure_surfaces_the_host_message_and_is_journaled() {
     assert_eq!(
         attempts[0].failure.as_deref(),
         Some("conflict: the session pipe is closed")
+    );
+}
+
+#[test]
+fn a_writer_failure_reports_no_receipt() {
+    let family = family();
+    let harness = harness_for(
+        &family,
+        ToggledTargets::all_running(),
+        RecordingWriter::new(Some(family.member)),
+    );
+
+    harness
+        .handler
+        .handle(family.lead, family.member, "please deploy")
+        .expect_err("the write fails");
+
+    assert!(harness.receipt.received().is_empty());
+}
+
+#[test]
+fn a_refused_directive_reports_no_receipt() {
+    let family = family();
+    let harness = harness_for(
+        &family,
+        ToggledTargets::with_stopped(family.member),
+        RecordingWriter::new(None),
+    );
+
+    for (target, text) in [
+        (family.other_lead, "please deploy"),
+        (family.member, ""),
+        (family.member, "deploy\u{7}now"),
+        (family.member, "please deploy"),
+    ] {
+        harness
+            .handler
+            .handle(family.lead, target, text)
+            .expect_err("refused");
+    }
+
+    assert!(harness.receipt.received().is_empty());
+}
+
+#[test]
+fn directives_sent_at_once_are_received_in_the_order_they_were_written() {
+    const SENDERS: usize = 8;
+    let family = family();
+    let harness = Arc::new(harness_for(
+        &family,
+        ToggledTargets::all_running(),
+        RecordingWriter::new(None),
+    ));
+
+    std::thread::scope(|scope| {
+        for number in 0..SENDERS {
+            let harness = Arc::clone(&harness);
+            let (lead, member) = (family.lead, family.member);
+            scope.spawn(move || {
+                harness
+                    .handler
+                    .handle(lead, member, &format!("task {number}"))
+                    .expect("sent");
+            });
+        }
+    });
+
+    let texts = |lines: Vec<Written>| lines.into_iter().map(|line| line.text).collect::<Vec<_>>();
+    assert_eq!(texts(harness.receipt.received()).len(), SENDERS);
+    assert_eq!(
+        texts(harness.receipt.received()),
+        texts(harness.writer.lines())
     );
 }
 

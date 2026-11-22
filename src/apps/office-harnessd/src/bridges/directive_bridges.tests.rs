@@ -8,7 +8,7 @@ use agent_application::common::interfaces::{ActionRecorder, AgentStore};
 use agent_application::common::models::{AgentAction, AgentActionEntry};
 use agent_domain::entities::Agent;
 use agent_domain::enums::AgentStatus;
-use agent_domain::value_objects::{AgentCommand, DisplayName, MachineId};
+use agent_domain::value_objects::{AgentCommand, DisplayName, MachineId, TaskSource, TaskText};
 use hierarchy_application::common::ports::{DirectiveJournal, DirectiveTarget, DirectiveWriter};
 use kernel::{AgentId, Timestamp};
 use terminal_application::common::errors::TerminalRuntimeError;
@@ -57,6 +57,14 @@ impl AgentStore for OneAgent {
     }
 
     fn update_status(&self, _id: AgentId, _status: AgentStatus) -> Result<(), PortError> {
+        Ok(())
+    }
+
+    fn update_task(
+        &self,
+        _id: AgentId,
+        _task: Option<&agent_domain::value_objects::TaskText>,
+    ) -> Result<(), PortError> {
         Ok(())
     }
 
@@ -200,6 +208,17 @@ impl AgentStore for BrokenStore {
 
     fn update_status(&self, _id: AgentId, _status: AgentStatus) -> Result<(), PortError> {
         Ok(())
+    }
+
+    fn update_task(
+        &self,
+        _id: AgentId,
+        _task: Option<&agent_domain::value_objects::TaskText>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Storage {
+            message: "the agent store cannot be written".to_owned(),
+            is_disk_failure: true,
+        })
     }
 
     fn delete(&self, _id: AgentId) -> Result<(), PortError> {
@@ -454,4 +473,77 @@ fn a_refusal_of_an_empty_text_keeps_the_colon_in_the_journal() {
         Some("text must not be empty: "),
         "{entry:?}"
     );
+}
+
+/// A store that keeps only the task text it is given.
+#[derive(Default)]
+struct TaskKeeper(Mutex<Option<TaskText>>);
+
+impl AgentStore for TaskKeeper {
+    fn insert(&self, _agent: &Agent) -> Result<(), PortError> {
+        Ok(())
+    }
+
+    fn find(&self, _id: AgentId) -> Result<Option<Agent>, PortError> {
+        Ok(None)
+    }
+
+    fn list(&self) -> Result<Vec<Agent>, PortError> {
+        Ok(Vec::new())
+    }
+
+    fn update_status(&self, _id: AgentId, _status: AgentStatus) -> Result<(), PortError> {
+        Ok(())
+    }
+
+    fn update_task(&self, _id: AgentId, task: Option<&TaskText>) -> Result<(), PortError> {
+        *locked(&self.0) = task.cloned();
+        Ok(())
+    }
+
+    fn delete(&self, _id: AgentId) -> Result<(), PortError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_received_directive_becomes_the_task_text_and_is_published() {
+    let target = AgentId::generate();
+    let store = Arc::new(TaskKeeper::default());
+    let events = EventHub::new();
+    let mut subscriber = events.subscribe();
+    let bridge = DirectiveReceiptBridge::new(
+        store.clone(),
+        events,
+        StorageAlerts::new(test_log()),
+        TaskOrder::default(),
+    );
+
+    bridge.received(target, "Fix the login test");
+
+    let task = locked(&store.0).clone().expect("task kept");
+    assert_eq!(task.text(), "Fix the login test");
+    assert_eq!(task.source(), TaskSource::Directive);
+    let frame: serde_json::Value =
+        serde_json::from_str(&subscriber.try_recv().expect("event")).expect("json");
+    assert_eq!(frame["type"], "agent.task");
+    assert_eq!(frame["agent_id"], target.to_string());
+    assert_eq!(frame["task"]["text"], "Fix the login test");
+    assert_eq!(frame["task"]["source"], "directive");
+}
+
+#[test]
+fn a_failed_task_store_is_an_alert_and_publishes_nothing() {
+    let events = EventHub::new();
+    let mut subscriber = events.subscribe();
+    let alerts = StorageAlerts::new(test_log());
+    let mut alert_feed = alerts.subscribe();
+    let bridge =
+        DirectiveReceiptBridge::new(Arc::new(BrokenStore), events, alerts, TaskOrder::default());
+
+    bridge.received(AgentId::generate(), "Fix the login test");
+
+    assert!(subscriber.try_recv().is_err());
+    let alert = alert_feed.try_recv().expect("alert");
+    assert!(alert.message.contains("the agent store cannot be written"));
 }

@@ -23,7 +23,7 @@ use super::event_hub::EventHub;
 use super::hold_requests::HoldGateway;
 use crate::bootstrap::StorageAlerts;
 use crate::bridges::{
-    NeedsYouBridge, StatusOrder, StoppingFlag, TerminalEvents, take_recorded_events,
+    NeedsYouBridge, StatusOrder, StoppingFlag, TaskOrder, TerminalEvents, take_recorded_events,
 };
 
 /// The requests that change an agent's status or its terminal. They run one
@@ -33,6 +33,10 @@ const DELETE_REQUEST: &str = "agent.delete";
 
 const CREATE_REQUEST: &str = "agent.create";
 const STOP_REQUEST: &str = "agent.stop";
+
+/// The requests that change a task text, which publish `agent.task` after
+/// they store; they hold the task order from the store to the publish.
+const TASK_REQUESTS: [&str; 2] = ["agent.task.set", "agent.new_task"];
 
 const ORDERED_REQUESTS: [&str; 5] = [
     "agent.start",
@@ -61,6 +65,7 @@ pub struct AgentGateway {
     events: EventHub,
     storage_alerts: StorageAlerts,
     status_order: StatusOrder,
+    task_order: TaskOrder,
     stopping: StoppingFlag,
     terminals: TerminalEvents,
     runtime: Arc<dyn TerminalRuntime>,
@@ -81,6 +86,7 @@ impl AgentGateway {
         events: EventHub,
         storage_alerts: StorageAlerts,
         status_order: StatusOrder,
+        task_order: TaskOrder,
         stopping: StoppingFlag,
         terminals: TerminalEvents,
         runtime: Arc<dyn TerminalRuntime>,
@@ -94,6 +100,7 @@ impl AgentGateway {
             events,
             storage_alerts,
             status_order,
+            task_order,
             stopping,
             terminals,
             runtime,
@@ -146,6 +153,13 @@ impl AgentGateway {
         if refused_while_stopping(&request.kind, self.stopping.load(Ordering::SeqCst)) {
             return Response::failure(request.id, ErrorCode::Refused, STOPPING_MESSAGE);
         }
+        // Taken after the status order and held to the end of the function,
+        // which is after the events are published.
+        let _task_turn = TASK_REQUESTS.contains(&request.kind.as_str()).then(|| {
+            self.task_order
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+        });
         // Drop what an earlier request on this thread left behind.
         drop(take_recorded_events());
         let had_place = self.has_place(request);

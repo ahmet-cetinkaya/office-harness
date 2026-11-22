@@ -93,6 +93,7 @@ impl Server {
             events.clone(),
             services.storage_alerts.clone(),
             Arc::clone(&services.agent.status_order),
+            Arc::clone(&services.agent.task_order),
             Arc::clone(&services.agent.stopping),
             services.terminal.events.clone(),
             Arc::clone(&services.terminal.runtime),
