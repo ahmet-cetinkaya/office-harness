@@ -5,6 +5,7 @@ use std::sync::Arc;
 use access_application::commands::authenticate_agent_call::AgentGrant;
 use agent_application::common::actor_scope::ActorScope;
 use axum::extract::ws::{Message, WebSocket};
+use hierarchy_application::commands::send_directive::DirectiveOutcome;
 use hierarchy_application::common::errors::HierarchyApplicationError;
 use hierarchy_domain::{
     AgentAction, HierarchyError, Hold, Role, TeamId, TreeRow, check_descendant, is_descendant_of,
@@ -143,7 +144,7 @@ fn journal_refusal(state: &ServerState, caller: AgentId, reason: &str) {
 /// thread left behind are dropped first, and only the entries of `work` go
 /// out. A request forwarded to the `AgentGateway` publishes its own, so it
 /// needs no wrap.
-fn recorded_and_published<T>(events: &EventHub, work: impl FnOnce() -> T) -> T {
+pub fn recorded_and_published<T>(events: &EventHub, work: impl FnOnce() -> T) -> T {
     drop(take_recorded_events());
     let outcome = work();
     for event in take_recorded_events() {
@@ -238,7 +239,7 @@ async fn answer_directive(state: &ServerState, grant: &AgentGrant, request: &Req
     .await;
     match sent {
         Ok(outcome) => match outcome {
-            Ok(()) => Response::success(request.id, Value::Null),
+            Ok(delivery) => Response::success(request.id, delivery_json(delivery)),
             Err((message, code)) => Response::failure(request.id, code, message),
         },
         // The blocking task died before the use case could journal; the
@@ -248,6 +249,18 @@ async fn answer_directive(state: &ServerState, grant: &AgentGrant, request: &Req
             journal_refusal(state, sender, &message);
             Response::failure(request.id, ErrorCode::Internal, message)
         }
+    }
+}
+
+/// The answer of an accepted directive (0012/FR-004): `submitted`, `waiting`
+/// with the place in the target's queue counted from 1, or `unsubmitted`.
+fn delivery_json(outcome: DirectiveOutcome) -> Value {
+    match outcome {
+        DirectiveOutcome::Submitted => json!({"delivery": "submitted"}),
+        DirectiveOutcome::Waiting { position } => {
+            json!({"delivery": "waiting", "position": position})
+        }
+        DirectiveOutcome::Unsubmitted => json!({"delivery": "unsubmitted"}),
     }
 }
 
