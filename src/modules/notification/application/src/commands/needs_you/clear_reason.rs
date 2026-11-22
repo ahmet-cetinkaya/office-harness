@@ -11,7 +11,8 @@ pub enum NeedsYouClearReason {
     /// The agent went to `starting`, `working`, or `stopped`.
     StatusChanged,
     AgentDeleted,
-    /// An agent hold was released. It clears an automatic hold only.
+    /// An agent hold was released. It clears an automatic hold and the hold of
+    /// a failed resume only.
     HoldReleased,
 }
 
@@ -19,7 +20,10 @@ impl NeedsYouClearReason {
     pub(super) const fn clears(self, item: &NeedsYouItem) -> bool {
         match self {
             Self::TerminalOpened | Self::StatusChanged | Self::AgentDeleted => true,
-            Self::HoldReleased => matches!(item.latest.kind, AttentionKind::AutoHold),
+            Self::HoldReleased => matches!(
+                item.latest.kind,
+                AttentionKind::AutoHold | AttentionKind::ResumeHold
+            ),
         }
     }
 }

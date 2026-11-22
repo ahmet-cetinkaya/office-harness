@@ -58,6 +58,7 @@ impl HoldJournalBridge {
             target_agent_id,
             action,
             result: ActionResult::Ok,
+            detail: None,
             at,
         });
         match stored {
@@ -94,7 +95,8 @@ impl HoldJournal for HoldJournalBridge {
 }
 
 /// Tells the user about an automatic hold: one `auto_hold` notification
-/// naming the limit, and `hold.changed`. This is the only publish of an
+/// naming the limit (or one `resume_hold` notification naming the reason),
+/// and `hold.changed`. This is the only publish of an
 /// automatic hold, whichever request caused it.
 pub struct HoldNotifierBridge {
     notifications: NotificationBridge,
@@ -120,12 +122,10 @@ impl HoldNotifierBridge {
     }
 }
 
-impl HoldNotifier for HoldNotifierBridge {
-    fn auto_held(&self, agent: AgentId, limit: &LimitRefusal) {
-        self.notifications
-            .record_auto_hold(agent, limit.kind.human_name());
-        // The service stored the hold before it called, so the store holds
-        // the state the clients must see.
+impl HoldNotifierBridge {
+    /// The service stored the hold before it called, so the store holds the
+    /// state the clients must see.
+    fn publish_holds(&self) {
         match self.store.load_holds() {
             Ok(holds) => self
                 .hub
@@ -134,6 +134,19 @@ impl HoldNotifier for HoldNotifierBridge {
                 .alerts
                 .report_disk_failure(&format!("the holds could not be read: {error}")),
         }
+    }
+}
+
+impl HoldNotifier for HoldNotifierBridge {
+    fn auto_held(&self, agent: AgentId, limit: &LimitRefusal) {
+        self.notifications
+            .record_auto_hold(agent, limit.kind.human_name());
+        self.publish_holds();
+    }
+
+    fn resume_held(&self, agent: AgentId, reason: &str) {
+        self.notifications.record_resume_hold(agent, reason);
+        self.publish_holds();
     }
 }
 

@@ -13,6 +13,8 @@ pub struct ActionRecord {
     pub target_agent_id: Option<AgentId>,
     pub action: ActionKind,
     pub result: ActionResult,
+    /// Why the action happened, when the action alone does not say it.
+    pub detail: Option<String>,
     pub at: Timestamp,
 }
 

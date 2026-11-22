@@ -180,6 +180,18 @@ impl NotificationBridge {
         );
     }
 
+    /// Records that the office held the agent after its resume failed twice;
+    /// the reason travels as the row's detail (0013).
+    pub fn record_resume_hold(&self, agent_id: AgentId, reason: &str) {
+        let detail = Some(reason.to_owned());
+        self.record(
+            agent_id,
+            NotificationEvent::ResumeHold,
+            detail.clone(),
+            detail,
+        );
+    }
+
     /// The notification first, then the queue: the queue item names the
     /// notification that created it, and the clients hear
     /// `notification.created` after the item is stored and before
@@ -339,6 +351,7 @@ const fn attention_kind_of(event: NotificationEvent) -> AttentionKind {
         NotificationEvent::WaitingForInput => AttentionKind::WaitingForInput,
         NotificationEvent::Bell => AttentionKind::Bell,
         NotificationEvent::AutoHold => AttentionKind::AutoHold,
+        NotificationEvent::ResumeHold => AttentionKind::ResumeHold,
     }
 }
 

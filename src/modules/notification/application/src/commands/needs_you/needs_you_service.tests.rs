@@ -66,12 +66,16 @@ fn reading_the_origin_notification_clears_the_item() {
 }
 
 #[test]
-fn a_hold_release_clears_an_auto_hold_item_only() {
+fn a_hold_release_clears_an_auto_hold_or_resume_hold_item_only() {
     let needs_you = service();
     let held = AgentId::generate();
+    let resume_held = AgentId::generate();
     let waiting = AgentId::generate();
     needs_you
         .record(held, event(AttentionKind::AutoHold, 10), None)
+        .expect("record");
+    needs_you
+        .record(resume_held, event(AttentionKind::ResumeHold, 15), None)
         .expect("record");
     needs_you
         .record(waiting, event(AttentionKind::WaitingForInput, 20), None)
@@ -80,11 +84,15 @@ fn a_hold_release_clears_an_auto_hold_item_only() {
     let held_cleared = needs_you
         .clear(held, NeedsYouClearReason::HoldReleased)
         .expect("clear");
+    let resume_held_cleared = needs_you
+        .clear(resume_held, NeedsYouClearReason::HoldReleased)
+        .expect("clear");
     let waiting_cleared = needs_you
         .clear(waiting, NeedsYouClearReason::HoldReleased)
         .expect("clear");
 
     assert!(held_cleared);
+    assert!(resume_held_cleared);
     assert!(!waiting_cleared);
 }
 
