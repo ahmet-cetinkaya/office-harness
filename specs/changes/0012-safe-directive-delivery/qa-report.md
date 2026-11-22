@@ -3,7 +3,7 @@
 ## Summary
 
 - **Date:** 2026-11-23.
-- **Build under test:** branch `feat/0012-safe-directive-delivery`, commit 82b8934 (implementation and tests) on `main` 6e3d197, toolchain 1.100.0. Every gate below ran on that tree.
+- **Build under test:** branch `feat/0012-safe-directive-delivery`, merge commit 05640c5 (implementation 82b8934 merged with `main` c07f21c), toolchain 1.100.0. The full gates below ran on that tree; the three repeated runs of the directive tests ran on 82b8934, before the merge.
 - **Overall status:** automated evidence stands for FR-001 to FR-005, the modified 0002/FR-010, and PB-1 to PB-5. The success criteria that name a count are proven with fewer directives than the count, so they are PARTIAL. Rows that need the real agent CLIs are BLOCKED. Nobody ran them.
 - **Status of this file:** the gate numbers come from runs on 2026-11-23. The CI result of the PR is not in this file.
 
@@ -27,8 +27,8 @@
 |---|---|---|
 | `cargo fmt --check` | workspace | PASS |
 | `cargo clippy --all-targets -D warnings` | workspace without `office-harness-desktop` | PASS (clean) |
-| `cargo test` | workspace without `office-harness-desktop`: 1182 passed, 0 failed | PASS |
-| `tests/agent_directive.rs`, `tests/task_text.rs` | 13 and 14 tests, run 3 times in a row | PASS (each time) |
+| `cargo test` | workspace without `office-harness-desktop`: 1203 passed, 0 failed (1182 before the merge) | PASS |
+| `tests/agent_directive.rs`, `tests/task_text.rs` | 13 and 14 tests, run 3 times in a row on 82b8934, once more in the merged workspace run | PASS (each time) |
 | `scripts/check-boundaries.sh` | repository | PASS (boundaries ok) |
 | Desktop checks (`bun test`, Playwright, `svelte-check`) | no desktop file changed | Not run |
 | CI | the PR | Not run yet |
