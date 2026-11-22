@@ -173,6 +173,44 @@ test("the floors show their desks with name, status, and last line", async ({
   await expectNoSeriousViolationsAtBothWidths(page);
 });
 
+// WCAG 1.4.11: the border alone marks a desk, so it needs 3:1 against the
+// floor it sits on (white; the app has one theme).
+const NON_TEXT_CONTRAST_MIN = 3;
+
+test("the desk border meets 3:1 against the floor (WCAG 1.4.11)", async ({
+  page,
+}) => {
+  await openScene(page);
+
+  const contrast = await desks(page)
+    .first()
+    .evaluate((element) => {
+      // A canvas turns any computed color syntax into plain RGB bytes.
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d", { willReadFrequently: true })!;
+      const luminance = (color: string): number => {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        const [red, green, blue] = context.getImageData(0, 0, 1, 1).data;
+        const linear = (byte: number): number => {
+          const value = byte / 255;
+          return value <= 0.04045
+            ? value / 12.92
+            : ((value + 0.055) / 1.055) ** 2.4;
+        };
+        return (
+          0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+        );
+      };
+      const border = luminance(getComputedStyle(element).borderTopColor);
+      const floor = luminance("white");
+      return (floor + 0.05) / (border + 0.05);
+    });
+  expect(contrast).toBeGreaterThanOrEqual(NON_TEXT_CONTRAST_MIN);
+});
+
 test("the switcher shows one project's floor and All projects brings the rest back", async ({
   page,
 }) => {
