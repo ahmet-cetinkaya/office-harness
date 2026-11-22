@@ -102,10 +102,8 @@ fn a_clean_confirmed_worktree_is_removed_without_force_with_its_branch() {
 
     assert_eq!(outcome.deleted_branches, ["office-harness/ana"]);
     assert_eq!(outcome.kept_folders.len(), 0);
-    assert_eq!(
-        worktrees.calls(),
-        ["status", "status", "remove", "branch -D"]
-    );
+    // A stopped agent writes nothing, so one status read is enough.
+    assert_eq!(worktrees.calls(), ["status", "remove", "branch -D"]);
     assert_eq!(office.agents.all().len(), 0);
 }
 
@@ -300,4 +298,19 @@ fn stop_and_check_stops_and_names_the_stop_in_its_refusal() {
     );
     assert_eq!(office.terminals.stopped().len(), 1);
     assert_eq!(office.agents.all().len(), 1);
+}
+
+#[test]
+fn stop_and_check_reads_nothing_for_an_agent_that_was_already_stopped() {
+    let office = Office::new();
+    let worktrees = FakeWorktrees::new(&std::env::temp_dir().join("wt"));
+    let agent = agent_with_worktree(&office, &worktrees, AgentStatus::Stopped);
+
+    office
+        .delete_agent_with(&worktrees)
+        .stop_and_check(agent.id, &remove_confirming(&agent, "h0"))
+        .expect("checked");
+
+    assert_eq!(worktrees.calls().len(), 0);
+    assert_eq!(office.terminals.stopped().len(), 0);
 }

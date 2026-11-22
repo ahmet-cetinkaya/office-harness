@@ -55,10 +55,10 @@ Paths are relative to the repository root. `T` is `src/modules/template`, `H` is
 | FR-011 | PASS (automated) | Domain: `A/domain/src/value_objects/env_entry.tests.rs`, `no_value_and_an_empty_value_are_different_entries`. Storage: `A/infrastructure/src/persistence/additions_document.tests.rs`, `no_value_and_an_empty_value_stay_different_in_the_stored_text`; `TI`, `no_value_and_an_empty_value_stay_different_after_a_round_trip`; `TJ`, `an_agent_body_round_trips_and_keeps_no_value_apart_from_an_empty_value`. Wire: `A/presentation/src/contracts/additions_body.tests.rs`, `a_null_value_is_no_value_and_an_empty_text_is_a_value`. Creation keeps it: `HB`, `a_value_less_environment_entry_keeps_no_value_in_the_stored_additions`. Import drops values: `HT`, `an_import_of_a_file_with_an_env_value_saves_no_value`. Not passed to the CLI: `A/application/src/commands/start_agent/start_agent_handler.tests.rs`, `a_variable_without_a_value_is_not_passed_and_an_empty_value_is`. Shown: `DE`, `the create dialog shows a variable without a value as no value`. The agent details show it as `NAME: no value`: `DE`, `an agent's details show a variable without a value as no value` (US3 scenario 6). |
 | PB-1 | PASS (automated) | `HB`, `a_second_ceo_is_refused_with_the_tree_rule_text`, `a_place_for_a_template_with_no_role_is_a_reason`. |
 | PB-2 | PASS (automated) | `HB`, `each_created_agent_has_a_create_record_with_the_user_as_actor`, `each_rolled_back_agent_has_a_create_and_a_delete_entry`. |
-| PB-3 | GAP | No test asserts that no CLI configuration path is written. No code path of this change writes one: a template holds only office-harness definitions. |
+| PB-3 | PASS (automated) | `HT`, `template_work_starts_no_agent_and_writes_no_cli_configuration`: saving, creating an agent and a team, and exporting leave every file and folder of the fake CLI homes and of the project folder as they were. Added by ACF-183. |
 | PB-4 | PASS (automated) | The file commands take no path: they open the dialog and touch only the picked path. `DF`: `a_file_of_exactly_the_cap_is_read`, `a_file_one_byte_over_the_cap_is_refused`, `a_folder_is_refused_as_not_a_regular_file`, `a_fifo_is_refused_without_being_opened`, `bytes_that_are_not_text_are_refused`, `a_missing_file_names_the_read_failure`, `an_export_writes_the_contents_to_the_picked_path`. The webview gets no `dialog:` or `fs:` permission: `DC`, `the_webview_capability_grants_exactly_the_listed_commands_and_notifications`. |
 | PB-5 | PASS (automated) | `DE`: every test works by keyboard, and the views are checked with axe (`expectNoSeriousViolations`), for example `an empty templates view says so and offers save and import`, `the create dialog shows a variable without a value as no value`. The screen reader pass is BLOCKED. |
-| A1 to A10 | PARTIAL (automated) | A2: `TN` tests above. A3: `TV`, `a_taken_name_gets_the_lowest_free_number_ignoring_case`. A4: `HB`, `a_team_lead_entry_with_the_ceo_role_is_created_as_a_lead`. A5: `TS`, `a_team_template_keeps_its_copy_when_an_agent_template_is_edited_or_deleted`. A6: `TS`, `an_export_holds_no_environment_value_and_keeps_the_names`; `HT`, `an_import_of_a_file_with_an_env_value_saves_no_value`. A7: `TB`, `fifty_agents_are_accepted_and_fifty_one_are_refused`; `DF` cap tests. A8: `TI`, `templates_survive_closing_and_reopening_the_database`. A9: `AC`, `an_agent_may_not_ask_for_a_type_outside_the_allowlist` (it asks for `template.list`, and the answer is `refused`; the other `template.*` types are outside the same allowlist and have no test of their own). A1 (created agents are not started) and A10 (template changes write no action record) have no test of their own. |
+| A1 to A10 | PASS (automated) | A1: `HT`, `template_work_starts_no_agent_and_writes_no_cli_configuration` (every agent made from a template is `stopped`). A10: `HT`, `template_changes_write_no_action_record` (save, edit, export, delete, and import write no row; a create from a template then writes one). Both added by ACF-183. A2: `TN` tests above. A3: `TV`, `a_taken_name_gets_the_lowest_free_number_ignoring_case`. A4: `HB`, `a_team_lead_entry_with_the_ceo_role_is_created_as_a_lead`. A5: `TS`, `a_team_template_keeps_its_copy_when_an_agent_template_is_edited_or_deleted`. A6: `TS`, `an_export_holds_no_environment_value_and_keeps_the_names`; `HT`, `an_import_of_a_file_with_an_env_value_saves_no_value`. A7: `TB`, `fifty_agents_are_accepted_and_fifty_one_are_refused`; `DF` cap tests. A8: `TI`, `templates_survive_closing_and_reopening_the_database`. A9: `AC`, `an_agent_may_not_ask_for_a_type_outside_the_allowlist` (it asks for `template.list`, and the answer is `refused`; the other `template.*` types are outside the same allowlist and have no test of their own). |
 | SC-001 | PARTIAL (automated) | Machine run: `DE`, `SC-001: a 15-agent tree from two templates in three create actions` builds a CEO and two teams of a lead and 6 members from two templates in 3 create actions, by keyboard, on the mock core: 15 agents, 3 create actions, 137 ms against a limit of 180000 ms. The run writes `sc-001-timing.json`; the copy is kept outside the repository in the QA agent's folder, `qa/evidence/sc-001-timing.json`. The 3-minute human run is BLOCKED (Manual QA). |
 | SC-002 | PASS (automated) | `HT`, `export_then_import_into_a_fresh_office_keeps_everything_but_env_values`; `TF`, `export_writes_every_environment_value_as_null_and_the_file_reads_back`; `TS`, `an_export_holds_no_environment_value_and_keeps_the_names`. |
 | SC-003 | PASS (automated) | One test for each kind of FR-009: `TF`, `an_unknown_version_unreadable_text_and_a_large_file_are_refused_with_a_reason`, `a_template_that_breaks_a_save_rule_is_named_with_its_reason`, `a_file_of_fifty_agents_is_accepted` (the 50 edge); `TB`, `fifty_agents_are_accepted_and_fifty_one_are_refused`; `TS`, `a_refused_file_saves_nothing_and_names_the_template_and_the_reason`; `TI`, `insert_all_saves_every_template_or_none`; `HT`, `an_import_text_over_256_kib_is_refused_as_invalid`. |
@@ -92,9 +92,8 @@ Every row of the Traceability table in `PLAN.md` has evidence or a recorded gap.
 | Plan row | Verdict | Where |
 |---|---|---|
 | FR-001 to FR-011 | evidence for each | Requirements table above. |
-| PB-1, PB-2, PB-4, PB-5 | evidence | Requirements table above. |
-| PB-3 | recorded gap | No test; no code path writes a CLI configuration. |
-| A1 to A10 | evidence for A2 to A9; recorded gap for A1 and A10 | Requirements table above. |
+| PB-1 to PB-5 | evidence | Requirements table above. |
+| A1 to A10 | evidence | Requirements table above. |
 | SC-001 | machine evidence; human run BLOCKED | Requirements table and Manual QA. |
 | SC-002 to SC-005 | evidence | Requirements table above. |
 | US1, US2, US3 | evidence, including US3 scenario 6 | Requirements table above. |
@@ -106,10 +105,9 @@ None recorded by T8. The T6 crate facts below are from the T6 worker.
 ## Known gaps (open only)
 
 1. **A project whose folder is missing has no test of its own.** The template's missing folder is tested.
-2. **PB-3, A1, and A10 have no test of their own.** They rest on code reading.
-3. **Only `template.list` is tested against the agent connection.** The allowlist refuses every type outside it.
-4. **No hands-on pass** of the rows in Manual QA.
-5. **The umbrella gate, the CI matrix of the Phase 2 PR, `/ac:review`, and `/ac:verify`** are not run in this file.
+2. **Only `template.list` is tested against the agent connection.** The allowlist refuses every type outside it.
+3. **No hands-on pass** of the rows in Manual QA.
+4. **The umbrella gate, the CI matrix of the Phase 2 PR, `/ac:review`, and `/ac:verify`** are not run in this file.
 
 ## Manual QA
 
