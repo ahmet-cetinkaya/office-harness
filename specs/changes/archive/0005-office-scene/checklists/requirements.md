@@ -1,6 +1,6 @@
 # Requirements checklist: 0005-office-scene
 
-Spec: `specs/changes/0005-office-scene/SPEC.md` · Status: draft · Date: 2026-11-17 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker.
+Spec: `specs/changes/archive/0005-office-scene/SPEC.md` · Status: draft · Date: 2026-11-17 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker.
 
 ## Content quality
 

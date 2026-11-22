@@ -1,6 +1,6 @@
 # Requirements checklist: 0002-agent-hierarchy
 
-Spec: `specs/changes/0002-agent-hierarchy/SPEC.md` · Status: approved (overnight directive 2026-11-16; owner may amend) · Date: 2026-11-16 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker. All `0001/FR-###` references re-verified against the merged 0001 on `main` (commit 4425166).
+Spec: `specs/changes/archive/0002-agent-hierarchy/SPEC.md` · Status: approved (overnight directive 2026-11-16; owner may amend) · Date: 2026-11-16 · Result: 16 of 16 items pass. No open `[NEEDS CLARIFICATION]` marker. All `0001/FR-###` references re-verified against the merged 0001 on `main` (commit 4425166).
 
 ## Content quality
 
