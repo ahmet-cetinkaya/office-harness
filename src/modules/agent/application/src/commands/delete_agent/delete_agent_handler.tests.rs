@@ -256,3 +256,26 @@ fn the_check_refuses_a_stale_hash_and_changes_nothing() {
     assert_eq!(office.terminals.stopped().len(), 0);
     assert_eq!(office.agents.all().len(), 1);
 }
+
+#[test]
+fn stop_and_check_stops_and_names_the_stop_in_its_refusal() {
+    let office = Office::new();
+    let worktrees = FakeWorktrees::new(&std::env::temp_dir().join("wt"));
+    let agent = agent_with_worktree(&office, &worktrees, AgentStatus::Working);
+    worktrees.queue_statuses(vec![clean_status("h1")]);
+
+    let error = office
+        .delete_agent_with(&worktrees)
+        .stop_and_check(agent.id, &remove_confirming(&agent, "h0"))
+        .expect_err("changed");
+
+    assert_eq!(
+        error,
+        ApplicationError::Conflict(
+            "the worktree of Ana changed while it stopped; it is stopped now, confirm again"
+                .to_owned()
+        )
+    );
+    assert_eq!(office.terminals.stopped().len(), 1);
+    assert_eq!(office.agents.all().len(), 1);
+}

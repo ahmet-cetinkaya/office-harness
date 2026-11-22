@@ -124,6 +124,8 @@ struct RecordingRemover {
     failing: Option<AgentId>,
     /// The agent whose worktree check refuses.
     stale: Option<AgentId>,
+    /// The agent whose worktree changes while it stops.
+    changes_at_stop: Option<AgentId>,
 }
 
 impl SubtreeAgentRemover for RecordingRemover {
@@ -135,6 +137,19 @@ impl SubtreeAgentRemover for RecordingRemover {
         if self.stale == Some(agent_id) {
             return Err(SubtreeActionError(
                 "the worktree of the member changed; confirm again".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn prepare(
+        &self,
+        agent_id: AgentId,
+        _worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError> {
+        if self.changes_at_stop == Some(agent_id) {
+            return Err(SubtreeActionError(
+                "the worktree of the member changed while it stopped".to_owned(),
             ));
         }
         Ok(())
@@ -303,6 +318,30 @@ fn a_stale_worktree_on_one_member_refuses_before_any_delete() {
 }
 
 #[test]
+fn a_member_that_changes_its_worktree_at_its_stop_refuses_before_any_delete() {
+    let family = family();
+    let remover = Arc::new(RecordingRemover {
+        changes_at_stop: Some(family.lead),
+        ..Default::default()
+    });
+    let handler = handler(
+        &family.rows,
+        Arc::new(RecordingEnder::default()),
+        Arc::clone(&remover) as Arc<dyn SubtreeAgentRemover>,
+    );
+
+    let error = handler
+        .delete_subtree(&request(family.ceo, true, Some(2)))
+        .expect_err("changed at stop");
+
+    assert!(matches!(
+        &error,
+        HierarchyApplicationError::ConflictInput(_)
+    ));
+    assert_eq!(remover.calls.order().len(), 0);
+}
+
+#[test]
 fn an_agent_without_descendants_deletes_alone_without_a_confirmation() {
     let agent_id = AgentId::generate();
     let remover = Arc::new(RecordingRemover::default());
@@ -414,6 +453,22 @@ struct GrowingRemover {
 }
 
 impl SubtreeAgentRemover for GrowingRemover {
+    fn check(
+        &self,
+        _agent_id: AgentId,
+        _worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError> {
+        Ok(())
+    }
+
+    fn prepare(
+        &self,
+        _agent_id: AgentId,
+        _worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError> {
+        Ok(())
+    }
+
     fn delete(
         &self,
         agent_id: AgentId,

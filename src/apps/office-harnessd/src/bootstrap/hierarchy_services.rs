@@ -255,6 +255,16 @@ impl SubtreeAgentRemover for DeleteAgentPort {
             .map_err(|error| SubtreeActionError(error.to_string()))
     }
 
+    fn prepare(
+        &self,
+        agent_id: AgentId,
+        worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError> {
+        self.delete
+            .stop_and_check(agent_id, &delete_worktrees(worktrees))
+            .map_err(|error| SubtreeActionError(error.to_string()))
+    }
+
     fn delete(
         &self,
         agent_id: AgentId,

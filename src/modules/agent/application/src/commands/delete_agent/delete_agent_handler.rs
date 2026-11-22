@@ -112,6 +112,26 @@ impl DeleteAgentHandler {
         require_confirmed(&agent, &status, confirmed)
     }
 
+    /// Stops an agent whose worktree the delete removes, then checks its
+    /// status again: the last step of a subtree's preparation, so no member
+    /// writes after its final check.
+    ///
+    /// # Errors
+    /// `NotFound`; `Internal` when the child cannot be ended; `Conflict`
+    /// when the worktree changed, which leaves the agent stopped.
+    pub fn stop_and_check(
+        &self,
+        agent_id: AgentId,
+        choice: &DeleteWorktrees,
+    ) -> Result<(), ApplicationError> {
+        let agent = require_agent(&*self.agents, agent_id)?;
+        let (Some(worktree), DeleteWorktrees::Remove(confirmed)) = (&agent.worktree, choice) else {
+            return Ok(());
+        };
+        self.stop_if_running(&agent)?;
+        require_confirmed_after_stop(&agent, &self.status(worktree), confirmed)
+    }
+
     /// # Errors
     /// `NotFound`; `Internal` when a running child cannot be ended, which
     /// keeps the agent; `Conflict` when a worktree to remove changed since
@@ -158,7 +178,7 @@ impl DeleteAgentHandler {
         self.stop_if_running(agent)?;
         // The agent may have written a file up to its stop.
         let status = self.status(worktree);
-        require_confirmed(agent, &status, confirmed)?;
+        require_confirmed_after_stop(agent, &status, confirmed)?;
         let Some(worktrees) = self.worktrees.as_ref().filter(|_| status.reachable) else {
             return Ok(WorktreeOutcome::kept(worktree));
         };
@@ -223,6 +243,21 @@ fn require_confirmed(
         "the worktree of {} changed; confirm again",
         agent.name
     )))
+}
+
+/// As `require_confirmed`, after the stop: the refusal says that the agent
+/// stays stopped.
+fn require_confirmed_after_stop(
+    agent: &Agent,
+    status: &WorktreeStatus,
+    confirmed: &HashMap<AgentId, String>,
+) -> Result<(), ApplicationError> {
+    require_confirmed(agent, status, confirmed).map_err(|_| {
+        ApplicationError::Conflict(format!(
+            "the worktree of {} changed while it stopped; it is stopped now, confirm again",
+            agent.name
+        ))
+    })
 }
 
 #[cfg(test)]

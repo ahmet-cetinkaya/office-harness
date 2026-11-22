@@ -473,6 +473,31 @@ fn the_hash_changes_when_one_file_is_reverted_and_another_added() {
 }
 
 #[test]
+fn the_hash_changes_when_an_already_changed_file_is_edited_again() {
+    let fixture = fixture();
+    let made = created(&fixture, "x");
+    let file = made.worktree.folder.join("a.txt");
+    fs::write(&file, "changed\n").expect("file");
+    let first = fixture.worktrees.status(&made.worktree);
+    fs::write(&file, "changed again, longer\n").expect("file");
+    let second = fixture.worktrees.status(&made.worktree);
+    assert_eq!(first.changed_files, second.changed_files);
+    assert_ne!(first.status_hash, second.status_hash);
+}
+
+#[test]
+fn a_renamed_file_counts_once() {
+    let fixture = fixture();
+    let made = created(&fixture, "x");
+    git(
+        &fixture.home,
+        &made.worktree.folder,
+        &["mv", "a.txt", "renamed.txt"],
+    );
+    assert_eq!(fixture.worktrees.status(&made.worktree).changed_files, 1);
+}
+
+#[test]
 fn own_commits_count_what_the_base_lacks_and_a_missing_base_keeps_the_branch() {
     let fixture = fixture();
     git(&fixture.home, &fixture.repository, &["branch", "topic"]);

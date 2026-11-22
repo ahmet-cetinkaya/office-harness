@@ -91,8 +91,10 @@ impl SubtreeHandler {
     /// the deletes keeps the confirmed count and the deleted set one tree:
     /// no placement can join in between and be missed.
     ///
-    /// Every agent's worktree confirmation is checked before the first
-    /// delete, so one question covers the whole subtree (0010 FR-005).
+    /// Every agent's worktree confirmation is checked, every agent whose
+    /// worktree goes is stopped, and every confirmation is checked again
+    /// before the first delete, so one question covers the whole subtree
+    /// and a refusal deletes nobody (0010 FR-005, D6).
     ///
     /// # Errors
     /// `Conflict` when the agent still has descendants and the request does
@@ -108,6 +110,11 @@ impl SubtreeHandler {
         for agent in &deleted {
             self.remover
                 .check(*agent, &request.worktrees)
+                .map_err(HierarchyApplicationError::from_delete)?;
+        }
+        for agent in &deleted {
+            self.remover
+                .prepare(*agent, &request.worktrees)
                 .map_err(HierarchyApplicationError::from_delete)?;
         }
         let mut worktrees = WorktreeReport::default();

@@ -45,7 +45,7 @@ Result: one entry per listed agent that has an own worktree, in the order given:
 { agent_id, name, folder, branch, base,
   folder_exists: bool, reachable: bool,
   changed_files: number, status_hash: string,
-  own_commits: number, base_exists: bool }
+  own_commits: number | null, base_exists: bool }   // null: git could not count them; the branch is kept
 ```
 
 Errors: `invalid` for a missing or malformed id; `not_found` for an unknown agent.
@@ -95,8 +95,8 @@ The result is now an object for every delete:
 
 With `remove`, for each agent with a worktree, deepest first in a subtree delete:
 
-1. Every listed worktree's status is read again and compared with `confirmed_status` before the first agent is stopped or deleted. A missing or different hash answers `conflict` "the worktree of <name> changed; confirm again" and nothing changes.
-2. The agent is stopped, the status is read again, and compared again. A difference answers the same `conflict`; the agents deleted before it stay deleted.
+1. Every listed worktree's status is read again and compared with `confirmed_status` before any agent is stopped. A missing or different hash answers `conflict` "the worktree of <name> changed; confirm again" and nothing changes.
+2. Every agent whose worktree is removed is stopped, and its status is read and compared again, before the first agent is deleted. A difference answers `conflict` "the worktree of <name> changed while it stopped; it is stopped now, confirm again"; no agent is deleted, and the stopped agents stay stopped.
 3. A worktree confirmed with 0 changes is removed without force, so git refuses one that changed since. Otherwise, or when the folder is missing, it is removed with force; only its own record is cleared.
 4. The branch is deleted only when it has no own commits and its base exists; otherwise it is kept and named. A branch that git refuses to delete (for example one checked out elsewhere) is kept and named.
 5. A repository that cannot be reached keeps the folder and the branch and names them; the agent is still deleted.

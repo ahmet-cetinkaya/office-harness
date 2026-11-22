@@ -56,11 +56,20 @@ pub trait SubtreeAgentRemover: Send + Sync {
     /// The agent module's refusal.
     fn check(
         &self,
-        _agent_id: AgentId,
-        _worktrees: &SubtreeWorktrees,
-    ) -> Result<(), SubtreeActionError> {
-        Ok(())
-    }
+        agent_id: AgentId,
+        worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError>;
+
+    /// Stops the agent when the delete removes its worktree, then checks
+    /// again, so no member writes after the last check (0010 D6).
+    ///
+    /// # Errors
+    /// The agent module's refusal; the agent stays stopped.
+    fn prepare(
+        &self,
+        agent_id: AgentId,
+        worktrees: &SubtreeWorktrees,
+    ) -> Result<(), SubtreeActionError>;
 
     /// # Errors
     /// The agent module's failure when the agent cannot be deleted.
