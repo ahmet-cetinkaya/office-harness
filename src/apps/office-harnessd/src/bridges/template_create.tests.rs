@@ -7,6 +7,7 @@
 
 use std::collections::HashSet;
 use std::fs;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -969,6 +970,7 @@ fn each_created_agent_has_a_create_record_with_the_user_as_actor() {
 struct FaultyStore {
     inner: Arc<dyn HierarchyStore>,
     fail_place_at: Option<usize>,
+    panic_place_at: Option<usize>,
     fail_team_save: bool,
     places: AtomicUsize,
 }
@@ -978,6 +980,17 @@ impl FaultyStore {
         Arc::new(Self {
             inner,
             fail_place_at: Some(position),
+            panic_place_at: None,
+            fail_team_save: false,
+            places: AtomicUsize::new(0),
+        })
+    }
+
+    fn panicking_place_at(inner: Arc<dyn HierarchyStore>, position: usize) -> Arc<Self> {
+        Arc::new(Self {
+            inner,
+            fail_place_at: None,
+            panic_place_at: Some(position),
             fail_team_save: false,
             places: AtomicUsize::new(0),
         })
@@ -987,6 +1000,7 @@ impl FaultyStore {
         Arc::new(Self {
             inner,
             fail_place_at: None,
+            panic_place_at: None,
             fail_team_save: true,
             places: AtomicUsize::new(0),
         })
@@ -1042,6 +1056,7 @@ impl HierarchyStore for FaultyStore {
         if self.fail_place_at == Some(position) {
             return Err(injected_store_failure("place"));
         }
+        assert_ne!(self.panic_place_at, Some(position), "injected place panic");
         self.inner
             .place_agent(agent_id, role, parent_agent_id, team_id)
     }
@@ -1114,6 +1129,29 @@ fn a_team_creation_whose_store_step_fails_removes_every_agent_and_the_team() {
         assert_eq!(office.agent_names(), vec!["ceo"], "place {fail_place_at}");
         assert_eq!(office.team_count(), 0, "place {fail_place_at}");
     }
+}
+
+#[test]
+fn a_team_creation_whose_store_step_panics_removes_every_agent_and_the_team() {
+    let office = office();
+    let ceo = office.create_ceo();
+    let id = office.save(
+        "Team",
+        TemplateBody::Team(team_body(office.folder.path(), 3)),
+    );
+    let store = FaultyStore::panicking_place_at(Arc::clone(&office.services.hierarchy.store), 2);
+    let bridge = office.bridge_over_store(store);
+
+    let panicked = within_deadline(move || {
+        panic::catch_unwind(AssertUnwindSafe(|| {
+            bridge.create_team(id, TEAM_NAME, ceo, None)
+        }))
+        .is_err()
+    });
+
+    assert!(panicked, "the panic still reaches the caller");
+    assert_eq!(office.agent_names(), vec!["ceo"]);
+    assert_eq!(office.team_count(), 0);
 }
 
 #[test]
