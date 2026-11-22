@@ -8,6 +8,7 @@ mod agent_line_bridge;
 mod agent_status_bridge;
 mod directive_bridges;
 mod hold_bridges;
+mod needs_you_bridge;
 mod notification_bridge;
 mod rate_limit_source;
 mod role_requests;
@@ -26,6 +27,7 @@ pub use directive_bridges::{
     DirectiveJournalBridge, DirectiveReceiptBridge, DirectiveTargetBridge, DirectiveWriterBridge,
 };
 pub use hold_bridges::{HoldJournalBridge, HoldNotifierBridge};
+pub use needs_you_bridge::{AgentNames, NeedsYouBridge};
 pub use notification_bridge::NotificationBridge;
 pub use rate_limit_source::SettingsRateLimits;
 pub use role_requests::{AgentCreatorBridge, RoleRequestsBridge};

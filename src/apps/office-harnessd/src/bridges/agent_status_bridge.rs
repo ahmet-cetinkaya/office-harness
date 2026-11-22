@@ -113,7 +113,7 @@ impl AgentStatusBridge {
 }
 
 /// The status event for a terminal event, and the detail that a failure shows.
-fn status_event(event: TerminalEvent) -> Option<(StatusEvent, Option<String>)> {
+pub(super) fn status_event(event: TerminalEvent) -> Option<(StatusEvent, Option<String>)> {
     match event {
         TerminalEvent::FirstOutput => Some((StatusEvent::FirstOutput, None)),
         TerminalEvent::OutputResumed => Some((StatusEvent::Output, None)),

@@ -12,6 +12,7 @@
     "allow-start-server",
     "allow-register-login-start",
     "allow-login-start-status",
+    "allow-set-window-title",
     "notification:default"
   ]
 }

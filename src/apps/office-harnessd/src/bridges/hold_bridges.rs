@@ -10,8 +10,9 @@ use hierarchy_application::common::interfaces::HoldStore;
 use hierarchy_application::common::ports::{HoldJournal, HoldNotifier};
 use hierarchy_domain::{Hold, HoldScope, HoldSetter, LimitRefusal};
 use kernel::{Actor, AgentId, Timestamp};
+use notification_application::commands::needs_you::NeedsYouClearReason;
 
-use super::{NotificationBridge, SystemClock};
+use super::{NeedsYouBridge, NotificationBridge, SystemClock};
 use crate::bootstrap::StorageAlerts;
 use crate::server::{EventHub, hold_changed_event};
 use agent_application::common::interfaces::Clock;
@@ -20,17 +21,28 @@ use agent_application::common::interfaces::Clock;
 /// and tells the clients with `action.recorded`. A user hold or release has
 /// the user as actor; an automatic hold has the office. A failed record
 /// write is the bridge's to report: the hold itself is already stored.
+///
+/// The release of an agent hold also clears that agent's Needs you item when
+/// the item says the office held it (0008 D2). The office hold is not an
+/// agent hold, so its release clears nothing.
 pub struct HoldJournalBridge {
     record: RecordActionHandler,
+    needs_you: NeedsYouBridge,
     hub: EventHub,
     alerts: StorageAlerts,
 }
 
 impl HoldJournalBridge {
     #[must_use]
-    pub fn new(record: RecordActionHandler, hub: EventHub, alerts: StorageAlerts) -> Self {
+    pub fn new(
+        record: RecordActionHandler,
+        needs_you: NeedsYouBridge,
+        hub: EventHub,
+        alerts: StorageAlerts,
+    ) -> Self {
         Self {
             record,
+            needs_you,
             hub,
             alerts,
         }
@@ -68,6 +80,10 @@ impl HoldJournal for HoldJournalBridge {
 
     fn released(&self, scope: HoldScope) {
         self.record_entry(Actor::User, scope, ActionKind::Release, SystemClock.now());
+        if let HoldScope::Agent(agent_id) = scope {
+            self.needs_you
+                .clear(agent_id, NeedsYouClearReason::HoldReleased);
+        }
     }
 
     fn storage_failed(&self, message: &str) {
