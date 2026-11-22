@@ -64,7 +64,7 @@ The server never learns which agent is on screen. A client that marks the origin
 ## Unchanged messages
 
 - `notification.read_agent {agent_id}` now also clears the agent's item (FR-004). Its request and result do not change.
-- `notification.read {id}` now also clears the item whose `origin_notification_id` equals `id`. Its request and result do not change.
+- `notification.read {notification_id}` now also clears the item whose `origin_notification_id` equals `notification_id`. Its request and result do not change.
 - `notification.list` and `notification.created` do not change (PB-1).
 - `agent.status` frames and `agent.delete` do not change. The server hooks them (FR-005).
 

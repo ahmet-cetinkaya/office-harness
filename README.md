@@ -36,9 +36,21 @@ The exact wording of these OS notices depends on the OS version. The macOS and W
 6. To move focus from the terminal back to the rest of the app, press `Ctrl+Shift+F12`.
 7. Close the app when you want. The agents keep running and the server keeps recording their output.
 
-The app has no screen to change the focus shortcut. The server stores it as the setting `focus_shortcut`. The default value is `Ctrl+Shift+F12`. A value is modifiers joined with `+`, then one key, for example `Ctrl+Alt+F11`. A client can change it with the `settings.set` request (see [the client protocol](specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md)). The app reads the setting when you open a terminal.
+The app has no screen to change the focus shortcut. The server stores it as the setting `focus_shortcut`. The default value is `Ctrl+Shift+F12`. A value is modifiers joined with `+`, then one key, for example `Ctrl+Alt+F11`. A client can change it with the `settings.set` request (see [the client protocol](specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md)). The app loads the setting once, when it starts, so a change applies at the next app start.
 
-The agent and switcher shortcuts are fixed: `Ctrl+Shift+F1` to `Ctrl+Shift+F9` open the first nine agents of the list, and `Ctrl+Shift+F10` opens the agent switcher. On most macOS keyboards the F-keys send media commands by default, so the shortcuts work there only while you hold `Fn` (or after you turn on "Use F1, F2, etc. keys as standard function keys"). If you cannot change that setting, a macOS build of a later release can move the shortcuts to the fallback family `Cmd+Alt+1` to `Cmd+Alt+9` (agents) and `Cmd+Alt+0` (switcher), which no webview or macOS default takes; that fallback is not shipped yet. On KDE Plasma the default family is not verified until a hands-on QA pass; if a distribution binds it globally, the same `Cmd`/`Ctrl+Alt` fallback applies. The full fallback table is in [the panel-practicality spec](specs/changes/0003-panel-practicality/SPEC.md).
+The agent and switcher shortcuts are fixed: `Ctrl+Shift+F1` to `Ctrl+Shift+F9` open the first nine agents of the list, `Ctrl+Shift+F10` opens the agent switcher, and `Ctrl+Shift+F11` jumps to the agent at the top of Needs you (see below). On most macOS keyboards the F-keys send media commands by default, so the shortcuts work there only while you hold `Fn` (or after you turn on "Use F1, F2, etc. keys as standard function keys"). If you cannot change that setting, a macOS build of a later release can move the shortcuts to the fallback family `Cmd+Alt+1` to `Cmd+Alt+9` (agents) and `Cmd+Alt+0` (switcher), which no webview or macOS default takes; that fallback is not shipped yet, and the jump key has no entry in it yet, so on macOS it also works only while you hold `Fn`. On KDE Plasma the default family is not verified until a hands-on QA pass; if a distribution binds it globally, the same `Cmd`/`Ctrl+Alt` fallback applies. The full fallback table is in [the panel-practicality spec](specs/changes/0003-panel-practicality/SPEC.md).
+
+## Needs you
+
+The panel has a "Needs you" section with the agents that wait for you. An agent gets one item when it asks for input (it was quiet for the quiet period), rings the terminal bell, fails, exits, or is put on hold by the office after it hit a limit. Each item shows the agent's name, its project, what the office saw, and how long the agent has waited, as text. A deleted agent, an agent that starts working again, and an agent that you stop have no item.
+
+The items are in groups: failed agents first, then agents that wait for input, ring the bell, or were held by the office, then exited agents. Inside a group the longest wait comes first. The number of items shows next to "Needs you" and in the window title, in the panel and in the office scene. The server keeps the items, so events that happened while the app was closed show when it opens.
+
+Press `Ctrl+Shift+F11` to open the terminal of the agent at the top of the list, with keyboard focus, from the panel, from a focused terminal, or from the office scene (there it opens the top agent's desk). The item leaves the list. Press the key again for the next agent. When the list is empty the view stays and the app says "No agent needs you". An exited agent that you will not restart can leave the list with its "Dismiss" button, which changes nothing else. Opening an agent's terminal by any route also removes its item.
+
+If the stored `focus_shortcut` is `Ctrl+Shift+F11`, the focus shortcut keeps the key and the jump has no key. The Needs you section then says: "The jump shortcut is off because the focus shortcut uses Ctrl+Shift+F11. Change the focus_shortcut setting (see the README) and reopen the app to turn the jump on." Change the setting, as described above, and restart the app.
+
+A client reaches the list with the `needs_you.list` and `needs_you.dismiss` requests and the `needs_you.changed` event. The shapes are in [the needs-you protocol](specs/changes/0008-needs-you-queue/contracts/needs-you-protocol.md).
 
 ## The agent hierarchy
 
@@ -58,7 +70,7 @@ A client reaches the hierarchy over the protocol: the `team.create`, `team.delet
 
 An agent can create agents, start and stop them, start new tasks, and send directives without you. If one agent loops, it can flood a terminal or churn agents faster than you can read. A hold stops these agent-made actions. The limits slow an agent that acts too fast.
 
-**Hold the office.** Choose "Hold office" in the panel header. The header then says "Office on hold" as text and offers "Release office". The shortcut is `Ctrl+Shift+H` while the keyboard focus is in the panel. It does not work inside a terminal, because a terminal gets every key. From a terminal, press the focus shortcut first, then `Ctrl+Shift+H`.
+**Hold the office.** Choose "Hold office" in the panel header. The header then says "Office on hold" as text and offers "Release office". The shortcut is `Ctrl+Shift+H` while the keyboard focus is in the panel. It also works inside a focused terminal: every key of the shortcut table leaves a terminal and is not sent to the CLI.
 
 **Hold one agent.** Open the agent details and choose the hold action. The agent and every agent under it are held. The agent's row says "on hold" as text. Choose the release action in the details to end it. Releasing the office does not release agent holds.
 
