@@ -2999,6 +2999,7 @@ dependencies = [
  "template-application",
  "template-domain",
  "template-infrastructure",
+ "template-presentation",
  "terminal-application",
  "terminal-domain",
  "terminal-infrastructure",
@@ -4633,6 +4634,13 @@ dependencies = [
 [[package]]
 name = "template-presentation"
 version = "0.1.0"
+dependencies = [
+ "kernel",
+ "serde_json",
+ "template-application",
+ "template-domain",
+ "wire",
+]
 
 [[package]]
 name = "tendril"
