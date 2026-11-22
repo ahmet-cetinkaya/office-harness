@@ -71,14 +71,24 @@ fn text_after_selection_mark(row: &str) -> Option<&str> {
 }
 
 /// An input prompt has the terminal cursor behind a mark such as `›` or
-/// `>`; a dialog does not. A list that shows beside such a prompt, as a
+/// `>`, in the text after it. A dialog parks the cursor on its marked entry,
+/// at the mark itself or before it, as `claude` does on `❯ No, exit` of its
+/// folder trust question. A list that shows beside a prompt, as a
 /// `● answer` row with a `  more` row above the prompt, or a hint row under
 /// it, is output or a hint, and does not hold a directive back.
 fn cursor_is_on_a_prompt(screen: &ScreenView) -> bool {
-    screen
-        .rows
-        .get(screen.cursor_row)
-        .is_some_and(|row| text_after_selection_mark(row).is_some())
+    screen.rows.get(screen.cursor_row).is_some_and(|row| {
+        text_after_selection_mark(row).is_some()
+            && screen.cursor_column > selection_mark_column(row)
+    })
+}
+
+/// The column of the row's leading selection mark: the count of the
+/// characters before it. Every mark takes one column.
+fn selection_mark_column(row: &str) -> usize {
+    row.chars()
+        .take_while(|character| character.is_whitespace())
+        .count()
 }
 
 /// A choice list without numbers ends the screen, as `❯ No` over `  Yes`:
