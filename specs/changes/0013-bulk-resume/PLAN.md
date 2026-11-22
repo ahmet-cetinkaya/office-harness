@@ -80,7 +80,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - **D9 Desktop.**
   - `D/modules/resume/`: service (`resume.plan`, `resume.start`), model (result text), and a controller that keeps the results from `resume.result`.
   - Header button "Resume interrupted (N)" from the agent list, shown only for N > 0 (FR-001).
-  - `resume-dialog.svelte`: loading, the check list in plan order (name, role, plan text, "on hold", "was running at an unclean stop"), a warning above Confirm when any listed agent has `after_unclean_stop` (linked to Confirm with `aria-describedby`), Confirm disabled with "Check at least one agent" when nothing is checked, then the results list in a `role="status"` region. Escape and Close keep the server running. It reuses the existing dialog primitive and button styles; no new visuals.
+  - `resume-dialog.svelte`: loading, the check list in plan order (name, role, plan text, "on hold", "was running at an unclean stop"), a warning above Confirm when any listed agent has `after_unclean_stop` (linked to Confirm with `aria-describedby`) with an acknowledgement check box that Confirm waits for while a marked agent is checked, Confirm disabled with "Check at least one agent" when nothing is checked, then the results list in a `role="status"` region. Escape and Close keep the server running. It reuses the existing dialog primitive and button styles; no new visuals.
 
 ## Scope
 
@@ -126,7 +126,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - Module, header button, dialog, wiring in `panel-view.svelte`, the action record detail (D10), and the mock-core requests and event.
 - **Acceptance:**
   - Vitest covers the model and the controller.
-  - Playwright `e2e/resume.spec.ts` covers: the button count and its absence; uncheck and confirm; live results, including `new_session` and `held`; the reason in the agent's action record; the unclean-stop marks and the warning, and no warning without them; Confirm disabled with nothing checked; keyboard only, with Escape; an axe scan of the dialog with no violation.
+  - Playwright `e2e/resume.spec.ts` covers: the button count and its absence; uncheck and confirm; live results, including `new_session` and `held`; the reason in the agent's action record; the unclean-stop marks, the warning, and Confirm unavailable until the acknowledgement, and no warning without marks; Confirm disabled with nothing checked; keyboard only, with Escape; an axe scan of the dialog with no violation.
   - `bun run check`, `lint`, `format:check`, `test`, and the Playwright suite pass.
 
 ### T5 Docs and evidence — depends on T1 to T4
