@@ -727,6 +727,7 @@ fn without_git_on_the_login_path_the_folder_is_not_in_a_repository() {
         fixture.root.clone(),
         Arc::new(LoginEnvironment::fixed(environment)),
         Environment::new(),
+        Arc::new(RecordedFailures::default()),
     );
     assert_eq!(worktrees.info(&fixture.repository, "x"), Ok(None));
 }
@@ -795,4 +796,191 @@ fn a_subfolder_that_is_a_link_out_of_the_worktree_in_the_base_is_refused() {
         WorktreeError::Invalid("the folder sub does not exist in evil".to_owned())
     );
     assert_nothing_left(&fixture);
+}
+
+/// A clean filter and a long-running filter process, planted in the shared
+/// configuration for every file after the worktree was made, as an agent
+/// could. Each touches its marker when git starts it.
+#[cfg(unix)]
+fn plant_filters(fixture: &Fixture) -> [PathBuf; 2] {
+    let clean_marker = fixture.home.join("clean-filter-ran");
+    let process_marker = fixture.home.join("process-filter-ran");
+    let clean = format!("touch '{}'; cat", clean_marker.display());
+    let process = format!("touch '{}'", process_marker.display());
+    for (key, value) in [
+        ("filter.planted.clean", clean.as_str()),
+        ("filter.planted.process", process.as_str()),
+        ("filter.planted.required", "true"),
+        ("filter.Other.Driver.clean", clean.as_str()),
+    ] {
+        git(&fixture.home, &fixture.repository, &["config", key, value]);
+    }
+    let info = fixture.repository.join(".git").join("info");
+    fs::create_dir_all(&info).expect("info folder");
+    fs::write(
+        info.join("attributes"),
+        "*.txt filter=planted\nb.txt filter=Other.Driver\n",
+    )
+    .expect("attributes");
+    [clean_marker, process_marker]
+}
+
+/// The same size and another change time, so git compares the content.
+#[cfg(unix)]
+fn touch_unchanged(file: &Path) {
+    let content = fs::read(file).expect("read");
+    fs::write(file, content).expect("rewrite");
+    fs::File::options()
+        .write(true)
+        .open(file)
+        .and_then(|handle| {
+            handle.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000))
+        })
+        .expect("change time");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_planted_filter_runs_neither_in_the_status_nor_in_the_plain_remove() {
+    let fixture = fixture();
+    let made = created(&fixture, "x");
+    let markers = plant_filters(&fixture);
+    touch_unchanged(&made.worktree.folder.join("a.txt"));
+    touch_unchanged(&made.worktree.folder.join("sub").join("b.txt"));
+
+    let status = fixture.worktrees.status(&made.worktree);
+
+    assert!(status.reachable);
+    for marker in &markers {
+        assert!(!marker.exists(), "{} ran", marker.display());
+    }
+    // A plain git status does run the planted filter; the filter process
+    // speaks no protocol, so that status may fail.
+    let _ = Command::new("git")
+        .arg("-C")
+        .arg(&made.worktree.folder)
+        .args(["status", "--porcelain"])
+        .envs(test_environment(&fixture.home))
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .expect("git runs");
+    assert!(markers.iter().any(|marker| marker.exists()));
+    for marker in &markers {
+        let _ = fs::remove_file(marker);
+    }
+    touch_unchanged(&made.worktree.folder.join("a.txt"));
+    fixture
+        .worktrees
+        .remove(&made.worktree, false)
+        .expect("removed");
+    for marker in &markers {
+        assert!(!marker.exists(), "{} ran", marker.display());
+    }
+}
+
+#[test]
+fn a_filter_driver_a_switch_cannot_name_reads_as_unreachable() {
+    let fixture = fixture();
+    let made = created(&fixture, "x");
+    git(
+        &fixture.home,
+        &fixture.repository,
+        &["config", "filter.a=b.clean", "cat"],
+    );
+    let status = fixture.worktrees.status(&made.worktree);
+    assert!(status.folder_exists && !status.reachable);
+}
+
+#[test]
+fn a_git_link_turned_to_another_repository_reads_as_unreachable() {
+    let fixture = fixture();
+    let made = created(&fixture, "x");
+    let other = fixture.home.join("other");
+    fs::create_dir_all(&other).expect("other");
+    git(&fixture.home, &other, &["init", "--quiet"]);
+    fs::write(
+        made.worktree.folder.join(".git"),
+        format!("gitdir: {}\n", other.join(".git").display()),
+    )
+    .expect("link turned");
+    let status = fixture.worktrees.status(&made.worktree);
+    assert!(status.folder_exists && !status.reachable);
+}
+
+#[test]
+fn a_branch_another_create_took_since_the_info_is_a_conflict() {
+    let fixture = fixture();
+    let info = fixture
+        .worktrees
+        .info(&fixture.repository, "dev")
+        .expect("info")
+        .expect("repository");
+    git(
+        &fixture.home,
+        &fixture.repository,
+        &["branch", "office-harness/dev"],
+    );
+    let runner = fixture.worktrees.require_runner().expect("git");
+    let request = WorktreeCreate {
+        folder: &fixture.repository,
+        agent_id: AgentId::generate(),
+        agent_name: "dev",
+        base: None,
+        branch_name: None,
+    };
+
+    let error = fixture
+        .worktrees
+        .make(runner, &info, &request, "main", &info.branch_name)
+        .expect_err("taken");
+
+    assert_eq!(
+        error,
+        WorktreeError::Conflict(
+            "the branch office-harness/dev exists; the next free name is office-harness/dev-2"
+                .to_owned()
+        )
+    );
+}
+
+/// Keeps every reported failure's text.
+#[derive(Default)]
+struct RecordedFailures(std::sync::Mutex<Vec<String>>);
+
+impl FailureReporter for RecordedFailures {
+    fn report(&self, error: &PortError) {
+        self.0.lock().expect("lock").push(error.to_string());
+    }
+}
+
+#[test]
+fn an_undo_that_leaves_the_branch_behind_raises_an_alert() {
+    let fixture = fixture();
+    let failures = Arc::new(RecordedFailures::default());
+    let worktrees = GitWorktrees::with_runner(fixture.root.clone(), Some(runner(&fixture.home)))
+        .with_failures(Arc::clone(&failures) as Arc<dyn FailureReporter>);
+    let clean = create(&fixture, &fixture.repository, "clean").expect("created");
+    worktrees.discard(&clean.worktree);
+    assert!(failures.0.lock().expect("lock").is_empty());
+    let made = create(&fixture, &fixture.repository, "x").expect("created");
+    git(
+        &fixture.home,
+        &made.worktree.folder,
+        &["checkout", "--quiet", "--detach"],
+    );
+    git(
+        &fixture.home,
+        &fixture.repository,
+        &["checkout", "--quiet", &made.worktree.branch],
+    );
+
+    worktrees.discard(&made.worktree);
+
+    let reported = failures.0.lock().expect("lock").clone();
+    assert_eq!(reported.len(), 1, "{reported:?}");
+    assert!(
+        reported[0].contains("the branch office-harness/x was left behind"),
+        "{reported:?}"
+    );
+    assert!(!made.worktree.folder.exists());
 }
