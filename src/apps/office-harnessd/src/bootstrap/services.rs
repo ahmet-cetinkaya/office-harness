@@ -21,9 +21,9 @@ use template_infrastructure::persistence::{
 
 use super::{
     AccessServices, AgentServices, HierarchyServices, LoginSetup, NotificationServices, ServerLog,
-    StartupError, StorageAlerts, TerminalServices, build_access_services, build_agent_services,
-    build_hierarchy_services, build_notification_services, build_terminal_services, open_database,
-    run_migrations,
+    StartupError, StorageAlerts, TemplateServices, TerminalServices, build_access_services,
+    build_agent_services, build_hierarchy_services, build_notification_services,
+    build_template_services, build_terminal_services, open_database, run_migrations,
 };
 use crate::bridges::{AgentCalls, CallHelper, NotificationBridge, SystemClock};
 use crate::config::Config;
@@ -44,6 +44,7 @@ pub struct Services {
     pub agent: AgentServices,
     pub hierarchy: HierarchyServices,
     pub notification: NotificationServices,
+    pub template: TemplateServices,
     /// Writes the notification rows; the hold notifier shares it with the
     /// status stream (0007 D7).
     pub notification_bridge: NotificationBridge,
@@ -153,6 +154,8 @@ pub fn start_with(
         &events,
         &notification_bridge,
     )?;
+    let template =
+        build_template_services(&connection, Arc::clone(&agent_bridge_store), &hierarchy);
     Ok(Services {
         machine,
         agents,
@@ -165,6 +168,7 @@ pub fn start_with(
         agent,
         hierarchy,
         notification,
+        template,
         notification_bridge,
         agent_bridge_store,
     })

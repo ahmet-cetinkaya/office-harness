@@ -63,7 +63,9 @@ pub trait HierarchyStore: Send + Sync {
     fn team_name_taken(&self, key: &str) -> Result<bool, HierarchyApplicationError>;
 
     /// Saves a new team and places its lead in one write. `parent_agent_id`
-    /// is the lead's resolved parent (the CEO when one exists).
+    /// is the lead's resolved parent (the CEO when one exists). It takes the
+    /// tree exclusion itself; a caller that already holds it calls
+    /// `save_team_and_place_lead_held`.
     ///
     /// # Errors
     /// `Storage` when the write fails; nothing is half-written.
@@ -71,14 +73,46 @@ pub trait HierarchyStore: Send + Sync {
         &self,
         team: &Team,
         parent_agent_id: Option<AgentId>,
+    ) -> Result<(), HierarchyApplicationError> {
+        let exclusion = self.tree_exclusion();
+        self.save_team_and_place_lead_held(&exclusion, team, parent_agent_id)
+    }
+
+    /// `save_team_and_place_lead` for a caller that holds the tree
+    /// exclusion. The guard is the proof; this call never takes the
+    /// exclusion again, which would wait on itself.
+    ///
+    /// # Errors
+    /// `Storage` when the write fails; nothing is half-written.
+    fn save_team_and_place_lead_held(
+        &self,
+        exclusion: &TreeExclusion<'_>,
+        team: &Team,
+        parent_agent_id: Option<AgentId>,
     ) -> Result<(), HierarchyApplicationError>;
 
     /// Removes a team record and unplaces its members in one write. The
-    /// agents keep their rows; they leave the hierarchy.
+    /// agents keep their rows; they leave the hierarchy. It takes the tree
+    /// exclusion itself; a caller that already holds it calls
+    /// `delete_team_and_unplace_held`.
     ///
     /// # Errors
     /// `Storage` when the write fails.
-    fn delete_team_and_unplace(&self, team_id: TeamId) -> Result<(), HierarchyApplicationError>;
+    fn delete_team_and_unplace(&self, team_id: TeamId) -> Result<(), HierarchyApplicationError> {
+        let exclusion = self.tree_exclusion();
+        self.delete_team_and_unplace_held(&exclusion, team_id)
+    }
+
+    /// `delete_team_and_unplace` for a caller that holds the tree
+    /// exclusion; it never takes the exclusion again.
+    ///
+    /// # Errors
+    /// `Storage` when the write fails.
+    fn delete_team_and_unplace_held(
+        &self,
+        exclusion: &TreeExclusion<'_>,
+        team_id: TeamId,
+    ) -> Result<(), HierarchyApplicationError>;
 
     /// Writes one agent's place columns (role, parent, team), and, for a
     /// lead with a team, names that agent the team's lead in the same
