@@ -1,6 +1,6 @@
 ---
-status: in_progress
-spec: specs/changes/0016-agent-file-browser/SPEC.md
+status: completed
+spec: specs/changes/archive/0016-agent-file-browser/SPEC.md
 commits: per-task
 ---
 

@@ -1,6 +1,6 @@
 # Requirements checklist: 0016-agent-file-browser
 
-Spec: `specs/changes/0016-agent-file-browser/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass after four rounds. No `[NEEDS CLARIFICATION]` marker; the size limit (512 KiB) is flagged for the review gate in the Clarifications. Every `0001/`, `0002/`, and `0010/` reference was checked against the specs on `main` at c07f21c.
+Spec: `specs/changes/archive/0016-agent-file-browser/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass after four rounds. No `[NEEDS CLARIFICATION]` marker; the size limit (512 KiB) is flagged for the review gate in the Clarifications. Every `0001/`, `0002/`, and `0010/` reference was checked against the specs on `main` at c07f21c.
 
 ## Content quality
 

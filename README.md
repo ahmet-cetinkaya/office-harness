@@ -183,7 +183,7 @@ To review what an agent did, choose "Browse files" in its details. A read-only v
 - Everything shows as plain text: no markup is rendered, no image loads, and control characters show as visible symbols.
 - The view writes nothing. It changes no file, takes no git lock, and runs no git hook, filter, external diff, text conversion, or signature program that a repository configures. It shows the state at the time of the last load; choose "Refresh" to load again.
 
-Agents cannot use this view. The shapes of the requests are in [the file view protocol](specs/changes/0016-agent-file-browser/contracts/file-view-protocol.md).
+Agents cannot use this view. The shapes of the requests are in [the file view protocol](specs/changes/archive/0016-agent-file-browser/contracts/file-view-protocol.md).
 
 ## Resume interrupted agents
 
