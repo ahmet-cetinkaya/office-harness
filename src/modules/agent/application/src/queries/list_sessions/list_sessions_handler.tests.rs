@@ -94,3 +94,21 @@ fn an_unmatched_id_and_a_session_that_never_started_each_give_a_reason() {
         "the session never started"
     );
 }
+
+#[test]
+fn a_lost_session_can_be_continued() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    let agent = office.add_agent("Ana", "tracked", folder.path(), AgentStatus::Stopped);
+    let mut lost = office
+        .start_agent()
+        .handle(agent.id)
+        .expect("start")
+        .session;
+    lost.cli_session_id = Some("cli-1".to_owned());
+    lost.end(ExitResult::Lost, kernel::Timestamp::from_unix_millis(5));
+    let adapters = crate::test_support::FakeAdapters;
+    let tracked = adapters.for_program("tracked");
+
+    assert_eq!(continuation_of(&lost, &*tracked), Ok("cli-1"));
+}

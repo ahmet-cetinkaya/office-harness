@@ -15,6 +15,7 @@ use super::hierarchy_requests::HierarchyGateway;
 use super::hold_requests::HoldGateway;
 use super::notification_requests::NotificationGateway;
 use super::restart_signal::RESTART_REQUEST;
+use super::resume_requests::ResumeGateway;
 use super::server_state::ServerState;
 use super::template_requests::TemplateGateway;
 use super::terminal_requests::{
@@ -233,6 +234,16 @@ async fn answer_request(
             let responses = responses.clone();
             tokio::spawn(async move {
                 let answer = holds.handle(request).await.encode();
+                // The connection may be gone by now; the request still ran.
+                let _ = responses.send(answer).await;
+            });
+            return Ok(());
+        }
+        Some(request) if ResumeGateway::accepts(&request.kind) => {
+            let resume = state.resume.clone();
+            let responses = responses.clone();
+            tokio::spawn(async move {
+                let answer = resume.handle(request).await.encode();
                 // The connection may be gone by now; the request still ran.
                 let _ = responses.send(answer).await;
             });

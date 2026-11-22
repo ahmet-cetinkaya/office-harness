@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::ExitResult;
 use agent_infrastructure::persistence::{AgentRepository, SessionRepository, SharedConnection};
+use office_harnessd::config::Config;
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use support::config_in;
@@ -115,5 +116,61 @@ async fn a_restart_request_ends_the_agents_closes_the_sockets_and_exits_with_cod
         .latest_for_agent(agent.parse().expect("id"))
         .expect("latest")
         .expect("session");
-    assert_eq!(session.exit_result, Some(ExitResult::Interrupted));
+    assert_eq!(
+        session.exit_result,
+        Some(ExitResult::Interrupted),
+        "a clean stop ends the session as interrupted, not lost"
+    );
+}
+
+fn spawn_server(config: &Config) -> ServerProcess {
+    ServerProcess(
+        Command::new(env!("CARGO_BIN_EXE_office-harnessd"))
+            .arg("--data-folder")
+            .arg(&config.data_folder)
+            .env("SHELL", "/bin/sh")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn server"),
+    )
+}
+
+#[tokio::test]
+async fn a_session_left_open_by_an_unclean_stop_ends_as_lost_at_the_next_start() {
+    let folder = tempfile::tempdir().expect("folder");
+    let config = config_in(&folder);
+    let work_folder = tempfile::tempdir().expect("work folder");
+    let mut server = spawn_server(&config);
+    let server_file = config.server_file_path();
+    let port = wait_for("server.json", || announced_port(&server_file)).await;
+    let token = std::fs::read_to_string(config.token_path()).expect("token");
+    let mut client = Client::new(WireClient::authenticate_ok(port, &token).await);
+    let sleeper = SLEEP_PROGRAMS
+        .iter()
+        .find(|program| Path::new(program).exists())
+        .expect("a sleep program");
+    let created = client
+        .ask(
+            "agent.create",
+            json!({"name": "Ana", "command": format!("{sleeper} 5"), "working_folder": work_folder.path()}),
+        )
+        .await;
+    let agent = created["result"]["id"].as_str().expect("id").to_owned();
+    client.start(&agent).await;
+    server.0.kill().expect("SIGKILL");
+    server.0.wait().expect("reap");
+    std::fs::remove_file(&server_file).expect("stale server.json");
+
+    let second = spawn_server(&config);
+    wait_for("server.json", || announced_port(&server_file)).await;
+    drop(second);
+
+    let connection =
+        SharedConnection::new(Connection::open(config.database_path()).expect("database"));
+    let session = SessionRepository::new(connection)
+        .latest_for_agent(agent.parse().expect("id"))
+        .expect("latest")
+        .expect("session");
+    assert_eq!(session.exit_result, Some(ExitResult::Lost));
 }

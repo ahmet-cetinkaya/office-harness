@@ -179,9 +179,10 @@ impl SessionRepository {
         })
     }
 
-    /// Ends every session that still runs as `interrupted` and returns how
-    /// many changed. The server calls it once at start, when no session can
-    /// be alive (FR-004).
+    /// Ends every session that still runs as `lost` and returns how many
+    /// changed. The server calls it once at start. A session that is still
+    /// open then was not ended by a clean stop, so its CLI may still run
+    /// (0013 FR-008); a clean stop ends its sessions as `interrupted` before.
     ///
     /// # Errors
     /// A storage failure.
@@ -190,7 +191,7 @@ impl SessionRepository {
             Ok(connection.execute(
                 "UPDATE agent_sessions SET ended_at = ?1, exit_result = ?2 \
                  WHERE ended_at IS NULL",
-                params![at.as_unix_millis(), ExitResult::Interrupted.to_string()],
+                params![at.as_unix_millis(), ExitResult::Lost.to_string()],
             )?)
         })
     }

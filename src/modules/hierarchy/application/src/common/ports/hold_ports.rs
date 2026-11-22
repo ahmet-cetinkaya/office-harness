@@ -39,7 +39,9 @@ pub trait HoldJournal: Send + Sync {
 }
 
 /// Tells the user that the office held an agent by itself. The service
-/// calls it once per automatic hold, after it released its own lock.
+/// calls it once per hold, after it released its own lock.
 pub trait HoldNotifier: Send + Sync {
     fn auto_held(&self, agent: AgentId, limit: &LimitRefusal);
+    /// The office held the agent because its resume failed twice (0013).
+    fn resume_held(&self, agent: AgentId, reason: &str);
 }

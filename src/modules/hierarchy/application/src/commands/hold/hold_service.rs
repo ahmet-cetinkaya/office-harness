@@ -148,6 +148,37 @@ impl HoldService {
         Ok(view)
     }
 
+    /// Holds one agent for the office, after a resume that failed twice
+    /// (0013). Returns the new hold, or `None` when the agent is already held:
+    /// the user's own hold stays and nothing is announced twice.
+    ///
+    /// # Errors
+    /// `Storage` when the write fails, in which case the previous holds stay.
+    pub fn hold_by_office(
+        &self,
+        agent: AgentId,
+        reason: &str,
+    ) -> Result<Option<Hold>, HierarchyApplicationError> {
+        let scope = HoldScope::Agent(agent);
+        let hold = Hold {
+            scope,
+            set_by: HoldSetter::Office,
+            since: self.clock.now(),
+            reason: Some(reason.to_owned()),
+        };
+        {
+            let mut state = self.locked();
+            if is_held(&state.holds, scope) {
+                return Ok(None);
+            }
+            self.store.save_hold(&hold)?;
+            state.holds.push(hold.clone());
+        }
+        self.journal.held(&hold);
+        self.notifier.resume_held(agent, reason);
+        Ok(Some(hold))
+    }
+
     /// Lifts one hold. Lifting the office hold leaves the agent holds.
     ///
     /// # Errors

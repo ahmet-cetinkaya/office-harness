@@ -51,6 +51,15 @@ describe("notification rows", () => {
     );
   });
 
+  test("a failed resume names the reason from the detail (0013 D7)", () => {
+    expect(
+      announcementText(row({ event: "resume_hold", detail: "ended at once" })),
+    ).toBe("Ada was put on hold after its resume failed: ended at once");
+    expect(announcementText(row({ event: "resume_hold" }))).toBe(
+      "Ada was put on hold after its resume failed",
+    );
+  });
+
   test("a row reads as one sentence in its reading order (D11)", () => {
     expect(rowText(row(), true)).toBe("Ada, exited");
     expect(rowText(row({ event: "bell" }), true)).toBe("Ada, rang the bell");

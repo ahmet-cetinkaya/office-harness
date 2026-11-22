@@ -7,7 +7,7 @@ export interface NotificationRow {
   /** The agent's name at creation, kept for the rows of a deleted agent. */
   agent_name: string;
   event: string;
-  /** The limit's name for an `auto_hold`; null for every other event. */
+  /** The limit's name for an `auto_hold`, the reason for a `resume_hold`; null otherwise. */
   detail?: string | null;
   created_at: number;
   /** Null while unread (FR-007). */
@@ -22,6 +22,7 @@ const EVENT_TEXT: Record<string, string> = {
 };
 
 export const EVENT_AUTO_HOLD = "auto_hold";
+const EVENT_RESUME_HOLD = "resume_hold";
 /** How many refusals by one limit put an agent on hold (0007 D7). */
 const AUTO_HOLD_REFUSALS = 3;
 
@@ -33,6 +34,10 @@ export function eventText(event: string, detail: string | null = null): string {
   if (event === EVENT_AUTO_HOLD) {
     const base = `was put on hold after ${AUTO_HOLD_REFUSALS} refusals`;
     return detail === null ? base : `${base} by the limit "${detail}"`;
+  }
+  if (event === EVENT_RESUME_HOLD) {
+    const base = "was put on hold after its resume failed";
+    return detail === null ? base : `${base}: ${detail}`;
   }
   return EVENT_TEXT[event] ?? event.replaceAll("_", " ");
 }

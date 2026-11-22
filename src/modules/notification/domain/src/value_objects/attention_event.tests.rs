@@ -13,3 +13,8 @@ fn every_kind_reads_back_from_its_stored_name() {
 fn an_unknown_name_is_rejected() {
     assert!("sleeping".parse::<AttentionKind>().is_err());
 }
+
+#[test]
+fn a_resume_hold_is_stored_as_resume_hold() {
+    assert_eq!(AttentionKind::ResumeHold.as_str(), "resume_hold");
+}

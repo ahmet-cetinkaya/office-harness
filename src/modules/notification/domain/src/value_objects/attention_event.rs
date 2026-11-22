@@ -7,7 +7,7 @@ use kernel::Timestamp;
 
 use crate::errors::NotificationError;
 
-/// What made an agent wait for the user (0008 D1). Same five names as a
+/// What made an agent wait for the user (0008 D1). Same names as a
 /// notification event, kept apart so the queue can change without the
 /// notification rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -16,15 +16,18 @@ pub enum AttentionKind {
     WaitingForInput,
     Bell,
     AutoHold,
+    /// A resume that failed twice put the agent on hold (0013).
+    ResumeHold,
     Exited,
 }
 
 impl AttentionKind {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Failed,
         Self::WaitingForInput,
         Self::Bell,
         Self::AutoHold,
+        Self::ResumeHold,
         Self::Exited,
     ];
 
@@ -36,6 +39,7 @@ impl AttentionKind {
             Self::WaitingForInput => "waiting_for_input",
             Self::Bell => "bell",
             Self::AutoHold => "auto_hold",
+            Self::ResumeHold => "resume_hold",
             Self::Exited => "exited",
         }
     }
@@ -56,7 +60,7 @@ impl FromStr for AttentionKind {
             .find(|kind| kind.as_str() == text)
             .ok_or_else(|| {
                 NotificationError(format!(
-                    "attention kind is not one of failed, waiting_for_input, bell, auto_hold, exited: {text}"
+                    "attention kind is not one of failed, waiting_for_input, bell, auto_hold, resume_hold, exited: {text}"
                 ))
             })
     }

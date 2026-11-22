@@ -109,6 +109,9 @@ async fn an_agent_may_not_ask_for_a_type_outside_the_allowlist() {
         ("template_import_confirm", "template.import.confirm"),
         ("needs_you_list", "needs_you.list"),
         ("needs_you_dismiss", "needs_you.dismiss"),
+        ("resume_plan", "resume.plan"),
+        ("resume_start", "resume.start"),
+        ("agent_resume", "agent.resume"),
     ];
     office
         .clis

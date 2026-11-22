@@ -12,6 +12,7 @@ use agent_application::commands::create_project::{
 };
 use agent_application::commands::delete_agent::{DeleteAgentHandler, DeleteWorktrees};
 use agent_application::commands::delete_project::DeleteProjectHandler;
+use agent_application::commands::resume_agent::{ResumeAgentHandler, ResumeOutcome};
 use agent_application::commands::set_office_additions::SetOfficeAdditionsHandler;
 use agent_application::commands::set_setting::SetSettingHandler;
 use agent_application::commands::set_task_text::SetTaskTextHandler;
@@ -38,8 +39,8 @@ use super::subtree_requests::{SubtreeRequests, SubtreeResult};
 use crate::contracts::{
     AdditionsRequest, AgentIdRequest, CreateAgentRequest, CreateProjectRequest, DeleteAgentRequest,
     FilesCommitRequest, FilesDiffRequest, FilesHistoryRequest, FilesListRequest, FilesReadRequest,
-    ProjectIdRequest, RolePlacement, SessionIdRequest, SettingKeyRequest, SettingRequest,
-    TaskTextRequest, WorktreeInfoRequest, WorktreeStatusRequest,
+    ProjectIdRequest, ResumeAgentRequest, RolePlacement, SessionIdRequest, SettingKeyRequest,
+    SettingRequest, TaskTextRequest, WorktreeInfoRequest, WorktreeStatusRequest,
 };
 use crate::mappings::{
     additions_changed_event, additions_json, agent_changed_event, agent_deleted_event, agent_json,
@@ -64,6 +65,7 @@ pub struct AgentUseCases {
     pub stop_agent: StopAgentHandler,
     pub start_new_task: StartNewTaskHandler,
     pub continue_session: ContinueSessionHandler,
+    pub resume_agent: ResumeAgentHandler,
     pub set_office_additions: SetOfficeAdditionsHandler,
     pub set_task_text: SetTaskTextHandler,
     pub get_office_additions: GetOfficeAdditionsHandler,
@@ -206,6 +208,7 @@ impl AgentHandlers {
             "agent.start" => self.start_agent(request),
             "agent.stop" => self.stop_agent(request),
             "agent.new_task" => self.start_new_task(request),
+            "agent.resume" => self.resume_agent(request),
             "agent.additions.get" => self.get_additions(request),
             "agent.additions.set" => self.set_additions(request),
             "agent.task.set" => self.set_task_text(request),
@@ -413,6 +416,20 @@ impl AgentHandlers {
         Ok(started_session(outcome).with_event(task_event))
     }
 
+    fn resume_agent(&self, request: &Request) -> Result<Success, HandlerError> {
+        let body = ResumeAgentRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        let agent_id: AgentId = parse_id("agent_id", &body.agent_id)?;
+        let resumer = &self.use_cases.resume_agent;
+        let outcome = match &body.after_session {
+            Some(text) => {
+                let after_session: SessionId = parse_id("after_session", text)?;
+                resumer.fall_back(agent_id, after_session)?
+            }
+            None => resumer.resume(agent_id)?,
+        };
+        Ok(resumed_session(outcome))
+    }
+
     fn set_task_text(&self, request: &Request) -> Result<Success, HandlerError> {
         let body = TaskTextRequest::read(&request.fields).map_err(HandlerError::invalid)?;
         let agent_id: AgentId = parse_id("agent_id", &body.agent_id)?;
@@ -491,6 +508,16 @@ fn started_session(outcome: StartOutcome) -> Success {
     let event = agent_status_event(outcome.agent.id, status, detail);
     let view = fresh_session_view(outcome.session);
     Success::result(session_json(&view)).with_event(event)
+}
+
+/// The session that `agent.resume` started, with how it started.
+fn resumed_session(outcome: ResumeOutcome) -> Success {
+    let mut success = started_session(outcome.start);
+    success.result["continued"] = Value::Bool(outcome.continued);
+    if let Some(reason) = outcome.reason {
+        success.result["reason"] = Value::String(reason);
+    }
+    success
 }
 
 fn parse_agent_id(request: &Request) -> Result<AgentId, HandlerError> {
