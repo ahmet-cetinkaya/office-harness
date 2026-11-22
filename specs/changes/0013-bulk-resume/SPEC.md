@@ -105,6 +105,7 @@ When the new session also ends at once, the office stops trying, puts the agent 
 - **PB-3:** A hold refuses only agent-made actions; the user's own actions, this action included, work as before (0007 PB-1, PB-2).
 - **PB-4:** office-harness creates, changes, or deletes nothing in a CLI's configuration (0001/FR-021).
 - **PB-5:** Each start, continue, and hold is recorded in the action record with its actor (0001/FR-011, 0007/FR-010).
+- **PB-6:** The notification of FR-005 is a notification of an automatic hold under 0003/FR-006 (as modified by 0007): it names the agent and the event, and the focused-terminal exception does not apply to it.
 
 ## User experience
 
