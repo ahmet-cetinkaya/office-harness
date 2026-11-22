@@ -422,6 +422,29 @@ async fn a_team_create_with_a_lead_object_creates_the_lead_and_the_team() {
     office.serving.stop().await;
 }
 
+/// 0002 A5: a team made before the CEO moves under the CEO when the CEO is
+/// created, so the CEO's subtree (and its call rules) cover that team.
+#[tokio::test]
+async fn a_ceo_created_after_a_team_takes_the_team_lead_under_it() {
+    let office = Office::open().await;
+    office.clis.add("fake-cli", "echo up; sleep 30");
+    let mut client = office.client().await;
+    let team = call(
+        &mut client,
+        1,
+        "team.create",
+        json!({"name": "Api", "lead": {"name": "Lea", "command": "fake-cli", "working_folder": office.work_path()}}),
+    )
+    .await;
+    assert_eq!(team["ok"], true, "{team}");
+
+    let ceo = create_ceo(&office, &mut client, 2).await;
+
+    // The lead is the CEO's one descendant: it moved under the CEO.
+    assert_eq!(descendant_count(&mut client, &ceo).await, 1);
+    office.serving.stop().await;
+}
+
 /// Reads events until one of the type `kind` arrives. Returns it.
 async fn next_event_of(client: &mut WireClient, kind: &str) -> Value {
     loop {
