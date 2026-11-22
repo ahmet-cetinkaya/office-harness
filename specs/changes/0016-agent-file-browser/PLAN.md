@@ -4,7 +4,7 @@ spec: specs/changes/0016-agent-file-browser/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-23 with the spec, for one review of both. The spec review gate passed for coding at d9c12b8 (2026-11-23) with condition C1, applied in D5. -->
+<!-- Drafted 2026-11-23 with the spec, for one review of both. The spec review gate passed for coding at d9c12b8 (2026-11-23) with condition C1, applied in D5. T2 to T5 are built on this branch; deviations are in qa-report.md. -->
 
 # Plan: Read-only file browser of an agent (0016)
 
