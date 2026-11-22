@@ -1,0 +1,42 @@
+# Requirements checklist: 0013-bulk-resume
+
+Spec: `specs/changes/0013-bulk-resume/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0007/`, and `0010/` reference was checked against the specs on `main` at 6e3d197.
+
+## Content quality
+
+- [x] No implementation detail: no language, framework, storage, API, or file names. (The research file names the test file; the spec does not.)
+- [x] Focused on user value and business need, readable by a non-technical stakeholder.
+- [x] Sections that do not apply are removed, not left as "N/A," except User experience.
+
+## Requirement completeness
+
+- [x] Every `FR-###` uses an EARS pattern with `SHALL` and one observable behavior.
+- [x] Every `FR-###` traces to a user story; every story has a priority reason, an independent test, and at least one scenario.
+- [x] Every `SC-###` meets the success-criteria rules.
+- [x] User experience lists the flow, states, a fixed design link when a design exists, and accessibility, with every state covered by a scenario or `FR-###`.
+- [x] Edge cases cover empty, invalid, boundary, concurrent, unauthorized, and failure inputs.
+- [x] Key entities are listed when the change involves data.
+- [x] Changes to existing behavior include `PRESERVED` statements (at least two).
+- [x] Assumptions and dependencies are listed; no silent guess remains in the requirement text.
+- [x] Scope is bounded by explicit out-of-scope entries.
+
+## Readiness
+
+- [x] At most three `[NEEDS CLARIFICATION]` markers; none inside an approved spec.
+- [x] No vague words ("works," "fast," "secure," "robust," "intuitive") and no placeholders without an observable.
+- [x] Terminology is consistent across stories, requirements, entities, and criteria.
+- [x] The spec meets the spec contract's Size rule, or Out of scope records the declined split.
+
+## Passes
+
+| Round | Pass | Findings | Fix |
+|---|---|---|---|
+| 1 | Requirements checklist | "Quickly" had no number. A failing agent could be started on every confirm. | The check period is 20 seconds (A2, Terms). FR-005 holds the agent; FR-002 lists a held agent unchecked. |
+| 2 | Hostile reader | A user stop inside the check period looked like a refusal and would start the agent again. Two clients could resume one agent twice. A plain command that ends with code 0 had no rule. | "Ends by itself" in Terms excludes user actions and a server stop; US2 scenario 4. FR-003 skips agents no longer `interrupted`; edge case for two clients. A3 counts any exit. |
+| 3 | Hostile reader on the fixed text | The hold of FR-005 also covers descendants (0007 A2), which a reader may not expect. A second hold of an agent already on hold had no rule. | A9 states both. |
+
+## Notes
+
+- **Size rule:** 6 ADDED FRs, one more than the size S guide of 5. FR-006 (the result text) belongs with the flow; a split would leave a change without its feedback. No split.
+- **No MODIFIED requirement:** 0001/FR-004 says no agent starts "without an explicit action"; the confirmed action is one, so FR-004 stays as written (PB-1). 0007/FR-008 (automatic hold after rate-limit refusals) is unchanged; FR-005 adds a second reason for an office hold through the same hold.
+- **Research:** R1 ran and passed; orphan sweep is out of scope with a stated reason.
