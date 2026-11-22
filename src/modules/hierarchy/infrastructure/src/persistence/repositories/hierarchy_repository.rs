@@ -112,7 +112,12 @@ impl HierarchyStore for HierarchyRepository {
         // The caller's exclusion joins the new placement to the count a
         // subtree action took; the connection lock is always the inner one.
         self.locked(|connection| {
-            connection
+            // One transaction, so a failure after the team row leaves no
+            // team without its lead's membership and place.
+            let transaction = connection
+                .transaction()
+                .map_err(|error| error.to_string())?;
+            transaction
                 .execute(
                     "INSERT INTO hierarchy_teams (id, name, name_key, project_id, lead_agent_id) \
                      VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -125,7 +130,7 @@ impl HierarchyStore for HierarchyRepository {
                     ],
                 )
                 .map_err(|error| error.to_string())?;
-            connection
+            transaction
                 .execute(
                     "INSERT INTO hierarchy_team_members (agent_id, team_id, joined_at) \
                      VALUES (?1, ?2, ?3)",
@@ -137,12 +142,13 @@ impl HierarchyStore for HierarchyRepository {
                 )
                 .map_err(|error| error.to_string())?;
             places.write_place(
-                connection,
+                &transaction,
                 team.lead_agent_id(),
                 Some(Role::Lead),
                 parent_agent_id,
                 Some(team.id()),
-            )
+            )?;
+            transaction.commit().map_err(|error| error.to_string())
         })
     }
 

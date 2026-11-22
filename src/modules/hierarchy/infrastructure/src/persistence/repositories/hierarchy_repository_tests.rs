@@ -146,6 +146,49 @@ fn a_failed_lead_placement_writes_nothing() {
     assert_eq!(seat, seated.as_uuid_text());
 }
 
+/// A failure on the lead's place write, the last of the three writes, rolls
+/// back the team row and the membership row written before it.
+#[test]
+fn a_failed_team_save_leaves_no_team_and_no_membership() {
+    let shared = database();
+    let lead = AgentId::generate();
+    {
+        let connection = shared.lock().expect("database");
+        agent(&connection, &lead, "Bo");
+        connection
+            .execute_batch(
+                "CREATE TEMP TRIGGER refuse_place BEFORE UPDATE OF role ON agent_agents \
+                 BEGIN SELECT RAISE(ABORT, 'place write refused'); END;",
+            )
+            .expect("trigger");
+    }
+    let store = repository(&shared);
+    let team = hierarchy_domain::Team::new(
+        hierarchy_domain::TeamName::parse("Core").expect("name"),
+        None,
+        lead,
+    );
+
+    let error = store
+        .save_team_and_place_lead(&team, None)
+        .expect_err("the place write fails");
+
+    let HierarchyApplicationError::Storage(message) = &error else {
+        panic!("the refusal reaches the store as Storage: {error}");
+    };
+    assert!(message.contains("place write refused"), "{message}");
+    let connection = shared.lock().expect("database");
+    let count = |table: &str| -> i64 {
+        connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("count")
+    };
+    assert_eq!(count("hierarchy_teams"), 0);
+    assert_eq!(count("hierarchy_team_members"), 0);
+}
+
 /// The green path still seats the lead in the same transaction.
 #[test]
 fn a_lead_placement_seats_the_lead_in_the_same_write() {
