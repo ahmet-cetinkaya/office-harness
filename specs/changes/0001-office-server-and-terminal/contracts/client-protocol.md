@@ -58,6 +58,8 @@ Every request is a JSON text frame `{"id":<u32>,"type":"<name>",...}`. The respo
 | `token.regenerate` | none | none. The caller's connection also closes | FR-010 |
 | `settings.get` / `.set` | key, value | setting | A1, A2, A12 |
 
+> Amended by 0013: a session's `exit_result` in `session.list` and the session results can also be `lost`: the session was still open when the server stopped uncleanly, and the next server start ended it. A clean stop still gives `interrupted`. A `lost` session can be continued like an `interrupted` one. Action record entries gain `detail` (a string or null). The requests `agent.resume`, `resume.plan`, and `resume.start` and the event `resume.result` are in `specs/changes/0013-bulk-resume/contracts/resume-protocol.md`.
+
 ## Events (server to client, no `id`)
 
 | Event | Fields | FR |

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: in_progress
 spec: specs/changes/0013-bulk-resume/SPEC.md
 commits: per-task
 ---
@@ -100,6 +100,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
   - Each new session of D1 has its D10 detail; a continue and every other action have none.
   - The migration test counts are updated.
   - A session open at server start ends as `lost`; a clean stop ends it as `interrupted`; a `lost` session can be continued.
+  - The tests that expected `interrupted` after a restart (`H/../tests/server_restart.rs`, `M/agent/infrastructure/tests/persistence.rs`) are split into clean stop = `interrupted` and unclean stop = `lost`.
   - `cargo test -p agent-application -p agent-presentation -p audit-infrastructure -p audit-presentation` passes.
 
 ### T2 Office hold and `resume_hold` notification (D6, D7)
@@ -131,7 +132,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 
 ### T5 Docs and evidence — depends on T1 to T4
 
-- `contracts/resume-protocol.md` final, README section, `qa-report.md` (each SC and FR with its evidence), and the spec Deviations if any. The Turkish HTML report goes to the shared spec-reports folder and is added to its index.
+- `contracts/resume-protocol.md` final; the 0001 data model and `contracts/client-protocol.md` amended ("Amended by 0013") where session end results are listed; README section, `qa-report.md` (each SC and FR with its evidence), and the spec Deviations if any. The Turkish HTML report goes to the shared spec-reports folder and is added to its index.
 - **Acceptance:** each FR and SC has a qa row with evidence. The no-other-project grep of the diff is clean.
 
 ## Verification
