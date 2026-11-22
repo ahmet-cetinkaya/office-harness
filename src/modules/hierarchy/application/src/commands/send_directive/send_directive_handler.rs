@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use hierarchy_domain::{AgentAction, HierarchyError, check_descendant, validate_directive_text};
 use kernel::AgentId;
@@ -8,7 +8,7 @@ use kernel::AgentId;
 use crate::commands::hold::HoldService;
 use crate::common::errors::HierarchyApplicationError;
 use crate::common::interfaces::HierarchyStore;
-use crate::common::ports::{DirectiveJournal, DirectiveTarget, DirectiveWriter};
+use crate::common::ports::{DirectiveJournal, DirectiveReceipt, DirectiveTarget, DirectiveWriter};
 
 /// Sends one directive from `sender` to one of its descendants (FR-009,
 /// FR-011). The target must sit in the sender's subtree, the text must pass
@@ -21,6 +21,11 @@ pub struct SendDirectiveHandler {
     targets: Arc<dyn DirectiveTarget>,
     writer: Arc<dyn DirectiveWriter>,
     journal: Arc<dyn DirectiveJournal>,
+    receipt: Arc<dyn DirectiveReceipt>,
+    /// Held from the terminal write through the receipt, so the order of
+    /// writes is the order of receipts and the task text is the one entered
+    /// last (0011 D2).
+    write_order: Mutex<()>,
     hold_guard: Option<Arc<HoldService>>,
 }
 
@@ -31,12 +36,15 @@ impl SendDirectiveHandler {
         targets: Arc<dyn DirectiveTarget>,
         writer: Arc<dyn DirectiveWriter>,
         journal: Arc<dyn DirectiveJournal>,
+        receipt: Arc<dyn DirectiveReceipt>,
     ) -> Self {
         Self {
             store,
             targets,
             writer,
             journal,
+            receipt,
+            write_order: Mutex::new(()),
             hold_guard: None,
         }
     }
@@ -109,7 +117,7 @@ impl SendDirectiveHandler {
                 ));
             }
         }
-        if let Err(message) = self.writer.write(target, text) {
+        if let Err(message) = self.write_and_receive(target, text) {
             return Err(self.journaled(
                 sender,
                 target,
@@ -118,6 +126,18 @@ impl SendDirectiveHandler {
             ));
         }
         self.journal.record(sender, target, text, None);
+        Ok(())
+    }
+
+    /// Writes the text and, once it is in the terminal, reports the receipt.
+    /// A failed write reports nothing, so the task text stays as it was.
+    fn write_and_receive(&self, target: AgentId, text: &str) -> Result<(), String> {
+        let _in_order = self
+            .write_order
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.writer.write(target, text)?;
+        self.receipt.received(target, text);
         Ok(())
     }
 

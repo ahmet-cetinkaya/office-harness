@@ -8,7 +8,7 @@ use agent_domain::entities::{AdditionsRecord, Agent, Machine, Project, Session};
 use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{
     AgentCommand, DisplayName, EnvEntry, ExitResult, OfficeAdditions, ProjectId, SessionId,
-    SettingKey, Settings,
+    SettingKey, Settings, TaskSource, TaskText,
 };
 use agent_infrastructure::persistence::{
     AdditionsRepository, AgentRepository, MachineRepository, PersistenceError, ProjectRepository,
@@ -142,6 +142,42 @@ fn a_stored_focus_shortcut_that_became_reserved_falls_back_to_the_default() {
         .expect("settings load");
 
     assert_eq!(loaded.focus_shortcut, Settings::default().focus_shortcut);
+}
+
+#[test]
+fn a_stored_focus_shortcut_loads_kept_or_falls_back_by_the_reserved_table() {
+    let jump_key_spellings = ["Ctrl+Shift+F11", "Shift+Ctrl+F11"];
+    let reserved_keys = ["Ctrl+Shift+F1", "Ctrl+Shift+F10", "Ctrl+Shift+H"];
+    let free_keys = ["Ctrl+Alt+F11", "Ctrl+Shift+F12"];
+    let default = Settings::default().focus_shortcut;
+    let cases = jump_key_spellings
+        .iter()
+        .chain(&free_keys)
+        .map(|stored| (*stored, *stored))
+        .chain(
+            reserved_keys
+                .iter()
+                .map(|stored| (*stored, default.as_str())),
+        );
+    for (stored, expected) in cases {
+        let folder = tempfile::tempdir().expect("folder");
+        let database = database_in(&folder);
+        drop(open_office(&database));
+        Connection::open(&database)
+            .expect("open database")
+            .execute(
+                "INSERT INTO agent_settings (key, value) VALUES ('focus_shortcut', ?1)",
+                [stored],
+            )
+            .expect("store the shortcut");
+
+        let loaded = open_office(&database)
+            .settings
+            .load()
+            .expect("settings load");
+
+        assert_eq!(loaded.focus_shortcut, expected, "{stored}");
+    }
 }
 
 #[test]
@@ -424,4 +460,80 @@ fn deleting_an_agent_deletes_its_additions_and_sessions() {
 
     assert_eq!(office.sessions.find(session.id).expect("find"), None);
     assert_eq!(office.additions.load(agent.id).expect("load"), None);
+}
+
+#[test]
+fn a_task_text_survives_a_reopen_and_a_clear_removes_it() {
+    let folder = TempDir::new().expect("folder");
+    let first = open_office(&database_in(&folder));
+    let agent = agent_named(&first, "Ana", None);
+    first.agents.insert(&agent).expect("agent");
+    let control_text = "Fix \u{1b}[31mit\nthen report";
+    let task = TaskText::from_input(
+        control_text,
+        Timestamp::from_unix_millis(42),
+        TaskSource::Directive,
+    )
+    .expect("valid")
+    .expect("some");
+    first
+        .agents
+        .update_task(agent.id, Some(&task))
+        .expect("set");
+    drop(first);
+
+    let reopened = open_office(&database_in(&folder));
+    let stored = reopened
+        .agents
+        .find(agent.id)
+        .expect("find")
+        .expect("agent");
+    assert_eq!(stored.task, Some(task));
+    reopened.agents.update_task(agent.id, None).expect("clear");
+    let cleared = reopened
+        .agents
+        .find(agent.id)
+        .expect("find")
+        .expect("agent");
+    assert_eq!(cleared.task, None);
+}
+
+#[test]
+fn a_task_text_of_an_unknown_agent_is_not_found() {
+    let folder = TempDir::new().expect("folder");
+    let office = open_office(&database_in(&folder));
+
+    let error = office
+        .agents
+        .update_task(AgentId::generate(), None)
+        .expect_err("unknown");
+
+    assert!(
+        matches!(error, PersistenceError::NotFound { .. }),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_stored_task_the_domain_rejects_reads_as_no_task_and_keeps_the_agent_readable() {
+    let folder = TempDir::new().expect("folder");
+    let database = database_in(&folder);
+    let office = open_office(&database);
+    let broken = agent_named(&office, "Ana", None);
+    let healthy = agent_named(&office, "Bo", None);
+    office.agents.insert(&broken).expect("agent");
+    office.agents.insert(&healthy).expect("agent");
+    Connection::open(&database)
+        .expect("open database")
+        .execute(
+            "UPDATE agent_agents SET task_text = 'x', task_set_at = 1, \
+             task_source = 'from a later version' WHERE id = ?1",
+            [broken.id.to_string()],
+        )
+        .expect("hand edit");
+
+    let listed = office.agents.list().expect("the list is still readable");
+
+    assert_eq!(listed.len(), 2);
+    assert!(listed.iter().all(|agent| agent.task.is_none()));
 }

@@ -13,6 +13,7 @@ const WEBVIEW_COMMANDS: &[&str] = &[
     "start_server",
     "register_login_start",
     "login_start_status",
+    "set_window_title",
 ];
 
 fn main() {

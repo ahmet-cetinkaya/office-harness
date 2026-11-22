@@ -51,6 +51,8 @@ export function createAgentService(client: CoreClient) {
         agent_id: agentId,
         additions,
       })) as AdditionsView,
+    setTask: async (agentId: string, text: string) =>
+      (await send("agent.task.set", { agent_id: agentId, text })) as Agent,
     listSessions: async (agentId: string) =>
       asList<Session>(await send("session.list", { agent_id: agentId })),
     continueSession: async (sessionId: string) => {

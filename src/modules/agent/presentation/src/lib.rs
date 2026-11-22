@@ -12,4 +12,4 @@ pub use handlers::{
     AgentHandlers, AgentUseCases, Handled, REQUEST_PREFIXES, RoleRequests, RoleResult, RoleSeed,
     SubtreeRequests, SubtreeResult,
 };
-pub use mappings::{agent_line_event, agent_status_event};
+pub use mappings::{agent_line_event, agent_status_event, agent_task_event};

@@ -86,3 +86,26 @@ fn a_project_changed_event_names_the_cause_and_the_project() {
     assert_eq!(event["cause"], "created");
     assert_eq!(event["project_id"], project_id.to_string());
 }
+
+#[test]
+fn a_task_event_carries_the_task_or_null_and_no_line_or_status() {
+    let agent_id = AgentId::generate();
+    let task = agent_domain::value_objects::TaskText::from_input(
+        "Fix the login test",
+        kernel::Timestamp::from_unix_millis(9),
+        agent_domain::value_objects::TaskSource::Directive,
+    )
+    .expect("valid");
+
+    let set = frame(&agent_task_event(agent_id, task.as_ref()));
+    let cleared = frame(&agent_task_event(agent_id, None));
+
+    assert_eq!(set["type"], "agent.task");
+    assert_eq!(set["agent_id"], agent_id.to_string());
+    assert_eq!(set["task"]["text"], "Fix the login test");
+    assert_eq!(set["task"]["set_at"], 9);
+    assert_eq!(set["task"]["source"], "directive");
+    assert_eq!(set.get("status"), None);
+    assert_eq!(set.get("last_line"), None);
+    assert_eq!(cleared["task"], Value::Null);
+}

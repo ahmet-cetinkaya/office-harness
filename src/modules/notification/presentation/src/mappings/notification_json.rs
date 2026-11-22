@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use notification_domain::Notification;
+use notification_domain::{NeedsYouItem, Notification};
 use serde_json::{Map, Value, json};
 use wire::Event;
 
@@ -26,4 +26,28 @@ pub fn notification_created_event(notification: &Notification) -> Event {
     let mut fields = Map::new();
     fields.insert("notification".to_owned(), notification_json(notification));
     Event::new("notification.created", fields)
+}
+
+/// The wire form of one needs-you item (contract `needs_you.list`).
+#[must_use]
+pub fn needs_you_item_json(item: &NeedsYouItem) -> Value {
+    json!({
+        "agent_id": item.agent_id.to_string(),
+        "kind": item.latest.kind.as_str(),
+        "detail": item.latest.detail,
+        "first_event_at": item.first_event_at.as_unix_millis(),
+        "latest_at": item.latest.at.as_unix_millis(),
+        "origin_notification_id": item.origin.map(|origin| origin.as_uuid_text()),
+    })
+}
+
+/// `needs_you.changed`: the full ordered list after any change (contract).
+#[must_use]
+pub fn needs_you_changed_event(items: &[NeedsYouItem]) -> Event {
+    let mut fields = Map::new();
+    fields.insert(
+        "items".to_owned(),
+        Value::Array(items.iter().map(needs_you_item_json).collect()),
+    );
+    Event::new("needs_you.changed", fields)
 }
