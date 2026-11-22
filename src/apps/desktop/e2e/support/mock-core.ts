@@ -11,6 +11,10 @@ import type {
 import type { ActionEntry } from "../../src/modules/audit/models/action-entry";
 import type { HierarchyTree } from "../../src/modules/hierarchy/models/hierarchy";
 import type { Hold, HoldState } from "../../src/modules/hold/models/hold";
+import type {
+  NeedsYouItem,
+  NeedsYouKind,
+} from "../../src/modules/needs-you/models/needs-you";
 import type { NotificationRow } from "../../src/modules/notification/models/notification";
 
 /** One seeded agent with the fields the 0003 suites assert on. The mock
@@ -37,6 +41,12 @@ export interface OfficeSeed {
   focusShortcut?: string;
   /** The notifications the faked server keeps. None when left out. */
   notifications?: NotificationRow[];
+  /** The Needs you items the faked server keeps when the page opens. None
+   * when left out. */
+  needsYou?: NeedsYouItem[];
+  /** Milliseconds that `notification.read_agent` waits before it answers and
+   * clears the agent's item, as a slow server. Answers at once when left out. */
+  readAgentDelayMs?: number;
   /** The holds the faked server keeps. None when left out. */
   holds?: Partial<HoldState>;
   /** Limit settings that differ from the server's defaults, by key. */
@@ -119,6 +129,17 @@ declare global {
         event: string,
         detail?: string,
       ): void;
+      /**
+       * An attention event, as the server sees it: the notification is
+       * created and announced, then the agent's Needs you item is recorded or
+       * updated and `needs_you.changed` follows (0008 D3).
+       */
+      attention(
+        agentId: string,
+        kind: NeedsYouKind,
+        detail?: string,
+        firstEventAt?: number,
+      ): void;
       /** The office puts an agent on hold by itself, as a limit does (0007). */
       autoHold(agentId: string, limitName: string): void;
       calls: RecordedCall[];
@@ -179,6 +200,7 @@ export async function installMockCore(
       hierarchy: structuredClone(mock.office?.hierarchy ?? null),
       actions: [] as ActionEntry[],
       notifications: structuredClone(mock.office?.notifications ?? []),
+      needsYou: structuredClone(mock.office?.needsYou ?? []),
       holds: {
         office: mock.office?.holds?.office ?? null,
         agents: structuredClone(mock.office?.holds?.agents ?? []),
@@ -259,6 +281,63 @@ export async function installMockCore(
         }
       }
     };
+    // The group of the contract's order: failed, then the agents that wait,
+    // then exited.
+    const needsYouRank = (kind: string) =>
+      kind === "failed" ? 0 : kind === "exited" ? 2 : 1;
+    const nameOf = (agentId: string) =>
+      office.agents.find((agent) => agent.id === agentId)?.name ?? agentId;
+    /** The items in the FR-003 order: group, longest wait, then name. */
+    const orderedNeedsYou = (): NeedsYouItem[] =>
+      structuredClone(
+        [...office.needsYou].sort(
+          (first, second) =>
+            needsYouRank(first.kind) - needsYouRank(second.kind) ||
+            first.first_event_at - second.first_event_at ||
+            nameOf(first.agent_id).localeCompare(nameOf(second.agent_id)),
+        ),
+      );
+    const pushNeedsYouChanged = () => {
+      pushEvent({ type: "needs_you.changed", items: orderedNeedsYou() });
+    };
+    /** Removes the items that match and publishes only when one left. */
+    const clearNeedsYou = (matches: (item: NeedsYouItem) => boolean) => {
+      const before = office.needsYou.length;
+      office.needsYou = office.needsYou.filter((item) => !matches(item));
+      if (office.needsYou.length !== before) pushNeedsYouChanged();
+    };
+    const recordAttention = (
+      agent: Agent,
+      kind: NeedsYouKind,
+      detail: string | null,
+      firstEventAt: number,
+    ) => {
+      // 0003 drops a bell while the agent has an unread bell; the item still
+      // records it, and a new item then has no origin (0008 D3).
+      const isCoalesced =
+        kind === "bell" &&
+        office.notifications.some(
+          (row) =>
+            row.agent_id === agent.id &&
+            row.event === "bell" &&
+            row.read_at === null,
+        );
+      const row = isCoalesced ? null : createNotification(agent, kind, detail);
+      const known = office.needsYou.find((item) => item.agent_id === agent.id);
+      if (known === undefined) {
+        office.needsYou.push({
+          agent_id: agent.id,
+          kind,
+          detail,
+          first_event_at: firstEventAt,
+          latest_at: Date.now(),
+          origin_notification_id: row?.id ?? null,
+        });
+      } else {
+        Object.assign(known, { kind, detail, latest_at: Date.now() });
+      }
+      pushNeedsYouChanged();
+    };
     const isActive = (status: string) =>
       ["starting", "working", "waiting_for_input"].includes(status);
     const findAgent = (agentId: unknown) =>
@@ -290,9 +369,14 @@ export async function installMockCore(
     };
     const heldAgent = (agentId: string) =>
       office.holds.agents.find((hold) => hold.agent_id === agentId);
+    // FR-005: these statuses end an agent's attention.
+    const CLEARING_STATUSES = ["starting", "working", "stopped"];
     const setStatus = (agent: Agent, status: string) => {
       agent.status = status;
       pushEvent({ type: "agent.status", agent_id: agent.id, status });
+      if (CLEARING_STATUSES.includes(status)) {
+        clearNeedsYou((item) => item.agent_id === agent.id);
+      }
     };
     const endSessions = (agentId: string) => {
       for (const session of office.sessions[agentId] ?? []) {
@@ -669,6 +753,7 @@ export async function installMockCore(
             }
           }
           office.agents = office.agents.filter((known) => known.id !== agentId);
+          clearNeedsYou((item) => item.agent_id === agentId);
           removeFromTree([...descendantsOf(agentId), agentId]);
           pushEvent({ type: "agent.deleted", agent_id: agentId });
           treeChanged("agent.deleted");
@@ -732,11 +817,28 @@ export async function installMockCore(
             return refuse("not_found", "not found: no such notification");
           }
           row.read_at ??= Date.now();
+          clearNeedsYou((item) => item.origin_notification_id === row.id);
           return null;
         }
         case "notification.read_agent": {
+          if (mock.office?.readAgentDelayMs) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, mock.office?.readAgentDelayMs),
+            );
+          }
           readAgentRows(String(fields.agent_id));
+          clearNeedsYou((item) => item.agent_id === fields.agent_id);
           return null;
+        }
+        case "needs_you.list":
+          return { items: orderedNeedsYou() };
+        case "needs_you.dismiss": {
+          const agentId = String(fields.agent_id);
+          if (!office.needsYou.some((item) => item.agent_id === agentId)) {
+            return refuse("not_found", "no needs-you item for the agent");
+          }
+          clearNeedsYou((item) => item.agent_id === agentId);
+          return { items: orderedNeedsYou() };
         }
         case "terminal.attach": {
           const agent = findAgent(fields.agent_id);
@@ -825,6 +927,9 @@ export async function installMockCore(
           );
           record(agent.id, "release");
           pushHoldChanged();
+          clearNeedsYou(
+            (item) => item.agent_id === agent.id && item.kind === "auto_hold",
+          );
           return {};
         }
         case "office.actions":
@@ -934,6 +1039,19 @@ export async function installMockCore(
             { id: agentId, name: agentName } as Agent,
             event as NotificationRow["event"],
             detail ?? null,
+          );
+        },
+        attention: (
+          agentId: string,
+          kind: NeedsYouKind,
+          detail?: string,
+          firstEventAt?: number,
+        ) => {
+          recordAttention(
+            findAgent(agentId),
+            kind,
+            detail ?? null,
+            firstEventAt ?? Date.now(),
           );
         },
         autoHold: (agentId: string, limitName: string) => {

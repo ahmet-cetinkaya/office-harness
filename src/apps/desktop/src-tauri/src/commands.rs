@@ -10,16 +10,30 @@
 use std::time::Duration;
 
 use serde_json::{Map, Value};
-use tauri::State;
 use tauri::ipc::{Channel, InvokeResponseBody};
+use tauri::{State, WebviewWindow};
 
-use crate::api_error::{ApiError, LOGIN_START_FAILED, START_FAILED, START_TIMEOUT};
+use crate::api_error::{
+    ApiError, LOGIN_START_FAILED, START_FAILED, START_TIMEOUT, WINDOW_TITLE_FAILED,
+};
 use crate::channels;
 use crate::connection::{Connection, ConnectionState};
 use crate::server_process::{self, LoginStartError};
 
 /// How long "start server" waits for the new server to answer.
 const START_WAIT: Duration = Duration::from_secs(15);
+
+/// The window title without a count; it is the one in `tauri.conf.json`.
+const APP_TITLE: &str = "office-harness";
+
+/// The title that shows how many agents need the user (0008 D7).
+fn window_title(count: u32) -> String {
+    if count == 0 {
+        APP_TITLE.to_owned()
+    } else {
+        format!("{APP_TITLE} ({count})")
+    }
+}
 
 #[tauri::command]
 pub fn watch_connection(connection: State<'_, Connection>, on_state: Channel<ConnectionState>) {
@@ -87,3 +101,16 @@ pub async fn register_login_start() -> Result<(), ApiError> {
 pub async fn login_start_status() -> Result<bool, ApiError> {
     run_login_start(server_process::is_login_start_registered).await
 }
+
+/// Takes only a number, so the webview cannot set any other title text, and
+/// needs no broad window permission (0008 D7).
+#[tauri::command]
+pub fn set_window_title(window: WebviewWindow, count: u32) -> Result<(), ApiError> {
+    window
+        .set_title(&window_title(count))
+        .map_err(|error| ApiError::new(WINDOW_TITLE_FAILED, error.to_string()))
+}
+
+#[cfg(test)]
+#[path = "commands.tests.rs"]
+mod tests;

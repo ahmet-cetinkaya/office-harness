@@ -1,7 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import { createTauriCoreClient } from "./core/api";
+  import { createTauriCoreClient, setWindowTitleCount } from "./core/api";
+  import { sharedFocusShortcut } from "./core/shortcuts";
   import {
     createConnectionStore,
     BusyView,
@@ -89,6 +90,7 @@
     void panel.office.controller.watch();
     void panel.notifications.watch();
     void panel.hold.watch();
+    void panel.needsYou.watch();
     void hierarchy.watch();
     void osNotificationTap();
   });
@@ -100,8 +102,35 @@
       void panel.office.controller.load();
       void panel.notifications.load();
       void panel.hold.load();
+      void panel.needsYou.load();
       void hierarchy.load();
+      // The jump key is unbound while the focus shortcut holds it, in the
+      // scene too, so the shared copy loads before any view needs it.
+      void sharedFocusShortcut(client);
     }
+  });
+
+  // The window title shows the count in both views (0008 D7, FR-009). The
+  // title is set by the core, which takes only the number.
+  let needsYouAgentIds = $state<string[]>([]);
+  $effect(() =>
+    panel.needsYou.subscribe(
+      (next) => (needsYouAgentIds = next.items.map((item) => item.agent_id)),
+    ),
+  );
+  // The panel's rows drop items of agents that are gone, so the title counts
+  // the same items.
+  const needsYouCount = $derived(
+    needsYouAgentIds.filter((agentId) =>
+      panel.office.snapshot.agents.some((agent) => agent.id === agentId),
+    ).length,
+  );
+  // The window starts without a count, so a first count of 0 sends nothing.
+  let titleCount = 0;
+  $effect(() => {
+    if (!isConnected || needsYouCount === titleCount) return;
+    titleCount = needsYouCount;
+    void setWindowTitleCount(needsYouCount);
   });
 
   /** Opens the tapped notification's agent, when it still exists (D7). */
@@ -175,6 +204,7 @@
         onProjectChoice={panel.setProjectChoice}
         bind:openAgentId
         onreopen={(agentId) => void panel.notifications.readAgent(agentId)}
+        needsYou={panel.needsYou}
       />
     {/if}
     <LoginStartPanel {client} />

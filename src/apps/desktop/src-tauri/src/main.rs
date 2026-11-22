@@ -42,6 +42,7 @@ fn main() {
             commands::start_server,
             commands::register_login_start,
             commands::login_start_status,
+            commands::set_window_title,
         ])
         .run(tauri::generate_context!());
     if let Err(error) = result {

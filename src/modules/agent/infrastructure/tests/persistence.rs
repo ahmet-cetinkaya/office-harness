@@ -145,6 +145,42 @@ fn a_stored_focus_shortcut_that_became_reserved_falls_back_to_the_default() {
 }
 
 #[test]
+fn a_stored_focus_shortcut_loads_kept_or_falls_back_by_the_reserved_table() {
+    let jump_key_spellings = ["Ctrl+Shift+F11", "Shift+Ctrl+F11"];
+    let reserved_keys = ["Ctrl+Shift+F1", "Ctrl+Shift+F10", "Ctrl+Shift+H"];
+    let free_keys = ["Ctrl+Alt+F11", "Ctrl+Shift+F12"];
+    let default = Settings::default().focus_shortcut;
+    let cases = jump_key_spellings
+        .iter()
+        .chain(&free_keys)
+        .map(|stored| (*stored, *stored))
+        .chain(
+            reserved_keys
+                .iter()
+                .map(|stored| (*stored, default.as_str())),
+        );
+    for (stored, expected) in cases {
+        let folder = tempfile::tempdir().expect("folder");
+        let database = database_in(&folder);
+        drop(open_office(&database));
+        Connection::open(&database)
+            .expect("open database")
+            .execute(
+                "INSERT INTO agent_settings (key, value) VALUES ('focus_shortcut', ?1)",
+                [stored],
+            )
+            .expect("store the shortcut");
+
+        let loaded = open_office(&database)
+            .settings
+            .load()
+            .expect("settings load");
+
+        assert_eq!(loaded.focus_shortcut, expected, "{stored}");
+    }
+}
+
+#[test]
 fn only_running_agents_become_interrupted_and_none_starts() {
     let folder = tempfile::tempdir().expect("folder");
     let office = open_office(&database_in(&folder));
