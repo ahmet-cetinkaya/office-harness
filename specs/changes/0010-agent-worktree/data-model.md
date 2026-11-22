@@ -45,7 +45,8 @@ All run as `git -c core.hooksPath=<null device> -c hook.<event>.enabled=false ..
 | Branch name check | `check-ref-format --branch <name>` | 10 s |
 | Create the branch | `branch --no-track -- <branch> <refs/heads/base or commit>` | 10 s |
 | Create the worktree | `worktree add -- <folder> <branch>` | 120 s |
-| Change count | `status --porcelain=v1 --untracked-files=all --ignore-submodules=none -z` | 10 s |
+| Filter drivers | `config --list --name-only -z` | 10 s |
+| Change count | `-c filter.<driver>.clean= ...` (each driver off) `status --porcelain=v1 --untracked-files=all --ignore-submodules=dirty -z` | 10 s |
 | Branch commit | `rev-parse --verify --quiet refs/heads/<branch>^{commit}` | 10 s |
 | Own commits | `rev-list --count <base ref>..<branch commit> --` | 10 s |
 | Base exists | `rev-parse --verify --quiet <base ref>^{commit}` | 10 s |

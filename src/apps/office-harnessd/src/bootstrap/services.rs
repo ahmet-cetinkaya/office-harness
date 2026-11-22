@@ -116,9 +116,9 @@ pub fn start_with(
     let settings = SettingsRepository::new(connection.clone());
     let attribution = login.attribution;
     let startup_settings = settings.load()?;
-    let terminal = build_terminal_services(config, &startup_settings, login)?;
-    let events = EventHub::new();
     let storage_alerts = StorageAlerts::new(log.clone());
+    let terminal = build_terminal_services(config, &startup_settings, login, &storage_alerts)?;
+    let events = EventHub::new();
     let access = build_access_services(config)?;
     let agent_calls = AgentCalls {
         store: access.agent_calls.clone(),

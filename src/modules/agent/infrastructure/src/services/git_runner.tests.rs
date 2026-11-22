@@ -127,6 +127,7 @@ mod with_a_stand_in_program {
         assert!(!output.contains("GIT_DIR="), "{output}");
         assert!(!output.contains("GIT_WORK_TREE="), "{output}");
         assert!(output.contains("GIT_OPTIONAL_LOCKS=0"), "{output}");
+        assert!(output.contains("GIT_NO_LAZY_FETCH=1"), "{output}");
         let output = runner.write(temp.path(), &["x"]).expect("ran");
         assert!(!output.contains("GIT_OPTIONAL_LOCKS"), "{output}");
     }
@@ -200,12 +201,49 @@ mod with_a_stand_in_program {
     }
 
     #[test]
-    fn a_child_that_keeps_the_pipe_after_git_exits_is_ended_at_the_deadline() {
+    fn a_child_that_keeps_the_pipes_after_git_exits_is_ended_and_the_output_kept() {
         let temp = TempDir::new().expect("temp");
-        let runner = runner_for(temp.path(), "sleep 30 & echo out", &environment())
-            .with_timeouts(Duration::from_millis(500), Duration::from_millis(500));
+        let pid_file = temp.path().join("child.pid");
+        let script = format!("sleep 30 & echo $! > '{}'; echo out", pid_file.display());
+        let runner = runner_for(temp.path(), &script, &environment())
+            .with_timeouts(Duration::from_secs(20), Duration::from_secs(20));
         let started = Instant::now();
-        assert_eq!(runner.read(temp.path(), &["x"]), Err(GitFailure::Timeout));
+        assert_eq!(runner.read(temp.path(), &["x"]), Ok("out\n".to_owned()));
+        assert!(started.elapsed() < Duration::from_secs(5));
+        let child: i32 = fs::read_to_string(&pid_file)
+            .expect("pid")
+            .trim()
+            .parse()
+            .expect("number");
+        let alive = nix::sys::signal::kill(nix::unistd::Pid::from_raw(child), None).is_ok();
+        assert!(!alive, "the child {child} still runs");
+    }
+
+    /// `setsid` leaves git's group, so ending the group cannot close the
+    /// pipe; the success still stands, because only stdout must end.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_helper_outside_the_group_that_keeps_stderr_does_not_turn_a_success_into_a_timeout() {
+        let temp = TempDir::new().expect("temp");
+        let pid_file = temp.path().join("helper.pid");
+        let script = format!(
+            "setsid sleep 30 >/dev/null </dev/null & echo $! > '{}'; echo out",
+            pid_file.display()
+        );
+        let runner = runner_for(temp.path(), &script, &environment())
+            .with_timeouts(Duration::from_secs(20), Duration::from_secs(20));
+        let started = Instant::now();
+        let answer = runner.read(temp.path(), &["x"]);
+        let helper: i32 = fs::read_to_string(&pid_file)
+            .expect("pid")
+            .trim()
+            .parse()
+            .expect("number");
+        let _ = nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(helper),
+            nix::sys::signal::Signal::SIGKILL,
+        );
+        assert_eq!(answer, Ok("out\n".to_owned()));
         assert!(started.elapsed() < Duration::from_secs(5));
     }
 

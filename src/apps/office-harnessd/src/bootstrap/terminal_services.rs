@@ -14,6 +14,7 @@ use terminal_domain::value_objects::OutputLimits;
 use terminal_infrastructure::services::{PortableTerminalRuntime, RuntimeSettings};
 use terminal_presentation::handlers::TerminalHandlers;
 
+use super::StorageAlerts;
 use crate::bridges::{TerminalEvents, TerminalLauncher};
 use crate::config::Config;
 
@@ -52,6 +53,7 @@ impl LoginSetup {
 }
 
 /// Builds the terminal services from the settings and the environment setup.
+/// What an undone worktree create leaves behind goes to `alerts`.
 ///
 /// # Errors
 /// A setting that is not a valid output limit.
@@ -59,6 +61,7 @@ pub fn build_terminal_services(
     config: &Config,
     settings: &Settings,
     login: LoginSetup,
+    alerts: &StorageAlerts,
 ) -> Result<TerminalServices, TerminalError> {
     let LoginSetup {
         login_environment,
@@ -79,6 +82,7 @@ pub fn build_terminal_services(
         config.worktrees_folder_path(),
         Arc::clone(&login_environment),
         server_environment.clone(),
+        Arc::new(alerts.clone()),
     ));
     Ok(TerminalServices {
         handlers: Arc::new(TerminalHandlers::new(&runtime)),

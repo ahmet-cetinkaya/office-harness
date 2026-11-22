@@ -148,7 +148,7 @@ Two agents that work in one git repository folder change the same files. To keep
 - The worktree is in the `worktrees/` folder of the [data folder](#data-folder), never inside your repository. When you chose a subfolder of the repository, the agent starts in the same subfolder of its worktree.
 - Untracked files, such as local environment files, are not copied into the worktree.
 - If the branch or the worktree cannot be made, no agent is created and no branch or folder is left.
-- The office runs git without hooks and without asking for credentials, and it writes no git configuration. Checkout filters that your repository configures, such as Git LFS, still run during the checkout, as in your own checkout, and can download files.
+- The office runs git without hooks and without asking for credentials, and it writes no git configuration. Checkout filters that your repository configures, such as Git LFS, still run during the checkout, as in your own checkout, and can download files. Later reads, such as the change count before a delete, run no filter; a file that only a filter changes, such as a Git LFS file, can then count as changed.
 - Only you can turn the choice on. Agents that create agents never get an own worktree.
 
 **In the details.** The agent's details show its branch, its base, and the worktree folder. If the worktree folder is gone or no longer linked to its repository (for example after you moved the repository), the agent does not start and says why.
