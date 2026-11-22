@@ -104,6 +104,36 @@ mod with_a_stand_in_program {
         file
     }
 
+    const END_DEADLINE: Duration = Duration::from_secs(5);
+    const END_POLL: Duration = Duration::from_millis(10);
+
+    /// True once `pid` is gone or a zombie, polled up to a deadline: a killed
+    /// child whose parent already exited waits for the system to reap it,
+    /// and until then a signal check still finds it.
+    fn has_ended(pid: i32) -> bool {
+        let deadline = Instant::now() + END_DEADLINE;
+        while !is_gone_or_zombie(pid) {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            thread::sleep(END_POLL);
+        }
+        true
+    }
+
+    /// Linux shows a zombie's state in `/proc`; elsewhere a zombie counts as
+    /// running until it is reaped, which the polling waits for.
+    fn is_gone_or_zombie(pid: i32) -> bool {
+        const ZOMBIE_STATE: char = 'Z';
+        if nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_err() {
+            return true;
+        }
+        fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+            stat.rsplit_once(") ")
+                .is_some_and(|(_, fields)| fields.starts_with(ZOMBIE_STATE))
+        })
+    }
+
     fn runner_for(folder: &Path, script: &str, environment: &Environment) -> GitRunner {
         GitRunner::new(program(folder, script), environment)
     }
@@ -195,9 +225,7 @@ mod with_a_stand_in_program {
             .trim()
             .parse()
             .expect("number");
-        thread::sleep(Duration::from_millis(100));
-        let alive = nix::sys::signal::kill(nix::unistd::Pid::from_raw(child), None).is_ok();
-        assert!(!alive, "the child {child} still runs");
+        assert!(has_ended(child), "the child {child} still runs");
     }
 
     #[test]
@@ -215,8 +243,7 @@ mod with_a_stand_in_program {
             .trim()
             .parse()
             .expect("number");
-        let alive = nix::sys::signal::kill(nix::unistd::Pid::from_raw(child), None).is_ok();
-        assert!(!alive, "the child {child} still runs");
+        assert!(has_ended(child), "the child {child} still runs");
     }
 
     /// `setsid` leaves git's group, so ending the group cannot close the
