@@ -62,6 +62,17 @@ impl PidHandle {
     }
 }
 
+/// True only when the read confirms the process is gone (not running, or a
+/// zombie) or the id now names another process. A read that fails for any
+/// other reason says nothing about the exit: the process may still run.
+pub(super) fn exit_confirmed(read: &Result<ProcessIdentity, ReadError>, started_at: u64) -> bool {
+    match read {
+        Ok(live) => live.started_at != started_at,
+        Err(ReadError::NotRunning) => true,
+        Err(ReadError::NotReadable) => false,
+    }
+}
+
 impl ProcessHandle for PidHandle {
     fn identity(&self) -> Result<ProcessIdentity, ReadError> {
         read_identity(self.pid)
@@ -78,7 +89,7 @@ impl ProcessHandle for PidHandle {
     fn wait_for_exit(&self, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         loop {
-            if !self.is_same_process() {
+            if exit_confirmed(&read_identity(self.pid), self.started_at) {
                 return true;
             }
             if Instant::now() >= deadline {
