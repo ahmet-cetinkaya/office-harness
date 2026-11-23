@@ -92,6 +92,14 @@ fn terminal_gateway(services: &Services) -> Arc<TerminalGateway> {
     ))
 }
 
+/// The user's `notification.*` and `needs_you.*` requests.
+fn notification_gateway(services: &Services) -> NotificationGateway {
+    NotificationGateway::new(
+        Arc::new(services.notification.handlers.clone()),
+        services.needs_you_bridge.clone(),
+    )
+}
+
 /// The user's `template.*` requests, over the template services.
 fn template_gateway(services: &Services) -> TemplateGateway {
     TemplateGateway::new(
@@ -175,10 +183,6 @@ impl Server {
             events.clone(),
             services.storage_alerts.clone(),
         );
-        let notification = NotificationGateway::new(
-            Arc::new(services.notification.handlers.clone()),
-            services.needs_you_bridge.clone(),
-        );
         let resume = resume_gateway(services, &agents, &events, options.resume_check_period);
         let (shutdown, stopping) = watch::channel(false);
         idle_sleeper(services, &agents, log, &options).spawn(stopping.clone());
@@ -197,7 +201,7 @@ impl Server {
             send_report: Arc::clone(&services.hierarchy.send_report),
             hierarchy_tree: Arc::clone(&services.hierarchy.tree),
             directive_journal: Arc::clone(&services.hierarchy.directive_journal),
-            notification,
+            notification: notification_gateway(services),
             templates: template_gateway(services),
             resume,
             events,
