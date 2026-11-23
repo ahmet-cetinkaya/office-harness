@@ -28,7 +28,8 @@ When the office creates an agent's own worktree (0010), the new worktree has no 
 | Base checkout | The main checkout folder of the repository, which 0010 stores as the agent's repository. It is the folder where the person installed the packages. It is the base checkout also when the chosen folder is inside another agent's worktree. It is not the base of 0010, which is a branch or a commit. |
 | Dependency folder | A folder named `node_modules` that holds installed Node.js packages, as npm, pnpm, Yarn (with `node_modules`), and Bun make it. |
 | Dependency place | The top folder of a worktree, or a folder of the worktree that holds a `package.json` file that git tracks in the worktree. The same folder, relative to the top, in the base checkout is its match. |
-| Dependency link | A link that the office makes in a new worktree, so that the dependency folder at a dependency place gives the installed packages of the base checkout at the same place. |
+| Dependency link | A link that the office makes in a new worktree, so that the dependency folder at a dependency place gives the installed packages of the base checkout at the same place. The office links only package entries of the base checkout's dependency folder. |
+| Package entry | An entry of a dependency folder whose name does not start with a dot, or one of the package manager entries `.bin`, `.pnpm`, `.modules.yaml`, `.package-lock.json`, `.yarn-state.yml`, and `.bun`. Other entries that start with a dot, such as the tool caches `.vite`, `.vitest`, `.cache`, `.tmp`, and `.astro`, are not package entries. |
 | Outside target | A place outside the base checkout, or a place that does not exist, that a link reaches after every link on its way is followed. |
 | Worktree dependencies | The office setting that this change adds. It is on or off. |
 
@@ -173,6 +174,7 @@ The person turns Worktree dependencies off in the office settings. The create fo
 | The new worktree already has a file, folder, or link named `node_modules` at that place (for example, the branch tracks one). | Boundary | The office makes, changes, and removes nothing at that place (FR-003 f). |
 | The base checkout's dependency folder is itself a link to a folder outside the base checkout. | Invalid | No dependency link at that place; the reason goes to the log; the other places and the create go on (FR-004). |
 | One package inside the base checkout's dependency folder is a link to a folder outside the base checkout, or a link to nothing. | Invalid | No link for that package; the reason goes to the log; the other links and the create go on (FR-004). The package is missing in the worktree until the agent installs it. |
+| The base checkout's dependency folder holds tool caches, such as `.vite` or `.cache`. | Boundary | They are not package entries and get no link. A tool in the worktree makes its own cache in the worktree's dependency folder, and the base checkout's caches stay unchanged (Terms). |
 | The repository has nested workspaces with several tracked `package.json` files. | Boundary | Each dependency place that meets the conditions of FR-003 gets its own dependency links (FR-002). |
 | The chosen base branch is not the branch checked out in the base checkout. | Boundary | The links give the packages that the base checkout has installed. When the base branch needs other package versions, the agent may need an install in the worktree (A4). |
 | The chosen folder is inside another agent's worktree. | Boundary | The base checkout is the main checkout of the repository, not the other worktree (Terms, US1 scenario 6). |
@@ -232,6 +234,7 @@ The person turns Worktree dependencies off in the office settings. The create fo
 - Q: What happens when a link cannot be made? → A: The office removes the links it made at that place, writes the reason to the server log, and creates the agent. No create fails because of this change (FR-007). Decided under the owner's spec delegation, 2026-11-23.
 - Q: Is Worktree dependencies on or off by default, and when does a change apply? → A: On; a change applies to the next creates, and existing worktrees keep their links until removal (FR-001). Decided under the owner's spec delegation, 2026-11-23.
 - Q: What happens on Windows? → A: The office makes no links, and the create goes on as in 0010 (FR-003 b, A6). Decided under the owner's spec delegation, 2026-11-23.
+- Q: Are tool caches inside the dependency folder shared too? → A: No. Only package entries are linked (Terms), so concurrent builds in the base checkout and in each worktree never write one cache. Decided at the review gate (r1), 2026-11-23.
 - Q: Must git ignore the dependency folder inside the new worktree too? → A: Yes. Without an ignore or exclude entry from the office, that is the only way that a link never shows as a change (FR-003 e, A9). Decided under the owner's spec delegation, 2026-11-23.
 
 ## Deviations
