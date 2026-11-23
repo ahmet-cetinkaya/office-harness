@@ -176,10 +176,13 @@ fn a_waiting_item_keeps_the_agent_awake_while_the_screen_shows_an_open_question(
 #[test]
 fn a_waiting_item_keeps_the_agent_awake_while_its_screen_cannot_be_read() {
     let items = [item_of(AttentionKind::WaitingForInput)];
-    assert_eq!(
-        verdict(&items, &FixedScreen(None)),
-        Err(SCREEN_UNREADABLE.to_owned())
-    );
+    // SC-006 counts 10 sleep checks.
+    for _ in 0..10 {
+        assert_eq!(
+            verdict(&items, &FixedScreen(None)),
+            Err(SCREEN_UNREADABLE.to_owned())
+        );
+    }
 }
 
 #[test]

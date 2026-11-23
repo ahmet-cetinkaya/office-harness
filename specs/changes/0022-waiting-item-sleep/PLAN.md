@@ -224,3 +224,9 @@ Ship every requirement of spec 0022 with automated evidence. Then repeat the 001
 ## Final verification
 
 Run `/ac:verify` against this plan. Every Traceability row needs its evidence, and CI must be green on the 3 OSes. Then Efe's code gate runs at the exact head.
+
+## Result
+
+T1 to T4 are done, one signed commit for each task. T4 is the 0008 contract note ("Amended by 0022", no wire change), `qa-report.md`, and this section. T4 also makes the SC-006 unit test run 10 checks.
+
+The gates pass on the final tree: 1794 tests passed, 0 failed. The hands-on run with a real `claude` passed SC-004: the agent slept 311.6 s after its prompted wait, with 0 dismisses and 0 terminal views open, and Enter woke it into the same session. SC-001, SC-003, SC-005 and SC-007 are PARTIAL, with fewer rounds or shorter times than stated; `qa-report.md` names each gap. No spec deviation.
