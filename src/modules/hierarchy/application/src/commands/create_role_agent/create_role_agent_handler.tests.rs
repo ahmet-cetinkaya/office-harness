@@ -463,6 +463,10 @@ fn a_refused_create_maps_to_the_matching_error_kind() {
         (CreatorErrorKind::Invalid, "agent name must not be empty"),
         (CreatorErrorKind::NotFound, "the project is gone"),
         (CreatorErrorKind::Conflict, "an agent named Ana exists"),
+        (
+            CreatorErrorKind::Refused,
+            "the temp cap is 3; end a temp or raise the cap",
+        ),
         (CreatorErrorKind::Internal, "the agent store is closed"),
     ];
     for (kind, message) in refusals {
@@ -471,6 +475,7 @@ fn a_refused_create_maps_to_the_matching_error_kind() {
             CreatorErrorKind::Invalid => HierarchyApplicationError::InvalidInput(message.clone()),
             CreatorErrorKind::NotFound => HierarchyApplicationError::NotFoundInput(message.clone()),
             CreatorErrorKind::Conflict => HierarchyApplicationError::ConflictInput(message.clone()),
+            CreatorErrorKind::Refused => HierarchyApplicationError::Refused(message.clone()),
             CreatorErrorKind::Internal => HierarchyApplicationError::Storage(message.clone()),
         };
         let creator = RecordingCreator::failing_create(CreatorError { kind, message });

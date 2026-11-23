@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use access_application::commands::authenticate_agent_call::AgentGrant;
 use agent_application::common::actor_scope::ActorScope;
+use agent_domain::entities::FinishedReport;
 use axum::extract::ws::{Message, WebSocket};
 use hierarchy_application::commands::send_directive::DirectiveOutcome;
 use hierarchy_application::commands::send_report::{Report, ReportDelivery};
@@ -12,7 +13,7 @@ use hierarchy_domain::{
     AgentAction, HierarchyError, Hold, ReportKind, Role, TeamId, TreeRow, check_descendant,
     is_descendant_of,
 };
-use kernel::{Actor, AgentId};
+use kernel::{Actor, AgentId, visible_text};
 use serde_json::{Value, json};
 use tokio::sync::watch;
 use tokio::task::spawn_blocking;
@@ -21,7 +22,7 @@ use wire::{CLOSE_UNAUTHORIZED, ErrorCode, Request, Response};
 use super::connection::{CLOSE_GOING_AWAY, close_with, send_text};
 use super::event_hub::EventHub;
 use super::server_state::ServerState;
-use crate::bridges::take_recorded_events;
+use crate::bridges::{EndOrder, EndReason, take_recorded_events};
 
 /// The only request types an agent connection answers (0002, plan D3). Any
 /// other type is refused, so no agent reaches `terminal.*`, `agent.delete`,
@@ -287,6 +288,7 @@ async fn answer_report(state: &ServerState, grant: &AgentGrant, request: &Reques
     };
     let handler = Arc::clone(&state.send_report);
     let events = state.events.clone();
+    let accepted = (report.sender, report.kind, report.text.clone());
     let sent = spawn_blocking(move || {
         let _actor = ActorScope::enter(Actor::Agent(sender));
         recorded_and_published(&events, || {
@@ -297,7 +299,10 @@ async fn answer_report(state: &ServerState, grant: &AgentGrant, request: &Reques
     })
     .await;
     match sent {
-        Ok(Ok(delivery)) => Response::success(request.id, report_answer(delivery)),
+        Ok(Ok(delivery)) => {
+            end_temp_after_done(state, &accepted);
+            Response::success(request.id, report_answer(delivery))
+        }
         Ok(Err((message, code))) => Response::failure(request.id, code, message),
         Err(error) => {
             let message = format!("the request task failed: {error}");
@@ -305,6 +310,30 @@ async fn answer_report(state: &ServerState, grant: &AgentGrant, request: &Reques
             Response::failure(request.id, ErrorCode::Internal, message)
         }
     }
+}
+
+/// D9: an accepted `done` report ends its sender when it is a temp. The end
+/// runs on its own task, so the answer to the report does not wait for the
+/// stop of the CLI that is waiting for it.
+fn end_temp_after_done(state: &ServerState, accepted: &(AgentId, ReportKind, String)) {
+    let (sender, kind, text) = accepted;
+    if *kind != ReportKind::Done {
+        return;
+    }
+    let ender = state.temps.ender().clone();
+    let order = EndOrder {
+        agent_id: *sender,
+        reason: EndReason::Done {
+            report: FinishedReport {
+                kind: kind.as_str().to_owned(),
+                text: visible_text(text),
+            },
+        },
+        actor: Actor::Office,
+        seen: None,
+    };
+    // A sender that is not a temp makes the end a no-op.
+    drop(spawn_blocking(move || ender.end(&order)));
 }
 
 /// The answer of an accepted report (0015 contract, `report.send` result):
@@ -472,6 +501,10 @@ async fn answer_office_request(
             return Response::failure(request.id, code, message);
         }
     };
+    let fields = match with_temp_choice(state, caller, request, fields).await {
+        Ok(fields) => fields,
+        Err(response) => return response,
+    };
     // The hold and the rate limits come last, after every 0002 rule, on the
     // same snapshot the rules read (spec A10).
     if let Err(response) = guard_office_request(state, caller, request, target, rows).await {
@@ -512,6 +545,102 @@ async fn answer_office_request(
             Response::failure(request.id, ErrorCode::Internal, message)
         }
     }
+}
+
+/// The temp choice of an agent-made create (0020 D4): a caller that is a temp
+/// always creates a temp, `own_worktree` belongs to a temp only, and a temp
+/// gets its own worktree unless the caller says no or its folder lies in no
+/// repository. Other requests pass unchanged.
+///
+/// # Errors
+/// The refusal, journaled, of an `own_worktree` that is not a temp's.
+async fn with_temp_choice(
+    state: &ServerState,
+    caller: AgentId,
+    request: &Request,
+    fields: serde_json::Map<String, Value>,
+) -> Result<serde_json::Map<String, Value>, Response> {
+    if request.kind != "agent.create" {
+        return Ok(fields);
+    }
+    let temps = state.temps.clone();
+    let gateway = state.agents.clone();
+    let chosen = spawn_blocking(move || {
+        let caller_is_temp = temps.is_temp(caller);
+        choose_temp(&gateway, caller_is_temp, fields)
+    })
+    .await
+    .map_err(|error| format!("the request task failed: {error}"))
+    .and_then(|chosen| chosen);
+    chosen.map_err(|message| {
+        let message = truncated(&message, MAX_REFUSAL_TEXT_CHARS);
+        journal_refusal(state, caller, &message);
+        Response::failure(request.id, ErrorCode::Invalid, message)
+    })
+}
+
+fn choose_temp(
+    gateway: &crate::server::AgentGateway,
+    caller_is_temp: bool,
+    mut fields: serde_json::Map<String, Value>,
+) -> Result<serde_json::Map<String, Value>, String> {
+    let asks_temp = fields.get("temp") == Some(&Value::Bool(true));
+    if !caller_is_temp && !asks_temp {
+        if fields.contains_key("own_worktree") {
+            return Err(OWN_WORKTREE_ONLY_FOR_TEMP.to_owned());
+        }
+        return Ok(fields);
+    }
+    fields.insert("temp".to_owned(), Value::Bool(true));
+    let own_worktree = match fields.remove("own_worktree") {
+        None => true,
+        Some(Value::Bool(choice)) => choice,
+        Some(_) => return Err("own_worktree is not true or false".to_owned()),
+    };
+    if own_worktree && let Some(info) = worktree_info(gateway, &fields) {
+        fields.insert("own_worktree".to_owned(), Value::Bool(true));
+        fields.insert("base".to_owned(), info.base);
+        fields.insert("branch_name".to_owned(), info.branch_name);
+    }
+    Ok(fields)
+}
+
+/// What `agent.worktree_info` answers for the folder of a create that lies
+/// in a repository.
+struct RepositoryInfo {
+    base: Value,
+    branch_name: Value,
+}
+
+/// Asks the worktree service for the folder of the create. `None` when the
+/// folder lies in no repository or the service cannot say: the create then
+/// makes no worktree, and any error of its own fields shows in its answer.
+fn worktree_info(
+    gateway: &crate::server::AgentGateway,
+    create: &serde_json::Map<String, Value>,
+) -> Option<RepositoryInfo> {
+    let mut fields = serde_json::Map::new();
+    for (from, to) in [
+        ("working_folder", "folder"),
+        ("project_id", "project_id"),
+        ("name", "name"),
+    ] {
+        if let Some(value) = create.get(from) {
+            fields.insert(to.to_owned(), value.clone());
+        }
+    }
+    let answer = gateway.run(&Request {
+        id: 0,
+        kind: "agent.worktree_info".to_owned(),
+        fields,
+    });
+    let Response::Success { result, .. } = answer else {
+        return None;
+    };
+    (result.get("in_repository") == Some(&Value::Bool(true))).then(|| RepositoryInfo {
+        base: result.get("base").cloned().unwrap_or(Value::Null),
+        branch_name: result.get("branch_name").cloned().unwrap_or(Value::Null),
+    })
 }
 
 /// Answers, logs, and journals a request whose target lies outside the
@@ -795,6 +924,10 @@ fn validated_place(
     Ok((Some(parent), None))
 }
 
+/// Why an own worktree of a create that makes no temp is refused (0010 A7,
+/// 0020 D4).
+const OWN_WORKTREE_ONLY_FOR_TEMP: &str = "own_worktree is only for a temp";
+
 /// Why an agent's create without a role of its own is refused: an unplaced
 /// agent (a role of `None`) can pass no place to a child (A4).
 const UNPLACED_REFUSAL: &str =
@@ -853,7 +986,15 @@ fn allowed_roles_refusal(allowed: &[Role]) -> String {
 /// frame beside them and is validated against the caller's place (A4);
 /// `additions` is refused outright, named by the gate like any other field
 /// the type does not take.
-const CREATE_FIELDS: [&str; 4] = ["name", "command", "working_folder", "project_id"];
+const CREATE_FIELDS: [&str; 7] = [
+    "name",
+    "command",
+    "working_folder",
+    "project_id",
+    "temp",
+    "objective",
+    "own_worktree",
+];
 
 /// The wire code of a directive failure: a rule between the agents is a
 /// refusal (the contract names not-a-descendant and not-running `refused`),

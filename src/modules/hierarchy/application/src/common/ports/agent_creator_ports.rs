@@ -61,6 +61,9 @@ pub enum CreatorErrorKind {
     NotFound,
     /// Another agent already holds the name or the resource.
     Conflict,
+    /// The office's own rule said no, as the temp cap does (0020 D3); it
+    /// answers `refused`, so it counts toward no rate limit.
+    Refused,
     /// The agent module could not reach its own storage.
     Internal,
 }
@@ -106,6 +109,7 @@ impl CreatorError {
             CreatorErrorKind::Invalid => HierarchyApplicationError::InvalidInput(self.message),
             CreatorErrorKind::NotFound => HierarchyApplicationError::NotFoundInput(self.message),
             CreatorErrorKind::Conflict => HierarchyApplicationError::ConflictInput(self.message),
+            CreatorErrorKind::Refused => HierarchyApplicationError::Refused(self.message),
             CreatorErrorKind::Internal => HierarchyApplicationError::Storage(self.message),
         }
     }

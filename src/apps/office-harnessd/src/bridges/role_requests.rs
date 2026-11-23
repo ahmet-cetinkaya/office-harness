@@ -2,8 +2,9 @@
 
 use std::sync::Arc;
 
-use agent_application::commands::create_agent::OwnWorktree;
+use agent_application::commands::create_agent::{NewTemp, OwnWorktree};
 use agent_application::commands::delete_agent::DeleteWorktrees;
+use agent_application::common::actor_scope::ActorScope;
 use agent_application::common::additions_input::AdditionsInput;
 use agent_application::common::command_line::split_command;
 use agent_domain::value_objects::{AgentCommand, DisplayName};
@@ -14,7 +15,7 @@ use hierarchy_application::commands::create_role_agent::{
 use hierarchy_application::common::errors::HierarchyApplicationError;
 use hierarchy_application::common::interfaces::HierarchyStore;
 use hierarchy_application::common::ports::{
-    AgentCreator, AgentSeed, CreatorError, CreatorErrorKind, SeedAdditions, SeedWorktree,
+    AgentCreator, AgentSeed, CreatorError, CreatorErrorKind, SeedAdditions, SeedWorktree, TempSeed,
 };
 use hierarchy_domain::{Role, TeamId};
 use kernel::AgentId;
@@ -117,7 +118,9 @@ fn seed_of(seed: &RoleSeed) -> Result<AgentSeed, String> {
         })
         .transpose()?;
     Ok(AgentSeed {
-        temp: None,
+        temp: seed.temp.as_ref().map(|temp| TempSeed {
+            objective: temp.objective.clone(),
+        }),
         name: seed.name.clone(),
         command: seed.command.clone(),
         working_folder: seed
@@ -196,7 +199,10 @@ impl AgentCreator for AgentCreatorBridge {
                         base: own.base,
                         branch_name: own.branch_name,
                     }),
-                    temp: None,
+                    temp: seed.temp.map(|temp| NewTemp {
+                        objective: temp.objective,
+                        creator: ActorScope::current(),
+                    }),
                 },
             )
             .map_err(|error| agent_failure(&error))?;
@@ -258,6 +264,9 @@ fn agent_failure(error: &agent_application::common::errors::ApplicationError) ->
             }
             agent_application::common::errors::ApplicationError::Conflict(_) => {
                 CreatorErrorKind::Conflict
+            }
+            agent_application::common::errors::ApplicationError::Refused(_) => {
+                CreatorErrorKind::Refused
             }
             _ => CreatorErrorKind::Internal,
         },

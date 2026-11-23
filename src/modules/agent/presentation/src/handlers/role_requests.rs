@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use agent_application::commands::create_agent::OwnWorktree;
+use agent_application::commands::create_agent::{NewTemp, OwnWorktree};
 use agent_application::common::additions_input::AdditionsInput;
 use wire::ErrorCode;
 
@@ -48,4 +48,6 @@ pub struct RoleSeed {
     pub additions: Option<AdditionsInput>,
     /// The user's own worktree choice (0010); agents never send one (A7).
     pub worktree: Option<OwnWorktree>,
+    /// The temp choice and its creator (0020); `None` creates no temp.
+    pub temp: Option<NewTemp>,
 }

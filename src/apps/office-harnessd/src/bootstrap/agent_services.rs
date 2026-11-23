@@ -20,8 +20,8 @@ use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
 use agent_application::common::action_journal::ActionJournal;
 use agent_application::common::interfaces::{
-    AdditionsStore, AgentStore, CliAdapters, Clock, FileView, ProjectStore, SessionStore,
-    SettingsStore, SleepGate, StatusCommandRunner, TerminalHost, WorktreeManager,
+    AdditionsStore, AgentStore, CliAdapters, Clock, FileView, FinishedTempStore, ProjectStore,
+    SessionStore, SettingsStore, SleepGate, StatusCommandRunner, TerminalHost, WorktreeManager,
 };
 use agent_application::common::session_ender::SessionEnder;
 use agent_application::common::session_launcher::{LauncherServices, SessionLauncher};
@@ -35,8 +35,8 @@ use agent_application::queries::list_sessions::ListSessionsHandler;
 use agent_application::queries::worktrees::{WorktreeInfoHandler, WorktreeStatusHandler};
 use agent_domain::value_objects::MachineId;
 use agent_infrastructure::persistence::{
-    AdditionsRepository, AgentRepository, ProjectRepository, SessionRepository, SettingsRepository,
-    SharedConnection,
+    AdditionsRepository, AgentRepository, FinishedTempRepository, ProjectRepository,
+    SessionRepository, SettingsRepository, SharedConnection,
 };
 use agent_infrastructure::services::{AttributionTiming, CliAdapterRegistry};
 use agent_presentation::{AgentHandlers, AgentUseCases};
@@ -80,6 +80,8 @@ pub struct AgentServices {
     pub record_action: RecordActionHandler,
     /// The office-level entries, for `office.actions`.
     pub office_actions: ListOfficeActionsHandler,
+    /// The entries of one agent; the temp watcher reads who stopped a temp.
+    pub actions: ListActionsHandler,
     /// Reads back an agent that another module's request created (the lead
     /// of `team.create`), so its `agent.changed` event can be sent.
     pub agent_reader: ListAgentsHandler,
@@ -91,6 +93,11 @@ pub struct AgentServices {
     pub settings: Arc<dyn SettingsStore>,
     /// Runs a start's sign-in check before the status order (0019 D13).
     pub sign_in_checks: SessionLauncher,
+    /// The sessions as the temp rules read them: the agent of a session, and
+    /// the exit result of a finished run (0020).
+    pub sessions: Arc<dyn SessionStore>,
+    /// The entries of the temps that ended (0020).
+    pub finished_temps: Arc<dyn FinishedTempStore>,
 }
 
 /// The stores and services that the use cases share.
@@ -166,6 +173,7 @@ pub fn build_agent_services(
     AgentServices {
         handlers: Arc::new(AgentHandlers::new(use_cases(&wiring, machine_id))),
         audit: AuditHandlers::new(ListActionsHandler::new(Arc::clone(&action_log))),
+        actions: ListActionsHandler::new(Arc::clone(&action_log)),
         office_actions: ListOfficeActionsHandler::new(action_log),
         record_action,
         agent_reader: ListAgentsHandler::new(Arc::clone(&wiring.agents)),
@@ -182,6 +190,8 @@ pub fn build_agent_services(
             Arc::clone(&wiring.terminals),
             Arc::clone(&wiring.clock),
         ),
+        sessions: Arc::clone(&wiring.sessions),
+        finished_temps: Arc::new(FinishedTempRepository::new(connection.clone())),
         saved_outputs: SavedOutputs::new(wiring.sessions),
         status_order: StatusOrder::default(),
         task_order: TaskOrder::default(),

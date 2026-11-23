@@ -25,6 +25,8 @@ pub enum AgentAction {
     Wake,
     /// The office ended a temp agent and removed it (0020).
     End,
+    /// The person dismissed the finished entry of an ended temp (0020).
+    Dismiss,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
