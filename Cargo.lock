@@ -3191,6 +3191,7 @@ dependencies = [
  "hierarchy-infrastructure",
  "hierarchy-presentation",
  "kernel",
+ "nix 0.28.0",
  "notification-application",
  "notification-domain",
  "notification-infrastructure",

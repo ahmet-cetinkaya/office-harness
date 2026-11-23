@@ -5,6 +5,7 @@
 pub mod fake_cli;
 pub mod office_client;
 pub mod running_office;
+pub mod secret_agents;
 pub mod server_process;
 pub mod wire_client;
 

@@ -6,7 +6,7 @@ use hierarchy_application::commands::hold::HoldService;
 use hierarchy_application::queries::tree::TreeQuery;
 use hierarchy_domain::AgentAction;
 use kernel::AgentId;
-use secret_application::SecretService;
+use secret_application::{SecretRedactor, SecretService};
 use secret_presentation::{
     Handled, USER_REQUESTS, answer_available, answer_get, answer_user_request, secret_changed_event,
 };
@@ -29,6 +29,7 @@ pub struct SecretGateway {
     events: EventHub,
     holds: Arc<HoldService>,
     tree: Arc<TreeQuery>,
+    redactor: Arc<SecretRedactor>,
     alerts: StorageAlerts,
 }
 
@@ -39,17 +40,21 @@ impl SecretGateway {
         journal: SecretJournal,
         events: EventHub,
         guards: (Arc<HoldService>, Arc<TreeQuery>),
+        redactor: Arc<SecretRedactor>,
         alerts: StorageAlerts,
     ) -> Self {
         let (holds, tree) = guards;
-        Self {
+        let gateway = Self {
             service,
             journal,
             events,
             holds,
             tree,
+            redactor,
             alerts,
-        }
+        };
+        gateway.refresh_redactor();
+        gateway
     }
 
     #[must_use]
@@ -135,6 +140,11 @@ impl SecretGateway {
     /// Records what the request said to record, tells the clients, and
     /// returns the answer.
     fn finish(&self, handled: Handled) -> Response {
+        if let Some(change) = &handled.event
+            && self.value_set_changed(change.cause)
+        {
+            self.refresh_redactor();
+        }
         if let Some(entry) = &handled.entry {
             self.journal.write(entry);
         }
@@ -142,6 +152,25 @@ impl SecretGateway {
             self.events.publish(&secret_changed_event(change));
         }
         handled.response
+    }
+
+    /// A save, a replace, a delete, or a reset changes which values the
+    /// office must replace. A read does not, unless the store was locked at
+    /// the start and opened since.
+    fn value_set_changed(&self, cause: &str) -> bool {
+        match cause {
+            "saved" | "replaced" | "deleted" | "reset" => true,
+            "read" => self.redactor.knows_no_value(),
+            _ => false,
+        }
+    }
+
+    /// Gives the redactor the values that open now (FR-012).
+    fn refresh_redactor(&self) {
+        match self.service.open_all() {
+            Ok(values) => self.redactor.replace_all(values),
+            Err(error) => self.alerts.report_disk_failure(&error.to_string()),
+        }
     }
 
     fn publish_store_change(&self, cause: &'static str) {

@@ -12,9 +12,11 @@ use audit_infrastructure::persistence::{
     LEDGER_TABLE as AUDIT_LEDGER_TABLE, SCRIPTS as AUDIT_SCRIPTS,
 };
 use gethostname::gethostname;
+use kernel::TextRedactor;
 use notification_infrastructure::persistence::{
     LEDGER_TABLE as NOTIFICATION_LEDGER_TABLE, SCRIPTS as NOTIFICATION_SCRIPTS,
 };
+use secret_application::SecretRedactor;
 use secret_infrastructure::persistence::{
     LEDGER_TABLE as SECRET_LEDGER_TABLE, SCRIPTS as SECRET_SCRIPTS,
 };
@@ -28,7 +30,7 @@ use super::{
     SecretServices, ServerLog, StartupError, StorageAlerts, TemplateServices, TerminalServices,
     build_access_services, build_agent_services, build_hierarchy_services,
     build_notification_services, build_secret_services, build_template_services,
-    build_terminal_services, open_database, run_migrations,
+    build_terminal_services, open_database, refuse_memory_dumps, run_migrations,
 };
 use crate::bridges::{
     AgentCalls, CallHelper, GateInputs, NeedsYouBridge, NotificationBridge, SystemClock,
@@ -113,6 +115,11 @@ pub fn start_with(
     log: &ServerLog,
     login: LoginSetup,
 ) -> Result<Services, StartupError> {
+    if let Err(reason) = refuse_memory_dumps() {
+        log.error(&format!(
+            "warning: the OS was not asked to refuse a memory dump of the server: {reason}"
+        ));
+    }
     // Before any agent starts: a stop sends Ctrl+C first, and a server that a
     // parent started in a new process group would pass "ignore Ctrl+C" on to
     // every agent. The forced end after the grace period stays the fallback.
@@ -138,7 +145,14 @@ pub fn start_with(
     let attribution = login.attribution;
     let startup_settings = settings.load()?;
     let storage_alerts = StorageAlerts::new(log.clone());
-    let terminal = build_terminal_services(config, &startup_settings, login, &storage_alerts)?;
+    let redactor = Arc::new(SecretRedactor::new());
+    let terminal = build_terminal_services(
+        config,
+        &startup_settings,
+        login,
+        &storage_alerts,
+        Arc::clone(&redactor) as Arc<dyn TextRedactor>,
+    )?;
     let events = EventHub::new();
     let access = build_access_services(config)?;
     let agent_calls = AgentCalls {
@@ -211,7 +225,12 @@ pub fn start_with(
         Arc::clone(&terminal.worktrees),
         &storage_alerts,
     );
-    let secret = build_secret_services(&connection, config, Arc::clone(&agent_bridge_store));
+    let secret = build_secret_services(
+        &connection,
+        config,
+        Arc::clone(&agent_bridge_store),
+        redactor,
+    );
     let session_processes = Arc::new(SessionProcessRepository::new(connection.clone()));
     let services = Services {
         machine,

@@ -226,6 +226,7 @@ fn secret_gateway(services: &Services, events: &EventHub) -> SecretGateway {
             Arc::clone(&services.hierarchy.holds),
             Arc::clone(&services.hierarchy.tree),
         ),
+        Arc::clone(&services.secret.redactor),
         services.storage_alerts.clone(),
     );
     gateway.forget_deleted_agents();
@@ -358,6 +359,7 @@ impl Server {
             directive_journal: Arc::clone(&services.hierarchy.directive_journal),
             notification: notification_gateway(services),
             secrets,
+            redactor: Arc::clone(&services.terminal.redactor),
             templates: template_gateway(services),
             resume,
             temps,

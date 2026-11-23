@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use agent_application::common::interfaces::AgentStore;
 use agent_infrastructure::persistence::SharedConnection;
-use secret_application::{SecretPorts, SecretService, StoreKeyVault};
+use secret_application::{SecretPorts, SecretRedactor, SecretService, StoreKeyVault};
 use secret_infrastructure::persistence::SecretRepository;
 use secret_infrastructure::{
     ChaChaRecordSealer, KeyFileVault, KeyringVault, OsStoreKeyGenerator, UnavailableKeyring,
@@ -28,6 +28,9 @@ pub fn disable_os_keyring() {
 /// the agent connection call.
 pub struct SecretServices {
     pub service: Arc<SecretService>,
+    /// Knows the secret values for the redaction (FR-012); the gateway keeps
+    /// it current at each change.
+    pub redactor: Arc<SecretRedactor>,
 }
 
 /// Builds the secret service over the one database connection. The store key
@@ -38,6 +41,7 @@ pub fn build_secret_services(
     connection: &SharedConnection,
     config: &Config,
     agents: Arc<dyn AgentStore>,
+    redactor: Arc<SecretRedactor>,
 ) -> SecretServices {
     let service = SecretService::new(SecretPorts {
         store: Arc::new(SecretRepository::new(connection.handle())),
@@ -50,6 +54,7 @@ pub fn build_secret_services(
     });
     SecretServices {
         service: Arc::new(service),
+        redactor,
     }
 }
 

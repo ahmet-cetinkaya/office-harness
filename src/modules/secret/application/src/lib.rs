@@ -7,6 +7,7 @@ mod errors;
 mod models;
 mod ports;
 mod provision;
+mod redactor;
 mod service;
 mod store_ports;
 
@@ -14,6 +15,7 @@ pub use errors::SecretServiceError;
 pub use models::{AvailableSecret, GrantSummary, ReadAnswer, SecretSummary, StoreState};
 pub use ports::{RecordSealer, SealError, StoreKeyVault, VaultError};
 pub use provision::{load_store_key, provision_store_key};
+pub use redactor::SecretRedactor;
 pub use service::{SecretPorts, SecretService};
 pub use store_ports::{
     AgentDirectory, SecretClock, SecretStore, StoreError, StoreKeyGenerator, StoredGrant,
