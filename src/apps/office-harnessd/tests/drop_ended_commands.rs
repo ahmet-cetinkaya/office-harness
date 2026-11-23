@@ -17,15 +17,12 @@ mod support;
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::ErrorKind;
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
 
 use agent_domain::value_objects::SessionId;
 use office_harnessd::config::Config;
 use rusqlite::{Connection, params};
-use serde_json::{Value, json};
+use serde_json::json;
 use support::config_in;
 use support::fake_cli::FakeClis;
 use support::office_client::{Client, wait_for};
@@ -42,21 +39,12 @@ const HELPER_LIFETIME_SECONDS: u32 = 15;
 /// The wait before the stored process replaces itself. It is longer than the
 /// scan period, so the old command line is stored before it is replaced.
 const EXEC_DELAY_SECONDS: u32 = 12;
-/// How long a stand-in process lives when nothing ends it, so a failed test
-/// leaves it for two minutes only.
-const LEFTOVER_SECONDS: u32 = 120;
 const SLOW_SECONDS: u32 = 600;
 
-const SWEEP_BOUND: Duration = Duration::from_secs(30);
-const POLL: Duration = Duration::from_millis(50);
 const DATABASE_SUFFIX: &str = "";
 const WRITE_LOG_SUFFIX: &str = "-wal";
 const SHARED_MEMORY_SUFFIX: &str = "-shm";
 const FILE_SUFFIXES: [&str; 3] = [DATABASE_SUFFIX, WRITE_LOG_SUFFIX, SHARED_MEMORY_SUFFIX];
-
-const PROCESS_STATE_FIELD_AFTER_NAME: usize = 0;
-const START_TIME_FIELD_AFTER_NAME: usize = 19;
-const ZOMBIE_STATE: &str = "Z";
 
 const EMPTY_ADDITIONS: &str = r#"{"flags":[],"env":[]}"#;
 const NORMAL_END: &str = "0";
@@ -448,9 +436,8 @@ fn insert_identity(connection: &Connection, session: &str, pid: i64, marker: &st
 
 /// What the 0017 build left: secure delete off, 10 sessions that ended with
 /// a marker in an ended identity, and in one more session 10 helper
-/// identities that were dropped and 10 command lines that were replaced.
-/// Writes, drops, replaces and ends identities as the 0017 build did, with
-/// secure delete off, and gives back the open connection, so that the caller
+/// identities that were dropped and 10 command lines that were replaced. It
+/// gives back the open connection, so that the caller
 /// chooses how that build stopped.
 fn write_as_the_0017_build(config: &Config, agent: &str) -> (Connection, Vec<String>) {
     let connection = Connection::open(config.database_path()).expect("database");
@@ -587,294 +574,316 @@ impl Fixture {
     }
 }
 
-/// One process as the test saw it: the start time tells a reused process id
-/// apart.
-fn start_time_of(pid: u32) -> i64 {
-    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).expect("stat");
-    let after_name = stat.rsplit_once(')').expect("a name").1;
-    let fields: Vec<&str> = after_name.split_whitespace().collect();
-    assert_ne!(fields[PROCESS_STATE_FIELD_AFTER_NAME], ZOMBIE_STATE);
-    fields[START_TIME_FIELD_AFTER_NAME]
-        .parse()
-        .expect("a start time")
-}
+/// SC-005 needs the sweep of 0017, which runs on Linux only until its macOS
+/// port.
+#[cfg(target_os = "linux")]
+mod resume_after_the_sweep {
+    use std::os::unix::process::CommandExt;
+    use std::process::{Child, Command, Stdio};
+    use std::time::{Duration, Instant};
 
-/// A process the office never saw, with no command line, that the sweep
-/// leaves running. It ends with the test.
-struct Decoy(Child);
+    use serde_json::Value;
 
-impl Drop for Decoy {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+    use super::*;
+
+    /// How long a stand-in process lives when nothing ends it, so a failed
+    /// test leaves it for two minutes only.
+    const LEFTOVER_SECONDS: u32 = 120;
+    const SWEEP_BOUND: Duration = Duration::from_secs(30);
+    const POLL: Duration = Duration::from_millis(50);
+    const PROCESS_STATE_FIELD_AFTER_NAME: usize = 0;
+    const START_TIME_FIELD_AFTER_NAME: usize = 19;
+    const ZOMBIE_STATE: &str = "Z";
+
+    /// One process as the test saw it: the start time tells a reused process id
+    /// apart.
+    fn start_time_of(pid: u32) -> i64 {
+        let stat = fs::read_to_string(format!("/proc/{pid}/stat")).expect("stat");
+        let after_name = stat.rsplit_once(')').expect("a name").1;
+        let fields: Vec<&str> = after_name.split_whitespace().collect();
+        assert_ne!(fields[PROCESS_STATE_FIELD_AFTER_NAME], ZOMBIE_STATE);
+        fields[START_TIME_FIELD_AFTER_NAME]
+            .parse()
+            .expect("a start time")
     }
-}
 
-/// A CLI that survives the server's death, with a helper in a session of its
-/// own, and that only sleeps when the office runs it again.
-fn leftover_body(records: &Path, command: &str) -> String {
-    let ran = format!("{}/ran-{command}", records.display());
-    format!(
-        "if [ -e {ran} ]; then echo ready; exec sleep {LEFTOVER_SECONDS}; fi\n: > {ran}\ntrap '' HUP\nsetsid sh -c 'exec sleep {LEFTOVER_SECONDS}' &\necho ready\nwait"
-    )
-}
+    /// A process the office never saw, with no command line, that the sweep
+    /// leaves running. It ends with the test.
+    struct Decoy(Child);
 
-/// A CLI that ends with the hang-up of the server's death.
-fn hung_up_body(records: &Path, command: &str) -> String {
-    let ran = format!("{}/ran-{command}", records.display());
-    format!(
-        "if [ -e {ran} ]; then echo ready; exec sleep {LEFTOVER_SECONDS}; fi\n: > {ran}\necho ready\nexec sleep {LEFTOVER_SECONDS}"
-    )
-}
-
-async fn plan_after_the_sweep(client: &mut Client) -> Value {
-    let deadline = Instant::now() + SWEEP_BOUND;
-    loop {
-        let plan = client.ask("resume.plan", json!({})).await;
-        assert_eq!(plan["ok"], true, "{plan}");
-        if plan["result"]["sweeping"] == false {
-            return plan["result"].clone();
+    impl Drop for Decoy {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
         }
-        assert!(
-            Instant::now() < deadline,
-            "the sweep took over {SWEEP_BOUND:?}"
-        );
-        tokio::time::sleep(POLL).await;
     }
-}
 
-fn assert_marks_of_the_plan(plan: &Value, expected: &[(String, Value, bool)]) {
-    for (agent, finding, warns) in expected {
-        let entry = plan["agents"]
-            .as_array()
-            .expect("agents")
-            .iter()
-            .find(|entry| entry["agent_id"] == *agent)
-            .unwrap_or_else(|| panic!("no entry for {agent}: {plan}"));
-        assert_eq!(entry["unclean_stop"], *finding, "{entry}");
-        assert_eq!(entry["after_unclean_stop"], *warns, "{entry}");
-    }
-}
-
-/// Actor, agent, result, and detail of one sweep entry.
-type SweepEntry = (String, Option<String>, String, String);
-
-fn sweep_entries(fixture: &Fixture) -> Vec<SweepEntry> {
-    let database = fixture.database();
-    let mut statement = database
-        .prepare(
-            "SELECT actor, target_agent_id, result, detail FROM audit_actions \
-             WHERE action = ?1 ORDER BY id",
+    /// A CLI that survives the server's death, with a helper in a session of its
+    /// own, and that only sleeps when the office runs it again.
+    fn leftover_body(records: &Path, command: &str) -> String {
+        let ran = format!("{}/ran-{command}", records.display());
+        format!(
+            "if [ -e {ran} ]; then echo ready; exec sleep {LEFTOVER_SECONDS}; fi\n: > {ran}\ntrap '' HUP\nsetsid sh -c 'exec sleep {LEFTOVER_SECONDS}' &\necho ready\nwait"
         )
-        .expect("prepare");
-    statement
-        .query_map([SWEEP_ENTRY_ACTION], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-        })
-        .expect("query")
-        .collect::<Result<_, _>>()
-        .expect("entries")
-}
+    }
 
-fn open_identities(fixture: &Fixture, session: &str) -> i64 {
-    fixture
-        .database()
-        .query_row(
-            "SELECT COUNT(*) FROM agent_session_processes WHERE state = 'open' AND session_id = ?1",
-            [session],
-            |row| row.get(0),
+    /// A CLI that ends with the hang-up of the server's death.
+    fn hung_up_body(records: &Path, command: &str) -> String {
+        let ran = format!("{}/ran-{command}", records.display());
+        format!(
+            "if [ -e {ran} ]; then echo ready; exec sleep {LEFTOVER_SECONDS}; fi\n: > {ran}\necho ready\nexec sleep {LEFTOVER_SECONDS}"
         )
-        .expect("count")
-}
+    }
 
-fn kill_server(server: &mut ServerProcess) {
-    server.0.kill().expect("SIGKILL the server");
-    server.0.wait().expect("reap the server");
-}
-
-/// The four agents of SC-004: a leftover that the sweep ends, one that it
-/// cannot read, a CLI that ended on the hang-up, and a session with no stored
-/// identity (one from before 0017).
-struct LostAgents {
-    ended: Started,
-    unreadable: Started,
-    hung_up: Started,
-    no_identity: Started,
-}
-
-impl LostAgents {
-    async fn start(fixture: &Fixture, client: &mut Client) -> Self {
-        let records = fixture.records_path();
-        for (command, body) in [
-            ("ended-cli", leftover_body(records, "ended-cli")),
-            ("unreadable-cli", leftover_body(records, "unreadable-cli")),
-            ("hung-up-cli", hung_up_body(records, "hung-up-cli")),
-            ("no-identity-cli", hung_up_body(records, "no-identity-cli")),
-        ] {
-            fixture.clis.add(command, &body);
+    async fn plan_after_the_sweep(client: &mut Client) -> Value {
+        let deadline = Instant::now() + SWEEP_BOUND;
+        loop {
+            let plan = client.ask("resume.plan", json!({})).await;
+            assert_eq!(plan["ok"], true, "{plan}");
+            if plan["result"]["sweeping"] == false {
+                return plan["result"].clone();
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the sweep took over {SWEEP_BOUND:?}"
+            );
+            tokio::time::sleep(POLL).await;
         }
-        let agents = Self {
-            ended: fixture.create_and_start(client, "Ended", "ended-cli").await,
-            unreadable: fixture
-                .create_and_start(client, "Unreadable", "unreadable-cli")
-                .await,
-            hung_up: fixture
-                .create_and_start(client, "Hangs up", "hung-up-cli")
-                .await,
-            no_identity: fixture
-                .create_and_start(client, "No identity", "no-identity-cli")
-                .await,
-        };
-        for (started, count) in [
-            (&agents.ended, 2),
-            (&agents.unreadable, 2),
-            (&agents.hung_up, 1),
-            (&agents.no_identity, 1),
-        ] {
-            wait_for("the stored identities of the stand-ins", || {
-                (open_identities(fixture, &started.session) >= count).then_some(())
-            })
-            .await;
+    }
+
+    fn assert_marks_of_the_plan(plan: &Value, expected: &[(String, Value, bool)]) {
+        for (agent, finding, warns) in expected {
+            let entry = plan["agents"]
+                .as_array()
+                .expect("agents")
+                .iter()
+                .find(|entry| entry["agent_id"] == *agent)
+                .unwrap_or_else(|| panic!("no entry for {agent}: {plan}"));
+            assert_eq!(entry["unclean_stop"], *finding, "{entry}");
+            assert_eq!(entry["after_unclean_stop"], *warns, "{entry}");
         }
-        agents
     }
 
-    fn all(&self) -> [&Started; 4] {
-        [
-            &self.ended,
-            &self.unreadable,
-            &self.hung_up,
-            &self.no_identity,
-        ]
-    }
+    /// Actor, agent, result, and detail of one sweep entry.
+    type SweepEntry = (String, Option<String>, String, String);
 
-    fn sessions(&self) -> Vec<&str> {
-        self.all()
-            .iter()
-            .map(|started| started.session.as_str())
-            .collect()
-    }
-
-    fn agent_ids(&self) -> Vec<String> {
-        self.all()
-            .iter()
-            .map(|started| started.agent.clone())
-            .collect()
-    }
-
-    /// Stores an open identity on a process the office never saw, which the
-    /// sweep leaves running, and deletes every identity of the session from
-    /// before 0017. Runs while the server is dead.
-    fn prepare_the_unclean_stop(&self, fixture: &Fixture) -> Decoy {
-        let decoy = Decoy(
-            Command::new("bash")
-                .arg0("")
-                .stdin(Stdio::piped())
-                .spawn()
-                .expect("a process without a command line"),
-        );
+    fn sweep_entries(fixture: &Fixture) -> Vec<SweepEntry> {
         let database = fixture.database();
-        database
-            .execute(
-                "INSERT INTO agent_session_processes \
-                 (session_id, pid, started_at, command_hash, command_display, boot, kind, state) \
-                 VALUES (?1, ?2, ?3, zeroblob(32), 'unread', 'boot', 'helper', 'open')",
-                params![
-                    self.unreadable.session,
-                    decoy.0.id(),
-                    start_time_of(decoy.0.id())
-                ],
+        let mut statement = database
+            .prepare(
+                "SELECT actor, target_agent_id, result, detail FROM audit_actions \
+                 WHERE action = ?1 ORDER BY id",
             )
-            .expect("an unreadable identity");
-        database
-            .execute(
-                "DELETE FROM agent_session_processes WHERE session_id = ?1",
-                [&self.no_identity.session],
-            )
-            .expect("no identity");
-        decoy
+            .expect("prepare");
+        statement
+            .query_map([SWEEP_ENTRY_ACTION], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .expect("query")
+            .collect::<Result<_, _>>()
+            .expect("entries")
     }
 
-    /// The mark that the plan gives each agent (0017/SC-005).
-    fn expected_marks(&self) -> Vec<(String, Value, bool)> {
-        vec![
-            (self.ended.agent.clone(), json!({"ended": 2}), false),
-            (
-                self.unreadable.agent.clone(),
-                json!({"may_run": "not readable"}),
-                true,
-            ),
-            (self.hung_up.agent.clone(), Value::Null, false),
-            (
-                self.no_identity.agent.clone(),
-                json!({"may_run": "no stored process"}),
-                true,
-            ),
-        ]
+    fn open_identities(fixture: &Fixture, session: &str) -> i64 {
+        fixture
+            .database()
+            .query_row(
+                "SELECT COUNT(*) FROM agent_session_processes WHERE state = 'open' AND session_id = ?1",
+                [session],
+                |row| row.get(0),
+            )
+            .expect("count")
     }
-}
 
-fn open_sessions(fixture: &Fixture) -> usize {
-    let open: i64 = fixture
-        .database()
-        .query_row(
-            "SELECT COUNT(*) FROM agent_sessions WHERE ended_at IS NULL",
-            [],
-            |row| row.get(0),
-        )
-        .expect("count");
-    usize::try_from(open).expect("a count")
-}
+    fn kill_server(server: &mut ServerProcess) {
+        server.0.kill().expect("SIGKILL the server");
+        server.0.wait().expect("reap the server");
+    }
 
-#[tokio::test]
-async fn after_the_resume_no_ended_identity_of_the_lost_sessions_remains_and_the_sweep_entries_keep_their_text()
- {
-    let fixture = Fixture::new();
-    let mut server = fixture.spawn();
-    wait_until_started(&fixture.config, 1).await;
-    let mut client = fixture.client().await;
-    let lost = LostAgents::start(&fixture, &mut client).await;
-    kill_server(&mut server);
-    drop(client);
-    let _decoy = lost.prepare_the_unclean_stop(&fixture);
-    let expected_marks = lost.expected_marks();
+    /// The four agents of SC-004: a leftover that the sweep ends, one that it
+    /// cannot read, a CLI that ended on the hang-up, and a session with no stored
+    /// identity (one from before 0017).
+    struct LostAgents {
+        ended: Started,
+        unreadable: Started,
+        hung_up: Started,
+        no_identity: Started,
+    }
 
-    let mut second = fixture.spawn();
-    wait_until_started(&fixture.config, 2).await;
-    let mut client = fixture.client().await;
-    assert_marks_of_the_plan(&plan_after_the_sweep(&mut client).await, &expected_marks);
-    kill_server(&mut second);
-    drop(client);
-    let _third = fixture.spawn();
-    wait_until_started(&fixture.config, 3).await;
-    let mut client = fixture.client().await;
-    assert_marks_of_the_plan(&plan_after_the_sweep(&mut client).await, &expected_marks);
+    impl LostAgents {
+        async fn start(fixture: &Fixture, client: &mut Client) -> Self {
+            let records = fixture.records_path();
+            for (command, body) in [
+                ("ended-cli", leftover_body(records, "ended-cli")),
+                ("unreadable-cli", leftover_body(records, "unreadable-cli")),
+                ("hung-up-cli", hung_up_body(records, "hung-up-cli")),
+                ("no-identity-cli", hung_up_body(records, "no-identity-cli")),
+            ] {
+                fixture.clis.add(command, &body);
+            }
+            let agents = Self {
+                ended: fixture.create_and_start(client, "Ended", "ended-cli").await,
+                unreadable: fixture
+                    .create_and_start(client, "Unreadable", "unreadable-cli")
+                    .await,
+                hung_up: fixture
+                    .create_and_start(client, "Hangs up", "hung-up-cli")
+                    .await,
+                no_identity: fixture
+                    .create_and_start(client, "No identity", "no-identity-cli")
+                    .await,
+            };
+            for (started, count) in [
+                (&agents.ended, 2),
+                (&agents.unreadable, 2),
+                (&agents.hung_up, 1),
+                (&agents.no_identity, 1),
+            ] {
+                wait_for("the stored identities of the stand-ins", || {
+                    (open_identities(fixture, &started.session) >= count).then_some(())
+                })
+                .await;
+            }
+            agents
+        }
 
-    let identities_before: i64 = lost
-        .sessions()
-        .iter()
-        .map(|session| fixture.identity_count(session))
-        .sum();
-    assert!(
-        identities_before > 0,
-        "the last lost sessions keep their identities"
-    );
-    let entries_before = sweep_entries(&fixture);
-    assert_ne!(entries_before.len(), 0, "the sweep wrote entries");
-    let agents = lost.agent_ids();
-    client
-        .send("resume.start", json!({"agent_ids": agents}))
+        fn all(&self) -> [&Started; 4] {
+            [
+                &self.ended,
+                &self.unreadable,
+                &self.hung_up,
+                &self.no_identity,
+            ]
+        }
+
+        fn sessions(&self) -> Vec<&str> {
+            self.all()
+                .iter()
+                .map(|started| started.session.as_str())
+                .collect()
+        }
+
+        fn agent_ids(&self) -> Vec<String> {
+            self.all()
+                .iter()
+                .map(|started| started.agent.clone())
+                .collect()
+        }
+
+        /// Stores an open identity on a process the office never saw, which the
+        /// sweep leaves running, and deletes every identity of the session from
+        /// before 0017. Runs while the server is dead.
+        fn prepare_the_unclean_stop(&self, fixture: &Fixture) -> Decoy {
+            let decoy = Decoy(
+                Command::new("bash")
+                    .arg0("")
+                    .stdin(Stdio::piped())
+                    .spawn()
+                    .expect("a process without a command line"),
+            );
+            let database = fixture.database();
+            database
+                .execute(
+                    "INSERT INTO agent_session_processes \
+                     (session_id, pid, started_at, command_hash, command_display, boot, kind, state) \
+                     VALUES (?1, ?2, ?3, zeroblob(32), 'unread', 'boot', 'helper', 'open')",
+                    params![
+                        self.unreadable.session,
+                        decoy.0.id(),
+                        start_time_of(decoy.0.id())
+                    ],
+                )
+                .expect("an unreadable identity");
+            database
+                .execute(
+                    "DELETE FROM agent_session_processes WHERE session_id = ?1",
+                    [&self.no_identity.session],
+                )
+                .expect("no identity");
+            decoy
+        }
+
+        /// The mark that the plan gives each agent (0017/SC-005).
+        fn expected_marks(&self) -> Vec<(String, Value, bool)> {
+            vec![
+                (self.ended.agent.clone(), json!({"ended": 2}), false),
+                (
+                    self.unreadable.agent.clone(),
+                    json!({"may_run": "not readable"}),
+                    true,
+                ),
+                (self.hung_up.agent.clone(), Value::Null, false),
+                (
+                    self.no_identity.agent.clone(),
+                    json!({"may_run": "no stored process"}),
+                    true,
+                ),
+            ]
+        }
+    }
+
+    fn open_sessions(fixture: &Fixture) -> usize {
+        let open: i64 = fixture
+            .database()
+            .query_row(
+                "SELECT COUNT(*) FROM agent_sessions WHERE ended_at IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        usize::try_from(open).expect("a count")
+    }
+
+    #[tokio::test]
+    async fn after_the_resume_no_ended_identity_of_the_lost_sessions_remains_and_the_sweep_entries_keep_their_text()
+     {
+        let fixture = Fixture::new();
+        let mut server = fixture.spawn();
+        wait_until_started(&fixture.config, 1).await;
+        let mut client = fixture.client().await;
+        let lost = LostAgents::start(&fixture, &mut client).await;
+        kill_server(&mut server);
+        drop(client);
+        let _decoy = lost.prepare_the_unclean_stop(&fixture);
+        let expected_marks = lost.expected_marks();
+
+        let mut second = fixture.spawn();
+        wait_until_started(&fixture.config, 2).await;
+        let mut client = fixture.client().await;
+        assert_marks_of_the_plan(&plan_after_the_sweep(&mut client).await, &expected_marks);
+        kill_server(&mut second);
+        drop(client);
+        let _third = fixture.spawn();
+        wait_until_started(&fixture.config, 3).await;
+        let mut client = fixture.client().await;
+        assert_marks_of_the_plan(&plan_after_the_sweep(&mut client).await, &expected_marks);
+
+        let identities_before: i64 = lost
+            .sessions()
+            .iter()
+            .map(|session| fixture.identity_count(session))
+            .sum();
+        assert!(
+            identities_before > 0,
+            "the last lost sessions keep their identities"
+        );
+        let entries_before = sweep_entries(&fixture);
+        assert_ne!(entries_before.len(), 0, "the sweep wrote entries");
+        let agents = lost.agent_ids();
+        client
+            .send("resume.start", json!({"agent_ids": agents}))
+            .await;
+        wait_for("every agent to store a new session", || {
+            (open_sessions(&fixture) >= agents.len()).then_some(())
+        })
         .await;
-    wait_for("every agent to store a new session", || {
-        (open_sessions(&fixture) >= agents.len()).then_some(())
-    })
-    .await;
 
-    for session in lost.sessions() {
-        assert_eq!(fixture.identity_count(session), 0, "{session}");
-    }
-    assert_eq!(sweep_entries(&fixture), entries_before);
-    for agent in &agents {
-        client.ask("agent.stop", json!({"agent_id": agent})).await;
+        for session in lost.sessions() {
+            assert_eq!(fixture.identity_count(session), 0, "{session}");
+        }
+        assert_eq!(sweep_entries(&fixture), entries_before);
+        for agent in &agents {
+            client.ask("agent.stop", json!({"agent_id": agent})).await;
+        }
     }
 }
