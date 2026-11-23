@@ -10,6 +10,7 @@ mod handshake;
 mod hierarchy_requests;
 mod hold_requests;
 mod notification_requests;
+mod process_scan;
 mod restart_signal;
 mod resume_order;
 mod resume_requests;

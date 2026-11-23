@@ -17,6 +17,8 @@ pub enum AgentAction {
     Refused,
     /// The user set, edited, or cleared the task text (0011).
     TaskText,
+    /// The office stopped storing the helper processes of a session (0017).
+    HelperLimit,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

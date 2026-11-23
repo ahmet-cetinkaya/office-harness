@@ -24,6 +24,7 @@ use agent_application::common::interfaces::{
 };
 use agent_application::common::session_ender::SessionEnder;
 use agent_application::common::session_launcher::{LauncherServices, SessionLauncher};
+use agent_application::common::session_process_recorder::SessionProcessRecorder;
 use agent_application::queries::get_office_additions::GetOfficeAdditionsHandler;
 use agent_application::queries::get_settings::GetSettingsHandler;
 use agent_application::queries::list_agents::ListAgentsHandler;
@@ -32,8 +33,8 @@ use agent_application::queries::list_sessions::ListSessionsHandler;
 use agent_application::queries::worktrees::{WorktreeInfoHandler, WorktreeStatusHandler};
 use agent_domain::value_objects::MachineId;
 use agent_infrastructure::persistence::{
-    AdditionsRepository, AgentRepository, ProjectRepository, SessionRepository, SettingsRepository,
-    SharedConnection,
+    AdditionsRepository, AgentRepository, ProjectRepository, SessionProcessRepository,
+    SessionRepository, SettingsRepository, SharedConnection,
 };
 use agent_infrastructure::services::{AttributionTiming, CliAdapterRegistry};
 use agent_presentation::{AgentHandlers, AgentUseCases};
@@ -46,8 +47,8 @@ use audit_presentation::AuditHandlers;
 
 use super::{ServerLog, StorageAlerts, TerminalServices};
 use crate::bridges::{
-    ActionRecorderBridge, AgentCalls, SavedOutputs, StatusOrder, StoppingFlag, SystemClock,
-    TaskOrder, TerminalHostBridge,
+    ActionRecorderBridge, AgentCalls, ProcessProbeBridge, SavedOutputs, StatusOrder, StoppingFlag,
+    SystemClock, TaskOrder, TerminalHostBridge,
 };
 
 /// The agent and audit modules, wired: the use cases behind their handlers,
@@ -63,6 +64,9 @@ pub struct AgentServices {
     /// Names the output file that `terminal.attach` shows for an agent that
     /// does not run.
     pub saved_outputs: SavedOutputs,
+    /// Stores the process identities of running sessions (0017). The CLI
+    /// identity is stored at the start; the server scans for helpers.
+    pub process_recorder: SessionProcessRecorder,
     /// Orders `agent.start` before the statuses its terminal causes.
     pub status_order: StatusOrder,
     /// Orders the storing and the publishing of every task text change.
@@ -95,6 +99,7 @@ struct Wiring {
     journal: ActionJournal,
     alerts: StorageAlerts,
     worktrees: Arc<dyn WorktreeManager>,
+    process_recorder: SessionProcessRecorder,
 }
 
 /// Joins the agent use cases to the SQLite stores, the terminal, the clock,
@@ -116,12 +121,24 @@ pub fn build_agent_services(
         record_action.clone(),
         alerts.clone(),
     ));
+    let sessions: Arc<dyn SessionStore> = Arc::new(SessionRepository::new(connection.clone()));
+    let journal = ActionJournal::new(recorder, Arc::clone(&clock));
+    let process_recorder = SessionProcessRecorder::new(
+        Arc::clone(&sessions),
+        Arc::new(SessionProcessRepository::new(connection.clone())),
+        Arc::new(ProcessProbeBridge::new(
+            Arc::clone(&terminal.runtime),
+            Arc::clone(&terminal.inspector),
+        )),
+        journal.clone(),
+        Arc::new(alerts.clone()),
+    );
     let wiring = Wiring {
         agents: Arc::new(AgentRepository::new(connection.clone())),
         projects: Arc::new(ProjectRepository::new(connection.clone())),
         settings: Arc::new(SettingsRepository::new(connection.clone())),
         additions: Arc::new(AdditionsRepository::new(connection.clone())),
-        sessions: Arc::new(SessionRepository::new(connection.clone())),
+        sessions,
         adapters: Arc::new(CliAdapterRegistry::new(attribution)),
         terminals: Arc::new(
             TerminalHostBridge::new(
@@ -133,7 +150,8 @@ pub fn build_agent_services(
             )
             .with_person_input(terminal.person_input.clone()),
         ),
-        journal: ActionJournal::new(recorder, Arc::clone(&clock)),
+        journal,
+        process_recorder,
         alerts: alerts.clone(),
         clock,
         worktrees: Arc::clone(&terminal.worktrees),
@@ -156,6 +174,7 @@ pub fn build_agent_services(
             Arc::clone(&wiring.terminals),
             Arc::clone(&wiring.clock),
         ),
+        process_recorder: wiring.process_recorder.clone(),
         saved_outputs: SavedOutputs::new(wiring.sessions),
         status_order: StatusOrder::default(),
         task_order: TaskOrder::default(),
@@ -175,6 +194,7 @@ fn launcher_of(wiring: &Wiring) -> SessionLauncher {
             adapters: Arc::clone(&wiring.adapters),
             clock: Arc::clone(&wiring.clock),
             failures: Arc::new(wiring.alerts.clone()),
+            processes: wiring.process_recorder.clone(),
         },
     )
 }

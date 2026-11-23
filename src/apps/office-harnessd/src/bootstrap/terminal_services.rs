@@ -8,10 +8,14 @@ use agent_domain::value_objects::Settings;
 use agent_infrastructure::services::{
     AttributionTiming, Environment, GitWorktrees, LoginEnvironment,
 };
-use terminal_application::common::interfaces::{TerminalEventSink, TerminalRuntime};
+use terminal_application::common::interfaces::{
+    ProcessInspector, TerminalEventSink, TerminalRuntime,
+};
 use terminal_domain::errors::TerminalError;
 use terminal_domain::value_objects::OutputLimits;
-use terminal_infrastructure::services::{PortableTerminalRuntime, RuntimeSettings};
+use terminal_infrastructure::services::{
+    PortableTerminalRuntime, RuntimeSettings, SystemProcessInspector,
+};
 use terminal_presentation::handlers::TerminalHandlers;
 
 use super::StorageAlerts;
@@ -22,6 +26,8 @@ use crate::config::Config;
 /// the launcher that applies the login environment, and the plain events.
 pub struct TerminalServices {
     pub runtime: Arc<dyn TerminalRuntime>,
+    /// Reads the processes of this machine, for the identities of 0017.
+    pub inspector: Arc<dyn ProcessInspector>,
     pub handlers: Arc<TerminalHandlers>,
     pub launcher: TerminalLauncher,
     pub events: TerminalEvents,
@@ -90,6 +96,7 @@ pub fn build_terminal_services(
         handlers: Arc::new(TerminalHandlers::new(&runtime)),
         launcher: TerminalLauncher::new(runtime.clone(), login_environment, server_environment),
         worktrees,
+        inspector: Arc::new(SystemProcessInspector::new()),
         runtime,
         events,
         person_input: PersonInput::default(),
