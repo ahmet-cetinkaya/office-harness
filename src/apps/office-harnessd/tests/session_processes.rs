@@ -5,7 +5,7 @@
 
 //! The recorder of 0017: the identities of the CLI and of its helpers are
 //! stored while a session runs, kept while a helper runs, updated when a
-//! process replaces itself, capped at the helper limit, and ended with the
+//! process replaces itself, capped at the helper limit, and deleted with the
 //! session. The fake CLIs are `sh` scripts.
 
 mod support;
@@ -261,7 +261,7 @@ async fn a_helper_that_left_the_cli_tree_stays_stored_while_it_runs() {
 }
 
 #[tokio::test]
-async fn a_stop_ends_every_stored_identity_of_the_session() {
+async fn a_stop_deletes_every_stored_identity_of_the_session() {
     let office = office_with_clis().await;
     let mut client = office.client().await;
     let (agent, session) = start_session(&office, &mut client, HELPER_CLI).await;
@@ -278,8 +278,7 @@ async fn a_stop_ends_every_stored_identity_of_the_session() {
 
     assert_eq!(stopped["ok"], true, "{stopped}");
     let rows = rows_of(config, &session);
-    assert!(rows.len() >= 2, "{rows:?}");
-    assert!(rows.iter().all(|row| row.state == "ended"), "{rows:?}");
+    assert!(rows.is_empty(), "{rows:?}");
 }
 
 #[tokio::test]
@@ -362,7 +361,7 @@ async fn the_office_database_stays_private_to_its_owner_while_identities_are_sto
 }
 
 #[tokio::test]
-async fn a_clean_server_restart_ends_every_stored_identity() {
+async fn a_clean_server_restart_deletes_every_stored_identity() {
     let folder = tempfile::tempdir().expect("folder");
     let work = tempfile::tempdir().expect("work folder");
     let records = tempfile::tempdir().expect("records");
@@ -394,6 +393,5 @@ async fn a_clean_server_restart_ends_every_stored_identity() {
     assert_eq!(answer["ok"], true, "{answer}");
     wait_for("the server to exit", || server.0.try_wait().expect("poll")).await;
     let rows = rows_of(&config, &session);
-    assert!(rows.len() >= 2, "{rows:?}");
-    assert!(rows.iter().all(|row| row.state == "ended"), "{rows:?}");
+    assert!(rows.is_empty(), "{rows:?}");
 }

@@ -4,6 +4,7 @@ use agent_application::common::models::{
     ProcessKind, SessionProcess, StoredProcess, SweepOutcome, SweepSummary,
 };
 use agent_domain::value_objects::{ExitResult, SessionId};
+use kernel::AgentId;
 use rusqlite::types::Type;
 use rusqlite::{Connection, Row, params};
 
@@ -221,9 +222,33 @@ impl SessionProcessRepository {
     }
 }
 
-/// Marks every open row of the session as ended. A session end calls it in
-/// the same transaction that ends the session row (0017/FR-008).
-pub(super) fn end_open_rows(connection: &Connection, session_id: &str) -> rusqlite::Result<usize> {
+/// Deletes every row of the session. A session end calls it in the same
+/// transaction that ends the session row, so no command line of the session
+/// stays (0017/FR-008 as changed by 0023).
+pub(super) fn delete_session_rows(
+    connection: &Connection,
+    session_id: &str,
+) -> rusqlite::Result<usize> {
+    connection.execute(
+        "DELETE FROM agent_session_processes WHERE session_id = ?1",
+        [session_id],
+    )
+}
+
+/// Deletes the ended rows of the agent's earlier `lost` sessions. Their open
+/// rows stay for the next sweep (0023/FR-001, FR-003).
+pub(super) fn delete_ended_rows_of_lost_sessions(
+    connection: &Connection,
+    agent_id: AgentId,
+) -> rusqlite::Result<usize> {
+    connection.execute(
+        "DELETE FROM agent_session_processes WHERE state = 'ended' AND session_id IN \
+         (SELECT id FROM agent_sessions WHERE agent_id = ?1 AND exit_result = ?2)",
+        params![agent_id.to_string(), ExitResult::Lost.to_string()],
+    )
+}
+
+fn end_open_rows(connection: &Connection, session_id: &str) -> rusqlite::Result<usize> {
     connection.execute(
         "UPDATE agent_session_processes SET state = 'ended' \
          WHERE session_id = ?1 AND state = 'open'",

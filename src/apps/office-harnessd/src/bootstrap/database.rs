@@ -12,6 +12,7 @@ const CONNECTION_SETTINGS: &str = "
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
     PRAGMA busy_timeout = 5000;
+    PRAGMA secure_delete = ON;
 ";
 
 /// Opens `office.db`, creating it owner-only first, in WAL mode with foreign

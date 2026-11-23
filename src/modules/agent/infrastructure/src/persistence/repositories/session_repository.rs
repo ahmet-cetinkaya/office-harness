@@ -5,7 +5,7 @@ use agent_domain::value_objects::{ExitResult, SessionId};
 use kernel::{AgentId, Timestamp};
 use rusqlite::{OptionalExtension, Row, params};
 
-use super::session_process_repository::end_open_rows;
+use super::session_process_repository::{delete_ended_rows_of_lost_sessions, delete_session_rows};
 use crate::persistence::additions_document::AdditionsDocument;
 use crate::persistence::{PersistenceError, SharedConnection};
 
@@ -67,7 +67,12 @@ impl SessionRepository {
     pub fn insert(&self, session: &Session) -> Result<(), PersistenceError> {
         let snapshot = AdditionsDocument::text_of(&session.additions_snapshot)?;
         self.connection.with(|connection| {
-            connection.execute(
+            // One transaction, so a new session never shows without the removal
+            // of the ended identities of the agent's earlier `lost` sessions
+            // (0023/FR-001).
+            let transaction = connection.transaction()?;
+            delete_ended_rows_of_lost_sessions(&transaction, session.agent_id)?;
+            transaction.execute(
                 "INSERT INTO agent_sessions (id, agent_id, cli_session_id, continued_from, \
                  additions_snapshot, started_at, ended_at, exit_result) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -82,6 +87,7 @@ impl SessionRepository {
                     session.exit_result.as_ref().map(ToString::to_string),
                 ],
             )?;
+            transaction.commit()?;
             Ok(())
         })
     }
@@ -183,11 +189,11 @@ impl SessionRepository {
         at: Timestamp,
     ) -> Result<bool, PersistenceError> {
         self.connection.with(|connection| {
-            // One transaction, so a stored identity never stays open under a
-            // session that ended (0017/FR-008).
+            // One transaction, so a stored identity never outlives the session
+            // that ended, and no command line of it stays (0017/FR-008, 0023).
             let transaction = connection.transaction()?;
             for session_id in running_session_ids(&transaction, agent_id)? {
-                end_open_rows(&transaction, &session_id)?;
+                delete_session_rows(&transaction, &session_id)?;
             }
             let changed = transaction.execute(
                 "UPDATE agent_sessions SET ended_at = ?2, exit_result = ?3 \
