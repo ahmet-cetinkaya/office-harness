@@ -26,6 +26,10 @@ notification-application = { path = "../../modules/notification/application" }
 notification-domain = { path = "../../modules/notification/domain" }
 notification-infrastructure = { path = "../../modules/notification/infrastructure" }
 notification-presentation = { path = "../../modules/notification/presentation" }
+schedule-application = { path = "../../modules/schedule/application" }
+schedule-domain = { path = "../../modules/schedule/domain" }
+schedule-infrastructure = { path = "../../modules/schedule/infrastructure" }
+schedule-presentation = { path = "../../modules/schedule/presentation" }
 template-application = { path = "../../modules/template/application" }
 template-domain = { path = "../../modules/template/domain" }
 template-infrastructure = { path = "../../modules/template/infrastructure" }
@@ -34,6 +38,8 @@ auto-launch.workspace = true
 axum.workspace = true
 directories.workspace = true
 gethostname.workspace = true
+# The scheduler reads the machine's time zone and formats local times.
+jiff.workspace = true
 kernel = { path = "../../kernel" }
 private-fs = { path = "../../shared/private-fs" }
 console-control = { path = "../../shared/console-control" }

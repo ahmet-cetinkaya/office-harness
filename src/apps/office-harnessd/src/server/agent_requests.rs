@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, PoisonError};
+use std::sync::{Arc, OnceLock, PoisonError};
 
 use agent_application::common::actor_scope::ActorScope;
 use agent_application::common::interfaces::Clock;
@@ -32,8 +32,9 @@ use super::hold_requests::HoldGateway;
 use super::subtree_status::{SubtreeState, subtree_entries, time_before};
 use crate::bootstrap::StorageAlerts;
 use crate::bridges::{
-    END_CHECK_REQUEST, ENDING_MESSAGE, NeedsYouBridge, StatusOrder, StoppingFlag, SystemClock,
-    TaskOrder, TempHooks, TempSnapshot, TerminalEvents, take_recorded_events, temp_changed_event,
+    END_CHECK_REQUEST, ENDING_MESSAGE, NeedsYouBridge, ScheduleBridge, StatusOrder, StoppingFlag,
+    SystemClock, TaskOrder, TempHooks, TempSnapshot, TerminalEvents, take_recorded_events,
+    temp_changed_event,
 };
 use crate::sweep::SweepGate;
 
@@ -110,6 +111,9 @@ pub struct AgentGateway {
     sign_in: Option<SessionLauncher>,
     /// What the gateway does around a request because of temps (0020).
     temps: Option<Arc<TempHooks>>,
+    /// The schedule bridge, which the server connects after it built the
+    /// gateway that the bridge wakes agents through (0025 D13).
+    schedules: Arc<OnceLock<ScheduleBridge>>,
 }
 
 impl AgentGateway {
@@ -148,7 +152,16 @@ impl AgentGateway {
             sweep_gate: SweepGate::default(),
             sign_in: None,
             temps: None,
+            schedules: Arc::default(),
         }
+    }
+
+    /// Connects the schedule bridge, which switches the schedules of a
+    /// removed agent off after each delete (0025/FR-010). Every clone of the
+    /// gateway shares the connection.
+    pub fn connect_schedules(&self, schedules: ScheduleBridge) {
+        // The server connects once; a second call has nothing to change.
+        let _ = self.schedules.set(schedules);
     }
 
     /// Attaches the temp hooks: the refusal of a start while a temp ends, the
@@ -264,6 +277,10 @@ impl AgentGateway {
             self.holds.forget_deleted_agents();
             // The same for the Needs you items (0008 D2).
             self.needs_you.forget_deleted_agents();
+            // And the schedules that sent to a removed agent (0025 D13).
+            if let Some(schedules) = self.schedules.get() {
+                schedules.forget_removed_targets();
+            }
         }
         self.add_last_lines(&mut response);
         if request.kind.starts_with(AGENT_PREFIX) {
