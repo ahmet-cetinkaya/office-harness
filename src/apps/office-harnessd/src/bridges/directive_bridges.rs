@@ -161,6 +161,9 @@ impl DirectiveWriter for DirectiveWriterBridge {
     fn deliver(&self, agent_id: AgentId, text: &str) -> Result<Delivery, String> {
         let before = self.runtime.screen(agent_id).unwrap_or_default();
         let run = self.runtime.current_run(agent_id);
+        // Stamped before the paste, so a sign-in watch never reads the
+        // directive as the CLI's own screen (0019 A5).
+        self.person_input.directive_typed(agent_id);
         self.runtime
             .paste(agent_id, text)
             .map_err(|error| error.to_string())?;

@@ -63,6 +63,19 @@ mod runs {
 
     use super::*;
 
+    /// The status bridge records only stops at a sign-in screen; these tests
+    /// have none.
+    struct NoRecords;
+
+    impl agent_application::common::interfaces::ActionRecorder for NoRecords {
+        fn record(
+            &self,
+            _entry: &agent_application::common::models::AgentActionEntry,
+        ) -> Result<(), PortError> {
+            Ok(())
+        }
+    }
+
     struct OneAgent(Mutex<Agent>);
 
     impl AgentStore for OneAgent {
@@ -212,6 +225,8 @@ mod runs {
             alerts: StorageAlerts::new(log.clone()),
             log,
             calls: Arc::new(access_infrastructure::services::MemoryAgentCallStore::new()),
+            sign_in_ends: SignInEnds::default(),
+            journal: ActionJournal::new(Arc::new(NoRecords), Arc::new(crate::bridges::SystemClock)),
         };
         (bridge, store, ends)
     }

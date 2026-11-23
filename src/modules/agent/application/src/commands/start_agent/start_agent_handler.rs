@@ -40,12 +40,8 @@ impl StartAgentHandler {
     pub fn handle(&self, agent_id: AgentId) -> Result<StartOutcome, ApplicationError> {
         let mut agent = require_agent(&*self.agents, agent_id)?;
         let outcome = self.launcher.launch(&mut agent, &LaunchKind::NewTask);
-        let failure = match &outcome {
-            Ok(outcome) => outcome.failure.clone(),
-            Err(error) => Some(error.to_string()),
-        };
         self.journal
-            .record(agent_id, AgentAction::Start, failure.as_deref())?;
+            .record_start(agent_id, AgentAction::Start, &outcome, None)?;
         outcome
     }
 }
