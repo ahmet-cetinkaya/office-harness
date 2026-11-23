@@ -21,11 +21,12 @@ pub trait TextRedactor: Send + Sync {
 }
 
 /// One output stream. It may hold back the end of a chunk while that end could
-/// be the start of an occurrence; `finish` gives it up.
+/// be the start of an occurrence; `finish` gives it up, at the end of the
+/// stream and when no more output comes for a short time.
 pub trait StreamRedactor: Send {
     fn push(&mut self, bytes: &[u8]) -> Vec<u8>;
 
-    /// What `push` still holds back, at the end of the stream.
+    /// What `push` still holds back.
     fn finish(&mut self) -> Vec<u8>;
 }
 

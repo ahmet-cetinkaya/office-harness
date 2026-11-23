@@ -45,7 +45,7 @@ pub fn build_secret_services(
 ) -> SecretServices {
     let service = SecretService::new(SecretPorts {
         store: Arc::new(SecretRepository::new(connection.handle())),
-        keyring: keyring(),
+        keyring: keyring(config),
         key_file: Arc::new(KeyFileVault::new(config.secret_key_path())),
         generator: Arc::new(OsStoreKeyGenerator),
         sealer: Arc::new(ChaChaRecordSealer),
@@ -58,10 +58,14 @@ pub fn build_secret_services(
     }
 }
 
-fn keyring() -> Arc<dyn StoreKeyVault> {
-    if OS_KEYRING_ENABLED.load(Ordering::SeqCst) {
-        Arc::new(KeyringVault::default())
-    } else {
-        Arc::new(UnavailableKeyring)
+/// The office's own keyring account. Where the account cannot be named, the
+/// keyring counts as not there and the store key goes to the key file.
+fn keyring(config: &Config) -> Arc<dyn StoreKeyVault> {
+    if !OS_KEYRING_ENABLED.load(Ordering::SeqCst) {
+        return Arc::new(UnavailableKeyring);
+    }
+    match KeyringVault::for_office(&config.secret_office_id_path()) {
+        Ok(vault) => Arc::new(vault),
+        Err(_) => Arc::new(UnavailableKeyring),
     }
 }

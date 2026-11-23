@@ -10,16 +10,22 @@
 use secret_application::StoreKeyVault;
 use secret_infrastructure::KeyringVault;
 
+/// A real read of an account that no office uses.
+fn vault_of_a_test_office() -> KeyringVault {
+    let folder = tempfile::tempdir().expect("folder");
+    KeyringVault::for_office(&folder.path().join("id")).expect("vault")
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_real_keyring_answers_from_inside_the_runtime_and_from_a_blocking_thread() {
-    let on_async_thread = KeyringVault::default().load();
+    let on_async_thread = vault_of_a_test_office().load();
     if let Err(error) = &on_async_thread {
         eprintln!("skipped: no usable OS keyring here ({error})");
         return;
     }
 
     let on_blocking_thread =
-        tokio::task::spawn_blocking(|| KeyringVault::default().load().map(|key| key.is_some()))
+        tokio::task::spawn_blocking(|| vault_of_a_test_office().load().map(|key| key.is_some()))
             .await
             .expect("blocking task");
 

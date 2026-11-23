@@ -66,7 +66,7 @@ async fn a_value_an_agent_prints_whole_or_in_two_parts_is_stored_as_a_placeholde
     let body = "printf 'before %s after\\n' \"$VALUE\"\n\
                 HEAD=$(printf %s \"$VALUE\" | cut -c1-9)\n\
                 REST=$(printf %s \"$VALUE\" | cut -c10-)\n\
-                printf 'half %s' \"$HEAD\"\nsleep 1\nprintf '%s end\\n' \"$REST\"\nsleep 30\n";
+                printf 'half %s' \"$HEAD\"\nprintf '%s end\\n' \"$REST\"\nsleep 30\n";
     agent_that_runs(&office, &mut client, "printer", body).await;
     let folder = data_folder(&office);
 
@@ -317,5 +317,27 @@ async fn every_text_column_is_decided_to_hold_agent_text_or_not() {
         "decide whether these hold agent-supplied text (0026/FR-012): {undecided:?}"
     );
     assert!(gone.is_empty(), "these columns no longer exist: {gone:?}");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn output_that_ends_with_the_first_byte_of_a_value_is_not_held_back() {
+    // The CLI outlives the wait below, so only the release after a pause, not
+    // the end of the output, can store the last byte.
+    disable_os_keyring();
+    let office = Office::open().await;
+    let mut client = office.client().await;
+    let body = "FIRST=$(printf %s \"$VALUE\" | cut -c1-1)\n\
+                printf 'last byte %s' \"$FIRST\"\nsleep 120\n";
+    agent_that_runs(&office, &mut client, "pauser", body).await;
+    let folder = data_folder(&office);
+
+    let stored = wait_for("the last byte in the stored output", || {
+        let bytes = data_folder_bytes(&folder);
+        contains(&bytes, &format!("last byte {}", &FIRST_VALUE[..1])).then_some(bytes)
+    })
+    .await;
+
+    assert!(!contains(&stored, FIRST_VALUE));
     office.serving.stop().await;
 }

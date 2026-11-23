@@ -23,8 +23,13 @@ pub fn provision_store_key(
 }
 
 /// The write then read-back probe: a keyring that accepts a key and loses it
-/// is no custody.
+/// is no custody. A keyring that already holds a key for this office has an
+/// owner that is not this store, so it is never written over (the key file
+/// takes the new key instead).
 fn keyring_keeps(keyring: &dyn StoreKeyVault, key: &StoreKey) -> bool {
+    if !matches!(keyring.load(), Ok(None)) {
+        return false;
+    }
     if keyring.store(key).is_err() {
         return false;
     }
