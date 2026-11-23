@@ -4,6 +4,7 @@
 export type Confirmation =
   | { kind: "stop" }
   | { kind: "delete" }
+  | { kind: "end_temp" }
   | { kind: "new_task"; isRunning: boolean }
   | { kind: "continue"; sessionId: string; isRunning: boolean };
 
@@ -17,6 +18,11 @@ export interface ConfirmationText {
 const ENDS_RUNNING_SESSION =
   "The running session ends first and its terminal closes.";
 
+/** What ending a temp, or stopping it alone, removes and what stays (0020). */
+export function tempRemovalText(agentName: string): string {
+  return `${agentName} will be removed. Work that is not merged stays in its worktree and branch. Files that git ignores are removed with a removed worktree.`;
+}
+
 export function confirmationText(
   confirmation: Confirmation,
   agentName: string,
@@ -27,6 +33,13 @@ export function confirmationText(
         title: `Stop ${agentName}?`,
         body: "The agent's CLI is ended and the session stops.",
         confirmLabel: "Stop agent",
+        isDestructive: true,
+      };
+    case "end_temp":
+      return {
+        title: `End ${agentName}?`,
+        body: tempRemovalText(agentName),
+        confirmLabel: "End temp",
         isDestructive: true,
       };
     case "delete":

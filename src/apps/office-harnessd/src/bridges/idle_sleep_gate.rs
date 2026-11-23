@@ -117,6 +117,24 @@ impl IdleSleepGate {
             .map(|inputs| inputs.without_activity(agent_id))
     }
 
+    /// How long ago the agent last wrote output or got person input, which is
+    /// the quiet time of a temp (0020/FR-004). `None` when no CLI runs or
+    /// the gate is not connected.
+    #[must_use]
+    pub fn output_quiet_for(&self, agent_id: AgentId) -> Option<Duration> {
+        self.inputs.get()?.since_output_or_input(agent_id)
+    }
+
+    /// True while an item in Needs you, a hold, or a running child keeps the
+    /// agent from the idle end (0020/FR-004); a failed read counts as
+    /// keeping it, so nothing ends on a guess.
+    #[must_use]
+    pub fn keeps_from_idle_end(&self, agent_id: AgentId) -> bool {
+        self.inputs.get().is_none_or(|inputs| {
+            inputs.check_attention(agent_id).is_err() || inputs.check_tree(agent_id).is_err()
+        })
+    }
+
     /// `Err` with the first blocking condition of FR-002 that holds.
     fn check(&self, agent_id: AgentId) -> Result<(), String> {
         let inputs = self.inputs.get().ok_or(NOT_CONNECTED)?;
@@ -165,6 +183,18 @@ impl GateInputs {
             .since_last_input(agent_id)
             .unwrap_or(Duration::MAX);
         since_waiting.min(since_input)
+    }
+
+    /// The shorter of the time since the last output of the running CLI and
+    /// the time since the last person input.
+    fn since_output_or_input(&self, agent_id: AgentId) -> Option<Duration> {
+        let since_input = self
+            .person_input
+            .since_last_input(agent_id)
+            .unwrap_or(Duration::MAX);
+        self.runtime
+            .quiet_for(agent_id)
+            .map(|since_output| since_output.min(since_input))
     }
 
     /// FR-002 b: an item in Needs you.

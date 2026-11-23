@@ -215,6 +215,8 @@ impl DirectiveJournal for Recorder {
     fn record(&self, sender: AgentId, _target: AgentId, _text: &str, failure: Option<&str>) {
         locked(&self.directives).push((sender, failure.map(str::to_owned)));
     }
+
+    fn record_objective(&self, _creator: kernel::Actor, _temp: AgentId) {}
 }
 
 struct NoHoldStore;

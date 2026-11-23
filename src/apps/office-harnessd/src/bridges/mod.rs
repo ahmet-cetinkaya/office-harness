@@ -22,6 +22,10 @@ mod sign_in_watch;
 mod status_command_bridge;
 mod subtree_requests;
 mod system_clock;
+mod temp_ender;
+mod temp_endings;
+mod temp_hooks;
+mod temp_ledger;
 mod template_create;
 mod template_create_error;
 mod template_plan;
@@ -54,6 +58,12 @@ pub use subtree_requests::{
     SubtreeRequestsBridge, delete_worktrees, subtree_worktrees, worktree_report,
 };
 pub use system_clock::{SteadyClock, SystemClock};
+pub use temp_ender::{EndOrder, EndOutcome, EndReason, TempEnder};
+pub use temp_endings::{CreatingGuard, END_CHECK_REQUEST, ENDING_MESSAGE, TempEndings};
+pub use temp_hooks::TempHooks;
+pub use temp_ledger::{
+    EndNote, KeptWork, TEMP_CHANGED_EVENT, TempLedger, TempSnapshot, temp_changed_event,
+};
 pub use template_create::{CreatedAgent, DirectPlace, TeamCreation, TemplateCreateBridge};
 pub use template_create_error::TemplateCreateError;
 pub use terminal_events::{AgentTerminalEvent, HeldLine, TerminalEvents};

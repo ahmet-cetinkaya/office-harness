@@ -8,6 +8,10 @@ import type {
   Project,
   Session,
 } from "../../src/modules/agent/models/agent";
+import type {
+  FinishedTemp,
+  TempRow,
+} from "../../src/modules/temps/models/temps";
 import type { ActionEntry } from "../../src/modules/audit/models/action-entry";
 import type { HierarchyTree } from "../../src/modules/hierarchy/models/hierarchy";
 import type { Hold, HoldState } from "../../src/modules/hold/models/hold";
@@ -146,6 +150,16 @@ export interface OfficeSeed {
   /** Milliseconds that every `agent.files.*` request waits before it answers,
    * as a slow office. Answers at once when left out. */
   fileViewDelayMs?: number;
+  /** What `temp.list` answers for each seeded temp agent, by agent id. A temp
+   * left out answers the person as creator, no parent, and zero seconds. */
+  tempRows?: Record<
+    string,
+    Partial<Pick<TempRow, "creator_name" | "parent_name" | "run_seconds">> & {
+      quiet_seconds?: number | null;
+    }
+  >;
+  /** The finished temps that `temp.list` answers, newest first. None when left out. */
+  finishedTemps?: FinishedTemp[];
   /** A refusal to answer with, by request type. The tree reads it too. */
   refusals?: Record<string, { code: string; message: string }>;
 }
@@ -309,6 +323,25 @@ export async function installMockCore(
     };
     const IDLE_SLEEP_INVALID =
       "idle_sleep_minutes is 0 (off) or a whole number of minutes from 5 to 1440";
+    // The temp settings of 0020, with their ranges and refusal texts.
+    const TEMP_SETTING_RULES: Record<
+      string,
+      { fallback: string; min: number; max: number; refusal: string }
+    > = {
+      temp_cap: {
+        fallback: "8",
+        min: 1,
+        max: 100,
+        refusal: "temp_cap is a whole number from 1 to 100",
+      },
+      temp_idle_minutes: {
+        fallback: "30",
+        min: 5,
+        max: 1440,
+        refusal:
+          "temp_idle_minutes is a whole number of minutes from 5 to 1440",
+      },
+    };
     const NO_LONGER_ASLEEP = "the agent is no longer asleep";
     let nextCallbackId = 1;
     let current = mock.initialState;
@@ -345,10 +378,13 @@ export async function installMockCore(
       } as HoldState,
       settings: {
         ...LIMIT_DEFAULTS,
+        temp_cap: TEMP_SETTING_RULES.temp_cap.fallback,
+        temp_idle_minutes: TEMP_SETTING_RULES.temp_idle_minutes.fallback,
         ...mock.office?.limits,
         focus_shortcut: mock.office?.focusShortcut ?? "Ctrl+Shift+F12",
         last_view: mock.office?.lastView ?? null,
       } as Record<string, string | null>,
+      finishedTemps: structuredClone(mock.office?.finishedTemps ?? []),
       sweep: mock.office?.sweep ?? "done",
       nextId: 1,
     };
@@ -737,8 +773,37 @@ export async function installMockCore(
     };
 
     /** One new agent row, with its additions, as `agent.create` makes. */
+    /** The temp mark of a create, or null; refuses as the contract does. */
+    const temporaryMark = (fields: Record<string, unknown>) => {
+      const objective = fields.objective;
+      if (fields.temp !== true) {
+        if (objective !== undefined) {
+          refuse("invalid", "objective is only for a temp");
+        }
+        return null;
+      }
+      if (objective === undefined)
+        refuse("invalid", "a temp needs an objective");
+      if (typeof objective !== "string" || objective.trim() === "") {
+        refuse("invalid", "a temp needs an objective");
+      }
+      if (String(objective).length > 8192) {
+        refuse("invalid", "the objective has at most 8192 characters");
+      }
+      const cap = Number(
+        office.settings.temp_cap ?? TEMP_SETTING_RULES.temp_cap.fallback,
+      );
+      if (office.agents.filter((known) => known.temp).length >= cap) {
+        refuse(
+          "refused",
+          `the temp cap is ${cap}; end a temp or raise the cap`,
+        );
+      }
+      return { objective: String(objective), creator: "user" };
+    };
     const createAgentRow = (fields: Record<string, unknown>): Agent => {
       if (!fields.name) refuse("invalid", "name is required");
+      const temp = temporaryMark(fields);
       const agent: Agent = {
         id: `agent-${office.nextId++}`,
         name: String(fields.name),
@@ -751,6 +816,7 @@ export async function installMockCore(
         last_line: null,
         task: null,
         worktree: null,
+        temp,
       };
       if (fields.own_worktree === true) {
         const repository = repositoryOf({
@@ -1245,6 +1311,7 @@ export async function installMockCore(
             fields.role as Record<string, unknown> | undefined,
           );
           pushEvent({ type: "agent.changed", agent });
+          if (agent.temp) pushEvent({ type: "temp.changed" });
           treeChanged("agent.placed");
           record(agent.id, "create");
           return agent;
@@ -1503,6 +1570,64 @@ export async function installMockCore(
           record(agentId, "stop");
           return null;
         }
+        case "temp.list": {
+          const rows = office.agents.flatMap((agent) =>
+            agent.temp === null || agent.temp === undefined
+              ? []
+              : [
+                  {
+                    agent,
+                    creator_name: "the person",
+                    parent_name: null,
+                    run_seconds: 0,
+                    quiet_seconds: null,
+                    ...mock.office?.tempRows?.[agent.id],
+                  },
+                ],
+          );
+          return {
+            temps: structuredClone(rows),
+            finished: structuredClone(office.finishedTemps),
+          };
+        }
+        case "temp.end": {
+          const agent = findAgent(fields.agent_id);
+          if (!agent.temp) refuse("invalid", "the agent is not a temp");
+          office.agents = office.agents.filter(
+            (known) => known.id !== agent.id,
+          );
+          office.finishedTemps.unshift({
+            id: `ended-${office.nextId++}`,
+            agent_id: agent.id,
+            name: agent.name,
+            objective: agent.temp?.objective ?? "",
+            creator: agent.temp?.creator ?? "user",
+            creator_name: "the person",
+            parent_name: null,
+            started_at: agent.created_at,
+            ended_at: Date.now(),
+            reason: "ended by the person",
+            report: null,
+            kept_folder: null,
+            kept_branch: null,
+            removal_failure: null,
+          });
+          pushEvent({ type: "agent.deleted", agent_id: agent.id });
+          pushEvent({ type: "temp.changed" });
+          record(agent.id, "end", "user", "ended by the person");
+          return {};
+        }
+        case "temp.dismiss": {
+          const before = office.finishedTemps.length;
+          office.finishedTemps = office.finishedTemps.filter(
+            (entry) => entry.id !== fields.entry_id,
+          );
+          if (office.finishedTemps.length === before) {
+            refuse("not_found", "no such finished temp");
+          }
+          pushEvent({ type: "temp.changed" });
+          return {};
+        }
         case "agent.delete": {
           const agentId = String(fields.agent_id);
           findAgent(agentId);
@@ -1672,6 +1797,15 @@ export async function installMockCore(
             (value === "0" || (Number(value) >= 5 && Number(value) <= 1440));
           if (key === IDLE_SLEEP_KEY && !isIdleMinutes) {
             refuse("invalid", IDLE_SLEEP_INVALID);
+          }
+          const tempRule = TEMP_SETTING_RULES[key];
+          if (
+            tempRule !== undefined &&
+            (!/^[0-9]+$/.test(value) ||
+              Number(value) < tempRule.min ||
+              Number(value) > tempRule.max)
+          ) {
+            refuse("invalid", tempRule.refusal);
           }
           if (key === DEPENDENCY_LINKS_KEY && !["on", "off"].includes(value)) {
             refuse("invalid", DEPENDENCY_LINKS_INVALID);

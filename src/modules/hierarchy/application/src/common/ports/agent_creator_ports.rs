@@ -25,6 +25,13 @@ pub struct SeedWorktree {
     pub branch_name: Option<String>,
 }
 
+/// The temporary mark of a seeded create (0020): the agent module checks the
+/// objective text and the cap.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TempSeed {
+    pub objective: String,
+}
+
 /// What creating an agent needs. This mirrors the agent module's
 /// `CreateAgentRequest`: that type is public, but it lives in the agent
 /// module's application crate, which the hierarchy does not depend on, so
@@ -40,6 +47,8 @@ pub struct AgentSeed {
     pub additions: Option<SeedAdditions>,
     /// Present asks for the agent's own branch and worktree (0010).
     pub worktree: Option<SeedWorktree>,
+    /// Present makes the agent a temporary agent (0020).
+    pub temp: Option<TempSeed>,
 }
 
 /// Why the agent module refused. The kinds follow its error contract, so a
@@ -52,6 +61,9 @@ pub enum CreatorErrorKind {
     NotFound,
     /// Another agent already holds the name or the resource.
     Conflict,
+    /// The office's own rule said no, as the temp cap does (0020 D3); it
+    /// answers `refused`, so it counts toward no rate limit.
+    Refused,
     /// The agent module could not reach its own storage.
     Internal,
 }
@@ -97,6 +109,7 @@ impl CreatorError {
             CreatorErrorKind::Invalid => HierarchyApplicationError::InvalidInput(self.message),
             CreatorErrorKind::NotFound => HierarchyApplicationError::NotFoundInput(self.message),
             CreatorErrorKind::Conflict => HierarchyApplicationError::ConflictInput(self.message),
+            CreatorErrorKind::Refused => HierarchyApplicationError::Refused(self.message),
             CreatorErrorKind::Internal => HierarchyApplicationError::Storage(self.message),
         }
     }

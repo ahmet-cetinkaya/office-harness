@@ -9,8 +9,8 @@ pub use additions_body::read_additions;
 pub use agent_requests::{
     AdditionsRequest, AgentIdRequest, CreateAgentRequest, CreateProjectRequest, DeleteAgentRequest,
     ProjectIdRequest, ResumeAgentRequest, RolePlacement, SessionIdRequest, SettingKeyRequest,
-    SettingRequest, SleepAgentRequest, TaskTextRequest, WakeAgentRequest, WorktreeInfoRequest,
-    WorktreeStatusRequest,
+    SettingRequest, SleepAgentRequest, TaskTextRequest, TempDismissRequest, TempEndRequest,
+    WakeAgentRequest, WorktreeInfoRequest, WorktreeStatusRequest,
 };
 pub use fields::Fields;
 pub use file_view_requests::{

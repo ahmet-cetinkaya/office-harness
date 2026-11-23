@@ -11,6 +11,8 @@ fn defaults_follow_the_data_model() {
     assert_eq!(settings.focus_shortcut, "Ctrl+Shift+F12");
     assert_eq!(settings.last_view, None);
     assert_eq!(settings.idle_sleep_minutes, 0);
+    assert_eq!(settings.temp_cap, 8);
+    assert_eq!(settings.temp_idle_minutes, 30);
     assert!(settings.worktree_dependency_links);
     assert_eq!(settings.value_of(SettingKey::WorktreeDependencyLinks), "on");
 }
@@ -410,6 +412,61 @@ fn idle_sleep_outside_that_range_is_refused_and_keeps_the_stored_value() {
             "{value}"
         );
         assert_eq!(settings.idle_sleep_minutes, 30, "{value}");
+    }
+}
+
+struct TempSettingCase {
+    key: SettingKey,
+    name: &'static str,
+    accepted: [&'static str; 2],
+    refused: [&'static str; 7],
+    message: &'static str,
+}
+
+const TEMP_SETTINGS: [TempSettingCase; 2] = [
+    TempSettingCase {
+        key: SettingKey::TempCap,
+        name: "temp_cap",
+        accepted: ["1", "100"],
+        refused: ["0", "101", "-1", "2.5", "abc", "", " 5"],
+        message: "temp_cap is a whole number from 1 to 100",
+    },
+    TempSettingCase {
+        key: SettingKey::TempIdleMinutes,
+        name: "temp_idle_minutes",
+        accepted: ["5", "1440"],
+        refused: ["0", "4", "1441", "2.5", "-5", "abc", ""],
+        message: "temp_idle_minutes is a whole number from 5 to 1440",
+    },
+];
+
+#[test]
+fn a_temp_setting_takes_both_ends_of_its_range() {
+    for case in TEMP_SETTINGS {
+        assert_eq!(case.key.as_str(), case.name);
+        assert_eq!(SettingKey::parse(case.name), Ok(case.key));
+        for value in case.accepted {
+            let mut settings = Settings::default();
+            settings.set_from_text(case.key, value).expect(value);
+            assert_eq!(settings.value_of(case.key), value);
+        }
+    }
+}
+
+#[test]
+fn a_temp_setting_outside_its_range_is_refused_with_the_range_and_keeps_the_stored_value() {
+    for case in TEMP_SETTINGS {
+        for value in case.refused {
+            let mut settings = Settings::default();
+            settings
+                .set_from_text(case.key, case.accepted[0])
+                .expect("valid");
+
+            let error = settings.set_from_text(case.key, value).expect_err(value);
+
+            assert_eq!(error.to_string(), case.message, "{value}");
+            assert_eq!(settings.value_of(case.key), case.accepted[0], "{value}");
+        }
     }
 }
 

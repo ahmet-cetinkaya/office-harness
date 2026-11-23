@@ -38,6 +38,8 @@
     /** The text that came with the status, for example why the agent failed. */
     statusDetail: string | null;
     projectName: string | null;
+    /** Who created the temp, as text; null for an agent that is not a temp. */
+    creatorName?: string | null;
     isBusy: boolean;
     /** True while the stop request of this agent is open. */
     isStopping: boolean;
@@ -70,6 +72,7 @@
     details,
     statusDetail,
     projectName,
+    creatorName = null,
     isBusy,
     isStopping,
     isOnHold,
@@ -111,7 +114,7 @@
   }
 
   function run(chosen: Confirmation): void {
-    if (chosen.kind === "stop") onstop();
+    if (chosen.kind === "stop" || chosen.kind === "end_temp") onstop();
     else if (chosen.kind === "delete") ondelete();
     else if (chosen.kind === "new_task") onnewtask();
     else oncontinue(chosen.sessionId);
@@ -143,6 +146,15 @@
         <dt class="font-medium">Project</dt>
         <dd>{projectName}</dd>
       {/if}
+      {#if agent.temp}
+        <dt class="font-medium">Temp</dt>
+        <dd class="break-words">
+          {agent.temp.objective}
+          <span class="block text-neutral-700">
+            Created by {creatorName}
+          </span>
+        </dd>
+      {/if}
       {#if agent.worktree}
         <dt class="font-medium">Branch</dt>
         <dd class="break-all">{agent.worktree.branch}</dd>
@@ -165,7 +177,7 @@
       {#if isRunning}
         <Button
           disabled={isBusy || isStopping}
-          onclick={() => ask({ kind: "stop" })}
+          onclick={() => ask({ kind: agent.temp ? "end_temp" : "stop" })}
         >
           Stop agent
         </Button>

@@ -99,3 +99,71 @@ fn a_whole_number_field_is_read_and_a_bad_one_is_named() {
         );
     }
 }
+
+fn create_body(extra: Value) -> Map<String, Value> {
+    let mut body = map(json!({"name": "Ana", "command": "claude"}));
+    body.extend(map(extra));
+    body
+}
+
+#[test]
+fn a_create_reads_the_temp_objective_only_with_temp_on() {
+    use super::super::agent_requests::CreateAgentRequest;
+
+    let read = CreateAgentRequest::read(&create_body(json!({"temp": true, "objective": "go"})))
+        .expect("reads");
+    assert_eq!(read.temp_objective.as_deref(), Some("go"));
+
+    for plain in [json!({}), json!({"temp": false}), json!({"temp": null})] {
+        let read = CreateAgentRequest::read(&create_body(plain)).expect("reads");
+        assert_eq!(read.temp_objective, None);
+    }
+}
+
+#[test]
+fn a_temp_without_an_objective_and_an_objective_without_a_temp_are_invalid() {
+    use super::super::agent_requests::CreateAgentRequest;
+
+    let cases = [
+        (json!({"temp": true}), "a temp needs an objective"),
+        (
+            json!({"objective": "go"}),
+            "objective is only taken with temp",
+        ),
+        (
+            json!({"temp": false, "objective": "go"}),
+            "objective is only taken with temp",
+        ),
+        (
+            json!({"temp": "yes", "objective": "go"}),
+            "temp must be true or false",
+        ),
+    ];
+    for (extra, message) in cases {
+        let error = CreateAgentRequest::read(&create_body(extra)).expect_err(message);
+        assert_eq!(error, message);
+    }
+}
+
+#[test]
+fn the_temp_end_and_dismiss_bodies_take_one_field_and_refuse_others() {
+    use super::super::agent_requests::{TempDismissRequest, TempEndRequest};
+
+    let end = TempEndRequest::read(&map(json!({"agent_id": "a1"}))).expect("reads");
+    assert_eq!(end.agent_id, "a1");
+    let dismiss = TempDismissRequest::read(&map(json!({"entry_id": "e1"}))).expect("reads");
+    assert_eq!(dismiss.entry_id, "e1");
+
+    assert_eq!(
+        TempEndRequest::read(&map(json!({}))).expect_err("missing"),
+        "agent_id is required"
+    );
+    assert_eq!(
+        TempEndRequest::read(&map(json!({"agent_id": "a1", "force": true}))).expect_err("extra"),
+        "force is not a field of temp.end"
+    );
+    assert_eq!(
+        TempDismissRequest::read(&map(json!({"entry_id": "e1", "all": true}))).expect_err("extra"),
+        "all is not a field of temp.dismiss"
+    );
+}

@@ -68,6 +68,7 @@ impl TemplateCreateError {
             CreatorErrorKind::Invalid => ErrorCode::Invalid,
             CreatorErrorKind::NotFound => ErrorCode::NotFound,
             CreatorErrorKind::Conflict => ErrorCode::Conflict,
+            CreatorErrorKind::Refused => ErrorCode::Refused,
             CreatorErrorKind::Internal => ErrorCode::Internal,
         };
         Self {
