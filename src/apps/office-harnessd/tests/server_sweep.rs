@@ -828,7 +828,8 @@ impl Scenario {
 
     /// Stores an open helper identity for the session on a process that the
     /// office never saw, which the sweep reads as it would an identity with
-    /// no command line: not readable, so it is left running.
+    /// no command line on Linux: not readable, so it is left running (see
+    /// `unreadable_finding` for macOS).
     fn store_unreadable_process(&mut self, session: &str) -> Mark {
         let process = Command::new("bash")
             .arg0("")
@@ -847,6 +848,31 @@ impl Scenario {
             .expect("an unreadable identity");
         mark
     }
+}
+
+/// On Linux a process whose first argument is empty has no command line, so
+/// the sweep cannot read it and warns that it may run.
+#[cfg(target_os = "linux")]
+fn unreadable_finding() -> Value {
+    json!({"may_run": "not readable"})
+}
+
+#[cfg(target_os = "linux")]
+const fn unreadable_warns() -> bool {
+    true
+}
+
+/// macOS still gives the program of such a process as its command line, so
+/// the sweep reads it as another process than the stored one and leaves it
+/// running; the finding counts only the agent's own two ended processes.
+#[cfg(target_os = "macos")]
+fn unreadable_finding() -> Value {
+    json!({"ended": 2})
+}
+
+#[cfg(target_os = "macos")]
+const fn unreadable_warns() -> bool {
+    false
 }
 
 fn plan_entry<'a>(plan: &'a Value, agent: &str) -> &'a Value {
@@ -920,7 +946,7 @@ async fn the_plan_says_for_each_lost_session_what_the_sweep_found() {
     );
     let expectations = [
         (&ended, json!({"ended": 2}), false),
-        (&unreadable, json!({"may_run": "not readable"}), true),
+        (&unreadable, unreadable_finding(), unreadable_warns()),
         (&hung_up, Value::Null, false),
         (&no_identity, json!({"may_run": "no stored process"}), true),
         (&capped, json!({"may_run": "helper limit"}), true),
