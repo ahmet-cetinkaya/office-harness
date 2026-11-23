@@ -19,6 +19,7 @@ use tokio::sync::broadcast::{self, error::RecvError};
 
 use super::sign_in_watch::SignInEnds;
 use super::terminal_events::AgentTerminalEvent;
+use super::wait_tracker::WaitTracker;
 use crate::bootstrap::{ServerLog, StorageAlerts};
 use crate::server::EventHub;
 
@@ -52,6 +53,8 @@ pub struct AgentStatusBridge {
     pub sign_in_ends: SignInEnds,
     /// Records the office's stop of a CLI at its sign-in screen.
     pub journal: ActionJournal,
+    /// Told when a session ends, which is a wait end (0022 D2).
+    pub waits: WaitTracker,
 }
 
 impl AgentStatusBridge {
@@ -96,6 +99,7 @@ impl AgentStatusBridge {
         let mut not_signed_in = None;
         if let TerminalEvent::Exited { exit_code } = item.event {
             self.calls.revoke_agent(item.agent_id);
+            self.waits.session_ended(item.agent_id);
             match self.sign_in_ends.take(item.agent_id, item.run) {
                 Some(reason) => {
                     self.end_session(item.agent_id, &ExitResult::NotSignedIn(reason.clone()));
