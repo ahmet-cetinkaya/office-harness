@@ -208,17 +208,118 @@ async fn turning_idle_sleep_on_restarts_the_count_for_long_idle_agents() {
     office.serving.stop().await;
 }
 
+/// Starts the agent and waits until it is idle, leaving the Needs you item
+/// that its `waiting for input` brings.
+async fn idle_agent_with_item(client: &mut Client, office: &Office, command: &str) -> String {
+    let agent = client.create_agent(office, "Ana", command, None).await;
+    client.start(&agent).await;
+    client.wait_for_status(&agent, "waiting_for_input").await;
+    agent
+}
+
+async fn items_of(client: &mut Client, agent: &str) -> Vec<Value> {
+    let listed = client.ask("needs_you.list", json!({})).await;
+    listed["result"]["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .filter(|item| item["agent_id"] == agent)
+        .cloned()
+        .collect()
+}
+
 #[tokio::test]
-async fn an_item_in_needs_you_keeps_the_agent_awake() {
+async fn an_idle_agent_with_a_plain_waiting_item_sleeps_and_its_item_stays_with_its_wait_time() {
     let office = open_office().await;
     office.clis.add("plain-cli", KEEPS_RUNNING);
     let mut client = office.client().await;
-    let agent = client.create_agent(&office, "Ana", "plain-cli", None).await;
-    client.start(&agent).await;
-    client.wait_for_status(&agent, "waiting_for_input").await;
+    let agent = idle_agent_with_item(&mut client, &office, "plain-cli").await;
+    let before = items_of(&mut client, &agent).await;
+    assert_eq!(before.len(), 1, "{before:?}");
+
+    turn_on(&mut client, IDLE_MINUTES).await;
+    client.wait_for_status(&agent, "asleep").await;
+
+    let after = items_of(&mut client, &agent).await;
+    assert_eq!(after, before, "the item and its wait time are unchanged");
+    assert_eq!(after[0]["kind"], "waiting_for_input", "{after:?}");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn an_item_that_recorded_a_bell_keeps_the_agent_awake() {
+    let office = open_office().await;
+    office
+        .clis
+        .add("bell-cli", "echo hi; sleep 0.1; printf '\\a'; sleep 30");
+    let mut client = office.client().await;
+    let agent = idle_agent_with_item(&mut client, &office, "bell-cli").await;
 
     turn_on(&mut client, IDLE_MINUTES).await;
     stays_awake(&mut client, &agent).await;
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_waiting_item_keeps_the_agent_awake_while_the_screen_shows_a_question() {
+    let office = open_office().await;
+    office
+        .clis
+        .add("asking-cli", "echo 'Overwrite the file? (y/n)'; sleep 30");
+    let mut client = office.client().await;
+    let agent = idle_agent_with_item(&mut client, &office, "asking-cli").await;
+
+    turn_on(&mut client, IDLE_MINUTES).await;
+    stays_awake(&mut client, &agent).await;
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_redrawing_cli_sleeps_one_idle_time_after_its_prompted_wait() {
+    // The CLI writes a line every 0.7 s for ever, so its output never goes
+    // quiet for an idle time; only the prompted wait counts.
+    let office = Office::open_with_options(
+        FakeClis::new(),
+        ServerOptions {
+            resume_check_period: CHECK_PERIOD,
+            idle_sleep_tick: TICK,
+            idle_sleep_minute: MINUTE,
+            ..ServerOptions::default()
+        },
+    )
+    .await;
+    office.clis.add(
+        "redraw-cli",
+        "echo ready; while true; do sleep 0.7; echo redraw; done",
+    );
+    let mut client = office.client().await;
+    let agent = idle_agent_with_item(&mut client, &office, "redraw-cli").await;
+
+    turn_on(&mut client, IDLE_MINUTES).await;
+    client.wait_for_status(&agent, "asleep").await;
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_wake_removes_the_item_of_a_sleeping_agent_at_starting() {
+    let office = open_office().await;
+    let works_on = "echo resumed; while true; do echo busy; sleep 0.1; done";
+    office
+        .clis
+        .add("claude", &claude_body(&office, works_on, works_on));
+    let mut client = office.client().await;
+    let agent = idle_agent_with_item(&mut client, &office, "claude").await;
+    turn_on(&mut client, IDLE_MINUTES).await;
+    client.wait_for_status(&agent, "asleep").await;
+    assert_eq!(items_of(&mut client, &agent).await.len(), 1);
+    // A woken agent must not fall asleep again during the checks.
+    turn_on(&mut client, 1440).await;
+
+    let request = client.send("wake.start", json!({"agent_id": agent})).await;
+    wake_results_of(&mut client, &agent).await;
+    client.answer_of(request).await;
+
+    assert_eq!(items_of(&mut client, &agent).await, Vec::<Value>::new());
     office.serving.stop().await;
 }
 

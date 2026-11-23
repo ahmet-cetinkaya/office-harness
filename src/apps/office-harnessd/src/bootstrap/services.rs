@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use agent_application::common::interfaces::Clock;
 use agent_domain::entities::Machine;
@@ -224,13 +223,13 @@ pub fn start_with(
         orphan_sweep,
         session_processes,
     };
-    connect_sleep_gate(&services, startup_settings.quiet_period_ms);
+    connect_sleep_gate(&services);
     Ok(services)
 }
 
 /// Gives the idle sleep gate the services its checks read, which are built
 /// after the agent module that holds it (0018).
-fn connect_sleep_gate(services: &Services, quiet_period_ms: u64) {
+fn connect_sleep_gate(services: &Services) {
     services.agent.sleep_gate.connect(GateInputs {
         agents: Arc::clone(&services.agent_bridge_store),
         tree: Arc::clone(&services.hierarchy.tree),
@@ -239,7 +238,6 @@ fn connect_sleep_gate(services: &Services, quiet_period_ms: u64) {
         directives: Arc::clone(&services.hierarchy.send_directive),
         person_input: services.terminal.person_input.clone(),
         runtime: Arc::clone(&services.terminal.runtime),
-        quiet_period: Duration::from_millis(quiet_period_ms),
     });
 }
 
