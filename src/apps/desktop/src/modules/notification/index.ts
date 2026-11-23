@@ -9,6 +9,7 @@ export { default as NotificationDialog } from "./components/notification-dialog.
 export { default as NotificationLiveRegion } from "./components/notification-live-region.svelte";
 export { default as UnreadButton } from "./components/unread-button.svelte";
 export {
+  opensSchedules,
   rowText,
   unreadCount,
   type NotificationRow,

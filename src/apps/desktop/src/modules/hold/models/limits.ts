@@ -72,11 +72,23 @@ export const TEMP_SETTINGS: readonly TempSetting[] = [
   },
 ];
 
+/** The schedule cap: how many schedules the office keeps (0025). */
+export const SCHEDULE_SETTINGS: readonly TempSetting[] = [
+  {
+    key: "schedule_cap",
+    label: "Schedule cap",
+    defaultValue: 50,
+    min: 1,
+    max: 200,
+    invalidMessage: "schedule_cap is a whole number from 1 to 200",
+  },
+];
+
 /** Every setting that the limits dialog stores, rate limits first. */
 export const ALL_LIMIT_SETTINGS: readonly {
   key: string;
   defaultValue: number;
-}[] = [...LIMIT_SETTINGS, ...TEMP_SETTINGS];
+}[] = [...LIMIT_SETTINGS, ...TEMP_SETTINGS, ...SCHEDULE_SETTINGS];
 
 const WHOLE_NUMBER = /^\d+$/;
 
@@ -108,7 +120,7 @@ export function firstLimitProblem(
     const problem = limitProblem(values[limit.key]);
     if (problem !== null) return { limit, problem };
   }
-  for (const setting of TEMP_SETTINGS) {
+  for (const setting of [...TEMP_SETTINGS, ...SCHEDULE_SETTINGS]) {
     const problem = tempProblem(values[setting.key], setting);
     if (problem !== null) return { limit: setting, problem };
   }

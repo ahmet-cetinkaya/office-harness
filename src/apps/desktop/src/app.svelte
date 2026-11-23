@@ -108,6 +108,7 @@
     void panel.sweep.watch();
     void panel.sleep.watch();
     void panel.temps.watch();
+    void panel.schedules.watch();
     void panel.needsYou.watch();
     void hierarchy.watch();
     void panel.templates.watch();

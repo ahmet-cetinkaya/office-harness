@@ -45,7 +45,7 @@ function fakeClient(handler: Handler = () => undefined) {
 
 /** The OS service stand-in: it records what it was asked to show. */
 function fakeOs(granted = true) {
-  const shown: { agentId: string; title: string; body: string }[] = [];
+  const shown: { agentId: string | null; title: string; body: string }[] = [];
   let asked = false;
   const os: OsNotificationService = {
     isAllowed: async () => {
@@ -112,6 +112,87 @@ describe("notification controller", () => {
     expect(shown).toEqual([
       { agentId: "agent-ada", title: "Ada", body: "Ada exited" },
     ]);
+  });
+
+  test("a schedule row without an agent joins the list and pings the OS with no agent", async () => {
+    const { client, push } = fakeClient(() => []);
+    const { os, shown } = fakeOs();
+    const { controller, state } = observe(client, os, () => null);
+    await controller.load();
+
+    push({
+      type: "notification.created",
+      notification: row({
+        id: "m1",
+        agent_id: null,
+        agent_name: "2 schedules missed runs",
+        event: "schedule",
+      }),
+    });
+    await settle();
+
+    expect(state().rows.map((entry) => entry.id)).toEqual(["m1"]);
+    expect(state().rows[0].read_at).toBeNull();
+    expect(shown).toEqual([
+      {
+        agentId: null,
+        title: "2 schedules missed runs",
+        body: "2 schedules missed runs",
+      },
+    ]);
+  });
+
+  test("the same id arriving again replaces the row, it is not duplicated", async () => {
+    const { client, push } = fakeClient(() => []);
+    const { os } = fakeOs();
+    const { controller, state } = observe(client, os);
+    await controller.load();
+    const missed = { agent_id: null, event: "schedule" };
+
+    push({
+      type: "notification.created",
+      notification: row({
+        ...missed,
+        id: "m1",
+        agent_name: "1 schedule missed runs",
+      }),
+    });
+    await settle();
+    push({
+      type: "notification.created",
+      notification: row({
+        ...missed,
+        id: "m1",
+        agent_name: "3 schedules missed runs",
+      }),
+    });
+    await settle();
+
+    expect(state().rows).toHaveLength(1);
+    expect(state().rows[0].agent_name).toBe("3 schedules missed runs");
+  });
+
+  test("a row without an agent is not read on arrival when no terminal is open", async () => {
+    const { client, push, requests } = fakeClient(() => []);
+    const { os } = fakeOs();
+    const { controller, state } = observe(
+      client,
+      os,
+      () => null,
+      () => true,
+    );
+    await controller.load();
+
+    push({
+      type: "notification.created",
+      notification: row({ id: "m2", agent_id: null, event: "schedule" }),
+    });
+    await settle();
+
+    expect(state().rows[0].read_at).toBeNull();
+    expect(
+      requests.some((request) => request.kind === "notification.read"),
+    ).toBe(false);
   });
 
   test("a notification read on arrival is reported, and one that is not is not (0008 D8)", async () => {

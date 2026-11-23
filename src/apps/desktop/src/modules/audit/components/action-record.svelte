@@ -29,9 +29,12 @@
           <time datetime={new Date(entry.at).toISOString()}>
             {formatTimestamp(entry.at)}
           </time>
-          {actionText(entry.action)} by {actorText(entry.actor)}. {resultText(
-            entry.result,
-          )}{#if detailText(entry) !== null}. {detailText(entry)}{/if}
+          {actionText(entry.action)} by {actorText(
+            entry.actor,
+            entry.actor_label,
+          )}. {resultText(entry.result)}{#if detailText(entry) !== null}. {detailText(
+              entry,
+            )}{/if}
         </li>
       {/each}
     </ol>

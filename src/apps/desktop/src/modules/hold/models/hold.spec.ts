@@ -14,6 +14,7 @@ import {
   LIMIT_INVALID_MESSAGE,
   LIMIT_SETTINGS,
   limitProblem,
+  SCHEDULE_SETTINGS,
   TEMP_SETTINGS,
   tempProblem,
 } from "./limits";
@@ -153,9 +154,37 @@ describe("temp settings", () => {
       ),
       temp_cap: "8",
       temp_idle_minutes: "4",
+      schedule_cap: "50",
     };
     expect(firstLimitProblem(values)?.limit.label).toBe(
       "Temp idle limit, minutes",
     );
+  });
+});
+
+describe("schedule cap setting", () => {
+  const [cap] = SCHEDULE_SETTINGS;
+
+  test("the cap is 1 to 200 with the default 50", () => {
+    expect(cap.defaultValue).toBe(50);
+    for (const text of ["1", "50", " 200 "])
+      expect(tempProblem(text, cap)).toBeNull();
+    for (const text of ["0", "201", "2.5", "abc", ""]) {
+      expect(tempProblem(text, cap)).toBe(
+        "schedule_cap is a whole number from 1 to 200",
+      );
+    }
+  });
+
+  test("a refused cap names its label in the first problem", () => {
+    const values = {
+      ...Object.fromEntries(
+        LIMIT_SETTINGS.map((limit) => [limit.key, String(limit.defaultValue)]),
+      ),
+      temp_cap: "8",
+      temp_idle_minutes: "30",
+      schedule_cap: "201",
+    };
+    expect(firstLimitProblem(values)?.limit.label).toBe("Schedule cap");
   });
 });

@@ -47,6 +47,19 @@ describe("toCoreRequestError", () => {
     expect(error.message).toBe("taken");
   });
 
+  test("keeps the failing fields of an invalid answer, and none when absent", () => {
+    const fields = [
+      { field: "name", rule: "blank", message: "must not be blank" },
+    ];
+
+    expect(
+      toCoreRequestError({ code: "invalid", message: "bad", fields }).fields,
+    ).toEqual(fields);
+    expect(
+      toCoreRequestError({ code: "invalid", message: "bad" }).fields,
+    ).toBeUndefined();
+  });
+
   test("wraps text rejections as core_unavailable", () => {
     expect(toCoreRequestError("command not found").code).toBe(CORE_UNAVAILABLE);
     expect(toCoreRequestError(new Error("boom")).message).toBe("boom");
