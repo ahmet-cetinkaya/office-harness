@@ -247,15 +247,23 @@ async fn after_a_sigkill_only_a_cli_that_ignores_the_hangup_outlives_the_server_
         !ignoring.still_runs(),
         "the sweep of 0017 ends the orphan before the plan lists the agents"
     );
-    let marked = plan["agents"]
-        .as_array()
-        .expect("planned agents")
-        .iter()
-        .filter(|entry| entry["after_unclean_stop"] == true)
-        .count();
+    let finding_of = |started: &Value| {
+        let agent = started["agent"].as_str().expect("agent");
+        plan["agents"]
+            .as_array()
+            .expect("planned agents")
+            .iter()
+            .find(|entry| entry["agent_id"] == agent)
+            .unwrap_or_else(|| panic!("no entry for {agent}: {plan}"))
+            .clone()
+    };
+    assert_eq!(finding_of(&ignores)["unclean_stop"], json!({"ended": 1}));
+    assert_eq!(finding_of(&ends)["unclean_stop"], Value::Null);
+    assert_eq!(finding_of(&claude)["unclean_stop"], Value::Null);
     assert_eq!(
-        marked, 3,
-        "every agent of the unclean stop is marked: {plan}"
+        finding_of(&ignores)["after_unclean_stop"],
+        false,
+        "an ended leftover is not a warning: {plan}"
     );
 
     let continued = client

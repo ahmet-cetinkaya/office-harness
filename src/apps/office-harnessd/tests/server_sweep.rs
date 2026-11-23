@@ -12,8 +12,9 @@
 mod support;
 
 use std::fs;
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use office_harnessd::config::Config;
@@ -698,4 +699,133 @@ async fn assert_nothing_swept_and_nothing_started(
         )
         .expect("count");
     assert_eq!(open, 0);
+}
+
+impl Scenario {
+    /// Waits until the office stored at least one open identity for the
+    /// session.
+    async fn wait_for_session_identity(&self, session: &str) {
+        wait_for("the stored identity of the session", || {
+            let stored: i64 = self
+                .database()
+                .query_row(
+                    "SELECT COUNT(*) FROM agent_session_processes \
+                     WHERE state = 'open' AND session_id = ?1",
+                    [session],
+                    |row| row.get(0),
+                )
+                .ok()?;
+            (stored > 0).then_some(())
+        })
+        .await;
+    }
+
+    /// Stores an open helper identity for the session on a process that the
+    /// office never saw, which the sweep reads as it would an identity with
+    /// no command line: not readable, so it is left running.
+    fn store_unreadable_process(&mut self, session: &str) -> Mark {
+        let process = Command::new("bash")
+            .arg0("")
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("a process without a command line");
+        let mark = Mark::read(process.id()).expect("the process runs");
+        self.decoys.push(process);
+        self.database()
+            .execute(
+                "INSERT INTO agent_session_processes \
+                 (session_id, pid, started_at, command_hash, command_display, boot, kind, state) \
+                 VALUES (?1, ?2, ?3, zeroblob(32), 'unread', 'boot', 'helper', 'open')",
+                rusqlite::params![
+                    session,
+                    mark.pid,
+                    mark.start_time.parse::<i64>().expect("start time")
+                ],
+            )
+            .expect("an unreadable identity");
+        mark
+    }
+}
+
+fn plan_entry<'a>(plan: &'a Value, agent: &str) -> &'a Value {
+    plan["agents"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .find(|entry| entry["agent_id"] == agent)
+        .unwrap_or_else(|| panic!("no entry for {agent}: {plan}"))
+}
+
+/// SC-005 on the server side: the plan tells, for each agent of an unclean
+/// stop, what the sweep did. A real `could not end` needs a process of
+/// another user, and a real helper limit needs 200 helpers, so those two
+/// causes are covered below the server (`unclean_stop.tests.rs`, the
+/// repository test of `sweep_summary`); the helper limit flag is set in the
+/// database here, as the recorder sets it.
+#[tokio::test]
+async fn the_plan_says_for_each_lost_session_what_the_sweep_found() {
+    let mut scenario = Scenario::new();
+    let mut server = scenario.spawn();
+    wait_until_started(&scenario.config, 1).await;
+    let mut client = scenario.client().await;
+    let (ended, _) = scenario
+        .create_and_start(&mut client, "Ended", PLAIN_CLI)
+        .await;
+    let (unreadable, unreadable_session) = scenario
+        .create_and_start(&mut client, "Unreadable", PLAIN_CLI)
+        .await;
+    let marks = scenario.wait_for_stored_processes(2).await;
+    let mut quick = Vec::new();
+    for name in ["Hangs up", "No identity", "Capped"] {
+        let (agent, session) = scenario
+            .create_and_start(&mut client, name, QUICK_CLI)
+            .await;
+        scenario.wait_for_session_identity(&session).await;
+        quick.push((agent, session));
+    }
+    let [
+        (hung_up, _),
+        (no_identity, no_identity_session),
+        (capped, capped_session),
+    ] = <[_; 3]>::try_from(quick).expect("three quick agents");
+    kill_server(&mut server);
+    drop(client);
+    let unreadable_mark = scenario.store_unreadable_process(&unreadable_session);
+    let database = scenario.database();
+    database
+        .execute(
+            "DELETE FROM agent_session_processes WHERE session_id = ?1",
+            [&no_identity_session],
+        )
+        .expect("no identity");
+    database
+        .execute(
+            "UPDATE agent_sessions SET helpers_capped = 1 WHERE id = ?1",
+            [&capped_session],
+        )
+        .expect("helper limit");
+    drop(database);
+
+    let _second = scenario.spawn();
+    wait_until_started(&scenario.config, 2).await;
+    let mut client = scenario.client().await;
+    let plan = plan_after_the_sweep(&mut client, SC003_BOUND).await;
+
+    assert_all_gone(&marks);
+    assert!(
+        unreadable_mark.still_runs(),
+        "an unreadable process is left"
+    );
+    let expectations = [
+        (&ended, json!({"ended": 2}), false),
+        (&unreadable, json!({"may_run": "not readable"}), true),
+        (&hung_up, Value::Null, false),
+        (&no_identity, json!({"may_run": "no stored process"}), true),
+        (&capped, json!({"may_run": "helper limit"}), true),
+    ];
+    for (agent, finding, warns) in expectations {
+        let entry = plan_entry(&plan, agent);
+        assert_eq!(entry["unclean_stop"], finding, "{entry}");
+        assert_eq!(entry["after_unclean_stop"], warns, "{entry}");
+    }
 }

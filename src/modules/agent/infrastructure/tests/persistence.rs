@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use agent_application::common::models::{ProcessKind, SessionProcess};
+use agent_application::common::models::{ProcessKind, SessionProcess, SweepOutcome, SweepSummary};
 use agent_domain::entities::{AdditionsRecord, Agent, Machine, Project, Session};
 use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{
@@ -717,7 +717,10 @@ fn ending_one_row_leaves_the_others_open() {
     }
     let first = office.processes.open_for_session(session.id).expect("rows")[0].id;
 
-    office.processes.end_one(first).expect("end one");
+    office
+        .processes
+        .end_one(first, SweepOutcome::Left)
+        .expect("end one");
 
     let rows = office.processes.open_for_session(session.id).expect("rows");
     assert_eq!(rows.len(), 1);
@@ -802,7 +805,10 @@ fn open_rows_of_lost_sessions_are_listed_and_no_others() {
         .insert_open(lost.id, ProcessKind::Helper, &process_of(8, 100, "y"))
         .expect("insert");
     let helper = office.processes.open_for_session(lost.id).expect("rows")[1].id;
-    office.processes.end_one(helper).expect("end one");
+    office
+        .processes
+        .end_one(helper, SweepOutcome::Left)
+        .expect("end one");
     // Only the first session is marked lost by the next start.
     Connection::open(database_in(&folder))
         .expect("open database")
@@ -886,4 +892,75 @@ fn the_helper_limit_mark_is_kept_on_the_session() {
         )
         .expect("column");
     assert_eq!(marked, 1);
+}
+
+#[test]
+fn the_sweep_summary_counts_each_outcome_and_the_rows_left_open() {
+    let folder = TempDir::new().expect("folder");
+    let (office, _agent, session) = office_with_running_session(&folder);
+    let outcomes = [
+        SweepOutcome::Ended,
+        SweepOutcome::Ended,
+        SweepOutcome::CouldNotEnd,
+        SweepOutcome::NotReadable,
+        SweepOutcome::BootTimeChanged,
+        SweepOutcome::Left,
+    ];
+    for pid in 1..=7 {
+        office
+            .processes
+            .insert_open(session.id, ProcessKind::Helper, &process_of(pid, 100, "x"))
+            .expect("insert");
+    }
+    let rows = office.processes.open_for_session(session.id).expect("rows");
+    for (row, outcome) in rows.iter().zip(outcomes) {
+        office.processes.end_one(row.id, outcome).expect("end one");
+    }
+    office
+        .processes
+        .mark_helper_limit(session.id)
+        .expect("mark");
+
+    let summary = office.processes.sweep_summary(session.id).expect("summary");
+
+    assert_eq!(
+        summary,
+        SweepSummary {
+            ended: 2,
+            could_not_end: 1,
+            not_readable: 1,
+            boot_time_changed: 1,
+            still_open: 1,
+            stored: 7,
+            helpers_capped: true,
+        }
+    );
+}
+
+#[test]
+fn the_sweep_summary_of_a_session_without_rows_is_empty() {
+    let folder = TempDir::new().expect("folder");
+    let (office, _agent, session) = office_with_running_session(&folder);
+
+    let summary = office.processes.sweep_summary(session.id).expect("summary");
+
+    assert_eq!(summary, SweepSummary::default());
+}
+
+#[test]
+fn a_session_end_leaves_no_sweep_outcome() {
+    let folder = TempDir::new().expect("folder");
+    let (office, _agent, session) = office_with_running_session(&folder);
+    office
+        .processes
+        .insert_open(session.id, ProcessKind::Cli, &process_of(7, 100, "x"))
+        .expect("insert");
+    office.processes.end_for_session(session.id).expect("end");
+
+    let summary = office.processes.sweep_summary(session.id).expect("summary");
+
+    assert_eq!(
+        (summary.stored, summary.ended, summary.still_open),
+        (1, 0, 0)
+    );
 }

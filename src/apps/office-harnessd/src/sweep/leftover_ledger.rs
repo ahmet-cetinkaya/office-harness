@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, Mutex, PoisonError};
 
+use agent_application::common::models::SweepOutcome;
 use agent_infrastructure::persistence::SessionProcessRepository;
 use audit_domain::{ActionEntry, ActionRecord};
 use audit_infrastructure::persistence::ActionRepository;
@@ -25,7 +26,12 @@ impl SharedLedger {
 }
 
 impl SweepLedger for SharedLedger {
-    fn record(&self, identity_id: i64, record: &ActionRecord) -> Result<ActionEntry, String> {
+    fn record(
+        &self,
+        identity_id: i64,
+        outcome: SweepOutcome,
+        record: &ActionRecord,
+    ) -> Result<ActionEntry, String> {
         // A panic in another call leaves SQLite consistent, so a poisoned
         // lock is safe to reuse.
         let mut connection = self
@@ -37,7 +43,7 @@ impl SweepLedger for SharedLedger {
             .map_err(|error| error.to_string())?;
         let entry =
             ActionRepository::append_in(&transaction, record).map_err(|error| error.to_string())?;
-        SessionProcessRepository::end_one_in(&transaction, identity_id)
+        SessionProcessRepository::end_one_in(&transaction, identity_id, outcome)
             .map_err(|error| error.to_string())?;
         transaction.commit().map_err(|error| error.to_string())?;
         Ok(entry)

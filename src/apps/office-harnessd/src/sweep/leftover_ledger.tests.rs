@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use agent_application::common::models::SweepOutcome;
 use agent_infrastructure::persistence::{LEDGER_TABLE, PRE_MIGRATION_CHECKS, SCRIPTS};
 use audit_domain::{ActionKind, ActionResult};
 use audit_infrastructure::persistence::{
@@ -67,12 +68,22 @@ fn the_entry_and_the_ended_mark_are_written_together() {
     let database = office_database();
 
     let entry = SharedLedger::new(Arc::clone(&database))
-        .record(IDENTITY_ID, &record())
+        .record(IDENTITY_ID, SweepOutcome::Ended, &record())
         .expect("recorded");
 
     assert_eq!(entry.record.action, ActionKind::EndLeftover);
     assert_eq!(entry_count(&database), 1);
     assert_eq!(identity_state(&database), "ended");
+    let outcome: String = database
+        .lock()
+        .expect("lock")
+        .query_row(
+            "SELECT sweep_outcome FROM agent_session_processes WHERE id = ?1",
+            [IDENTITY_ID],
+            |row| row.get(0),
+        )
+        .expect("outcome");
+    assert_eq!(outcome, "ended");
 }
 
 #[test]
@@ -84,7 +95,11 @@ fn a_failed_entry_leaves_the_identity_open_so_the_next_sweep_tries_again() {
         .execute("DROP TABLE audit_actions", [])
         .expect("drop");
 
-    let outcome = SharedLedger::new(Arc::clone(&database)).record(IDENTITY_ID, &record());
+    let outcome = SharedLedger::new(Arc::clone(&database)).record(
+        IDENTITY_ID,
+        SweepOutcome::Ended,
+        &record(),
+    );
 
     assert!(outcome.is_err());
     assert_eq!(identity_state(&database), "open");
@@ -102,7 +117,11 @@ fn a_failed_mark_leaves_no_entry_behind() {
         )
         .expect("trigger");
 
-    let outcome = SharedLedger::new(Arc::clone(&database)).record(IDENTITY_ID, &record());
+    let outcome = SharedLedger::new(Arc::clone(&database)).record(
+        IDENTITY_ID,
+        SweepOutcome::Ended,
+        &record(),
+    );
 
     assert!(outcome.is_err());
     assert_eq!(entry_count(&database), 0);

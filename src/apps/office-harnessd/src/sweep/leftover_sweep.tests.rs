@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
 
-use agent_application::common::models::SessionProcess;
+use agent_application::common::models::{SessionProcess, SweepOutcome};
 use agent_domain::value_objects::SessionId;
 use audit_domain::ActionResult;
 use terminal_application::common::interfaces::{EndOutcome, ProcessHandle, ReadError};
@@ -102,10 +102,17 @@ impl ProcessInspector for FakeInspector {
 #[derive(Default)]
 struct RecordingLedger {
     entries: Mutex<Vec<(i64, ActionRecord)>>,
+    outcomes: Mutex<Vec<(i64, SweepOutcome)>>,
 }
 
 impl SweepLedger for RecordingLedger {
-    fn record(&self, identity_id: i64, record: &ActionRecord) -> Result<ActionEntry, String> {
+    fn record(
+        &self,
+        identity_id: i64,
+        outcome: SweepOutcome,
+        record: &ActionRecord,
+    ) -> Result<ActionEntry, String> {
+        locked(&self.outcomes).push((identity_id, outcome));
         locked(&self.entries).push((identity_id, record.clone()));
         Ok(ActionEntry {
             id: identity_id,

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use agent_application::common::models::SweepOutcome;
 use audit_domain::ActionResult;
 use terminal_application::common::models::Mismatch;
 
@@ -48,6 +49,21 @@ impl LeftoverResult {
         }
     }
 
+    /// What `resume.plan` later reads for the identity (D8). The two `left`
+    /// reasons that cannot rule out a running process are kept apart.
+    #[must_use]
+    pub fn outcome(&self) -> SweepOutcome {
+        match self {
+            Self::Ended | Self::EndedByForce => SweepOutcome::Ended,
+            Self::CouldNotEnd(_) => SweepOutcome::CouldNotEnd,
+            Self::Left(LeftReason::NotReadable) => SweepOutcome::NotReadable,
+            Self::Left(LeftReason::Mismatch(Mismatch::BootTimeChanged)) => {
+                SweepOutcome::BootTimeChanged
+            }
+            Self::Left(_) => SweepOutcome::Left,
+        }
+    }
+
     /// A `could not end` is the one result that fails the action.
     #[must_use]
     pub fn action_result(&self) -> ActionResult {
@@ -57,3 +73,7 @@ impl LeftoverResult {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "leftover_result.tests.rs"]
+mod tests;
