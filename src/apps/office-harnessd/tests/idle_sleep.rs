@@ -313,6 +313,36 @@ async fn a_wake_continues_the_last_session_and_records_one_wake_by_the_person() 
 }
 
 #[tokio::test]
+async fn a_wake_under_a_hold_continues_the_session_and_the_hold_stays() {
+    let office = open_office().await;
+    office.clis.add(
+        "claude",
+        &claude_body(&office, KEEPS_RUNNING, KEEPS_RUNNING),
+    );
+    let mut client = office.client().await;
+    let agent = idle_agent(&mut client, &office, "Ana", "claude").await;
+    turn_on(&mut client, IDLE_MINUTES).await;
+    client.wait_for_status(&agent, "asleep").await;
+    turn_on(&mut client, 1440).await;
+    let held = client.ask("hold.set", json!({"agent_id": agent})).await;
+    assert_eq!(held["ok"], true, "{held}");
+
+    let request = client.send("wake.start", json!({"agent_id": agent})).await;
+    let results = wake_results_of(&mut client, &agent).await;
+    let answer = client.answer_of(request).await;
+
+    assert_eq!(answer["result"]["continued"], true, "{answer}");
+    assert_eq!(result_names(&results), ["checking", "continued"]);
+    let holds = client.ask("hold.list", json!({})).await;
+    let agent_holds = holds["result"]["agents"].as_array().expect("agent holds");
+    assert!(
+        agent_holds.iter().any(|hold| hold["agent_id"] == agent),
+        "{holds}"
+    );
+    office.serving.stop().await;
+}
+
+#[tokio::test]
 async fn a_wake_that_fails_twice_starts_the_agent_twice_and_holds_it_with_one_notification() {
     let office = open_office().await;
     office
@@ -413,6 +443,14 @@ async fn an_asleep_agent_stays_asleep_after_a_server_restart_and_is_not_resumabl
     let plan = client.ask("resume.plan", json!({})).await;
     assert_eq!(plan["result"]["agents"], json!([]), "{plan}");
     assert_eq!(client.sessions(&agent).await.len(), 1, "nothing started");
+    let setting = client
+        .ask("settings.get", json!({"key": "idle_sleep_minutes"}))
+        .await;
+    assert_eq!(
+        setting["result"]["value"],
+        IDLE_MINUTES.to_string(),
+        "{setting}"
+    );
     office.serving.stop().await;
 }
 
