@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use agent_application::common::interfaces::Clock;
-use agent_application::common::models::StoredProcess;
+use agent_application::common::models::{StoredProcess, SweepOutcome};
 use audit_domain::{ActionEntry, ActionKind, ActionRecord};
 use audit_presentation::action_recorded_event;
 use kernel::{Actor, AgentId};
@@ -29,7 +29,12 @@ pub struct Leftover {
 pub trait SweepLedger: Send + Sync {
     /// # Errors
     /// The text of the storage failure; neither write happened.
-    fn record(&self, identity_id: i64, record: &ActionRecord) -> Result<ActionEntry, String>;
+    fn record(
+        &self,
+        identity_id: i64,
+        outcome: SweepOutcome,
+        record: &ActionRecord,
+    ) -> Result<ActionEntry, String>;
 }
 
 /// Tells the user that the sweep could not end a process of an agent.
@@ -97,7 +102,10 @@ impl LeftoverSweep {
             detail: Some(entry_detail(&leftover.stored, result)),
             at: self.clock.now(),
         };
-        match self.ledger.record(leftover.stored.id, &record) {
+        match self
+            .ledger
+            .record(leftover.stored.id, result.outcome(), &record)
+        {
             Ok(entry) => self.events.publish(&action_recorded_event(&entry)),
             Err(message) => self.alerts.report_disk_failure(&format!(
                 "the sweep result of identity {} was not stored: {message}",

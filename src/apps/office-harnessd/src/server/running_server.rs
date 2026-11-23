@@ -79,6 +79,7 @@ fn resume_gateway(
         ResumeContext {
             agents: agents.clone(),
             store: Arc::clone(&services.agent_bridge_store),
+            processes: Arc::clone(&services.session_processes),
             holds: Arc::clone(&services.hierarchy.holds),
             events: events.clone(),
             alerts: services.storage_alerts.clone(),

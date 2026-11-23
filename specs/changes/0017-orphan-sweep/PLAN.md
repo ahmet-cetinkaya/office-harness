@@ -203,6 +203,11 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - **T3, `server_crash` test.** It asserted that the orphan keeps running after the restart; that is now the reverse by design, so it waits for `sweeping: false` and asserts the orphan ended.
 - **T3, limits of the evidence.** A real `could not end` needs another user's process, so it is covered by fake inspector unit tests only. The real-process tests (`server_sweep.rs`) need `/proc` and run on Linux only. At the default 10 s grace, 30 stubborn agents with one helper each were listed by `resume.plan` after 10.1 s (SC-001 bound: 30 s).
 
+- **T4, the result is kept on the identity row.** Migration 0008 (not yet released, so changed in place) adds `sweep_outcome` (`ended`, `could_not_end`, `not_readable`, `boot_time_changed`, `left`) to `agent_session_processes`. The ledger writes it in the same transaction as the entry and the `ended` mark; a session end leaves it NULL. `resume.plan` reads a per-session summary only when the last session is `lost`.
+- **T4, reason order.** When several `may_run` causes hold, the first of these is named: could not end, not readable, boot time changed, no stored process, helper limit, not swept (a row still open because its result was not stored). `may_run` wins over `ended`.
+- **T4, the old boolean.** `after_unclean_stop` is now `true` only with `may_run`. `server_crash` therefore asserts per agent (the ignoring CLI gives `{ended: 1}`, the others `null`) in place of three warnings.
+- **T4, limits of the evidence.** The integration test (`server_sweep.rs`, Linux) covers `ended`, `not readable`, `null` after a hang-up, `no stored process`, and `helper limit` (the flag is set in the database, not by 200 real helpers; T2 tests the cap itself). `could not end` and `not swept` are unit and repository tests.
+
 ## Review log
 
 r1 (Efe, fa44fb0): M1 to M3, L1, L2 resolved as below. r2 (Efe, 350ff07): PASS for coding; N1 (macOS FR-011 residual under A10) is checked in the code review.

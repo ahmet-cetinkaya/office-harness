@@ -5,6 +5,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use agent_domain::enums::AgentStatus;
+use agent_domain::value_objects::SessionId;
 use hierarchy_application::queries::tree::TreeQuery;
 use hierarchy_domain::HoldScope;
 use kernel::AgentId;
@@ -15,6 +16,7 @@ use wire::{ErrorCode, Request, Response};
 use super::agent_requests::STOPPING_MESSAGE;
 use super::resume_order::start_order;
 use super::resume_run::{ResumeContext, run_resume};
+use super::unclean_stop::UncleanStop;
 use crate::sweep::{SweepGate, SweepState};
 
 const RESUME_PLAN: &str = "resume.plan";
@@ -104,7 +106,11 @@ impl ResumeGateway {
     }
 
     /// The interrupted agents in start order, with what will happen to each
-    /// (FR-002, FR-008).
+    /// (FR-002, FR-008). Each entry is `{agent_id, last_session, can_continue,
+    /// held, reason?, unclean_stop, after_unclean_stop}`: `unclean_stop` is
+    /// `null`, `{"ended": n}`, or `{"may_run": reason}` for a last session
+    /// that was `lost` (0017/D8), and `after_unclean_stop` is `true` exactly
+    /// when `may_run` is set, so an older desktop app keeps its warning.
     fn plan(&self) -> Result<Value, Refusal> {
         if self.sweep_gate.state() == SweepState::Running {
             return Ok(json!({ "sweeping": true, "agents": [] }));
@@ -141,22 +147,40 @@ impl ResumeGateway {
                 .and_then(Value::as_str)
                 .map(str::to_owned),
         };
-        let after_unclean_stop = last_session
-            .as_ref()
-            .and_then(|session| session.get("exit_result"))
-            .and_then(Value::as_str)
-            == Some(LOST_EXIT_RESULT);
+        let unclean_stop = self.unclean_stop(last_session.as_ref())?;
         let mut entry = json!({
             "agent_id": agent_id.to_string(),
             "last_session": last_session,
             "can_continue": can_continue,
             "held": held,
-            "after_unclean_stop": after_unclean_stop,
+            "unclean_stop": unclean_stop.as_ref().map(UncleanStop::to_json),
+            "after_unclean_stop": unclean_stop.as_ref().is_some_and(UncleanStop::warns),
         });
         if let Some(reason) = reason {
             entry["reason"] = json!(reason);
         }
         Ok(entry)
+    }
+
+    /// What the sweep found for the session, when it ended as `lost` (D8).
+    fn unclean_stop(&self, session: Option<&Value>) -> Result<Option<UncleanStop>, Refusal> {
+        let Some(session) = session else {
+            return Ok(None);
+        };
+        if session.get("exit_result").and_then(Value::as_str) != Some(LOST_EXIT_RESULT) {
+            return Ok(None);
+        }
+        let session_id = session
+            .get("id")
+            .and_then(Value::as_str)
+            .and_then(|text| SessionId::from_str(text).ok())
+            .ok_or_else(|| (ErrorCode::Internal, "a session has no valid id".to_owned()))?;
+        let summary = self
+            .context
+            .processes
+            .sweep_summary(session_id)
+            .map_err(|error| internal(&error))?;
+        Ok(UncleanStop::of(&summary))
     }
 
     /// The newest `session.list` entry, which carries `can_continue` and the

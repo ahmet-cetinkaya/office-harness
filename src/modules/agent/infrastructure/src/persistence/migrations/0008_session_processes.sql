@@ -18,6 +18,10 @@ CREATE TABLE agent_session_processes (
     boot            TEXT    NOT NULL,
     kind            TEXT    NOT NULL CHECK (kind IN ('cli', 'helper')),
     state           TEXT    NOT NULL CHECK (state IN ('open', 'ended')),
+    -- What the sweep of an unclean stop found, for resume.plan; NULL for a
+    -- row that a session end or a helper end closed.
+    sweep_outcome   TEXT    CHECK (sweep_outcome IN
+        ('ended', 'could_not_end', 'not_readable', 'boot_time_changed', 'left')),
     UNIQUE (session_id, pid, started_at)
 );
 

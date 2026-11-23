@@ -58,6 +58,9 @@ pub struct Services {
     /// The sweep of the processes that an unclean stop left (0017). It holds
     /// the gate that the starting requests wait on.
     pub orphan_sweep: OrphanSweep,
+    /// The stored process identities, read for the sweep finding of
+    /// `resume.plan` (0017/D8).
+    pub session_processes: Arc<SessionProcessRepository>,
 }
 
 /// Runs each module's migrations, every module on its own ledger.
@@ -197,6 +200,7 @@ pub fn start_with(
         Arc::clone(&terminal.worktrees),
         &storage_alerts,
     );
+    let session_processes = Arc::new(SessionProcessRepository::new(connection.clone()));
     Ok(Services {
         machine,
         agents,
@@ -214,6 +218,7 @@ pub fn start_with(
         needs_you_bridge,
         agent_bridge_store,
         orphan_sweep,
+        session_processes,
     })
 }
 

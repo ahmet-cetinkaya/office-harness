@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use agent_application::common::models::{ProcessKind, SessionProcess, StoredProcess};
+use agent_application::common::models::{
+    ProcessKind, SessionProcess, StoredProcess, SweepOutcome, SweepSummary,
+};
 use agent_domain::value_objects::{ExitResult, SessionId};
 use rusqlite::types::Type;
 use rusqlite::{Connection, Row, params};
@@ -131,23 +133,65 @@ impl SessionProcessRepository {
     ///
     /// # Errors
     /// A storage failure.
-    pub fn end_one(&self, id: i64) -> Result<(), PersistenceError> {
+    pub fn end_one(&self, id: i64, outcome: SweepOutcome) -> Result<(), PersistenceError> {
         self.connection
-            .with(|connection| Self::end_one_in(connection, id))
+            .with(|connection| Self::end_one_in(connection, id, outcome))
     }
 
-    /// Marks one row as ended on the caller's connection or transaction, so
-    /// the sweep can write it in one transaction with its action record
-    /// entry (0017/FR-009).
+    /// Marks one row as ended with the sweep result, on the caller's
+    /// connection or transaction, so the sweep can write it in one
+    /// transaction with its action record entry (0017/FR-009).
     ///
     /// # Errors
     /// A storage failure.
-    pub fn end_one_in(connection: &Connection, id: i64) -> Result<(), PersistenceError> {
+    pub fn end_one_in(
+        connection: &Connection,
+        id: i64,
+        outcome: SweepOutcome,
+    ) -> Result<(), PersistenceError> {
         connection.execute(
-            "UPDATE agent_session_processes SET state = 'ended' WHERE id = ?1",
-            [id],
+            "UPDATE agent_session_processes SET state = 'ended', sweep_outcome = ?2 \
+             WHERE id = ?1",
+            params![id, outcome_text(outcome)],
         )?;
         Ok(())
+    }
+
+    /// What the sweep found for the processes of one session.
+    ///
+    /// # Errors
+    /// A storage failure.
+    pub fn sweep_summary(&self, session_id: SessionId) -> Result<SweepSummary, PersistenceError> {
+        self.connection.with(|connection| {
+            let counts = |outcome: SweepOutcome| {
+                format!(
+                    "COALESCE(SUM(sweep_outcome = '{}'), 0)",
+                    outcome_text(outcome)
+                )
+            };
+            let query = format!(
+                "SELECT {}, {}, {}, {}, COALESCE(SUM(state = 'open'), 0), COUNT(*), \
+                 COALESCE((SELECT helpers_capped FROM agent_sessions WHERE id = ?1), 0) \
+                 FROM agent_session_processes WHERE session_id = ?1",
+                counts(SweepOutcome::Ended),
+                counts(SweepOutcome::CouldNotEnd),
+                counts(SweepOutcome::NotReadable),
+                counts(SweepOutcome::BootTimeChanged),
+            );
+            Ok(
+                connection.query_row(&query, [session_id.to_string()], |row| {
+                    Ok(SweepSummary {
+                        ended: row.get(0)?,
+                        could_not_end: row.get(1)?,
+                        not_readable: row.get(2)?,
+                        boot_time_changed: row.get(3)?,
+                        still_open: row.get(4)?,
+                        stored: row.get(5)?,
+                        helpers_capped: row.get::<_, i64>(6)? != 0,
+                    })
+                })?,
+            )
+        })
     }
 
     /// Marks every open row of the session as ended.
@@ -244,6 +288,16 @@ fn integer_of(started_at: u64) -> Result<i64, PersistenceError> {
     i64::try_from(started_at).map_err(|error| {
         PersistenceError::Storage(rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
     })
+}
+
+const fn outcome_text(outcome: SweepOutcome) -> &'static str {
+    match outcome {
+        SweepOutcome::Ended => "ended",
+        SweepOutcome::CouldNotEnd => "could_not_end",
+        SweepOutcome::NotReadable => "not_readable",
+        SweepOutcome::BootTimeChanged => "boot_time_changed",
+        SweepOutcome::Left => "left",
+    }
 }
 
 fn kind_text(kind: ProcessKind) -> &'static str {

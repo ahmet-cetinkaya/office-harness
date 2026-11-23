@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use agent_application::common::actor_scope::ActorScope;
 use agent_application::common::interfaces::AgentStore;
+use agent_infrastructure::persistence::SessionProcessRepository;
 use hierarchy_application::HoldService;
 use kernel::{Actor, AgentId};
 use serde_json::{Map, Value, json};
@@ -30,6 +31,8 @@ const SPAWN_ERROR_PREFIX: &str = "spawn-error: ";
 pub struct ResumeContext {
     pub agents: AgentGateway,
     pub store: Arc<dyn AgentStore>,
+    /// The sweep results of `lost` sessions, for `resume.plan` (0017/D8).
+    pub processes: Arc<SessionProcessRepository>,
     pub holds: Arc<HoldService>,
     pub events: EventHub,
     pub alerts: StorageAlerts,

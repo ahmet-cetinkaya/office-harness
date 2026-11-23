@@ -24,6 +24,7 @@ mod server_state;
 mod subtree_status;
 mod template_requests;
 mod terminal_requests;
+mod unclean_stop;
 mod upgrade_check;
 
 pub use agent_call::recorded_and_published;
