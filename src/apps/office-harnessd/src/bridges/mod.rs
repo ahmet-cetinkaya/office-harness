@@ -9,6 +9,7 @@ mod agent_line_bridge;
 mod agent_status_bridge;
 mod directive_bridges;
 mod hold_bridges;
+mod idle_sleep_gate;
 mod needs_you_bridge;
 mod notification_bridge;
 mod person_input;
@@ -35,6 +36,7 @@ pub use directive_bridges::{
     TaskOrder,
 };
 pub use hold_bridges::{HoldJournalBridge, HoldNotifierBridge};
+pub use idle_sleep_gate::{GateInputs, IdleRule, IdleSleepGate, SleepingAgents};
 pub use needs_you_bridge::{AgentNames, NeedsYouBridge};
 pub use notification_bridge::NotificationBridge;
 pub use person_input::{PERSON_TYPING_PAUSE, PersonInput};

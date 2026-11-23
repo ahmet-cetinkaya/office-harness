@@ -17,6 +17,7 @@ use super::dispatcher::Dispatcher;
 use super::event_hub::EventHub;
 use super::hierarchy_requests::HierarchyGateway;
 use super::hold_requests::HoldGateway;
+use super::idle_sleep_run::IdleSleeper;
 use super::notification_requests::NotificationGateway;
 use super::restart_signal::RestartSignal;
 use super::resume_requests::ResumeGateway;
@@ -60,6 +61,25 @@ fn resume_gateway(
             check_period,
         },
         Arc::clone(&services.hierarchy.tree),
+    )
+}
+
+/// The idle sleep task of 0018: it sleeps through the agent gateway, so
+/// every sleep keeps the status order and the action record.
+fn idle_sleeper(
+    services: &Services,
+    agents: &AgentGateway,
+    log: &ServerLog,
+    options: &ServerOptions,
+) -> IdleSleeper {
+    IdleSleeper::new(
+        Arc::clone(&services.agent.sleep_gate),
+        Arc::clone(&services.agent.settings),
+        Arc::clone(&services.agent_bridge_store),
+        agents.clone(),
+        options.idle_sleep_tick,
+        options.idle_sleep_minute,
+        log.clone(),
     )
 }
 
@@ -158,6 +178,7 @@ impl Server {
         );
         let resume = resume_gateway(services, &agents, &events, options.resume_check_period);
         let (shutdown, stopping) = watch::channel(false);
+        idle_sleeper(services, &agents, log, &options).spawn(stopping.clone());
         let state = ServerState {
             port,
             options,
