@@ -120,7 +120,7 @@ A parent that sends a directive to an asleep child, or a child that sends a repo
 - **FR-002** (US1): WHILE idle sleep is on, THE SYSTEM SHALL begin to put an agent to sleep within 60 seconds of the first moment at which the agent has been idle for at least the idle time since its idle-since moment and none of these blocking conditions holds: (a) the agent is not idle; (b) it has an item in Needs you (0008); (c) a hold covers it (0007/FR-004); (d) a directive or a report waits in its queue (0012, 0015); (e) pending office text or unsent person text waits at its input line (0012); (f) one of its children runs; and THE SYSTEM SHALL check all six conditions again right before it ends the CLI, and SHALL NOT end it when one of them holds.
 - **FR-003** (US1): WHEN the system puts an agent to sleep, THE SYSTEM SHALL end the agent's CLI as the person's stop does (0001 A3), SHALL show the agent as `asleep` once the CLI has ended, SHALL keep the last session as the session that a wake continues, SHALL keep the recent output of that session with the lines that the CLI printed while it ended, SHALL add one action record entry for the sleep, and no separate stop entry, with the office as actor and the reason "idle for N minutes", and SHALL NOT notify the person or add a Needs you item for the sleep or for the end of the CLI that the sleep caused.
 - **FR-004** (US1, US2): WHILE an agent is asleep, THE SYSTEM SHALL keep it `asleep` across server and machine restarts and after idle sleep is turned off, until the person wakes it, the person or an agent-made action stops it (it then shows `stopped`), deletes it, starts a new task on it (0001/FR-024), or continues one of its sessions (0001/FR-025), or an agent-made action starts it as 0002/FR-008 allows for an agent that is not running; and SHALL NOT list it in "Resume interrupted" (0013/FR-001).
-- **FR-005** (US4): WHILE an agent is going to sleep or asleep, THE SYSTEM SHALL refuse a directive to it and a report to it, SHALL answer the sender that the receiver is not running because it is asleep, and SHALL record the refusal as 0002/FR-011 and 0015/FR-009 require.
+- **FR-005** (US4): WHILE an agent is going to sleep or asleep, THE SYSTEM SHALL refuse a directive to it and a report to it, SHALL answer the sender that the receiver is not running because it is asleep, and SHALL record the refusal as 0002/FR-011 and 0015/FR-009 require; and WHEN a directive or a report still waits in the queue of an agent that is going to sleep, THE SYSTEM SHALL withdraw it with the reason that the receiver is asleep and record the withdrawal as 0012/FR-005 requires.
 - **FR-006** (US2): WHILE an agent is asleep, THE SYSTEM SHALL offer the person a Wake button in the agent's details and in its terminal view; WHILE an agent is asleep and its terminal view has keyboard focus, THE SYSTEM SHALL wake the agent when the person presses Enter and SHALL send no key from that view to any CLI; and THE SYSTEM SHALL carry out a wake while the office or the agent is on hold.
 - **FR-007** (US2, US3): WHEN the person wakes an agent, THE SYSTEM SHALL continue the agent's last session where its CLI supports it (0001/FR-025) and otherwise start a new session at once with the reason, SHALL apply the fallback of 0013/FR-004 and the hold of 0013/FR-005 to this start as 0013 applies them to a start of its action, and SHALL add one action record entry for the wake with the person as actor, with the reason when the wake started a new session; IF the agent is not asleep when the system carries out the wake, THEN THE SYSTEM SHALL start nothing and tell the person that the agent is no longer asleep.
 - **FR-008** (US2, US3): THE SYSTEM SHALL show the result of each wake as text in the agent's details and terminal view as soon as it is known: waking, checking (during the check period), continued, new session (with the reason), on hold (with the reason), or no longer asleep.
@@ -145,7 +145,7 @@ A parent that sends a directive to an asleep child, or a child that sends a repo
 
 **Flow (sleep):**
 
-1. In the office settings, the person turns on "Idle sleep". The idle time field shows 30 minutes. A help text says that the office ends the CLI of an agent that stays idle this long, keeps its session, and continues it on Wake, and that a CLI that cannot continue a session starts a new one.
+1. In the office settings, the person turns on "Idle sleep". The idle time field shows 30 minutes. A help text says that the office ends the CLI of an agent that stays idle this long, keeps its session, and continues it on Wake; that a CLI that cannot continue a session starts a new one; and that the sleep also ends every program that the CLI started and that still runs, such as a background task or a development server.
 2. An agent stays idle for the idle time, and no blocking condition holds.
 3. While its CLI ends, the agent keeps the status `waiting for input`.
 4. The agent list, the office scene, and the subtree read show `asleep`. The terminal view shows the last output and the text "Asleep. Press Enter or Wake to continue the last session." with a Wake button.
@@ -220,9 +220,11 @@ A parent that sends a directive to an asleep child, or a child that sends a repo
 | The agent changes to `working`, or a person input reaches it, before the last check. | Concurrent | The last check finds it, and the office does not stop the CLI (FR-002, US1 scenario 6). |
 | The agent prints output, rings the bell, or a person types, after the last check while the CLI ends. | Concurrent | The sleep completes. The output stays in the recent output; a bell notifies as any bell does (0003/FR-006). Keys reach the CLI while it runs and are lost when it ends. The person can wake the agent (A5). |
 | A directive or a report arrives while the agent is going to sleep. | Concurrent | It is refused with the reason that the agent is asleep, and recorded (FR-005). |
+| A directive or a report entered the queue after the office's last check, just before the stop began. | Concurrent | It is withdrawn with the reason that the agent is asleep, and the withdrawal is in the sender's and the receiver's records (FR-005, 0012/FR-005). |
 | The agent has a running child. | Boundary | It is not put to sleep (FR-002 f). When no child runs any more, the normal rule applies. |
 | The person starts a child of an asleep parent. | Boundary | The parent stays asleep. A report of the child to it is refused with the reason that the parent is asleep (FR-005, A9). |
 | The agent waits on a question that the person has already seen. | Boundary | It can be put to sleep; the office does not read the screen for questions. A wake continues the session (A1). |
+| The CLI shows `waiting for input` while a program that it started still runs, for example a background task of the CLI, a development server, or a build started in the background. | Boundary | No blocking condition sees it. The sleep ends that program with the CLI, as the person's stop does, and its work is lost; the help text of the setting says so (A15). |
 | The person stops an asleep agent. | Boundary | It shows `stopped`; the stop is recorded with the person as actor (FR-004). |
 | The person deletes an asleep agent. | Boundary | It is deleted as a stopped agent is (FR-004, 0001/FR-012). |
 | The office is put on hold while an agent is asleep, and then the person wakes it. | Boundary | The office carries out the wake; the agent's agent-made actions stay refused (FR-006, 0007/FR-002). |
@@ -257,6 +259,7 @@ A parent that sends a directive to an asleep child, or a child that sends a repo
 - **A12:** Only the sleep and the wake results of the agent whose terminal view or details are open are announced to assistive technology. The agent list shows the status of every agent as text. This keeps 30 agents from flooding a screen reader.
 - **A13:** The wake result is not stored. It shows until the agent's next sleep, the person's next action on the agent, or a server restart. The action record, the status, and the hold list keep what happened.
 - **A14:** Only agents with a running CLI can be idle. Agents that are `exited`, `failed`, `stopped`, `interrupted`, or `asleep` are never put to sleep.
+- **A15:** A CLI can show `waiting for input` while a program that it started still runs, for example a background task of the CLI, a development server, or a build started in the background. The office does not detect such programs. A sleep ends the CLI as the person's stop does (0001 A3), and such a program ends with it, as it does at the person's stop, so its work ends too. A program that detached itself from the CLI can keep running, as after the person's stop. The help text of the setting says this, so that the person turns idle sleep on knowing it.
 
 ## Out of scope
 
@@ -266,6 +269,7 @@ A parent that sends a directive to an asleep child, or a child that sends a repo
 - A "Wake all" action.
 - A setting for the check period (A3, A8).
 - Reading CLI output to find a refusal or a question (A1, 0013 A4).
+- Finding programs that a CLI started and that still run, to keep such an agent awake (A15).
 
 ## Clarifications
 
@@ -286,6 +290,8 @@ A parent that sends a directive to an asleep child, or a child that sends a repo
 - Q: What does a wake do when the continue fails? → A: The 0013 fallback: one new session, then a hold with one notification (FR-007, A8). Decided under the owner's spec delegation, 2026-11-23.
 - Q: What happens when the CLI does not end at the sleep stop? → A: The agent stays as it was, the failure is recorded once, and the office tries again only after the agent was active and then idle again (FR-009). Decided under the owner's spec delegation, 2026-11-23.
 - Q: Does an agent-made action wake an asleep agent? → A: No. Agent-made actions treat it as not running, as today (A10). Decided under the owner's spec delegation, 2026-11-23.
+- Q: What happens to programs that the CLI started and that still run when it shows `waiting for input`? → A: The sleep ends them with the CLI, as the person's stop does; the office does not detect them, and the help text of the setting warns about it (A15, Out of scope). Decided under the owner's spec delegation, 2026-11-23.
+- Q: What happens to a directive that entered the queue just before the stop began? → A: It is withdrawn with the reason that the receiver is asleep and recorded (FR-005). Decided under the owner's spec delegation, 2026-11-23.
 - Q: Which sleeps and wakes are announced to assistive technology? → A: Those of the agent whose terminal view or details are open (A12). Decided under the owner's spec delegation, 2026-11-23.
 
 ## Deviations
