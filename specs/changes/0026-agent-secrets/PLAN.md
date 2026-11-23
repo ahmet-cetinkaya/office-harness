@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 spec: specs/changes/0026-agent-secrets/SPEC.md
 commits: per-task
 ---

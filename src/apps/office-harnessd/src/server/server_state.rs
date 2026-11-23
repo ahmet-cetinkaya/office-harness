@@ -20,6 +20,7 @@ use super::hold_requests::HoldGateway;
 use super::notification_requests::NotificationGateway;
 use super::restart_signal::RestartSignal;
 use super::resume_requests::ResumeGateway;
+use super::secret_requests::SecretGateway;
 use super::server_options::ServerOptions;
 use super::temp_requests::TempGateway;
 use super::template_requests::TemplateGateway;
@@ -55,6 +56,9 @@ pub struct ServerState {
     /// case journals the attempts it runs.
     pub directive_journal: Arc<DirectiveJournalBridge>,
     pub notification: NotificationGateway,
+    /// The user's `secret.*` requests and the agent's `secret.available` and
+    /// `secret.get` (0026). Only the agent connection routes the second pair.
+    pub secrets: SecretGateway,
     /// The user's `template.*` requests. Only the user connection routes to
     /// it; the agent connection never does (0009).
     pub templates: TemplateGateway,

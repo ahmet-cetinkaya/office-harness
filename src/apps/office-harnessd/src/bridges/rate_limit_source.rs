@@ -32,6 +32,7 @@ impl RateLimitSource for SettingsRateLimits {
                 create: settings.limit_creates_per_agent,
                 lifecycle: settings.limit_lifecycle_per_agent,
                 report: settings.limit_reports_per_agent,
+                secret_read: settings.limit_secret_reads_per_agent,
             },
             Err(error) => {
                 self.log.error(&format!(

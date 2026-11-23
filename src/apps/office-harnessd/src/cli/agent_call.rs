@@ -16,6 +16,10 @@ pub const AGENT_CALL: &str = "agent-call";
 const AGENT_TOKEN_VARIABLE: &str = "OFFICE_HARNESS_AGENT_TOKEN";
 const SERVER_FILE_VARIABLE: &str = "OFFICE_HARNESS_SERVER_FILE";
 const REQUEST_ID: u32 = 1;
+/// Prints the value of `secret.get` alone, so it can go into a pipe or a file
+/// descriptor and never into an argument (0026 contract, helper).
+const VALUE_ONLY_FLAG: &str = "--value-only";
+const SECRET_GET: &str = "secret.get";
 const USAGE_EXIT_CODE: u8 = 2;
 const FAILURE_EXIT_CODE: u8 = 1;
 
@@ -38,7 +42,9 @@ pub async fn run(arguments: &[OsString]) -> ExitCode {
 
 #[derive(Debug, thiserror::Error)]
 enum CallError {
-    #[error("usage: office-harnessd {AGENT_CALL} <request type> [<json fields>]")]
+    #[error(
+        "usage: office-harnessd {AGENT_CALL} <request type> [<json fields>] ({VALUE_ONLY_FLAG} only with {SECRET_GET})"
+    )]
     Usage,
     #[error("the fields are not a JSON object")]
     BadFields,
@@ -103,7 +109,80 @@ fn read_port(path: &Path) -> Result<u16, CallError> {
         .ok_or_else(|| CallError::ServerFile("no port".to_owned()))
 }
 
+/// Takes `--value-only` out of the arguments; it is only for `secret.get`.
+fn split_value_only(arguments: &[OsString]) -> Result<(bool, Vec<OsString>), CallError> {
+    let value_only = arguments.iter().any(|argument| argument == VALUE_ONLY_FLAG);
+    let rest: Vec<OsString> = arguments
+        .iter()
+        .filter(|argument| *argument != VALUE_ONLY_FLAG)
+        .cloned()
+        .collect();
+    let is_secret_get = rest.first().is_some_and(|kind| kind == SECRET_GET);
+    if value_only && !is_secret_get {
+        return Err(CallError::Usage);
+    }
+    Ok((value_only, rest))
+}
+
+/// What the helper writes for one answer.
+#[derive(Debug, PartialEq, Eq)]
+struct Rendered {
+    accepted: bool,
+    stdout: Option<String>,
+    stderr: Option<String>,
+}
+
+/// With `--value-only` an accepted read gives the value alone, with no line
+/// break, and any other answer gives nothing for standard output: its error
+/// goes to standard error. Without it the answer is printed as it came.
+fn render_answer(answer: &str, value_only: bool) -> Rendered {
+    let parsed = serde_json::from_str::<Value>(answer).ok();
+    let accepted = parsed
+        .as_ref()
+        .and_then(|value| value["ok"].as_bool())
+        .unwrap_or(false);
+    if !value_only {
+        return Rendered {
+            accepted,
+            stdout: Some(format!("{answer}\n")),
+            stderr: None,
+        };
+    }
+    let value = parsed
+        .as_ref()
+        .and_then(|value| value["result"]["value"].as_str());
+    if let (true, Some(value)) = (accepted, value) {
+        return Rendered {
+            accepted,
+            stdout: Some(value.to_owned()),
+            stderr: None,
+        };
+    }
+    let message = parsed
+        .as_ref()
+        .and_then(|value| value["error"]["message"].as_str())
+        .unwrap_or("the office did not answer with a value");
+    Rendered {
+        accepted: false,
+        stdout: None,
+        stderr: Some(format!("office-harnessd {AGENT_CALL}: {message}\n")),
+    }
+}
+
+fn print_answer(answer: &str, value_only: bool) -> bool {
+    let rendered = render_answer(answer, value_only);
+    if let Some(text) = &rendered.stdout {
+        print!("{text}");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+    }
+    if let Some(text) = &rendered.stderr {
+        eprint!("{text}");
+    }
+    rendered.accepted
+}
+
 async fn call(arguments: &[OsString]) -> Result<bool, CallError> {
+    let (value_only, arguments) = split_value_only(arguments)?;
     let (kind, rest) = arguments.split_first().ok_or(CallError::Usage)?;
     let kind = kind.to_str().ok_or(CallError::Usage)?;
     if rest.len() > 1 {
@@ -139,12 +218,9 @@ async fn call(arguments: &[OsString]) -> Result<bool, CallError> {
         .await
         .map_err(|error| CallError::Connect(error.to_string()))?;
     let answer = next_text(&mut socket).await.ok_or(CallError::NoAnswer)?;
-    println!("{answer}");
+    let accepted = print_answer(&answer, value_only);
     let _ = socket.close(None).await;
-    Ok(serde_json::from_str::<Value>(&answer)
-        .ok()
-        .and_then(|value| value["ok"].as_bool())
-        .unwrap_or(false))
+    Ok(accepted)
 }
 
 async fn next_text<S>(socket: &mut S) -> Option<String>

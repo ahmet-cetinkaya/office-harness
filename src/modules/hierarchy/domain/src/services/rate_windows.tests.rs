@@ -26,6 +26,7 @@ fn wide_limits() -> RateLimits {
         create: 100,
         lifecycle: 100,
         report: 100,
+        secret_read: 100,
     }
 }
 
@@ -91,6 +92,30 @@ fn exactly_the_report_limit_passes_and_the_next_is_refused() {
         ..wide_limits()
     };
     assert_passes_limit_then_refuses(AgentAction::Report, &limits, LimitKind::Report, 5);
+}
+
+#[test]
+fn exactly_the_secret_read_limit_passes_and_the_next_is_refused() {
+    let limits = RateLimits {
+        secret_read: 4,
+        ..wide_limits()
+    };
+    assert_passes_limit_then_refuses(AgentAction::SecretRead, &limits, LimitKind::SecretRead, 4);
+}
+
+#[test]
+fn a_secret_read_takes_no_report_slot() {
+    let limits = RateLimits {
+        report: 1,
+        ..wide_limits()
+    };
+    let mut windows = RateWindows::default();
+    for _ in 0..5 {
+        assert_eq!(
+            windows.try_take(id(SENDER), AgentAction::SecretRead, &limits, at_seconds(0)),
+            Ok(())
+        );
+    }
 }
 
 #[test]

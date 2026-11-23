@@ -59,11 +59,15 @@ impl StoreKeyVault for FakeKeyring {
     }
 }
 
-struct AllAgentsExist;
+/// Every agent exists, except the ones a test deleted.
+#[derive(Default)]
+struct Agents {
+    deleted: Mutex<Vec<AgentId>>,
+}
 
-impl AgentDirectory for AllAgentsExist {
-    fn exists(&self, _agent: &AgentId) -> Result<bool, StoreError> {
-        Ok(true)
+impl AgentDirectory for Agents {
+    fn exists(&self, agent: &AgentId) -> Result<bool, StoreError> {
+        Ok(!self.deleted.lock().expect("lock").contains(agent))
     }
 }
 
@@ -78,6 +82,7 @@ impl SecretClock for FixedClock {
 struct Office {
     folder: tempfile::TempDir,
     keyring: Arc<FakeKeyring>,
+    agents: Arc<Agents>,
     service: SecretService,
     repository: SecretRepository,
 }
@@ -95,18 +100,20 @@ fn office() -> Office {
     }
     let repository = SecretRepository::new(Arc::new(Mutex::new(connection)));
     let keyring = Arc::new(FakeKeyring::default());
+    let agents = Arc::new(Agents::default());
     let service = SecretService::new(SecretPorts {
         store: Arc::new(repository.clone()),
         keyring: keyring.clone(),
         key_file: Arc::new(KeyFileVault::new(folder.path().join("secrets.key"))),
         generator: Arc::new(OsStoreKeyGenerator),
         sealer: Arc::new(ChaChaRecordSealer),
-        agents: Arc::new(AllAgentsExist),
+        agents: agents.clone(),
         clock: Arc::new(FixedClock),
     });
     Office {
         folder,
         keyring,
+        agents,
         service,
         repository,
     }
@@ -397,10 +404,9 @@ fn the_grants_of_a_deleted_agent_go() {
         .grant(&name("API_KEY"), &agent(1))
         .expect("grant");
 
-    office
-        .service
-        .remove_grants_of_agent(&agent(1))
-        .expect("remove");
+    office.agents.deleted.lock().expect("lock").push(agent(1));
+    assert!(office.service.forget_deleted_agents().expect("forget"));
+    assert!(!office.service.forget_deleted_agents().expect("again"));
 
     let (_, secrets) = office.service.list().expect("list");
     assert_eq!(secrets[0].grants, []);

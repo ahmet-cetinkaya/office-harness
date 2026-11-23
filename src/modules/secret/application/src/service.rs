@@ -205,13 +205,31 @@ impl SecretService {
         Ok(removed)
     }
 
-    /// Removes the grants of a deleted agent (FR-009).
+    /// Removes the grants of every agent that no longer exists (FR-009). A
+    /// delete of one agent, a delete of a subtree, and a start after the
+    /// agents were deleted while the server was down all take this path.
+    ///
+    /// Returns whether a grant was removed.
     ///
     /// # Errors
     /// `Storage`.
-    pub fn remove_grants_of_agent(&self, agent: &AgentId) -> Result<()> {
+    pub fn forget_deleted_agents(&self) -> Result<bool> {
         let _write = self.write_guard();
-        Ok(self.ports.store.remove_grants_of_agent(agent)?)
+        let mut removed_any = false;
+        let mut checked = Vec::new();
+        for stored in self.ports.store.list()? {
+            for grant in stored.grants {
+                if checked.contains(&grant.agent_id) {
+                    continue;
+                }
+                checked.push(grant.agent_id);
+                if !self.ports.agents.exists(&grant.agent_id)? {
+                    self.ports.store.remove_grants_of_agent(&grant.agent_id)?;
+                    removed_any = true;
+                }
+            }
+        }
+        Ok(removed_any)
     }
 
     fn write_guard(&self) -> MutexGuard<'_, ()> {
