@@ -286,6 +286,20 @@ impl ActionRecorder for RecordingRecorder {
 }
 
 #[derive(Default)]
+/// The fake adapters know no status command, so this never runs.
+struct NoStatusCommands;
+
+impl agent_application::common::interfaces::StatusCommandRunner for NoStatusCommands {
+    fn run(
+        &self,
+        _run: &agent_application::common::models::StatusRun,
+    ) -> agent_application::common::models::StatusRunResult {
+        agent_application::common::models::StatusRunResult::CouldNotRun(
+            "no status command in these tests".to_owned(),
+        )
+    }
+}
+
 struct FakeFailures;
 
 impl FailureReporter for FakeFailures {
@@ -374,16 +388,8 @@ fn stores() -> FakeStores {
     }
 }
 
-fn use_cases(stores: &FakeStores) -> AgentUseCases {
-    let journal = ActionJournal::new(Arc::new(RecordingRecorder), Arc::clone(&stores.clock));
-    let ender = SessionEnder::new(
-        Arc::clone(&stores.agents_trait),
-        Arc::clone(&stores.settings),
-        Arc::clone(&stores.sessions),
-        Arc::clone(&stores.terminals),
-        Arc::clone(&stores.clock),
-    );
-    let launcher = SessionLauncher::new(
+fn launcher_of(stores: &FakeStores) -> SessionLauncher {
+    SessionLauncher::new(
         Arc::clone(&stores.agents_trait),
         Arc::clone(&stores.projects),
         Arc::clone(&stores.additions),
@@ -393,8 +399,22 @@ fn use_cases(stores: &FakeStores) -> AgentUseCases {
             adapters: Arc::clone(&stores.adapters),
             clock: Arc::clone(&stores.clock),
             failures: Arc::new(FakeFailures),
+            status_commands: Arc::new(NoStatusCommands),
+            sign_in_timeout: agent_application::common::sign_in_check::SIGN_IN_TIMEOUT,
         },
+    )
+}
+
+fn use_cases(stores: &FakeStores) -> AgentUseCases {
+    let journal = ActionJournal::new(Arc::new(RecordingRecorder), Arc::clone(&stores.clock));
+    let ender = SessionEnder::new(
+        Arc::clone(&stores.agents_trait),
+        Arc::clone(&stores.settings),
+        Arc::clone(&stores.sessions),
+        Arc::clone(&stores.terminals),
+        Arc::clone(&stores.clock),
     );
+    let launcher = launcher_of(stores);
     AgentUseCases {
         create_agent: CreateAgentHandler::new(
             Arc::clone(&stores.agents_trait),

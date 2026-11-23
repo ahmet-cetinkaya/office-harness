@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! The visible form of a text that crosses from one agent to another or to
-//! the person: no control or bidirectional format character travels as
-//! itself (0014, 0015/FR-003).
+//! the person, or that a CLI printed: no control or bidirectional format
+//! character travels as itself (0014, 0015/FR-003, 0019/FR-007).
 
 use std::fmt::Write as _;
 

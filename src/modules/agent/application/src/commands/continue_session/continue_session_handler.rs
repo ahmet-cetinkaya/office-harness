@@ -57,12 +57,8 @@ impl ContinueSessionHandler {
         let agent = require_agent(&*self.agents, session.agent_id)?;
         let agent_id = agent.id;
         let outcome = self.begin(agent, &session);
-        let failure = match &outcome {
-            Ok(outcome) => outcome.failure.clone(),
-            Err(error) => Some(error.to_string()),
-        };
         self.journal
-            .record(agent_id, AgentAction::Continue, failure.as_deref())?;
+            .record_start(agent_id, AgentAction::Continue, &outcome, None)?;
         outcome
     }
 
@@ -76,7 +72,7 @@ impl ContinueSessionHandler {
             from: session,
             cli_session_id,
         };
-        let prepared = self.launcher.prepare(&agent, &kind)?;
+        let prepared = self.launcher.prepare_replacing(&agent, &kind)?;
         if agent.status.is_running() {
             self.ender.stop_for_restart(&mut agent)?;
         }

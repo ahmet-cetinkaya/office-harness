@@ -25,5 +25,5 @@ pub use services::tree_rules::{
     Placement, TreeRow, check_placement, descendants_in_tree_order, descendants_of,
     is_descendant_of, resolved_parent,
 };
-pub use services::visible_text::visible_text;
+pub use services::visible_text;
 pub use value_objects::{Role, TeamName, parse_role};
