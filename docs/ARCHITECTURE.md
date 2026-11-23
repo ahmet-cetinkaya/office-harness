@@ -1,6 +1,6 @@
 # Architecture Specification
 
-Status: draft for the owner's review · Date: 2026-11-15. Product scope is in [PRD.md](PRD.md). The behavior contracts are the change specs under [`specs/changes/`](../specs/changes/). The design of change 0001 is beside its spec: [research.md](../specs/changes/0001-office-server-and-terminal/research.md), [data-model.md](../specs/changes/0001-office-server-and-terminal/data-model.md), and [contracts/client-protocol.md](../specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md).
+Status: draft for the owner's review · Date: 2026-11-15. Product scope is in [PRD.md](PRD.md). The behavior contracts are the change specs under [`specs/changes/`](../specs/changes/). The design of change 0001 is beside its spec: [research.md](../specs/changes/archive/0001-office-server-and-terminal/research.md), [data-model.md](../specs/changes/archive/0001-office-server-and-terminal/data-model.md), and [contracts/client-protocol.md](../specs/changes/archive/0001-office-server-and-terminal/contracts/client-protocol.md).
 
 Marks:
 - **Decided** means that the owner made the decision.
@@ -285,7 +285,7 @@ async fn main() -> anyhow::Result<()> {
 
 ### Authentication context
 
-The full rules are in [the client protocol](../specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md#authentication-fr-007-fr-010).
+The full rules are in [the client protocol](../specs/changes/archive/0001-office-server-and-terminal/contracts/client-protocol.md#authentication-fr-007-fr-010).
 
 - **Before any module code runs,** the server's `server/` layer:
   - refuses non-loopback peers;
