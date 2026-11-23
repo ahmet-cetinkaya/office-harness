@@ -28,7 +28,8 @@ impl NeedsYouItem {
             AttentionKind::WaitingForInput
             | AttentionKind::Bell
             | AttentionKind::AutoHold
-            | AttentionKind::ResumeHold => WAITING_GROUP,
+            | AttentionKind::ResumeHold
+            | AttentionKind::LeftoverKept => WAITING_GROUP,
             AttentionKind::Exited => EXITED_GROUP,
         }
     }
