@@ -29,6 +29,7 @@ use wire::{ErrorCode, Request, Response};
 use super::agent_call::recorded_and_published;
 use super::event_hub::EventHub;
 use super::hold_requests::HoldGateway;
+use super::secret_requests::SecretGateway;
 use super::subtree_status::{SubtreeState, subtree_entries, time_before};
 use crate::bootstrap::StorageAlerts;
 use crate::bridges::{
@@ -114,6 +115,8 @@ pub struct AgentGateway {
     /// The schedule bridge, which the server connects after it built the
     /// gateway that the bridge wakes agents through (0025 D13).
     schedules: Arc<OnceLock<ScheduleBridge>>,
+    /// Drops the grants of deleted agents (0026/FR-009).
+    secrets: Option<SecretGateway>,
 }
 
 impl AgentGateway {
@@ -153,6 +156,7 @@ impl AgentGateway {
             sign_in: None,
             temps: None,
             schedules: Arc::default(),
+            secrets: None,
         }
     }
 
@@ -170,6 +174,13 @@ impl AgentGateway {
     #[must_use]
     pub fn with_temps(mut self, temps: TempHooks) -> Self {
         self.temps = Some(Arc::new(temps));
+        self
+    }
+
+    /// Lets a delete drop the secret grants of the agents it removed (0026).
+    #[must_use]
+    pub fn with_secrets(mut self, secrets: SecretGateway) -> Self {
+        self.secrets = Some(secrets);
         self
     }
 
@@ -280,6 +291,10 @@ impl AgentGateway {
             // And the schedules that sent to a removed agent (0025 D13).
             if let Some(schedules) = self.schedules.get() {
                 schedules.forget_removed_targets();
+            }
+            // And the secret grants (0026/FR-009).
+            if let Some(secrets) = &self.secrets {
+                secrets.forget_deleted_agents();
             }
         }
         self.add_last_lines(&mut response);

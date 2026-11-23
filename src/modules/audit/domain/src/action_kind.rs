@@ -29,10 +29,14 @@ pub enum ActionKind {
     Wake,
     End,
     Dismiss,
+    /// An agent read a secret, or was refused (0026).
+    SecretRead,
+    /// The person changed a secret or a grant (0026).
+    SecretChange,
 }
 
 impl ActionKind {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 22] = [
         Self::Create,
         Self::Start,
         Self::Stop,
@@ -53,6 +57,8 @@ impl ActionKind {
         Self::Wake,
         Self::End,
         Self::Dismiss,
+        Self::SecretRead,
+        Self::SecretChange,
     ];
 
     /// The stored and wire name.
@@ -79,6 +85,8 @@ impl ActionKind {
             Self::Wake => "wake",
             Self::End => "end",
             Self::Dismiss => "dismiss",
+            Self::SecretRead => "secret_read",
+            Self::SecretChange => "secret_change",
         }
     }
 }

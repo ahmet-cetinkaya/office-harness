@@ -100,11 +100,19 @@ describe("hold announcements", () => {
 });
 
 describe("limit rows", () => {
-  test("the reports limit is listed last, defaulting to 5 (0015)", () => {
-    expect(LIMIT_SETTINGS.at(-1)).toEqual({
+  test("the reports limit is listed after the first four, defaulting to 5 (0015)", () => {
+    expect(LIMIT_SETTINGS.at(4)).toEqual({
       key: "limit_reports_per_agent",
       label: "Reports sent by one agent",
       defaultValue: 5,
+    });
+  });
+
+  test("the secret reads limit is listed last, defaulting to 20 (0026)", () => {
+    expect(LIMIT_SETTINGS.at(-1)).toEqual({
+      key: "limit_secret_reads_per_agent",
+      label: "Reads of secrets by one agent",
+      defaultValue: 20,
     });
   });
 });

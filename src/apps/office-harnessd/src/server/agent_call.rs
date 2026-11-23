@@ -13,7 +13,7 @@ use hierarchy_domain::{
     AgentAction, HierarchyError, Hold, ReportKind, Role, TeamId, TreeRow, check_descendant,
     is_descendant_of,
 };
-use kernel::{Actor, AgentId, visible_text};
+use kernel::{Actor, AgentId, TextRedactor, visible_text};
 use serde_json::{Value, json};
 use tokio::sync::watch;
 use tokio::task::spawn_blocking;
@@ -28,7 +28,7 @@ use crate::bridges::{EndOrder, EndReason, take_recorded_events};
 /// other type is refused, so no agent reaches `terminal.*`, `agent.delete`,
 /// `team.*`, `hierarchy.*`, `server.*`, `settings.*`, `project.*`,
 /// `template.*`, or the additions of an agent.
-const ALLOWED_REQUESTS: [&str; 8] = [
+const ALLOWED_REQUESTS: [&str; 10] = [
     "agent.whoami",
     "agent.subtree",
     "agent.create",
@@ -37,6 +37,8 @@ const ALLOWED_REQUESTS: [&str; 8] = [
     "agent.stop",
     "directive.send",
     "report.send",
+    "secret.available",
+    "secret.get",
 ];
 
 /// Every request of this family is the person's: an agent that sends one is
@@ -45,7 +47,7 @@ const SCHEDULE_PREFIX: &str = "schedule.";
 const ONLY_THE_PERSON_SCHEDULES: &str = "only the person makes schedules";
 
 /// What the connection of an agent says about a request it will not run.
-const NOT_ALLOWED: &str = "an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants, and send reports to its parent or the person";
+const NOT_ALLOWED: &str = "an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants, send reports to its parent or the person, and read the secrets that the person granted to it";
 
 /// The longest client text a refusal reason keeps: the type and a field key
 /// travel into the log and the record, so the limit keeps one hostile frame
@@ -104,7 +106,7 @@ pub async fn serve_agent_connection(mut socket: WebSocket, state: ServerState, g
 }
 
 async fn answer_request(state: &ServerState, grant: &AgentGrant, frame: &str) -> Response {
-    let Some(request) = Request::decode(frame) else {
+    let Some(request) = Request::decode(frame).map(|request| redacted(state, request)) else {
         return Response::failure(
             0,
             ErrorCode::Invalid,
@@ -125,6 +127,10 @@ async fn answer_request(state: &ServerState, grant: &AgentGrant, frame: &str) ->
                 "agent.subtree" => return answer_subtree(state, grant, &request).await,
                 "directive.send" => return answer_directive(state, grant, &request).await,
                 "report.send" => return answer_report(state, grant, &request).await,
+                "secret.available" => {
+                    return state.secrets.agent_available(grant.agent_id, request).await;
+                }
+                "secret.get" => return state.secrets.agent_get(grant.agent_id, request).await,
                 "agent.create" | "agent.start" | "agent.new_task" | "agent.stop" => {
                     return answer_office_request(state, grant, &request).await;
                 }
@@ -148,6 +154,30 @@ async fn answer_request(state: &ServerState, grant: &AgentGrant, frame: &str) ->
     let reason = refusal_reason(&refusal, &request.kind);
     journal_refusal(state, grant.agent_id, &reason);
     Response::failure(request.id, ErrorCode::Refused, reason)
+}
+
+/// Replaces a secret value in every text of the request before anything
+/// stores it or passes it on: a directive, a report, a task, a startup
+/// prompt, the name or objective of a new agent or temp (0026/FR-012). The
+/// agent keeps what it knows; the office keeps the placeholder.
+fn redacted(state: &ServerState, mut request: Request) -> Request {
+    for value in request.fields.values_mut() {
+        redact_value(&*state.redactor, value);
+    }
+    request
+}
+
+fn redact_value(redactor: &dyn TextRedactor, value: &mut Value) {
+    match value {
+        Value::String(text) => *text = redactor.redact_text(text),
+        Value::Array(items) => items
+            .iter_mut()
+            .for_each(|item| redact_value(redactor, item)),
+        Value::Object(fields) => fields
+            .values_mut()
+            .for_each(|field| redact_value(redactor, field)),
+        _ => {}
+    }
 }
 
 /// Journals a refusal and publishes the entry it wrote.

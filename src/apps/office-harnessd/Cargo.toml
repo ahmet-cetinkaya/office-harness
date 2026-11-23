@@ -30,6 +30,10 @@ schedule-application = { path = "../../modules/schedule/application" }
 schedule-domain = { path = "../../modules/schedule/domain" }
 schedule-infrastructure = { path = "../../modules/schedule/infrastructure" }
 schedule-presentation = { path = "../../modules/schedule/presentation" }
+secret-application = { path = "../../modules/secret/application" }
+secret-domain = { path = "../../modules/secret/domain" }
+secret-infrastructure = { path = "../../modules/secret/infrastructure" }
+secret-presentation = { path = "../../modules/secret/presentation" }
 template-application = { path = "../../modules/template/application" }
 template-domain = { path = "../../modules/template/domain" }
 template-infrastructure = { path = "../../modules/template/infrastructure" }
@@ -58,6 +62,11 @@ tokio.workspace = true
 futures-util.workspace = true
 tokio-tungstenite.workspace = true
 wire = { path = "../../shared/wire" }
+
+# The server asks the OS for no memory dump (0026/FR-013), through nix's safe
+# wrappers.
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["resource", "process"] }
 
 [dev-dependencies]
 tempfile.workspace = true

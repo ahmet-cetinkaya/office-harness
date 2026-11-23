@@ -6,7 +6,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use kernel::AgentId;
+use kernel::{AgentId, StreamRedactor};
 use portable_pty::{Child, MasterPty};
 use terminal_application::common::errors::TerminalRuntimeError;
 use terminal_application::common::interfaces::{OutputSubscriber, TerminalEventSink};
@@ -30,6 +30,10 @@ const DRAIN_GRACE: Duration = Duration::from_millis(300);
 const FORCE_GRACE: Duration = Duration::from_secs(3);
 const MIN_MONITOR_TICK: Duration = Duration::from_millis(10);
 const MAX_MONITOR_TICK: Duration = Duration::from_millis(250);
+/// How long the redaction may hold back the end of the output, which could be
+/// the start of a secret value, while no more output comes. Then it goes to the
+/// screen and the file, so a line that ends with such a byte is not stale.
+const HELD_TAIL_RELEASE: Duration = Duration::from_millis(100);
 /// The quiet monitor also reports a changed last line at most this often.
 const LINE_REPORT_EVERY: Duration = Duration::from_millis(1000);
 const CTRL_C: u8 = 0x03;
@@ -60,6 +64,10 @@ struct Subscription {
 /// a snapshot and the live subscription atomic: output cannot land between
 /// them.
 struct SessionCore {
+    /// Replaces secret values in the output before the screen and the file see
+    /// it (0026/FR-012). Subscribers get the raw bytes: the live stream is the
+    /// person's own screen.
+    redaction: Box<dyn StreamRedactor>,
     emulator: ScreenEmulator,
     store: Option<OutputStore>,
     subscribers: Vec<Subscription>,
@@ -105,6 +113,7 @@ pub struct SessionParts {
     pub agent_id: AgentId,
     pub pty: SpawnedPty,
     pub emulator: ScreenEmulator,
+    pub redaction: Box<dyn StreamRedactor>,
     pub store: OutputStore,
     pub size: TerminalSize,
     pub quiet_period: Duration,
@@ -144,6 +153,7 @@ impl TerminalSession {
             agent_id,
             pty,
             emulator,
+            redaction,
             store,
             size,
             quiet_period,
@@ -156,6 +166,7 @@ impl TerminalSession {
             process_id: pty.child.process_id(),
             runs_through_batch_interpreter: pty.runs_through_batch_interpreter,
             core: Mutex::new(SessionCore {
+                redaction,
                 emulator,
                 store: Some(store),
                 subscribers: Vec::new(),
@@ -349,16 +360,38 @@ impl TerminalSession {
                 Ok(count) => self.handle_output(&buffer[..count]),
             }
         }
+        self.release_held_output();
         locked(&self.lifecycle).reader_finished = true;
         self.lifecycle_changed.notify_all();
+    }
+
+    /// What the redaction held back (the start of a value that never
+    /// finished) goes to the screen and the file. It runs at the end of the
+    /// output and when the output has paused (0026/A3: a value that is split
+    /// across a longer pause is not replaced).
+    fn release_held_output(&self) {
+        let replies = {
+            let mut core = locked(&self.core);
+            let rest = core.redaction.finish();
+            if rest.is_empty() {
+                return;
+            }
+            let replies = core.emulator.process(&rest);
+            let _ = core.record(&rest);
+            replies
+        };
+        if !replies.is_empty() {
+            let _ = self.write_input(&replies);
+        }
     }
 
     fn handle_output(&self, bytes: &[u8]) {
         let mut events = Vec::new();
         let replies = {
             let mut core = locked(&self.core);
-            let replies = core.emulator.process(bytes);
-            let (dropped_oldest, storage_event) = core.record(bytes);
+            let stored = core.redaction.push(bytes);
+            let replies = core.emulator.process(&stored);
+            let (dropped_oldest, storage_event) = core.record(&stored);
             events.extend(storage_event);
             core.broadcast(&LiveOutput::Bytes(bytes.to_vec()));
             if dropped_oldest {
@@ -423,7 +456,9 @@ impl TerminalSession {
     }
 
     fn run_quiet_monitor(&self, quiet_period: Duration) {
-        let tick = (quiet_period / 4).clamp(MIN_MONITOR_TICK, MAX_MONITOR_TICK);
+        let tick = (quiet_period / 4)
+            .clamp(MIN_MONITOR_TICK, MAX_MONITOR_TICK)
+            .min(HELD_TAIL_RELEASE);
         // One interval in the past, so the first change reports on the first
         // tick instead of a full window after the start.
         let mut line_report_due = Instant::now()
@@ -431,6 +466,9 @@ impl TerminalSession {
             .unwrap_or_else(Instant::now);
         while !self.has_exited() {
             thread::sleep(tick);
+            if self.quiet_for() >= HELD_TAIL_RELEASE {
+                self.release_held_output();
+            }
             if self.take_quiet_period_report(quiet_period) {
                 self.publish_unless_exited(TerminalEvent::QuietPeriod);
             }
