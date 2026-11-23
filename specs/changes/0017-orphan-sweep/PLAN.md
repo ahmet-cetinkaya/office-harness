@@ -91,7 +91,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
   - `office.sweep` event `{state: "running" | "done"}`, and the same state in the hello answer; the panel shows "Ending processes left from the last run" in a `role="status"` region while `running`.
   - The resume dialog shows the same text in place of the list while `sweeping`, then loads the plan when the event says `done`.
   - The dialog marks: "Ended N processes left from the last run" for `ended`, the 0013 mark and warning for `may_run`, nothing for `null`. The acknowledgement rule applies only to `may_run`.
-  - The action record shows the new action text "ended a leftover process" with the detail, and the action text "stopped storing helpers" for `helper_limit`. The desktop escapes control and bidirectional-control characters again in the detail before it shows it, and renders it as text only.
+  - The action record shows the new action text "checked a leftover process" with the detail (renamed from "ended a leftover process" at the final review: a `left` entry is not an end; the detail names the result), and the action text "stopped storing helpers" for `helper_limit`. The desktop escapes control and bidirectional-control characters again in the detail before it shows it, and renders it as text only.
 
 ## Scope
 

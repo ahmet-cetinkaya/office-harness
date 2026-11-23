@@ -198,7 +198,7 @@ test.describe("orphan sweep (0017)", () => {
     const record = page.getByRole("region", { name: "Action record" });
 
     await expect(record).toContainText(
-      "Ended a leftover process by the office",
+      "Checked a leftover process by the office",
     );
     await expect(record).toContainText(
       "Detail: identity 12: ended by force: pid 4242, session s-1, run\\u{1b}[2J <b>bold</b>",
