@@ -30,11 +30,13 @@ use tempfile::TempDir;
 /// The real server binary that the fake CLIs run as the helper.
 const HELPER: &str = env!("CARGO_BIN_EXE_office-harnessd");
 
-/// The watcher looks every 50 ms and 5 idle minutes pass in half a second.
+/// The watcher looks every 50 ms and 5 idle minutes pass in 1.5 s. The idle
+/// limit must stay well above the 400 ms quiet period of the test office, or
+/// a loaded machine ends a temp before its Needs you item exists.
 const TICK: Duration = Duration::from_millis(50);
-const MINUTE: Duration = Duration::from_millis(100);
+const MINUTE: Duration = Duration::from_millis(300);
 const IDLE_MINUTES: u32 = 5;
-const IDLE_LIMIT: Duration = Duration::from_millis(500);
+const IDLE_LIMIT: Duration = MINUTE.saturating_mul(IDLE_MINUTES);
 
 /// The longest an end may take (spec SC-002).
 const END_LIMIT: Duration = Duration::from_secs(10);
@@ -212,7 +214,7 @@ impl Fixture {
         git(&repository, &["init", "--quiet", "--initial-branch=main"]);
         fs::write(repository.join("a.txt"), "a\n").expect("file");
         commit_all(&repository, "first");
-        // 1440 idle minutes last 144 s here, so only the tests about the idle
+        // 1440 idle minutes last 432 s here, so only the tests about the idle
         // limit see it; the other settings let a test create many temps.
         for (key, value) in [
             ("temp_idle_minutes", "1440"),

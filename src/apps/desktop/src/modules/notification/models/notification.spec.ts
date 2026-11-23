@@ -74,9 +74,7 @@ describe("notification rows", () => {
       event: "temp_ended",
       detail: "no output for 30 minutes",
     });
-    expect(announcementText(ended)).toBe(
-      "Ada ended: no output for 30 minutes",
-    );
+    expect(announcementText(ended)).toBe("Ada ended: no output for 30 minutes");
     expect(rowText(ended, false)).toBe(
       "Ada, ended: no output for 30 minutes, agent deleted",
     );
