@@ -6,13 +6,18 @@ use std::sync::{Arc, Mutex, PoisonError};
 use access_application::common::interfaces::AgentCallStore;
 use agent_application::commands::change_agent_status::ChangeAgentStatusHandler;
 use agent_application::commands::end_session::EndSessionHandler;
+use agent_application::common::action_journal::ActionJournal;
+use agent_application::common::actor_scope::ActorScope;
+use agent_application::common::models::AgentAction;
 use agent_domain::enums::StatusEvent;
 use agent_domain::value_objects::ExitResult;
 use agent_presentation::agent_status_event;
+use kernel::Actor;
 use terminal_application::common::interfaces::TerminalRuntime;
 use terminal_domain::events::TerminalEvent;
 use tokio::sync::broadcast::{self, error::RecvError};
 
+use super::sign_in_watch::SignInEnds;
 use super::terminal_events::AgentTerminalEvent;
 use crate::bootstrap::{ServerLog, StorageAlerts};
 use crate::server::EventHub;
@@ -43,6 +48,10 @@ pub struct AgentStatusBridge {
     /// child revokes its agent's credential before the session closes, so a
     /// restart can never meet a late revoke.
     pub calls: Arc<dyn AgentCallStore>,
+    /// The runs that the sign-in watch stopped (0019/FR-005).
+    pub sign_in_ends: SignInEnds,
+    /// Records the office's stop of a CLI at its sign-in screen.
+    pub journal: ActionJournal,
 }
 
 impl AgentStatusBridge {
@@ -71,6 +80,7 @@ impl AgentStatusBridge {
         // event is judged and applied.
         let _turn = self.order.lock().unwrap_or_else(PoisonError::into_inner);
         if self.runtime.current_run(item.agent_id) != Some(item.run) {
+            self.sign_in_ends.forget(item.agent_id, item.run);
             return;
         }
         if item.event == TerminalEvent::OutputStorageFailed {
@@ -80,12 +90,19 @@ impl AgentStatusBridge {
             ));
             return;
         }
-        let Some((event, detail)) = status_event(item.event) else {
+        let Some((mut event, mut detail)) = status_event(item.event) else {
             return;
         };
         if let TerminalEvent::Exited { exit_code } = item.event {
             self.calls.revoke_agent(item.agent_id);
-            self.end_session(item.agent_id, exit_code);
+            match self.sign_in_ends.take(item.agent_id, item.run) {
+                Some(reason) => {
+                    self.end_not_signed_in(item.agent_id, &reason);
+                    event = StatusEvent::ExitedWithFailure;
+                    detail = Some(reason);
+                }
+                None => self.end_session(item.agent_id, &ExitResult::Code(exit_code)),
+            }
         }
         match self.change_status.handle(item.agent_id, event) {
             Ok(Some(agent)) => self.hub.publish(&agent_status_event(
@@ -102,10 +119,20 @@ impl AgentStatusBridge {
 impl AgentStatusBridge {
     /// Closes the session that the child's exit ends. A stop that already
     /// closed it leaves nothing to do.
-    fn end_session(&self, agent_id: kernel::AgentId, exit_code: u32) {
+    fn end_session(&self, agent_id: kernel::AgentId, result: &ExitResult) {
+        if let Err(error) = self.end_session.handle(agent_id, result) {
+            self.alerts.report_disk_failure(&error.to_string());
+        }
+    }
+
+    /// Ends the session of a CLI that the sign-in watch stopped, and
+    /// records the stop with the office as actor and the reason (0019/FR-005).
+    fn end_not_signed_in(&self, agent_id: kernel::AgentId, reason: &str) {
+        self.end_session(agent_id, &ExitResult::NotSignedIn(reason.to_owned()));
+        let _office = ActorScope::enter(Actor::Office);
         if let Err(error) = self
-            .end_session
-            .handle(agent_id, &ExitResult::Code(exit_code))
+            .journal
+            .record(agent_id, AgentAction::Stop, Some(reason))
         {
             self.alerts.report_disk_failure(&error.to_string());
         }

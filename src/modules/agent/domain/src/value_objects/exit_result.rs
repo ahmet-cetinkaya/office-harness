@@ -9,6 +9,7 @@ const SIGNAL: &str = "signal";
 const INTERRUPTED: &str = "interrupted";
 const LOST: &str = "lost";
 const SPAWN_ERROR_PREFIX: &str = "spawn-error: ";
+const NOT_SIGNED_IN_PREFIX: &str = "not-signed-in: ";
 
 /// How a session ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +24,9 @@ pub enum ExitResult {
     /// The session was still open when the server stopped without a clean
     /// stop; its CLI may still run (spec 0013 FR-008).
     Lost,
+    /// The office ended the CLI at its sign-in screen; the text is the
+    /// reason (spec 0019 FR-005).
+    NotSignedIn(String),
 }
 
 impl fmt::Display for ExitResult {
@@ -33,6 +37,7 @@ impl fmt::Display for ExitResult {
             Self::SpawnError(text) => write!(formatter, "{SPAWN_ERROR_PREFIX}{text}"),
             Self::Interrupted => formatter.write_str(INTERRUPTED),
             Self::Lost => formatter.write_str(LOST),
+            Self::NotSignedIn(reason) => write!(formatter, "{NOT_SIGNED_IN_PREFIX}{reason}"),
         }
     }
 }
@@ -52,6 +57,9 @@ impl FromStr for ExitResult {
         }
         if let Some(reason) = text.strip_prefix(SPAWN_ERROR_PREFIX) {
             return Ok(Self::SpawnError(reason.to_owned()));
+        }
+        if let Some(reason) = text.strip_prefix(NOT_SIGNED_IN_PREFIX) {
+            return Ok(Self::NotSignedIn(reason.to_owned()));
         }
         text.parse()
             .map(Self::Code)

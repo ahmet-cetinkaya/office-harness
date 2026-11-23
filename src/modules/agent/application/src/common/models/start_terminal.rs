@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use agent_domain::value_objects::SessionId;
 use kernel::AgentId;
 
+use super::SignIn;
+
 /// What the terminal host needs to find the program and its environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrepareLaunch {
@@ -43,4 +45,7 @@ pub struct StartTerminal {
     pub environment: Vec<(String, String)>,
     /// Typed into the terminal after its first output, as a paste.
     pub typed_input: Option<String>,
+    /// The CLI's sign-in knowledge: the first seconds are watched for its
+    /// sign-in screen words, if it has any (0019/FR-005).
+    pub sign_in: SignIn,
 }

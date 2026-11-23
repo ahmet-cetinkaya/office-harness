@@ -11,4 +11,7 @@ pub mod lookup;
 pub mod models;
 pub mod session_ender;
 pub mod session_launcher;
+pub mod sign_in_check;
+pub mod sign_in_checker;
+pub mod sign_in_scope;
 pub mod worktree_link;
