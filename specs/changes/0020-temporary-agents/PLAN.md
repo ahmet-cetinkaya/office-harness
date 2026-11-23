@@ -154,5 +154,6 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 ## Result
 
 - **Delivered:** T1 15e5bd2, T2 a49099e, T4 992c49c, T3 31b6449, T5 5960859 and the qa commit; `main` merged at fa83dff in c05eb62.
-- **Evidence:** `qa-report.md` gives every FR, PB, and SC a PASS with the test that proves it; the hands-on run with a real `claude` temp stays BLOCKED.
+- **Evidence:** `qa-report.md` gives every FR, PB, and SC a PASS with the test that proves it, except FR-004 and SC-005, which are PARTIAL because their tests run the idle limit on a shortened minute; the hands-on run with a real `claude` temp stays BLOCKED.
+- **Follow-up:** an idle end claims the temp outside the status order, so a new task that holds the order at that moment can see its fresh session stopped (a window of milliseconds). Routing idle ends through `temp.end_check` closes it (final review r3, N1).
 - **Deviations:** the dismiss record, the `Refused` kind of the hierarchy creator error, the creating guard of the watcher, and one settings store in the create handler after the 0021 merge (`qa-report.md`, Deviations from the plan).
