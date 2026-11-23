@@ -1,6 +1,6 @@
 # Requirements checklist: 0026-agent-secrets
 
-Spec: `specs/changes/0026-agent-secrets/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker; 3 proposals in Clarifications wait for the owner's confirmation with the spec.
+Spec: `specs/changes/0026-agent-secrets/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Revised for spec review r1 (M1, L1 to L3); the three owner proposals are accepted.
 
 ## Content quality
 
