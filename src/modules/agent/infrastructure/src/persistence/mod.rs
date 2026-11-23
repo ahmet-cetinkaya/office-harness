@@ -11,6 +11,7 @@ pub use migrations::{LEDGER_TABLE, PRE_MIGRATION_CHECKS, PreMigrationCheck, SCRI
 pub use persistence_error::PersistenceError;
 pub use repositories::{
     AdditionsRepository, AgentRepository, FinishedTempRepository, MachineRepository,
-    ProjectRepository, SessionProcessRepository, SessionRepository, SettingsRepository,
+    MaintenanceRepository, ProjectRepository, SessionProcessRepository, SessionRepository,
+    SettingsRepository, WriteLogCheckpoint,
 };
 pub use shared_connection::SharedConnection;

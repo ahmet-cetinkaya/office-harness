@@ -879,32 +879,130 @@ fn a_dismiss_removes_one_entry_and_nothing_else() {
     assert_eq!(office.finished_temps.list().expect("list"), [kept]);
 }
 
+fn stored_rows_of(folder: &TempDir, session_id: SessionId) -> i64 {
+    Connection::open(database_in(folder))
+        .expect("open database")
+        .query_row(
+            "SELECT count(*) FROM agent_session_processes WHERE session_id = ?1",
+            [session_id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("count")
+}
+
 #[test]
-fn the_end_of_a_running_session_ends_its_rows_in_the_same_step() {
+fn every_normal_end_of_a_running_session_deletes_its_rows_in_the_same_step() {
+    let normal_ends = [
+        ExitResult::Signal,
+        ExitResult::Code(1),
+        ExitResult::SpawnError("no such file".to_owned()),
+        ExitResult::NotSignedIn("sign in".to_owned()),
+        ExitResult::Interrupted,
+    ];
+    for result in normal_ends {
+        let folder = TempDir::new().expect("folder");
+        let (office, agent, session) = office_with_running_session(&folder);
+        for (pid, kind) in [(7, ProcessKind::Cli), (8, ProcessKind::Helper)] {
+            office
+                .processes
+                .insert_open(session.id, kind, &process_of(pid, 100, "x"))
+                .expect("insert");
+        }
+
+        office
+            .sessions
+            .end_running(agent.id, &result, Timestamp::from_unix_millis(20))
+            .expect("end");
+
+        assert_eq!(stored_rows_of(&folder, session.id), 0, "{result}");
+        assert_eq!(
+            office.processes.open_for_lost_sessions().expect("lost"),
+            Vec::new()
+        );
+    }
+}
+
+#[test]
+fn a_session_end_deletes_the_rows_of_its_own_session_only() {
     let folder = TempDir::new().expect("folder");
     let (office, agent, session) = office_with_running_session(&folder);
-    office
-        .processes
-        .insert_open(session.id, ProcessKind::Cli, &process_of(7, 100, "x"))
-        .expect("insert");
+    let other_agent = agent_named(&office, "Ben", None);
+    office.agents.insert(&other_agent).expect("agent");
+    let other = session_of(&other_agent, 11, OfficeAdditions::default());
+    office.sessions.insert(&other).expect("session");
+    for id in [session.id, other.id] {
+        office
+            .processes
+            .insert_open(id, ProcessKind::Cli, &process_of(7, 100, "x"))
+            .expect("insert");
+    }
 
     office
         .sessions
         .end_running(
             agent.id,
-            &ExitResult::Interrupted,
+            &ExitResult::Signal,
             Timestamp::from_unix_millis(20),
         )
         .expect("end");
 
-    assert_eq!(
-        office.processes.open_for_session(session.id).expect("rows"),
-        Vec::new()
-    );
-    assert_eq!(
-        office.processes.open_for_lost_sessions().expect("lost"),
-        Vec::new()
-    );
+    assert_eq!(stored_rows_of(&folder, session.id), 0);
+    assert_eq!(stored_rows_of(&folder, other.id), 1);
+}
+
+#[test]
+fn a_new_session_deletes_the_ended_rows_of_earlier_lost_sessions_and_keeps_open_ones() {
+    let folder = TempDir::new().expect("folder");
+    let (office, agent, lost) = office_with_running_session(&folder);
+    for pid in [7, 8] {
+        office
+            .processes
+            .insert_open(lost.id, ProcessKind::Helper, &process_of(pid, 100, "x"))
+            .expect("insert");
+    }
+    let swept = office.processes.open_for_session(lost.id).expect("rows")[0].id;
+    office
+        .processes
+        .end_one(swept, SweepOutcome::Ended)
+        .expect("end one");
+    office
+        .sessions
+        .mark_running_as_interrupted(Timestamp::from_unix_millis(20))
+        .expect("lose");
+
+    office
+        .sessions
+        .insert(&session_of(&agent, 30, OfficeAdditions::default()))
+        .expect("new session");
+
+    let kept = office.processes.open_for_lost_sessions().expect("lost");
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].process.pid, 8);
+    assert_eq!(stored_rows_of(&folder, lost.id), 1);
+}
+
+#[test]
+fn a_new_session_leaves_the_ended_rows_of_another_agents_lost_session() {
+    let folder = TempDir::new().expect("folder");
+    let (office, _agent, lost) = office_with_running_session(&folder);
+    office
+        .processes
+        .insert_open(lost.id, ProcessKind::Cli, &process_of(7, 100, "x"))
+        .expect("insert");
+    office.processes.end_for_session(lost.id).expect("end");
+    office
+        .sessions
+        .mark_running_as_interrupted(Timestamp::from_unix_millis(20))
+        .expect("lose");
+    let other_agent = agent_named(&office, "Ben", None);
+    office.agents.insert(&other_agent).expect("agent");
+
+    office
+        .sessions
+        .insert(&session_of(&other_agent, 30, OfficeAdditions::default()))
+        .expect("new session");
+
+    assert_eq!(stored_rows_of(&folder, lost.id), 1);
 }
 
 #[test]

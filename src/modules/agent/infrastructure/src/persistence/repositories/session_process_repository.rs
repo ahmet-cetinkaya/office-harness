@@ -4,6 +4,7 @@ use agent_application::common::models::{
     ProcessKind, SessionProcess, StoredProcess, SweepOutcome, SweepSummary,
 };
 use agent_domain::value_objects::{ExitResult, SessionId};
+use kernel::AgentId;
 use rusqlite::types::Type;
 use rusqlite::{Connection, Row, params};
 
@@ -14,6 +15,13 @@ const SELECT_PROCESS: &str = "SELECT id, session_id, pid, started_at, command_ha
 
 const KIND_CLI: &str = "cli";
 const KIND_HELPER: &str = "helper";
+
+/// A session that started after `earlier` for the same agent, in the order
+/// that `SessionRepository::latest_for_agent` uses.
+const LATER_SESSION_OF_SAME_AGENT: &str = "SELECT 1 FROM agent_sessions later \
+     WHERE later.agent_id = earlier.agent_id \
+     AND (later.started_at > earlier.started_at \
+          OR (later.started_at = earlier.started_at AND later.rowid > earlier.rowid))";
 
 /// The stored identities of the processes of sessions (0017).
 pub struct SessionProcessRepository {
@@ -206,6 +214,32 @@ impl SessionProcessRepository {
         })
     }
 
+    /// Deletes every identity that the rules of 0023 no longer keep: all
+    /// identities of a session that did not end as `lost`, and the ended
+    /// identities of a `lost` session that is not the last session of its
+    /// agent. Open identities of a `lost` session stay for the sweep. One
+    /// statement, so a stop in the middle leaves the rest for the next start.
+    /// Returns how many rows it deleted.
+    ///
+    /// # Errors
+    /// A storage failure.
+    pub fn delete_unkept(&self) -> Result<usize, PersistenceError> {
+        self.connection.with(|connection| {
+            Ok(connection.execute(
+                &format!(
+                    "DELETE FROM agent_session_processes WHERE session_id IN \
+                     (SELECT id FROM agent_sessions \
+                      WHERE ended_at IS NOT NULL AND COALESCE(exit_result, '') <> ?1) \
+                     OR (state = 'ended' AND session_id IN \
+                         (SELECT earlier.id FROM agent_sessions earlier \
+                          WHERE earlier.exit_result = ?1 AND EXISTS \
+                              ({LATER_SESSION_OF_SAME_AGENT})))"
+                ),
+                [ExitResult::Lost.to_string()],
+            )?)
+        })
+    }
+
     /// Marks the session as having left helpers unstored (the helper limit).
     ///
     /// # Errors
@@ -221,9 +255,33 @@ impl SessionProcessRepository {
     }
 }
 
-/// Marks every open row of the session as ended. A session end calls it in
-/// the same transaction that ends the session row (0017/FR-008).
-pub(super) fn end_open_rows(connection: &Connection, session_id: &str) -> rusqlite::Result<usize> {
+/// Deletes every row of the session. A session end calls it in the same
+/// transaction that ends the session row, so no command line of the session
+/// stays (0017/FR-008 as changed by 0023).
+pub(super) fn delete_session_rows(
+    connection: &Connection,
+    session_id: &str,
+) -> rusqlite::Result<usize> {
+    connection.execute(
+        "DELETE FROM agent_session_processes WHERE session_id = ?1",
+        [session_id],
+    )
+}
+
+/// Deletes the ended rows of the agent's earlier `lost` sessions. Their open
+/// rows stay for the next sweep (0023/FR-001, FR-003).
+pub(super) fn delete_ended_rows_of_lost_sessions(
+    connection: &Connection,
+    agent_id: AgentId,
+) -> rusqlite::Result<usize> {
+    connection.execute(
+        "DELETE FROM agent_session_processes WHERE state = 'ended' AND session_id IN \
+         (SELECT id FROM agent_sessions WHERE agent_id = ?1 AND exit_result = ?2)",
+        params![agent_id.to_string(), ExitResult::Lost.to_string()],
+    )
+}
+
+fn end_open_rows(connection: &Connection, session_id: &str) -> rusqlite::Result<usize> {
     connection.execute(
         "UPDATE agent_session_processes SET state = 'ended' \
          WHERE session_id = ?1 AND state = 'open'",
