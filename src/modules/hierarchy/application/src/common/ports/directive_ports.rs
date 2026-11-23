@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use kernel::{AgentId, Timestamp};
+use kernel::{Actor, AgentId, Timestamp};
 
 /// Whether the office may type a directive into a target now (0012/FR-002).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +45,13 @@ pub trait DirectiveTarget: Send + Sync {
     #[must_use]
     fn name_of(&self, agent_id: AgentId) -> Option<String>;
 
+    /// Whether the agent is a temporary agent (0020), so a report it sends
+    /// outlives its removal in the queue. A host with no temps answers false.
+    #[must_use]
+    fn is_temp(&self, _agent_id: AgentId) -> bool {
+        false
+    }
+
     /// Whether the office may type into the target now (0012/FR-002).
     ///
     /// # Errors
@@ -79,6 +86,10 @@ pub trait DirectiveJournal: Send + Sync {
     /// was (FR-011). The bridge stores the full text and its hash as it does
     /// for the 0001 actions, and a refusal keeps the rejected text as sent.
     fn record(&self, sender: AgentId, target: AgentId, text: &str, failure: Option<&str>);
+
+    /// Records the objective of a temporary agent once, in the temp's own
+    /// record, with the creator as actor (0020/FR-001).
+    fn record_objective(&self, creator: Actor, temp: AgentId);
 }
 
 /// Tells the office that a target received a directive: the text is in its

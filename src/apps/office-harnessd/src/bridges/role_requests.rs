@@ -117,6 +117,7 @@ fn seed_of(seed: &RoleSeed) -> Result<AgentSeed, String> {
         })
         .transpose()?;
     Ok(AgentSeed {
+        temp: None,
         name: seed.name.clone(),
         command: seed.command.clone(),
         working_folder: seed

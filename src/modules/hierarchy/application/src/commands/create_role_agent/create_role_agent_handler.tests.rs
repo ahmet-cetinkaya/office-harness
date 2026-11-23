@@ -183,6 +183,7 @@ fn lead_with_team() -> TeamWithLead {
 
 fn seed(name: &str) -> AgentSeed {
     AgentSeed {
+        temp: None,
         name: name.to_owned(),
         command: "claude".to_owned(),
         working_folder: None,
@@ -798,6 +799,7 @@ fn the_seed_round_trips_every_field_into_the_created_agent() {
         startup_prompt: Some("begin".to_owned()),
     };
     let seed = AgentSeed {
+        temp: None,
         name: "Ana".to_owned(),
         command: "claude --danger".to_owned(),
         working_folder: Some(std::path::PathBuf::from("/tmp/office")),
