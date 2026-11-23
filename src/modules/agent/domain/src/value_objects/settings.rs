@@ -17,6 +17,13 @@ const DEFAULT_LIMIT_LIFECYCLE_PER_AGENT: u32 = 10;
 const DEFAULT_LIMIT_REPORTS_PER_AGENT: u32 = 5;
 /// Idle sleep is off until the person turns it on (0018 D1).
 const DEFAULT_IDLE_SLEEP_MINUTES: u32 = 0;
+/// A new own worktree shares the installed packages unless the person turns
+/// it off (0021 D10).
+const DEFAULT_WORKTREE_DEPENDENCY_LINKS: bool = true;
+
+/// The stored texts of an on or off setting (0021 D10).
+const SWITCH_ON: &str = "on";
+const SWITCH_OFF: &str = "off";
 
 /// The most temp agents the office holds at once, and how long a temp may
 /// stay quiet before the office ends it (0020 D2).
@@ -124,6 +131,7 @@ pub struct Settings {
     pub idle_sleep_minutes: u32,
     pub temp_cap: u32,
     pub temp_idle_minutes: u32,
+    pub worktree_dependency_links: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,10 +149,11 @@ pub enum SettingKey {
     IdleSleepMinutes,
     TempCap,
     TempIdleMinutes,
+    WorktreeDependencyLinks,
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::QuietPeriodMs,
         Self::OutputLineLimit,
         Self::FocusShortcut,
@@ -158,6 +167,7 @@ impl SettingKey {
         Self::IdleSleepMinutes,
         Self::TempCap,
         Self::TempIdleMinutes,
+        Self::WorktreeDependencyLinks,
     ];
 
     #[must_use]
@@ -176,6 +186,7 @@ impl SettingKey {
             Self::IdleSleepMinutes => "idle_sleep_minutes",
             Self::TempCap => "temp_cap",
             Self::TempIdleMinutes => "temp_idle_minutes",
+            Self::WorktreeDependencyLinks => "worktree_dependency_links",
         }
     }
 
@@ -205,6 +216,7 @@ impl Default for Settings {
             idle_sleep_minutes: DEFAULT_IDLE_SLEEP_MINUTES,
             temp_cap: DEFAULT_TEMP_CAP,
             temp_idle_minutes: DEFAULT_TEMP_IDLE_MINUTES,
+            worktree_dependency_links: DEFAULT_WORKTREE_DEPENDENCY_LINKS,
         }
     }
 }
@@ -228,13 +240,17 @@ impl Settings {
             SettingKey::IdleSleepMinutes => self.idle_sleep_minutes.to_string(),
             SettingKey::TempCap => self.temp_cap.to_string(),
             SettingKey::TempIdleMinutes => self.temp_idle_minutes.to_string(),
+            SettingKey::WorktreeDependencyLinks => {
+                switch_text(self.worktree_dependency_links).to_owned()
+            }
         }
     }
 
     /// Sets one setting from its stored text.
     ///
     /// # Errors
-    /// `InvalidNumber`, `NotPositive`, `InvalidLimit`, `InvalidIdleSleep`, `InvalidWholeNumber`, or `Empty`, naming the setting;
+    /// `InvalidNumber`, `NotPositive`, `InvalidLimit`, `InvalidIdleSleep`, `InvalidWholeNumber`,
+    /// `InvalidSwitch`, or `Empty`, naming the setting;
     /// `InvalidLastView`, `TooLarge`, or `ReservedShortcut` for the 0003 keys.
     pub fn set_from_text(&mut self, key: SettingKey, text: &str) -> Result<(), AgentError> {
         match key {
@@ -271,6 +287,9 @@ impl Settings {
             SettingKey::TempIdleMinutes => {
                 self.temp_idle_minutes =
                     parse_whole_number(key, text, TEMP_IDLE_MINUTES_MIN, TEMP_IDLE_MINUTES_MAX)?;
+            }
+            SettingKey::WorktreeDependencyLinks => {
+                self.worktree_dependency_links = parse_switch(key, text)?;
             }
         }
         Ok(())
@@ -340,6 +359,21 @@ fn parse_whole_number(key: SettingKey, text: &str, min: u32, max: u32) -> Result
             min,
             max,
         })
+}
+
+const fn switch_text(is_on: bool) -> &'static str {
+    if is_on { SWITCH_ON } else { SWITCH_OFF }
+}
+
+/// Exactly `on` or `off`.
+fn parse_switch(key: SettingKey, text: &str) -> Result<bool, AgentError> {
+    match text {
+        SWITCH_ON => Ok(true),
+        SWITCH_OFF => Ok(false),
+        _ => Err(AgentError::InvalidSwitch {
+            field: key.as_str(),
+        }),
+    }
 }
 
 fn parse_shortcut(key: SettingKey, text: &str) -> Result<String, AgentError> {

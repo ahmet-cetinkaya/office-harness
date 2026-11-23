@@ -88,6 +88,7 @@ pub fn worktree_info_json(info: Option<&WorktreeInfo>) -> Value {
                 "branches": info.branches,
                 "branch_name": info.branch_name,
                 "subfolder": info.subfolder,
+                "shares_dependencies": info.shares_dependencies,
             })
         },
     )

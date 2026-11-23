@@ -953,6 +953,7 @@ impl WorktreeManager for FakeWorktrees {
             base_is_branch: true,
             branches: vec!["main".to_owned()],
             branch_name: format!("office-harness/{}", agent_name.to_lowercase()),
+            shares_dependencies: false,
         }))
     }
 

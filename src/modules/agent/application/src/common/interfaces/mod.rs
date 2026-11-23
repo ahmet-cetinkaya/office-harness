@@ -31,5 +31,6 @@ pub use sleep_gate::SleepGate;
 pub use status_command_runner::StatusCommandRunner;
 pub use terminal_host::TerminalHost;
 pub use worktree_manager::{
-    CreatedWorktree, WorktreeCreate, WorktreeError, WorktreeInfo, WorktreeManager, WorktreeStatus,
+    CreatedWorktree, DEPENDENCY_LINKS_SUPPORTED, WorktreeCreate, WorktreeError, WorktreeInfo,
+    WorktreeManager, WorktreeStatus,
 };

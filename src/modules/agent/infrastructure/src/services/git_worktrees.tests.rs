@@ -113,6 +113,7 @@ fn create(fixture: &Fixture, folder: &Path, name: &str) -> Result<CreatedWorktre
         agent_name: name,
         base: None,
         branch_name: None,
+        link_dependencies: false,
     })
 }
 
@@ -228,6 +229,7 @@ fn a_taken_branch_name_moves_to_the_next_free_one() {
             agent_name: "dev",
             base: None,
             branch_name: Some("office-harness/dev"),
+            link_dependencies: false,
         })
         .expect_err("taken");
     assert_eq!(
@@ -251,6 +253,7 @@ fn a_base_outside_the_listed_branches_is_refused_before_git_runs() {
                 agent_name: "x",
                 base: Some(base),
                 branch_name: None,
+                link_dependencies: false,
             })
             .expect_err("refused");
         assert_eq!(
@@ -272,6 +275,7 @@ fn a_branch_name_without_the_prefix_is_refused() {
             agent_name: "x",
             base: None,
             branch_name: Some("main2"),
+            link_dependencies: false,
         })
         .expect_err("refused");
     assert_eq!(error, WorktreeError::Invalid(BRANCH_NAME_SHAPE.to_owned()));
@@ -337,6 +341,7 @@ fn the_data_folder_inside_the_repository_is_refused() {
             agent_name: "x",
             base: None,
             branch_name: None,
+            link_dependencies: false,
         })
         .expect_err("refused");
     assert_eq!(error, WorktreeError::Invalid(DATA_FOLDER_INSIDE.to_owned()));
@@ -366,6 +371,7 @@ fn the_data_folder_inside_a_linked_worktree_is_refused() {
             agent_name: "x",
             base: None,
             branch_name: None,
+            link_dependencies: false,
         })
         .expect_err("refused");
     assert_eq!(error, WorktreeError::Invalid(DATA_FOLDER_INSIDE.to_owned()));
@@ -398,6 +404,7 @@ fn an_unwritable_worktrees_folder_fails_the_create_and_leaves_nothing() {
         agent_name: "x",
         base: None,
         branch_name: None,
+        link_dependencies: false,
     });
     fs::set_permissions(parent, fs::Permissions::from_mode(0o755)).expect("writable");
     assert!(matches!(error, Err(WorktreeError::Failed(_))), "{error:?}");
@@ -433,6 +440,7 @@ fn a_checkout_that_times_out_leaves_nothing() {
             agent_name: "x",
             base: None,
             branch_name: None,
+            link_dependencies: false,
         })
         .expect_err("timed out");
     assert_eq!(
@@ -571,6 +579,7 @@ fn own_commits_count_what_the_base_lacks_and_a_missing_base_keeps_the_branch() {
             agent_name: "x",
             base: Some("topic"),
             branch_name: None,
+            link_dependencies: false,
         })
         .expect("created");
     commit_all(&fixture.home, &made.worktree.folder, "own 1");
@@ -781,6 +790,7 @@ fn a_branch_named_like_a_commit_id_is_refused_as_base() {
             agent_name: "x",
             base: Some(&hex),
             branch_name: None,
+            link_dependencies: false,
         })
         .expect_err("refused");
     assert!(matches!(error, WorktreeError::Invalid(_)), "{error:?}");
@@ -825,6 +835,7 @@ fn a_subfolder_that_is_a_link_out_of_the_worktree_in_the_base_is_refused() {
             agent_name: "x",
             base: Some("evil"),
             branch_name: None,
+            link_dependencies: false,
         })
         .expect_err("refused");
     assert_eq!(
@@ -963,6 +974,7 @@ fn a_branch_another_create_took_since_the_info_is_a_conflict() {
         agent_name: "dev",
         base: None,
         branch_name: None,
+        link_dependencies: false,
     };
 
     let error = fixture
@@ -1093,3 +1105,6 @@ fn a_plain_remove_of_a_worktree_with_a_submodule_is_refused_before_its_filter_ru
     );
     assert!(marker.exists());
 }
+
+#[path = "git_worktrees_dependencies.tests.rs"]
+mod dependencies;
