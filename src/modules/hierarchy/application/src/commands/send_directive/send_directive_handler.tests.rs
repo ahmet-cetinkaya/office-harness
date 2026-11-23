@@ -98,6 +98,7 @@ struct ToggledTargets {
     stopped: Mutex<Option<AgentId>>,
     names: Vec<(AgentId, &'static str)>,
     readiness: Mutex<Readiness>,
+    asleep: Mutex<Option<AgentId>>,
 }
 
 impl ToggledTargets {
@@ -114,6 +115,7 @@ impl ToggledTargets {
             stopped: Mutex::new(None),
             names,
             readiness: Mutex::new(Readiness::Ready),
+            asleep: Mutex::new(None),
         }
     }
 
@@ -122,6 +124,7 @@ impl ToggledTargets {
             stopped: Mutex::new(Some(agent_id)),
             names,
             readiness: Mutex::new(Readiness::Ready),
+            asleep: Mutex::new(None),
         }
     }
 }
@@ -129,6 +132,10 @@ impl ToggledTargets {
 impl DirectiveTarget for ToggledTargets {
     fn is_running(&self, agent_id: AgentId) -> Result<bool, String> {
         Ok(*locked(&self.stopped) != Some(agent_id))
+    }
+
+    fn is_asleep(&self, agent_id: AgentId) -> bool {
+        *locked(&self.asleep) == Some(agent_id)
     }
 
     fn name_of(&self, agent_id: AgentId) -> Option<String> {
@@ -496,6 +503,34 @@ fn a_stopped_target_is_refused_by_name_before_any_write() {
 }
 
 #[test]
+fn an_asleep_target_is_refused_as_asleep_and_journaled() {
+    let family = family();
+    let targets = ToggledTargets::with_stopped_and_names(
+        family.member,
+        vec![(family.member, "docker-watcher")],
+    );
+    *locked(&targets.asleep) = Some(family.member);
+    let harness = harness_for(&family, targets, RecordingWriter::new(None));
+
+    let error = harness
+        .handler
+        .handle(family.lead, family.member, "please deploy")
+        .expect_err("an asleep target cannot take text");
+
+    assert_eq!(
+        error,
+        HierarchyApplicationError::Invalid(HierarchyError::Asleep {
+            name: "docker-watcher".to_owned()
+        })
+    );
+    assert!(harness.writer.lines().is_empty());
+    assert_eq!(
+        harness.failures(),
+        ["invalid: the agent is not running, it is asleep: docker-watcher"]
+    );
+}
+
+#[test]
 fn a_stopped_unknown_target_is_refused_by_id_before_any_write() {
     // The id only fails to resolve when the agent is gone from the office,
     // for example deleted between the snapshot and the lookup; the refusal
@@ -769,6 +804,30 @@ fn a_target_that_stopped_withdraws_every_waiting_directive() {
         [
             "withdrawn before typing: Member is no longer running",
             "withdrawn before typing: Member is no longer running",
+        ]
+    );
+}
+
+#[test]
+fn a_target_that_went_to_sleep_withdraws_every_waiting_directive_as_asleep() {
+    let family = family();
+    let harness = ready_harness(&family);
+    harness.set_readiness(Readiness::Busy);
+    send(&harness, &family, "first");
+    send(&harness, &family, "second");
+    assert_eq!(harness.handler.waiting_count(family.member), 2);
+
+    harness.set_readiness(Readiness::Gone);
+    *locked(&harness.targets.asleep) = Some(family.member);
+    harness.handler.deliver_waiting();
+
+    assert!(harness.writer.lines().is_empty());
+    assert_eq!(harness.handler.waiting_count(family.member), 0);
+    assert_eq!(
+        harness.failures(),
+        [
+            "withdrawn before typing: the agent is not running, it is asleep: Member",
+            "withdrawn before typing: the agent is not running, it is asleep: Member",
         ]
     );
 }

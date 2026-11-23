@@ -20,6 +20,20 @@ use crate::common::ports::{
     Readiness, ReportJournal,
 };
 
+/// Why a target that does not run refuses a directive or a report: asleep
+/// (0018), or plainly not running.
+pub(crate) fn not_running_error(
+    targets: &dyn DirectiveTarget,
+    target: AgentId,
+    name: String,
+) -> HierarchyError {
+    if targets.is_asleep(target) {
+        HierarchyError::Asleep { name }
+    } else {
+        HierarchyError::NotRunning { name }
+    }
+}
+
 /// The record text of a directive that was typed but got no Enter
 /// (0012/FR-003).
 pub(crate) const UNSUBMITTED: &str =
@@ -168,12 +182,12 @@ impl SendDirectiveHandler {
             .is_running(target)
             .map_err(HierarchyApplicationError::Storage)?
         {
-            let name = self.name_of(target);
+            let refusal = not_running_error(&*self.targets, target, self.name_of(target));
             return Err(self.journaled(
                 sender,
                 target,
                 text,
-                HierarchyApplicationError::Invalid(HierarchyError::NotRunning { name }),
+                HierarchyApplicationError::Invalid(refusal),
             ));
         }
         // Before the hold guard, so a full queue never takes a rate-window
@@ -409,6 +423,12 @@ impl SendDirectiveHandler {
         delivery
     }
 
+    /// How many directives and reports wait in the target's queue.
+    #[must_use]
+    pub fn waiting_count(&self, target: AgentId) -> usize {
+        self.queue.waiting_count(target)
+    }
+
     /// One delivery round for one target: withdraws what expired, then
     /// types, withdraws, or keeps the head.
     fn deliver_next(&self, target: AgentId) {
@@ -423,7 +443,12 @@ impl SendDirectiveHandler {
             Ok(Readiness::Ready) => self.deliver_head(&head),
             Ok(Readiness::Gone) => {
                 self.queue.release(target);
-                let reason = format!("{} is no longer running", self.name_of(target));
+                let name = self.name_of(target);
+                let reason = if self.targets.is_asleep(target) {
+                    HierarchyError::Asleep { name }.to_string()
+                } else {
+                    format!("{name} is no longer running")
+                };
                 for directive in self.queue.drain(target) {
                     self.withdrawn(&directive, &reason);
                 }
