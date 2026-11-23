@@ -53,7 +53,7 @@ export function eventText(event: string, detail: string | null = null): string {
     return detail === null ? base : `${base} by the limit "${detail}"`;
   }
   if (event === EVENT_RESUME_HOLD) {
-    const base = "was put on hold after its resume failed";
+    const base = "was put on hold";
     return detail === null ? base : `${base}: ${detail}`;
   }
   if (event === EVENT_REPORT) {

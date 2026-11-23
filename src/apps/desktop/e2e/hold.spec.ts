@@ -312,8 +312,7 @@ test.describe("agent hold", () => {
       window.__mockCore.attention("agent-ada", "resume_hold", "ended at once"),
     );
 
-    const expected =
-      "Ada was put on hold after its resume failed: ended at once";
+    const expected = "Ada was put on hold: ended at once";
 
     // The agent's terminal is open, yet the notification stays unread.
     await page.getByRole("button", { name: "Notifications, 1 unread" }).click();
