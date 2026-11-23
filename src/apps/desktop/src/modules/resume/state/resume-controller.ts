@@ -13,8 +13,12 @@ import {
 } from "../models/resume";
 import { createResumeService } from "../services/resume-service";
 
-/** Where the dialog is: reading the plan, choosing, or showing the results. */
-export type ResumePhase = "loading" | "failed" | "choosing" | "running";
+/**
+ * Where the dialog is: reading the plan, waiting for the sweep that must end
+ * first (0017), choosing, or showing the results.
+ */
+export type ResumePhase =
+  "loading" | "sweeping" | "failed" | "choosing" | "running";
 
 export interface ResumeSnapshot {
   phase: ResumePhase;
@@ -43,6 +47,8 @@ export const INITIAL_RESUME: ResumeSnapshot = {
 };
 
 const EVENT_RESUME_RESULT = "resume.result";
+const EVENT_SWEEP = "office.sweep";
+const EVENT_RESYNC = "client.resync";
 const REQUEST_FAILED = "The request failed.";
 
 /**
@@ -67,10 +73,49 @@ export function createResumeController(client: CoreClient) {
   }
 
   function handleEvent(event: ServerEvent): void {
+    if (event.type === EVENT_RESYNC) {
+      // The `done` event may have gone by while the connection was down.
+      if (snapshot.phase === "sweeping") void open();
+      return;
+    }
+    if (event.type === EVENT_SWEEP) {
+      // A plan that waits for the sweep loads once the sweep is done.
+      const isWaiting =
+        snapshot.phase === "sweeping" || snapshot.phase === "loading";
+      if (event.state === "done" && isWaiting) void open();
+      return;
+    }
     if (event.type !== EVENT_RESUME_RESULT) return;
     const result = readResult(event);
     if (result === null || !snapshot.sentIds.includes(result.agent_id)) return;
     publish({ results: { ...snapshot.results, [result.agent_id]: result } });
+  }
+
+  /**
+   * Reads `resume.plan` and checks every agent that is not on hold (FR-002).
+   * While the sweep runs the plan is empty, so the dialog waits for `done`.
+   */
+  async function open(): Promise<void> {
+    const openId = ++newestOpen;
+    publish({ ...INITIAL_RESUME });
+    try {
+      const { isSweeping, entries } = await service.plan();
+      if (openId !== newestOpen) return;
+      if (isSweeping) {
+        publish({ phase: "sweeping" });
+        return;
+      }
+      publish({
+        phase: "choosing",
+        entries,
+        checkedIds: entries
+          .filter((entry) => !entry.isHeld)
+          .map((entry) => entry.agent_id),
+      });
+    } catch (rejection) {
+      if (openId !== newestOpen) return;
+      publish({ phase: "failed", failure: describe(rejection) });
+    }
   }
 
   return {
@@ -95,25 +140,7 @@ export function createResumeController(client: CoreClient) {
       }
     },
 
-    /** Reads `resume.plan` and checks every agent that is not on hold (FR-002). */
-    open: async (): Promise<void> => {
-      const openId = ++newestOpen;
-      publish({ ...INITIAL_RESUME });
-      try {
-        const entries = await service.plan();
-        if (openId !== newestOpen) return;
-        publish({
-          phase: "choosing",
-          entries,
-          checkedIds: entries
-            .filter((entry) => !entry.isHeld)
-            .map((entry) => entry.agent_id),
-        });
-      } catch (rejection) {
-        if (openId !== newestOpen) return;
-        publish({ phase: "failed", failure: describe(rejection) });
-      }
-    },
+    open,
 
     toggle(agentId: string): void {
       const isChecked = snapshot.checkedIds.includes(agentId);

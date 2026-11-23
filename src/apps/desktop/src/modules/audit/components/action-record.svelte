@@ -4,6 +4,7 @@
   import {
     actionText,
     actorText,
+    detailText,
     resultText,
     type ActionEntry,
   } from "../models/action-entry";
@@ -30,8 +31,7 @@
           </time>
           {actionText(entry.action)} by {actorText(entry.actor)}. {resultText(
             entry.result,
-          )}{#if entry.detail !== null}
-            Reason: {entry.detail}{/if}
+          )}{#if detailText(entry) !== null}. {detailText(entry)}{/if}
         </li>
       {/each}
     </ol>

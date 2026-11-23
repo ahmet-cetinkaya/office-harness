@@ -44,6 +44,11 @@ vt100 = "=0.18.1"
 base64 = "0.22"
 # Safe signal and account wrappers; the version matches the one portable-pty uses.
 nix = { version = "0.28", default-features = false }
+# Reads the process list, parents, start times, and command lines for the 0017
+# orphan sweep; reading only, with no default features (plan D1).
+sysinfo = { version = "=0.40.1", default-features = false, features = ["system"] }
+# The pidfd system calls that nix 0.28 has no wrapper for (0017 plan D1).
+libc = "0.2"
 tauri = { version = "=2.12.5", features = [] }
 tauri-build = "=2.7.4"
 # OS notifications for the 0003 panel (research R7, plan D7).

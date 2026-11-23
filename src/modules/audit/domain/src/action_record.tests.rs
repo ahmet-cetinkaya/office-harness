@@ -32,13 +32,27 @@ fn hold_and_release_have_their_wire_names() {
     assert_eq!(ActionKind::Release.as_str(), "release");
     assert_eq!("hold".parse::<ActionKind>(), Ok(ActionKind::Hold));
     assert_eq!("release".parse::<ActionKind>(), Ok(ActionKind::Release));
-    assert_eq!(ActionKind::ALL.len(), 16);
+    assert_eq!(ActionKind::ALL.len(), 18);
 }
 
 #[test]
 fn the_task_text_kind_has_its_wire_name() {
     assert_eq!(ActionKind::TaskText.as_str(), "task_text");
     assert_eq!("task_text".parse::<ActionKind>(), Ok(ActionKind::TaskText));
+    assert_eq!(ActionKind::HelperLimit.as_str(), "helper_limit");
+    assert_eq!(
+        "helper_limit".parse::<ActionKind>(),
+        Ok(ActionKind::HelperLimit)
+    );
+}
+
+#[test]
+fn the_end_leftover_kind_has_its_wire_name() {
+    assert_eq!(ActionKind::EndLeftover.as_str(), "end_leftover");
+    assert_eq!(
+        "end_leftover".parse::<ActionKind>(),
+        Ok(ActionKind::EndLeftover)
+    );
 }
 
 #[test]

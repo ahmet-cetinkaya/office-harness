@@ -33,6 +33,7 @@ use crate::bridges::{
     NeedsYouBridge, StatusOrder, StoppingFlag, SystemClock, TaskOrder, TerminalEvents,
     take_recorded_events,
 };
+use crate::sweep::SweepGate;
 
 /// The requests that change an agent's status or its terminal. They run one
 /// at a time, and apart from the status bridge, so that a delete never
@@ -69,7 +70,7 @@ const STARTING_REQUESTS: [&str; 5] = [
 /// The start request that names a session instead of an agent.
 const CONTINUE_REQUEST: &str = "session.continue";
 
-const STOPPING_MESSAGE: &str = "the server is stopping and starts no agent";
+pub(super) const STOPPING_MESSAGE: &str = "the server is stopping and starts no agent";
 
 /// The requests whose answers carry agent rows; `project.*`, `session.*`
 /// and `settings.*` answers carry other ids and get no place fields.
@@ -92,6 +93,8 @@ pub struct AgentGateway {
     hierarchy: Arc<TreeQuery>,
     holds: HoldGateway,
     needs_you: NeedsYouBridge,
+    /// The sweep of 0017 that the starting requests wait for.
+    sweep_gate: SweepGate,
     /// Runs the sign-in check of a start before the status order (0019).
     sign_in: Option<SessionLauncher>,
 }
@@ -129,8 +132,17 @@ impl AgentGateway {
             hierarchy,
             holds,
             needs_you,
+            sweep_gate: SweepGate::default(),
             sign_in: None,
         }
+    }
+
+    /// Makes the requests that start a child wait until the sweep of 0017 is
+    /// over (FR-007).
+    #[must_use]
+    pub fn with_sweep_gate(mut self, sweep_gate: SweepGate) -> Self {
+        self.sweep_gate = sweep_gate;
+        self
     }
 
     /// Runs each start's sign-in check before the start takes its turn in
@@ -153,6 +165,12 @@ impl AgentGateway {
 
     pub async fn handle(&self, request: Request) -> Response {
         let id = request.id;
+        // Before the status order: a waiting start must not hold it.
+        if STARTING_REQUESTS.contains(&request.kind.as_str())
+            && self.sweep_gate.wait_until_done().await.is_err()
+        {
+            return Response::failure(id, ErrorCode::Refused, STOPPING_MESSAGE);
+        }
         let gateway = self.clone();
         spawn_blocking(move || gateway.run(&request))
             .await

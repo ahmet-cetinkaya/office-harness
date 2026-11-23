@@ -7,7 +7,7 @@ use agent_application::common::interfaces::Clock;
 use agent_domain::entities::Machine;
 use agent_infrastructure::persistence::{
     AgentRepository, LEDGER_TABLE, MachineRepository, PRE_MIGRATION_CHECKS, ProjectRepository,
-    SCRIPTS, SessionRepository, SettingsRepository, SharedConnection,
+    SCRIPTS, SessionProcessRepository, SessionRepository, SettingsRepository, SharedConnection,
 };
 use audit_infrastructure::persistence::{
     LEDGER_TABLE as AUDIT_LEDGER_TABLE, SCRIPTS as AUDIT_SCRIPTS,
@@ -31,6 +31,7 @@ use crate::bridges::{
 };
 use crate::config::Config;
 use crate::server::EventHub;
+use crate::sweep::{LeftoverSweep, OrphanSweep, SharedLedger};
 
 const FALLBACK_HOST_NAME: &str = "localhost";
 
@@ -57,6 +58,12 @@ pub struct Services {
     /// The agent store as the bridge reads it, for the agent name a
     /// notification copies at creation.
     pub agent_bridge_store: Arc<dyn agent_application::common::interfaces::AgentStore>,
+    /// The sweep of the processes that an unclean stop left (0017). It holds
+    /// the gate that the starting requests wait on.
+    pub orphan_sweep: OrphanSweep,
+    /// The stored process identities, read for the sweep finding of
+    /// `resume.plan` (0017/D8).
+    pub session_processes: Arc<SessionProcessRepository>,
 }
 
 /// Runs each module's migrations, every module on its own ledger.
@@ -91,6 +98,10 @@ pub fn start(config: &Config, log: &ServerLog) -> Result<Services, StartupError>
 ///
 /// # Errors
 /// Any database, migration, or persistence failure.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the startup steps run in one order, and each builds what the next one needs"
+)]
 pub fn start_with(
     config: &Config,
     log: &ServerLog,
@@ -168,6 +179,13 @@ pub fn start_with(
         storage_alerts.clone(),
         log.clone(),
     );
+    let orphan_sweep = prepare_orphan_sweep(
+        &connection,
+        &settings,
+        &terminal,
+        &notification_bridge,
+        (&events, &storage_alerts, log),
+    )?;
     let hierarchy = build_hierarchy_services(
         &connection,
         &agent,
@@ -185,6 +203,7 @@ pub fn start_with(
         Arc::clone(&terminal.worktrees),
         &storage_alerts,
     );
+    let session_processes = Arc::new(SessionProcessRepository::new(connection.clone()));
     let services = Services {
         machine,
         agents,
@@ -201,6 +220,8 @@ pub fn start_with(
         notification_bridge,
         needs_you_bridge,
         agent_bridge_store,
+        orphan_sweep,
+        session_processes,
     };
     connect_sleep_gate(&services, startup_settings.quiet_period_ms);
     Ok(services)
@@ -219,6 +240,32 @@ fn connect_sleep_gate(services: &Services, quiet_period_ms: u64) {
         runtime: Arc::clone(&services.terminal.runtime),
         quiet_period: Duration::from_millis(quiet_period_ms),
     });
+}
+
+/// The sweep over the identities that the unclean stop left open. It reads
+/// the `lost` sessions that startup just marked.
+fn prepare_orphan_sweep(
+    connection: &SharedConnection,
+    settings: &SettingsRepository,
+    terminal: &TerminalServices,
+    notifications: &NotificationBridge,
+    (events, alerts, log): (&EventHub, &StorageAlerts, &ServerLog),
+) -> Result<OrphanSweep, StartupError> {
+    let sweep = LeftoverSweep {
+        inspector: Arc::clone(&terminal.inspector),
+        ledger: Arc::new(SharedLedger::new(connection.handle())),
+        notifier: Arc::new(notifications.clone()),
+        clock: Arc::new(SystemClock),
+        events: events.clone(),
+        alerts: alerts.clone(),
+        log: log.clone(),
+    };
+    Ok(OrphanSweep::prepare(
+        &SessionProcessRepository::new(connection.clone()),
+        &SessionRepository::new(connection.clone()),
+        settings,
+        sweep,
+    )?)
 }
 
 fn host_name() -> String {

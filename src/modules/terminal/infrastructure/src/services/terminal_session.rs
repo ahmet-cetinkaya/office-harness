@@ -186,6 +186,10 @@ impl TerminalSession {
         locked(&self.lifecycle).child_exited
     }
 
+    pub fn process_id(&self) -> Option<u32> {
+        self.process_id
+    }
+
     pub fn has_exited(&self) -> bool {
         locked(&self.lifecycle).exit_code.is_some()
     }

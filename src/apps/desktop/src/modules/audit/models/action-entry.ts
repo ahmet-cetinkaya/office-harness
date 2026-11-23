@@ -26,14 +26,48 @@ const ACTION_TEXT: Record<string, string> = {
   hold: "Put on hold",
   release: "Released from hold",
   report: "Sent a report",
+  end_leftover: "Checked a leftover process",
+  helper_limit: "Stopped storing helpers",
   sleep: "Put to sleep",
   wake: "Woke",
 };
+
+/**
+ * Entries whose detail is not a reason but a record of what happened, so it
+ * is labelled "Detail" (0017, D9).
+ */
+const DETAIL_ACTIONS: readonly string[] = ["end_leftover", "helper_limit"];
+
+/**
+ * Control and format characters (which include the zero-width and the
+ * bidirectional controls) and the line and paragraph separators. The server
+ * escapes the same set.
+ */
+const UNSAFE_CHARACTERS = /[\p{Cc}\p{Cf}\u2028\u2029]/gu;
 
 const OFFICE_ACTOR = "office";
 
 export function actionText(action: string): string {
   return ACTION_TEXT[action] ?? action.replaceAll("_", " ");
+}
+
+/**
+ * The detail as safe text. The server already writes such characters as
+ * `\u{..}`; the desktop does it again for any that remain, so a command line
+ * cannot reorder or hide text (0017, D9).
+ */
+export function visibleDetail(detail: string): string {
+  return detail.replace(
+    UNSAFE_CHARACTERS,
+    (character) => `\\u{${(character.codePointAt(0) ?? 0).toString(16)}}`,
+  );
+}
+
+/** The detail line of an entry: "Reason: ..." or "Detail: ...", or null. */
+export function detailText(entry: ActionEntry): string | null {
+  if (entry.detail === null) return null;
+  const label = DETAIL_ACTIONS.includes(entry.action) ? "Detail" : "Reason";
+  return `${label}: ${visibleDetail(entry.detail)}`;
 }
 
 export function actorText(actor: string): string {
