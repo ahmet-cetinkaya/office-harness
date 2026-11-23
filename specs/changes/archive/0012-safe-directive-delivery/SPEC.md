@@ -232,13 +232,13 @@ What this change does not cover, stated plainly:
 
 ## Deviations
 
-Implementation notes. None of them defers or changes a requirement. The last note records a gap found after the change shipped; the requirement stays as written.
+Implementation notes. None of them defers or changes a requirement. The last note records a gap found after the change shipped and closed by #127; the requirement stays as written.
 
 - **One delivery per target, not one write lock for all.** The plan kept the handler's single write lock. A delivery can wait up to 2 seconds for the input line, so the handler now marks one delivery per target instead; directives to other targets go on meanwhile, and writes and receipts of one target keep their order (0011 D2).
 - **Readiness has three answers.** The plan named the reasons a target is busy. The handler needs only ready, busy, or gone, so the reasons are not carried.
 - **Input-line check by count.** The plan compared the text's end with the end of the line before typing. The check counts how often the text's end, and a paste placeholder, show at the input line before and after typing, so a line that already held the same text elsewhere does not count (A9).
 - **Commits.** The plan named one commit per task. The hierarchy change and the server change do not build apart, so T2 to T4 code and tests are one commit, and the documents are another.
-- **Found after ship (2026-11-23): FR-002 is not met for an unnumbered choice list.** In a hands-on run, the start question of `claude` in a new folder, a choice list with a cursor mark and no numbers, did not hold a directive; the office typed it after the quiet period. FR-003 held: no Enter was sent and the question stayed unanswered. A follow-up change fixes the question check (qa-report, Known gaps).
+- **Found after ship (2026-11-23): FR-002 is not met for an unnumbered choice list.** In a hands-on run, the start question of `claude` in a new folder, a choice list with a cursor mark and no numbers, did not hold a directive; the office typed it after the quiet period. FR-003 held: no Enter was sent and the question stayed unanswered. #127 fixed the question check on 2026-11-23; the same hands-on run then held the directive (qa-report, Known gaps).
 
 
 ## Updates
