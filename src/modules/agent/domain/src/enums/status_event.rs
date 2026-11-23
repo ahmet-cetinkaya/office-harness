@@ -14,10 +14,11 @@ pub enum StatusEvent {
     ExitedWithFailure,
     StoppedByUser,
     ServerStopped,
+    PutToSleep,
 }
 
 impl StatusEvent {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Start,
         Self::FirstOutput,
         Self::QuietPeriodElapsed,
@@ -26,6 +27,7 @@ impl StatusEvent {
         Self::ExitedWithFailure,
         Self::StoppedByUser,
         Self::ServerStopped,
+        Self::PutToSleep,
     ];
 }
 
@@ -40,6 +42,7 @@ impl fmt::Display for StatusEvent {
             Self::ExitedWithFailure => "exit with failure",
             Self::StoppedByUser => "stop by the user",
             Self::ServerStopped => "server stop",
+            Self::PutToSleep => "sleep after the idle time",
         };
         formatter.write_str(name)
     }

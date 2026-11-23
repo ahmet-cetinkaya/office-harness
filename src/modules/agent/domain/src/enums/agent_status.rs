@@ -18,10 +18,13 @@ pub enum AgentStatus {
     Failed,
     Stopped,
     Interrupted,
+    /// Put to sleep after the idle time (0018): the session is kept, no
+    /// CLI runs.
+    Asleep,
 }
 
 impl AgentStatus {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Starting,
         Self::Working,
         Self::WaitingForInput,
@@ -29,6 +32,7 @@ impl AgentStatus {
         Self::Failed,
         Self::Stopped,
         Self::Interrupted,
+        Self::Asleep,
     ];
 
     /// Statuses of an agent that has a live session.
@@ -50,6 +54,7 @@ impl AgentStatus {
             Self::Failed => "failed",
             Self::Stopped => "stopped",
             Self::Interrupted => "interrupted",
+            Self::Asleep => "asleep",
         }
     }
 }

@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use agent_domain::entities::Agent;
+use agent_domain::enums::{AgentStatus, StatusEvent};
 use kernel::AgentId;
 
 use crate::common::action_journal::ActionJournal;
@@ -13,7 +14,8 @@ use crate::common::models::AgentAction;
 use crate::common::session_ender::SessionEnder;
 
 /// Stops a running agent (`agent.stop`, FR-012): the terminal asks, waits the
-/// grace period, then forces.
+/// grace period, then forces. An asleep agent has no CLI, so its stop only
+/// sets the status (0018 D5).
 #[derive(Clone)]
 pub struct StopAgentHandler {
     agents: Arc<dyn AgentStore>,
@@ -47,6 +49,10 @@ impl StopAgentHandler {
     }
 
     fn end(&self, agent: &mut Agent) -> Result<(), ApplicationError> {
+        if agent.status == AgentStatus::Asleep {
+            // No CLI runs while the agent sleeps, so there is nothing to end.
+            return self.stop_sleeper(agent);
+        }
         if !agent.status.is_running() {
             return Err(ApplicationError::Conflict(format!(
                 "agent {} is not running, it is {}",
@@ -54,6 +60,12 @@ impl StopAgentHandler {
             )));
         }
         self.ender.stop(agent)
+    }
+
+    fn stop_sleeper(&self, agent: &mut Agent) -> Result<(), ApplicationError> {
+        agent.apply(StatusEvent::StoppedByUser)?;
+        self.agents.update_status(agent.id, agent.status)?;
+        Ok(())
     }
 }
 

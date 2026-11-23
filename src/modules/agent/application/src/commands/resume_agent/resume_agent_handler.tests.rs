@@ -272,3 +272,62 @@ fn the_reason_of_a_continue_that_did_not_start_carries_the_text() {
         Some("the continue did not start: no such program")
     );
 }
+
+#[test]
+fn an_asleep_agent_wakes_into_its_last_session_and_the_record_is_a_wake_without_detail() {
+    let office = Office::new();
+    let (agent, first) = agent_after(&office, "claude", &ExitResult::Signal, AgentStatus::Asleep);
+
+    let outcome = office.resume_agent().wake(agent.id).expect("wake");
+
+    assert!(outcome.continued);
+    assert_eq!(outcome.reason, None);
+    assert_eq!(outcome.start.session.continued_from, Some(first.id));
+    let wakes: Vec<_> = office
+        .recorder
+        .entries()
+        .into_iter()
+        .filter(|entry| entry.action == AgentAction::Wake)
+        .collect();
+    assert_eq!(wakes.len(), 1);
+    assert_eq!(wakes[0].detail, None);
+}
+
+#[test]
+fn a_wake_with_a_cli_that_cannot_continue_starts_a_new_session_with_the_reason() {
+    let office = Office::new();
+    let (agent, _) = agent_after(&office, "generic", &ExitResult::Signal, AgentStatus::Asleep);
+
+    let outcome = office.resume_agent().wake(agent.id).expect("wake");
+
+    let reason = "the agent's command does not support continuing a session";
+    assert!(!outcome.continued);
+    assert_eq!(outcome.reason.as_deref(), Some(reason));
+    let entry = last_entry(&office);
+    assert_eq!(entry.action, AgentAction::Wake);
+    assert_eq!(
+        entry.detail.as_deref(),
+        Some(format!("new session: {reason}").as_str())
+    );
+}
+
+#[test]
+fn an_agent_that_is_not_asleep_cannot_be_woken_and_nothing_starts() {
+    let office = Office::new();
+    let (agent, _) = agent_after(
+        &office,
+        "claude",
+        &ExitResult::Interrupted,
+        AgentStatus::Interrupted,
+    );
+    let entries_before = office.recorder.entries().len();
+
+    let error = office.resume_agent().wake(agent.id).expect_err("conflict");
+
+    assert_eq!(
+        error,
+        ApplicationError::Conflict("the agent is no longer asleep".to_owned())
+    );
+    assert_eq!(office.terminals.started().len(), 1);
+    assert_eq!(office.recorder.entries().len(), entries_before);
+}
