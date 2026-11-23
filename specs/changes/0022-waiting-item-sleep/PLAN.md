@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 spec: specs/changes/0022-waiting-item-sleep/SPEC.md
 commits: per-task
 ---
