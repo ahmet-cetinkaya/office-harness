@@ -13,6 +13,7 @@
     sharedFocusShortcut,
     type FocusShortcut,
   } from "../../../core/shortcuts";
+  import { ASLEEP_STATUS, WakePanel, type SleepController } from "../../sleep";
   import { createInputQueue } from "../services/input-queue";
   import {
     binaryBytes,
@@ -28,6 +29,10 @@
     agentName: string;
     /** A stopped agent shows the output of its last session and takes no input. */
     isRunning: boolean;
+    /** The agent status; "asleep" adds the wake panel and the Enter key (0018). */
+    status?: string;
+    /** Wakes an asleep agent; without it the view has no wake. */
+    sleep?: SleepController;
     /**
      * Runs on the focus shortcut instead of the default return to this
      * view's heading; the scene uses it to hand focus back to the desk
@@ -36,7 +41,15 @@
     onFocusLeave?: () => void;
   }
 
-  let { client, agentId, agentName, isRunning, onFocusLeave }: Props = $props();
+  let {
+    client,
+    agentId,
+    agentName,
+    isRunning,
+    status,
+    sleep,
+    onFocusLeave,
+  }: Props = $props();
 
   const RESIZE_DEBOUNCE_MS = 100;
   const SCROLLBACK_LINES = 10_000;
@@ -49,6 +62,7 @@
   let focusShortcut = $state<FocusShortcut | null>(null);
   let hasDroppedOutput = $state(false);
   let problem = $state<string | null>(null);
+  const isAsleep = $derived(status === ASLEEP_STATUS && sleep !== undefined);
   let terminalInput = $state<HTMLTextAreaElement | null>(null);
 
   $effect(() => {
@@ -62,6 +76,10 @@
       // Puts the screen text in the page for screen readers.
       screenReaderMode: true,
       disableStdin: !isRunning,
+    });
+    // A wake in the scene turns the same view from stopped to running.
+    $effect(() => {
+      terminal.options.disableStdin = !isRunning;
     });
     const fit = new FitAddon();
     let isDisposed = false;
@@ -146,6 +164,15 @@
         }
         // Returning false keeps the sequence out of the terminal and lets
         // the keydown bubble to the panel's app-level handler.
+        return false;
+      }
+      // Enter is the one key of an asleep agent that does something: it
+      // wakes the agent. Every other key stays in the app, and no CLI runs.
+      if (isAsleep && event.key === "Enter") {
+        if (event.type === "keydown") {
+          event.preventDefault();
+          void sleep?.wake(agentId);
+        }
         return false;
       }
       // A stopped terminal takes no input, so Tab must reach the browser and
@@ -254,7 +281,9 @@
     Terminal
   </h3>
   <p class="text-sm text-neutral-900">
-    {#if !isRunning}
+    {#if isAsleep}
+      The agent is asleep. The terminal shows the output of its last session.
+    {:else if !isRunning}
       The agent is stopped. The terminal shows the output of its last session.
     {:else if focusShortcut !== null}
       Every key goes to the agent, except
@@ -267,6 +296,9 @@
       Opening the terminal.
     {/if}
   </p>
+  {#if sleep !== undefined}
+    <WakePanel controller={sleep} {agentId} {isAsleep} />
+  {/if}
   {#if hasDroppedOutput}
     <p
       role="status"

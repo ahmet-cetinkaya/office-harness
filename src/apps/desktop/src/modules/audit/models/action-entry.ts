@@ -26,6 +26,8 @@ const ACTION_TEXT: Record<string, string> = {
   hold: "Put on hold",
   release: "Released from hold",
   report: "Sent a report",
+  sleep: "Put to sleep",
+  wake: "Woke",
 };
 
 const OFFICE_ACTOR = "office";
