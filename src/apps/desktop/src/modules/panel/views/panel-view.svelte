@@ -48,6 +48,7 @@
   import { interruptedCount, ResumeAction } from "../../resume";
   import { SweepStatus } from "../../sweep";
   import { IdleSleepDialog } from "../../sleep";
+  import { WorktreeDependenciesDialog } from "../../worktree-dependencies";
   import { SaveAsTemplateDialog, TemplatesView } from "../../template";
   import {
     isJumpUnbound,
@@ -181,6 +182,7 @@
   let createAgentInProject = $state<string | null>(null);
   let isCreatingProject = $state(false);
   let isEditingIdleSleep = $state(false);
+  let isEditingWorktreeDependencies = $state(false);
   let isSwitchingAgent = $state(false);
   let isShowingNotifications = $state(false);
   let isShowingTemplates = $state(false);
@@ -442,6 +444,12 @@
         <Button variant="secondary" onclick={() => (isEditingIdleSleep = true)}>
           Idle sleep
         </Button>
+        <Button
+          variant="secondary"
+          onclick={() => (isEditingWorktreeDependencies = true)}
+        >
+          Worktree dependencies
+        </Button>
       </div>
     {/if}
   </header>
@@ -685,6 +693,12 @@
   <IdleSleepDialog
     controller={store.sleep}
     onclose={() => (isEditingIdleSleep = false)}
+  />
+{/if}
+{#if isEditingWorktreeDependencies}
+  <WorktreeDependenciesDialog
+    controller={store.worktreeDependencies}
+    onclose={() => (isEditingWorktreeDependencies = false)}
   />
 {/if}
 {#if isCreatingProject}

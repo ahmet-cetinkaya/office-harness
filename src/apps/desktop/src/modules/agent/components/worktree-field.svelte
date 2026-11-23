@@ -3,6 +3,8 @@
   import SelectField from "$shared/ui/select-field.svelte";
   import {
     baseOptions,
+    SHARED_PACKAGES_NOTE,
+    UNSHARED_PACKAGES_NOTE,
     type RepositoryInfo,
     type WorktreeInfo,
     type WorktreeQuery,
@@ -93,6 +95,7 @@
     </p>
     <p class="text-sm text-neutral-700">
       Untracked files such as local environment files are not copied.
+      {info.shares_dependencies ? SHARED_PACKAGES_NOTE : UNSHARED_PACKAGES_NOTE}
     </p>
   </div>
 {/if}

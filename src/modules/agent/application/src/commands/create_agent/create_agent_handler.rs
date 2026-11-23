@@ -6,7 +6,7 @@ use std::sync::Arc;
 use agent_domain::entities::{AdditionsRecord, Agent};
 use agent_domain::errors::AgentError;
 use agent_domain::value_objects::{
-    AgentCommand, AgentWorktree, DisplayName, MachineId, OfficeAdditions, ProjectId,
+    AgentCommand, AgentWorktree, DisplayName, MachineId, OfficeAdditions, ProjectId, Settings,
 };
 use kernel::AgentId;
 
@@ -15,8 +15,8 @@ use crate::common::additions_input::AdditionsInput;
 use crate::common::command_line::split_command;
 use crate::common::errors::ApplicationError;
 use crate::common::interfaces::{
-    AdditionsStore, AgentStore, Clock, CreatedWorktree, ProjectStore, WorktreeCreate,
-    WorktreeManager,
+    AdditionsStore, AgentStore, Clock, CreatedWorktree, ProjectStore, SettingsStore,
+    WorktreeCreate, WorktreeManager,
 };
 use crate::common::lookup::require_project;
 use crate::common::models::AgentAction;
@@ -57,6 +57,8 @@ pub struct CreateAgentHandler {
     machine_id: MachineId,
     /// Absent refuses every own-worktree create.
     worktrees: Option<Arc<dyn WorktreeManager>>,
+    /// Absent takes the default settings (0021 D11).
+    settings: Option<Arc<dyn SettingsStore>>,
 }
 
 impl CreateAgentHandler {
@@ -77,6 +79,7 @@ impl CreateAgentHandler {
             journal,
             machine_id,
             worktrees: None,
+            settings: None,
         }
     }
 
@@ -85,6 +88,14 @@ impl CreateAgentHandler {
     #[must_use]
     pub fn with_worktrees(mut self, worktrees: Arc<dyn WorktreeManager>) -> Self {
         self.worktrees = Some(worktrees);
+        self
+    }
+
+    /// Attaches the office settings, which say whether a new own worktree
+    /// shares the installed packages (0021).
+    #[must_use]
+    pub fn with_settings(mut self, settings: Arc<dyn SettingsStore>) -> Self {
+        self.settings = Some(settings);
         self
     }
 
@@ -218,7 +229,16 @@ impl CreateAgentHandler {
             agent_name: name.as_str(),
             base: own.base.as_deref(),
             branch_name: own.branch_name.as_deref(),
+            link_dependencies: self.links_dependencies()?,
         })?)
+    }
+
+    fn links_dependencies(&self) -> Result<bool, ApplicationError> {
+        let settings = match &self.settings {
+            Some(store) => store.load()?,
+            None => Settings::default(),
+        };
+        Ok(settings.worktree_dependency_links)
     }
 
     fn discard_worktree(&self, agent: &Agent) {
