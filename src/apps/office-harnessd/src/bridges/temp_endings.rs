@@ -15,6 +15,8 @@ use kernel::AgentId;
 use serde_json::{Value, json};
 use wire::{ErrorCode, Request, Response};
 
+use super::EndOutcome;
+
 /// The office-only request that checks a status under the status order and
 /// claims the temp for its end when the status is still the one the watcher
 /// read.
@@ -74,6 +76,27 @@ impl TempEndings {
     #[must_use]
     pub fn claim(&self, agent_id: AgentId) -> bool {
         self.locked().insert(agent_id)
+    }
+
+    /// Joins the set when the agent is a temp, so a `done` report of an agent
+    /// that is not a temp never makes its start read "the temp is ending".
+    ///
+    /// # Errors
+    ///
+    /// The outcome that ends nothing: the agent is gone, is not a temp, or is
+    /// already ending, or the store failed.
+    pub fn claim_temp(&self, agent_id: AgentId) -> Result<(), EndOutcome> {
+        match self.agents.find(agent_id) {
+            Ok(Some(agent)) if agent.temp.is_some() => {}
+            Ok(Some(_)) => return Err(EndOutcome::NotATemp),
+            Ok(None) => return Err(EndOutcome::Gone),
+            Err(error) => return Err(EndOutcome::Failed(error.to_string())),
+        }
+        if self.claim(agent_id) {
+            Ok(())
+        } else {
+            Err(EndOutcome::AlreadyEnding)
+        }
     }
 
     /// Marks a temp create as running until the guard drops.

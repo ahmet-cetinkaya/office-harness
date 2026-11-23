@@ -332,7 +332,7 @@ fn end_temp_after_done(state: &ServerState, accepted: &(AgentId, ReportKind, Str
         actor: Actor::Office,
         seen: None,
     };
-    // A sender that is not a temp makes the end a no-op.
+    // A sender that is not a temp is never claimed, so the end is a no-op.
     drop(spawn_blocking(move || ender.end(&order)));
 }
 

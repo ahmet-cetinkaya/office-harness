@@ -141,6 +141,38 @@ fn a_temp_joins_the_set_once_and_leaves_it() {
 }
 
 #[test]
+fn a_done_sender_that_is_not_a_temp_is_never_claimed_and_can_still_start() {
+    let member = agent(1, AgentStatus::WaitingForInput, false);
+    let endings = endings(vec![member], Vec::new());
+    let member = AgentId::from_u128(1);
+
+    assert_eq!(endings.claim_temp(member), Err(EndOutcome::NotATemp));
+
+    assert!(!endings.contains(member));
+    let named = json!({"agent_id": member.to_string()});
+    for kind in ["agent.start", "agent.new_task"] {
+        assert!(!endings.refuses(&request(kind, named.clone())), "{kind}");
+    }
+}
+
+#[test]
+fn a_temp_is_claimed_once_and_a_gone_agent_never() {
+    let endings = endings(
+        vec![agent(1, AgentStatus::WaitingForInput, true)],
+        Vec::new(),
+    );
+    let temp = AgentId::from_u128(1);
+
+    assert_eq!(endings.claim_temp(temp), Ok(()));
+    assert_eq!(endings.claim_temp(temp), Err(EndOutcome::AlreadyEnding));
+    assert_eq!(
+        endings.claim_temp(AgentId::from_u128(2)),
+        Err(EndOutcome::Gone)
+    );
+    assert!(!endings.contains(AgentId::from_u128(2)));
+}
+
+#[test]
 fn a_create_in_progress_shows_until_its_guard_drops() {
     let endings = endings(Vec::new(), Vec::new());
     assert!(!endings.is_creating());

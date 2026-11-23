@@ -166,11 +166,7 @@ impl TempEnder {
 
     fn claim(&self, order: &EndOrder) -> Result<(), EndOutcome> {
         let Some(seen) = order.seen else {
-            return if self.parts.hooks.endings.claim(order.agent_id) {
-                Ok(())
-            } else {
-                Err(EndOutcome::AlreadyEnding)
-            };
+            return self.parts.hooks.endings.claim_temp(order.agent_id);
         };
         match self.checked_claim(order.agent_id, seen) {
             Ok(true) => Ok(()),
