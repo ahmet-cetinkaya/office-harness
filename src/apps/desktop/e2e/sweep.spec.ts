@@ -208,7 +208,7 @@ test.describe("orphan sweep (0017)", () => {
     await expect(record).toContainText("…abababab");
     await expect(record).toContainText("Stopped storing helpers by the office");
     await expect(record).toContainText(
-      "Detail: the limit of 200 helpers per session",
+      "Succeeded. Detail: the limit of 200 helpers per session",
     );
     await expectNoSeriousViolations(page);
   });
