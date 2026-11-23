@@ -1,6 +1,6 @@
 # Requirements checklist: 0019-cli-sign-in-check
 
-Spec: `specs/changes/0019-cli-sign-in-check/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0003/`, `0011/`, `0012`, and `0013/` reference was checked against the specs on `main` at 6e2a8bd.
+Spec: `specs/changes/archive/0019-cli-sign-in-check/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0003/`, `0011/`, `0012`, and `0013/` reference was checked against the specs on `main` at 6e2a8bd.
 
 ## Content quality
 
