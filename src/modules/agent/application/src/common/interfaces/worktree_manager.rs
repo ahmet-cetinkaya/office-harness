@@ -8,6 +8,11 @@ use thiserror::Error;
 
 use crate::common::errors::ApplicationError;
 
+/// Links need no rights on Unix; on Windows a link to a folder needs
+/// Developer Mode or administrator rights, so the office makes none there
+/// (0021 A6).
+pub const DEPENDENCY_LINKS_SUPPORTED: bool = cfg!(unix);
+
 /// What the create form shows for a folder inside a git repository (0010
 /// FR-001, D4).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +28,9 @@ pub struct WorktreeInfo {
     pub branches: Vec<String>,
     /// The branch a create would make now.
     pub branch_name: String,
+    /// A create now would share the installed Node.js packages (0021
+    /// FR-008): the setting is on and the platform has links.
+    pub shares_dependencies: bool,
 }
 
 /// One own-worktree create (0010 D5). Absent `base` and `branch_name` take
@@ -34,6 +42,9 @@ pub struct WorktreeCreate<'a> {
     pub agent_name: &'a str,
     pub base: Option<&'a str>,
     pub branch_name: Option<&'a str>,
+    /// Shares the base checkout's installed Node.js packages into the new
+    /// worktree (0021).
+    pub link_dependencies: bool,
 }
 
 /// A made worktree and the folder the agent starts in: the worktree plus

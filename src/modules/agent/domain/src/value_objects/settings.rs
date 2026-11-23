@@ -17,6 +17,13 @@ const DEFAULT_LIMIT_LIFECYCLE_PER_AGENT: u32 = 10;
 const DEFAULT_LIMIT_REPORTS_PER_AGENT: u32 = 5;
 /// Idle sleep is off until the person turns it on (0018 D1).
 const DEFAULT_IDLE_SLEEP_MINUTES: u32 = 0;
+/// A new own worktree shares the installed packages unless the person turns
+/// it off (0021 D10).
+const DEFAULT_WORKTREE_DEPENDENCY_LINKS: bool = true;
+
+/// The stored texts of an on or off setting (0021 D10).
+const SWITCH_ON: &str = "on";
+const SWITCH_OFF: &str = "off";
 
 /// The range of a rate limit (0007 D4). The upper bound keeps a typo from
 /// turning the limit off.
@@ -111,6 +118,7 @@ pub struct Settings {
     pub limit_lifecycle_per_agent: u32,
     pub limit_reports_per_agent: u32,
     pub idle_sleep_minutes: u32,
+    pub worktree_dependency_links: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,10 +134,11 @@ pub enum SettingKey {
     LimitLifecyclePerAgent,
     LimitReportsPerAgent,
     IdleSleepMinutes,
+    WorktreeDependencyLinks,
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::QuietPeriodMs,
         Self::OutputLineLimit,
         Self::FocusShortcut,
@@ -141,6 +150,7 @@ impl SettingKey {
         Self::LimitLifecyclePerAgent,
         Self::LimitReportsPerAgent,
         Self::IdleSleepMinutes,
+        Self::WorktreeDependencyLinks,
     ];
 
     #[must_use]
@@ -157,6 +167,7 @@ impl SettingKey {
             Self::LimitLifecyclePerAgent => "limit_lifecycle_per_agent",
             Self::LimitReportsPerAgent => "limit_reports_per_agent",
             Self::IdleSleepMinutes => "idle_sleep_minutes",
+            Self::WorktreeDependencyLinks => "worktree_dependency_links",
         }
     }
 
@@ -184,6 +195,7 @@ impl Default for Settings {
             limit_lifecycle_per_agent: DEFAULT_LIMIT_LIFECYCLE_PER_AGENT,
             limit_reports_per_agent: DEFAULT_LIMIT_REPORTS_PER_AGENT,
             idle_sleep_minutes: DEFAULT_IDLE_SLEEP_MINUTES,
+            worktree_dependency_links: DEFAULT_WORKTREE_DEPENDENCY_LINKS,
         }
     }
 }
@@ -205,13 +217,17 @@ impl Settings {
             SettingKey::LimitLifecyclePerAgent => self.limit_lifecycle_per_agent.to_string(),
             SettingKey::LimitReportsPerAgent => self.limit_reports_per_agent.to_string(),
             SettingKey::IdleSleepMinutes => self.idle_sleep_minutes.to_string(),
+            SettingKey::WorktreeDependencyLinks => {
+                switch_text(self.worktree_dependency_links).to_owned()
+            }
         }
     }
 
     /// Sets one setting from its stored text.
     ///
     /// # Errors
-    /// `InvalidNumber`, `NotPositive`, `InvalidLimit`, `InvalidIdleSleep`, or `Empty`, naming the setting;
+    /// `InvalidNumber`, `NotPositive`, `InvalidLimit`, `InvalidIdleSleep`, `InvalidSwitch`, or `Empty`,
+    /// naming the setting;
     /// `InvalidLastView`, `TooLarge`, or `ReservedShortcut` for the 0003 keys.
     pub fn set_from_text(&mut self, key: SettingKey, text: &str) -> Result<(), AgentError> {
         match key {
@@ -241,6 +257,9 @@ impl Settings {
             }
             SettingKey::IdleSleepMinutes => {
                 self.idle_sleep_minutes = parse_idle_sleep_minutes(key, text)?;
+            }
+            SettingKey::WorktreeDependencyLinks => {
+                self.worktree_dependency_links = parse_switch(key, text)?;
             }
         }
         Ok(())
@@ -298,6 +317,21 @@ fn parse_idle_sleep_minutes(key: SettingKey, text: &str) -> Result<u32, AgentErr
         .ok_or(AgentError::InvalidIdleSleep {
             field: key.as_str(),
         })
+}
+
+const fn switch_text(is_on: bool) -> &'static str {
+    if is_on { SWITCH_ON } else { SWITCH_OFF }
+}
+
+/// Exactly `on` or `off`.
+fn parse_switch(key: SettingKey, text: &str) -> Result<bool, AgentError> {
+    match text {
+        SWITCH_ON => Ok(true),
+        SWITCH_OFF => Ok(false),
+        _ => Err(AgentError::InvalidSwitch {
+            field: key.as_str(),
+        }),
+    }
 }
 
 fn parse_shortcut(key: SettingKey, text: &str) -> Result<String, AgentError> {

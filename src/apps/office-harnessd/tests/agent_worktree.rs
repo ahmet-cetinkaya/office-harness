@@ -197,6 +197,7 @@ async fn the_choice_is_offered_only_inside_a_repository() {
             "branches": ["main"],
             "branch_name": "office-harness/lead-dev",
             "subfolder": "sub/",
+            "shares_dependencies": true,
         }),
         "{answer}"
     );

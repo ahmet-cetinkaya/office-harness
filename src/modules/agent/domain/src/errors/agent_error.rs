@@ -27,6 +27,8 @@ pub enum AgentError {
     InvalidLimit { field: &'static str },
     #[error("{field} is 0 (off) or a whole number of minutes from 5 to 1440")]
     InvalidIdleSleep { field: &'static str },
+    #[error("{field} is on or off")]
+    InvalidSwitch { field: &'static str },
     #[error(
         "environment entry {name:?} is malformed: a name starts with a letter or an underscore \
          and holds only letters, digits, and underscores"

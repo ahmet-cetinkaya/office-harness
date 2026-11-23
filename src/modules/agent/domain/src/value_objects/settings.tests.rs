@@ -11,6 +11,8 @@ fn defaults_follow_the_data_model() {
     assert_eq!(settings.focus_shortcut, "Ctrl+Shift+F12");
     assert_eq!(settings.last_view, None);
     assert_eq!(settings.idle_sleep_minutes, 0);
+    assert!(settings.worktree_dependency_links);
+    assert_eq!(settings.value_of(SettingKey::WorktreeDependencyLinks), "on");
 }
 
 #[test]
@@ -408,5 +410,43 @@ fn idle_sleep_outside_that_range_is_refused_and_keeps_the_stored_value() {
             "{value}"
         );
         assert_eq!(settings.idle_sleep_minutes, 30, "{value}");
+    }
+}
+
+#[test]
+fn worktree_dependency_links_take_on_or_off() {
+    let mut settings = Settings::default();
+    settings
+        .set_from_text(SettingKey::WorktreeDependencyLinks, "off")
+        .expect("valid");
+    assert!(!settings.worktree_dependency_links);
+    assert_eq!(
+        settings.value_of(SettingKey::WorktreeDependencyLinks),
+        "off"
+    );
+    settings
+        .set_from_text(SettingKey::WorktreeDependencyLinks, "on")
+        .expect("valid");
+    assert!(settings.worktree_dependency_links);
+}
+
+#[test]
+fn worktree_dependency_links_refuse_other_text_and_keep_the_stored_value() {
+    for value in ["", "On", "true", "1", " off", "no"] {
+        let mut settings = Settings::default();
+        settings
+            .set_from_text(SettingKey::WorktreeDependencyLinks, "off")
+            .expect("valid");
+
+        let error = settings
+            .set_from_text(SettingKey::WorktreeDependencyLinks, value)
+            .expect_err(value);
+
+        assert_eq!(
+            error.to_string(),
+            "worktree_dependency_links is on or off",
+            "{value}"
+        );
+        assert!(!settings.worktree_dependency_links, "{value}");
     }
 }
