@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use kernel::AgentId;
@@ -69,12 +69,16 @@ impl Waits {
     }
 }
 
+/// Called with the agent after each wait end, outside the tracker's lock.
+type WaitEndListener = Arc<dyn Fn(AgentId) + Send + Sync>;
+
 /// Tells a prompted change of an agent's status from an unprompted one,
 /// from the wait ends that the server sees itself and never from the screen
 /// (0022 A2). Clones share one record.
 #[derive(Clone)]
 pub struct WaitTracker {
     waits: Arc<Mutex<Waits>>,
+    wait_end_listener: Arc<OnceLock<WaitEndListener>>,
 }
 
 impl Default for WaitTracker {
@@ -93,6 +97,7 @@ impl WaitTracker {
                 quiet_period,
                 work_bound_extra: WORK_BOUND_EXTRA,
             })),
+            wait_end_listener: Arc::default(),
         }
     }
 
@@ -111,9 +116,18 @@ impl WaitTracker {
         self.locked().work_bound()
     }
 
+    /// Calls `listener` after each wait end. The first listener stays: the
+    /// server has one Needs you queue to tell.
+    pub fn on_wait_end(&self, listener: impl Fn(AgentId) + Send + Sync + 'static) {
+        let _ = self.wait_end_listener.set(Arc::new(listener));
+    }
+
     /// A person's input or the office's text reached the agent's terminal.
     pub fn wait_end(&self, agent_id: AgentId) {
         self.locked().agent(agent_id).ended_since_wait = true;
+        if let Some(listener) = self.wait_end_listener.get() {
+            listener(agent_id);
+        }
     }
 
     /// A session of the agent's CLI starts in `run`: nothing of an earlier
