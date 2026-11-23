@@ -70,9 +70,10 @@ fn the_sysinfo_reader_gives_the_command_line_form_of_the_proc_reader() {
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod pid_handle_exit {
+    use terminal_application::common::interfaces::EndOutcome;
     use terminal_application::common::models::ProcessIdentity;
 
-    use super::super::pid_handle::exit_confirmed;
+    use super::super::pid_handle::{exit_confirmed, outcome_without_signal};
     use super::*;
 
     const OPENED_AT: u64 = 100;
@@ -110,5 +111,31 @@ mod pid_handle_exit {
     #[test]
     fn a_process_that_cannot_be_read_may_still_run() {
         assert!(!exit_confirmed(&Err(ReadError::NotReadable), OPENED_AT));
+    }
+
+    #[test]
+    fn the_same_process_gets_the_signal() {
+        assert_eq!(
+            outcome_without_signal(&Ok(identity_started_at(OPENED_AT)), OPENED_AT),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn a_gone_process_or_another_process_gets_no_signal_and_counts_as_gone() {
+        for read in [
+            Err(ReadError::NotRunning),
+            Ok(identity_started_at(OPENED_AT + 1)),
+        ] {
+            assert_eq!(
+                outcome_without_signal(&read, OPENED_AT),
+                Ok(Some(EndOutcome::Gone))
+            );
+        }
+    }
+
+    #[test]
+    fn a_process_that_cannot_be_read_gets_no_signal_and_is_no_end() {
+        assert!(outcome_without_signal(&Err(ReadError::NotReadable), OPENED_AT).is_err());
     }
 }

@@ -2,10 +2,10 @@
 
 //! The handle for a system without a process handle: macOS, and Linux before
 //! 5.3. It holds the process id and the start time seen at open. Before each
-//! end it reads the start time again and ends nothing when it differs. A
-//! process that exits and whose id is reused in the short time between the
-//! read and the signal can still be ended wrongly; the spec accepts that risk
-//! for these systems only (A10).
+//! end it reads the start time again and ends nothing when it differs or
+//! cannot be read. A process that exits and whose id is reused in the short
+//! time between the read and the signal can still be ended wrongly; the spec
+//! accepts that risk for these systems only (A10).
 
 use std::thread;
 use std::time::{Duration, Instant};
@@ -23,6 +23,9 @@ use super::sysinfo_reader::read_identity;
 
 /// How often `wait_for_exit` reads the process again.
 const EXIT_POLL_INTERVAL: Duration = Duration::from_millis(20);
+/// Why no signal goes to a process that the read just before it could not
+/// read: the office cannot tell that it is still the stored process.
+const NOT_READABLE_BEFORE_END: &str = "the process cannot be read before the end request";
 
 pub struct PidHandle {
     pid: u32,
@@ -40,15 +43,9 @@ impl PidHandle {
         }))
     }
 
-    /// Reads again, and tells whether the id still names the process that this
-    /// handle was opened on.
-    fn is_same_process(&self) -> bool {
-        read_identity(self.pid).is_ok_and(|live| live.started_at == self.started_at)
-    }
-
     fn end_with(&self, signal: Signal) -> Result<EndOutcome, String> {
-        if !self.is_same_process() {
-            return Ok(EndOutcome::Gone);
+        if let Some(outcome) = outcome_without_signal(&read_identity(self.pid), self.started_at)? {
+            return Ok(outcome);
         }
         let Ok(raw) = i32::try_from(self.pid) else {
             return Err(format!("process id {} is out of range", self.pid));
@@ -59,6 +56,22 @@ impl PidHandle {
             Err(Errno::ESRCH) => Ok(EndOutcome::Gone),
             Err(error) => Err(error.to_string()),
         }
+    }
+}
+
+/// What the read just before a signal decides: `Gone` when the process is
+/// gone or the id names another process, an error when it cannot be read (the
+/// sweep then records that it could not end it), and nothing when the signal
+/// may go.
+pub(super) fn outcome_without_signal(
+    read: &Result<ProcessIdentity, ReadError>,
+    started_at: u64,
+) -> Result<Option<EndOutcome>, String> {
+    match read {
+        Err(ReadError::NotReadable) => Err(NOT_READABLE_BEFORE_END.to_owned()),
+        Err(ReadError::NotRunning) => Ok(Some(EndOutcome::Gone)),
+        Ok(live) if live.started_at != started_at => Ok(Some(EndOutcome::Gone)),
+        Ok(_) => Ok(None),
     }
 }
 
