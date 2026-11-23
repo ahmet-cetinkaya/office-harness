@@ -4,7 +4,7 @@
 
 - **Date:** 2026-11-23.
 - **Build under test:** branch `feat/0024-cli-hook-status` on `origin/main` 7c23699. The Rust gates ran at e8da8ca. The hands-on runs used a real, signed-in `claude` 2.1.322 through the office server.
-- **Overall status:** automated tests prove every requirement. Two criteria stay PARTIAL: SC-002 (the 30-minute run, see below) and SC-007 (a refused connection adds no delay, a hanging endpoint was not run). SC-001 and SC-003 hold on the real CLI. The CI result is in the PR, not here.
+- **Overall status:** automated tests prove every requirement. One criterion stays PARTIAL: SC-007 (a refused connection adds no delay, a hanging endpoint was not run). SC-001, SC-002, and SC-003 hold on the real CLI. The CI result is in the PR, not here.
 
 ### Verdict words
 
@@ -47,14 +47,14 @@ The run starts one agent in a new folder, accepts the trust dialog, and sends pr
 | `/compact` | `compacting` showed while it ran (7.3 to 8.5 s). After it ended, the agent returned to `waiting for input` at once with `turn_stopped`. The first run of this step found that the late state kept an open turn from the Escape step, so the agent waited for the quiet period. The fix resets the open work when a session turns late. | PASS after the fix (`hook_sessions` unit test and a rerun) |
 | A project hook of the person (`UserPromptSubmit` that appends a line to a file) | It ran for every prompt, alongside the office hooks: 4 lines in the file for the 4 prompts sent (3 prompts and `/compact`). | PASS for FR-003, SC-006 (project hook; a user-level hook was not added) |
 | A dead endpoint (`claude -p` with a hook to a closed port) | The turn took 4.0 and 4.8 s with the hook against 4.1 and 4.2 s without it, and the answer was the same. A refused connection fails at once. | PARTIAL for SC-007: a hanging endpoint was not tried. The hook timeout of 2 s is in the file. |
-| 30-minute idle run | See SC-002. | see below |
+| 30-minute idle run (turn, then no input) | One notification for the turn. Then 0 status changes and 0 notifications for 30 minutes. | PASS for SC-002 |
 
 ## Success criteria
 
 | Id | Verdict | Evidence |
 |---|---|---|
 | SC-001 | PASS (hands-on) | Three turns of a real `claude`: `working` within 0.1 s of the prompt, `waiting for input` at the stop report. Automated: `hook_status.rs` `a_turn_works_from_its_start_to_its_stop_within_a_second_of_each_report`. 20 rounds were not run. |
-| SC-002 | PENDING | A 30-minute run of the real CLI is in progress (`a_real_claude_idles_with_no_status_change_and_one_notification`). The automated redraw test (`output_of_a_waiting_exact_session_makes_no_change_and_no_notification`) shows 0 changes in 3.5 s of redraws. |
+| SC-002 | PASS (hands-on, automated) | A 30-minute run of the real `claude` 2.1.322 (`a_real_claude_idles_with_no_status_change_and_one_notification`, 1854 s): one notification for the turn, then 0 status changes and 0 notifications in 30 minutes of idle. The automated redraw test (`output_of_a_waiting_exact_session_makes_no_change_and_no_notification`) shows 0 changes in 3.5 s of redraws. |
 | SC-003 | PASS (hands-on, automated) | One real ask. Automated: the item and notification test, `an_open_ask_keeps_an_idle_agent_awake_even_after_its_item_is_dismissed`, and the directive readiness unit test (50 directives were not sent). |
 | SC-004 | PASS (automated) | `hook_reports.rs`: wrong secret, no secret, another session, an ended session (`every_refusal_is_one_answer_and_changes_nothing`), a body of 1 MB, a browser `Origin`, a wrong `Host`. A request from another machine could not be sent from this one; the loopback check is the `require_loopback_peer` layer of 0001. |
 | SC-005 | PASS (automated) | `hook_launch.rs`: exit, failure, stop, server stop. Start failure: `terminal_host.rs` calls `end` on a failed spawn (no test forces a spawn failure with a file). Crash restart: `status_hook_files` unit test for the sweep. |
