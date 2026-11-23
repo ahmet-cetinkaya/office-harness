@@ -18,7 +18,7 @@ When the office makes an agent's own worktree (0010), it gives the worktree the 
 
 **Why this approach:**
 - A link in place of the whole `node_modules` folder is not a folder for git, so the common rule `node_modules/` does not match it: `git status` lists it as untracked, the delete question would count it, and an agent could commit it. A real folder matches both `node_modules` and `node_modules/`, and git never looks inside an ignored folder, so no exclude entry and no change to the repository's configuration is needed (0010 PB-2).
-- Per-entry links keep tool caches that a tool makes later (for example `node_modules/.vite`) in the worktree's own folder.
+- Per-entry links, limited to package entries, keep tool caches (for example `node_modules/.vite`) in the worktree's own folder, so concurrent builds never write one shared cache.
 - The links are found again from the worktree itself (a link inside a dependency folder whose target is the same entry in the base checkout), so the agent row stores nothing new and no migration is needed.
 
 **What it will not do:** link other ecosystems, junctions on Windows, refresh links after the base checkout installs more packages, or touch existing worktrees (spec Out of scope).
@@ -41,7 +41,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 
 ## Decisions
 
-- **D1 Link shape.** At each place, `<worktree>/<place>/node_modules` is a real folder that the office makes with `create_dir` (never `create_dir_all`: the parent must already exist in the checkout). Inside it, one symbolic link per entry of `<repository>/<place>/node_modules`, dot entries included (`.bin`, `.pnpm`, `.bun`, `.package-lock.json`), each with the absolute target `<repository>/<place>/node_modules/<entry>`.
+- **D1 Link shape.** At each place, `<worktree>/<place>/node_modules` is a real folder that the office makes with `create_dir` (never `create_dir_all`: the parent must already exist in the checkout). Inside it, one symbolic link per package entry of `<repository>/<place>/node_modules` (spec Terms): a name without a leading dot, or one of `.bin`, `.pnpm`, `.modules.yaml`, `.package-lock.json`, `.yarn-state.yml`, `.bun`. Each link has the absolute target `<repository>/<place>/node_modules/<entry>`. Tool caches such as `.vite` and `.cache` get no link, so each worktree's tools write their own cache (review r1 M1).
 - **D2 Places.** `git ls-files -z -- ':(glob)**/package.json'` in the new worktree (reads the index; runs no filter or hook). A place is the folder of each path, plus the top. A place with a `node_modules` part is dropped (a package inside a tracked dependency folder). The list is deduplicated and sorted.
 - **D3 Checks per place** (FR-003), in this order; a failed check skips the place and changes nothing:
   1. `<worktree>/<place>/node_modules` does not exist, not even as a broken link (`symlink_metadata` is `NotFound`) (f).
@@ -67,7 +67,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - `worktree_manager.rs`: `WorktreeCreate::link_dependencies`, `WorktreeInfo::shares_dependencies`, `DEPENDENCY_LINKS_SUPPORTED`.
 - `create_agent_handler.rs`, `worktree_info_handler.rs`: settings store (D11); the `agent.worktree_info` mapping adds `shares_dependencies`; bootstrap wiring.
 - `dependency_links.rs` (new): places (D2), checks (D3, D4), link and unlink (D1, D6, D7), log reasons (D5); `git_worktrees.rs` calls `link_dependencies` after the subfolder check in `make` and `unlink_dependencies` at the start of `remove_record` (which `discard` runs).
-- `git_worktrees_dependencies.tests.rs` (real git in a temporary folder, Unix only where links are made): top and nested places linked for the rules `node_modules/` and `node_modules`; `git status` empty and `status().changed_files == 0`; `git add --all` stages nothing; setting off; base folder not ignored; tracked file at the place; base folder and single packages that lead outside or to nothing are refused and logged; an unreadable base folder is logged and the create goes on; remove and discard leave the base packages unchanged; an agent's own link to an outside folder is never followed; Windows makes no link (`cfg(windows)` test).
+- `git_worktrees_dependencies.tests.rs` (real git in a temporary folder, Unix only where links are made): top and nested places linked for the rules `node_modules/` and `node_modules`; `.bin` linked, the tool caches `.vite` and `.cache` not linked; `.vite` and `.cache` not linked, `.bin` linked; `git status` empty and `status().changed_files == 0`; `git add --all` stages nothing; setting off; base folder not ignored; tracked file at the place; base folder and single packages that lead outside or to nothing are refused and logged; an unreadable base folder is logged and the create goes on; remove and discard leave the base packages unchanged; an agent's own link to an outside folder is never followed; Windows makes no link (`cfg(windows)` test).
 - **Acceptance:** `cargo test -p agent-infrastructure -p agent-application -p agent-domain` and clippy clean.
 
 ### T2: Wire test (commit 2)
@@ -84,7 +84,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 ### T4: Docs and QA (commit 4)
 
 - README "Own worktree per agent": a short paragraph on shared packages, the setting, and Windows.
-- `specs/changes/0021-worktree-dependencies/qa-report.md` with one row per FR and SC, and the hands-on rows: a real agent in a worktree of this repository runs `bun test` in the desktop folder without an install.
+- `specs/changes/0021-worktree-dependencies/qa-report.md` with one row per FR and SC, and the hands-on rows: a real agent in a worktree of this repository runs `bun test` in the desktop folder without an install, and a Vite build in that worktree leaves the checkout's `node_modules/.vite` unchanged (review r1 N1).
 - SPEC Deviations for anything shipped differently.
 - **Acceptance:** links in the docs resolve; no other product is named; no zero-width character in added lines.
 
