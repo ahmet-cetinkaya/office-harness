@@ -400,7 +400,8 @@ fn an_office_from_before_session_processes_keeps_its_sessions_and_stores_none() 
 
     let applied = run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, &[]).expect("forward");
 
-    assert_eq!(applied, 1);
+    // Every script from version 8 on runs once, the later ones included.
+    assert_eq!(applied, SCRIPTS.len() - (SESSION_PROCESSES_VERSION - 1));
     assert_eq!(ledger_versions(&connection), all_versions());
     let (sessions, processes, capped): (i64, i64, i64) = connection
         .query_row(

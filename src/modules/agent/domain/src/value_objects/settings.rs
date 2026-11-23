@@ -25,6 +25,11 @@ const DEFAULT_WORKTREE_DEPENDENCY_LINKS: bool = true;
 const SWITCH_ON: &str = "on";
 const SWITCH_OFF: &str = "off";
 
+/// The most temp agents the office holds at once, and how long a temp may
+/// stay quiet before the office ends it (0020 D2).
+const DEFAULT_TEMP_CAP: u32 = 8;
+const DEFAULT_TEMP_IDLE_MINUTES: u32 = 30;
+
 /// The range of a rate limit (0007 D4). The upper bound keeps a typo from
 /// turning the limit off.
 const LIMIT_MIN: u32 = 1;
@@ -34,6 +39,12 @@ const LIMIT_MAX: u32 = 1_000;
 const IDLE_SLEEP_OFF: u32 = 0;
 const IDLE_SLEEP_MIN: u32 = 5;
 const IDLE_SLEEP_MAX: u32 = 1_440;
+
+/// The ranges of the temp settings (0020 D2).
+const TEMP_CAP_MIN: u32 = 1;
+const TEMP_CAP_MAX: u32 = 100;
+const TEMP_IDLE_MINUTES_MIN: u32 = 5;
+const TEMP_IDLE_MINUTES_MAX: u32 = 1_440;
 
 /// The longest stored text of one setting, in bytes (0003 data model).
 const LAST_VIEW_MAX_BYTES: usize = 1_024;
@@ -118,6 +129,8 @@ pub struct Settings {
     pub limit_lifecycle_per_agent: u32,
     pub limit_reports_per_agent: u32,
     pub idle_sleep_minutes: u32,
+    pub temp_cap: u32,
+    pub temp_idle_minutes: u32,
     pub worktree_dependency_links: bool,
 }
 
@@ -134,11 +147,13 @@ pub enum SettingKey {
     LimitLifecyclePerAgent,
     LimitReportsPerAgent,
     IdleSleepMinutes,
+    TempCap,
+    TempIdleMinutes,
     WorktreeDependencyLinks,
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 14] = [
         Self::QuietPeriodMs,
         Self::OutputLineLimit,
         Self::FocusShortcut,
@@ -150,6 +165,8 @@ impl SettingKey {
         Self::LimitLifecyclePerAgent,
         Self::LimitReportsPerAgent,
         Self::IdleSleepMinutes,
+        Self::TempCap,
+        Self::TempIdleMinutes,
         Self::WorktreeDependencyLinks,
     ];
 
@@ -167,6 +184,8 @@ impl SettingKey {
             Self::LimitLifecyclePerAgent => "limit_lifecycle_per_agent",
             Self::LimitReportsPerAgent => "limit_reports_per_agent",
             Self::IdleSleepMinutes => "idle_sleep_minutes",
+            Self::TempCap => "temp_cap",
+            Self::TempIdleMinutes => "temp_idle_minutes",
             Self::WorktreeDependencyLinks => "worktree_dependency_links",
         }
     }
@@ -195,6 +214,8 @@ impl Default for Settings {
             limit_lifecycle_per_agent: DEFAULT_LIMIT_LIFECYCLE_PER_AGENT,
             limit_reports_per_agent: DEFAULT_LIMIT_REPORTS_PER_AGENT,
             idle_sleep_minutes: DEFAULT_IDLE_SLEEP_MINUTES,
+            temp_cap: DEFAULT_TEMP_CAP,
+            temp_idle_minutes: DEFAULT_TEMP_IDLE_MINUTES,
             worktree_dependency_links: DEFAULT_WORKTREE_DEPENDENCY_LINKS,
         }
     }
@@ -217,6 +238,8 @@ impl Settings {
             SettingKey::LimitLifecyclePerAgent => self.limit_lifecycle_per_agent.to_string(),
             SettingKey::LimitReportsPerAgent => self.limit_reports_per_agent.to_string(),
             SettingKey::IdleSleepMinutes => self.idle_sleep_minutes.to_string(),
+            SettingKey::TempCap => self.temp_cap.to_string(),
+            SettingKey::TempIdleMinutes => self.temp_idle_minutes.to_string(),
             SettingKey::WorktreeDependencyLinks => {
                 switch_text(self.worktree_dependency_links).to_owned()
             }
@@ -226,8 +249,8 @@ impl Settings {
     /// Sets one setting from its stored text.
     ///
     /// # Errors
-    /// `InvalidNumber`, `NotPositive`, `InvalidLimit`, `InvalidIdleSleep`, `InvalidSwitch`, or `Empty`,
-    /// naming the setting;
+    /// `InvalidNumber`, `NotPositive`, `InvalidLimit`, `InvalidIdleSleep`, `InvalidWholeNumber`,
+    /// `InvalidSwitch`, or `Empty`, naming the setting;
     /// `InvalidLastView`, `TooLarge`, or `ReservedShortcut` for the 0003 keys.
     pub fn set_from_text(&mut self, key: SettingKey, text: &str) -> Result<(), AgentError> {
         match key {
@@ -257,6 +280,13 @@ impl Settings {
             }
             SettingKey::IdleSleepMinutes => {
                 self.idle_sleep_minutes = parse_idle_sleep_minutes(key, text)?;
+            }
+            SettingKey::TempCap => {
+                self.temp_cap = parse_whole_number(key, text, TEMP_CAP_MIN, TEMP_CAP_MAX)?;
+            }
+            SettingKey::TempIdleMinutes => {
+                self.temp_idle_minutes =
+                    parse_whole_number(key, text, TEMP_IDLE_MINUTES_MIN, TEMP_IDLE_MINUTES_MAX)?;
             }
             SettingKey::WorktreeDependencyLinks => {
                 self.worktree_dependency_links = parse_switch(key, text)?;
@@ -316,6 +346,18 @@ fn parse_idle_sleep_minutes(key: SettingKey, text: &str) -> Result<u32, AgentErr
         })
         .ok_or(AgentError::InvalidIdleSleep {
             field: key.as_str(),
+        })
+}
+
+/// A whole number from `min` to `max`; the refusal names the range.
+fn parse_whole_number(key: SettingKey, text: &str, min: u32, max: u32) -> Result<u32, AgentError> {
+    text.parse::<u32>()
+        .ok()
+        .filter(|number| (min..=max).contains(number))
+        .ok_or(AgentError::InvalidWholeNumber {
+            field: key.as_str(),
+            min,
+            max,
         })
 }
 

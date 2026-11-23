@@ -104,6 +104,13 @@ pub fn report_line(name: &str, sender: AgentId, kind: ReportKind, text: &str) ->
     format!("[report from {name} ({sender}): {kind}] {text}")
 }
 
+/// The line a parent reads when its temporary agent has ended (0020/FR-007).
+/// `name` must already be in visible form, so the line holds no line break.
+#[must_use]
+pub fn end_notice_line(name: &str, agent_id: AgentId, reason: &str) -> String {
+    format!("[temp ended: {name} ({agent_id}): {reason}]")
+}
+
 /// The action record's text of a report (0015 contract, "Action record").
 #[must_use]
 pub fn report_record_text(kind: ReportKind, text: &str) -> String {

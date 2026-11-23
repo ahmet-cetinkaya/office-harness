@@ -4,17 +4,20 @@
 
 use agent_application::common::errors::PortError;
 use agent_application::common::interfaces::{
-    AdditionsStore, AgentStore, ProjectStore, SessionProcessStore, SessionStore, SettingsStore,
+    AdditionsStore, AgentStore, FinishedTempStore, ProjectStore, SessionProcessStore, SessionStore,
+    SettingsStore,
 };
 use agent_application::common::models::{ProcessKind, SessionProcess, StoredProcess};
-use agent_domain::entities::{AdditionsRecord, Agent, Project, Session};
+use agent_domain::entities::{AdditionsRecord, Agent, FinishedTemp, Project, Session};
 use agent_domain::enums::AgentStatus;
-use agent_domain::value_objects::{ExitResult, ProjectId, SessionId, Settings, TaskText};
+use agent_domain::value_objects::{
+    ExitResult, FinishedTempId, ProjectId, SessionId, Settings, TaskText,
+};
 use kernel::{AgentId, Timestamp};
 
 use crate::persistence::{
-    AdditionsRepository, AgentRepository, PersistenceError, ProjectRepository,
-    SessionProcessRepository, SessionRepository, SettingsRepository,
+    AdditionsRepository, AgentRepository, FinishedTempRepository, PersistenceError,
+    ProjectRepository, SessionProcessRepository, SessionRepository, SettingsRepository,
 };
 
 impl From<PersistenceError> for PortError {
@@ -63,6 +66,20 @@ impl AgentStore for AgentRepository {
 
     fn delete(&self, id: AgentId) -> Result<(), PortError> {
         Ok(Self::delete(self, id)?)
+    }
+}
+
+impl FinishedTempStore for FinishedTempRepository {
+    fn insert(&self, entry: &FinishedTemp) -> Result<(), PortError> {
+        Ok(Self::insert(self, entry)?)
+    }
+
+    fn list(&self) -> Result<Vec<FinishedTemp>, PortError> {
+        Ok(Self::list(self)?)
+    }
+
+    fn dismiss(&self, id: FinishedTempId) -> Result<bool, PortError> {
+        Ok(Self::dismiss(self, id)?)
     }
 }
 

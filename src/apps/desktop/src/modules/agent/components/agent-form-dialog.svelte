@@ -5,7 +5,12 @@
   import FailureMessage from "$shared/ui/failure-message.svelte";
   import SelectField from "$shared/ui/select-field.svelte";
   import TextField from "$shared/ui/text-field.svelte";
-  import type { NewAgent, Project } from "../models/agent";
+  import {
+    OBJECTIVE_HINT,
+    objectiveProblem,
+    type NewAgent,
+    type Project,
+  } from "../models/agent";
   import type {
     WorktreeInfo,
     WorktreeQuery,
@@ -34,6 +39,7 @@
   }: Props = $props();
 
   const NO_PROJECT = "";
+  const ERROR_ID = "agent-form-error";
   let name = $state("");
   let command = $state("");
   let workingFolder = $state("");
@@ -42,6 +48,10 @@
   // svelte-ignore state_referenced_locally
   let projectId = $state(initialProjectId ?? NO_PROJECT);
   let failure = $state<FailureText>(null);
+  let isTemp = $state(false);
+  let objective = $state("");
+  /** Set when the objective is refused here, so its field points at the text. */
+  let hasObjectiveProblem = $state(false);
   let worktree = $state<WorktreeSelection | null>(null);
   // A refused create can name a branch that was taken meanwhile, so the
   // choice reads the free name again.
@@ -57,11 +67,21 @@
     if (workingFolder.trim() !== "")
       agent.working_folder = workingFolder.trim();
     if (projectId !== NO_PROJECT) agent.project_id = projectId;
+    if (isTemp) {
+      agent.temp = true;
+      agent.objective = objective.trim();
+    }
     return { ...agent, ...worktree };
   }
 
   async function submit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
+    const problem = isTemp ? objectiveProblem(objective) : null;
+    hasObjectiveProblem = problem !== null;
+    if (problem !== null) {
+      failure = problem;
+      return;
+    }
     failure = await onsubmit(readAgent());
     if (failure === null) onclose();
     else refusals += 1;
@@ -86,7 +106,21 @@
       options={projectOptions}
       bind:value={projectId}
     />
+    <label class="flex items-center gap-2 text-sm font-medium text-neutral-900">
+      <input type="checkbox" bind:checked={isTemp} />
+      Temporary agent (one job)
+    </label>
+    {#if isTemp}
+      <TextField
+        label="Objective"
+        hint={OBJECTIVE_HINT}
+        isMultiline
+        errorId={hasObjectiveProblem ? ERROR_ID : undefined}
+        bind:value={objective}
+      />
+    {/if}
     <WorktreeField
+      startsOn={isTemp}
       folder={workingFolder}
       projectId={projectId === NO_PROJECT ? null : projectId}
       {name}
@@ -95,7 +129,11 @@
       bind:selection={worktree}
     />
     {#if failure !== null}
-      <FailureMessage lead="The agent was not created." message={failure} />
+      <FailureMessage
+        id={ERROR_ID}
+        lead="The agent was not created."
+        message={failure}
+      />
     {/if}
     <div class="flex flex-wrap gap-3">
       <Button type="submit" disabled={isBusy}>Create agent</Button>

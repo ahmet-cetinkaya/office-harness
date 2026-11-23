@@ -3,6 +3,7 @@
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
 use super::*;
+use crate::common::ports::{AgentCreator, AgentSeed, CreatorError, CreatorErrorKind, TempSeed};
 use hierarchy_domain::{AUTO_HOLD_REFUSAL_COUNT, RateLimits, Role};
 use kernel::Timestamp;
 
@@ -462,6 +463,60 @@ fn the_exact_limit_passes_and_the_next_action_is_refused() {
     let refusal = fixture.lifecycle(MEMBER).unwrap_err();
     assert!(refusal.reason.contains("allows 10 per 60 seconds"));
     assert_eq!(fixture.recorder.count(is_held), 0);
+}
+
+/// Refuses every create the way the agent module refuses one at the
+/// temporary-agent cap (0020/FR-003).
+struct CapRefusingCreator;
+
+impl AgentCreator for CapRefusingCreator {
+    fn create(&self, _seed: AgentSeed) -> Result<AgentId, CreatorError> {
+        Err(CreatorError {
+            kind: CreatorErrorKind::Conflict,
+            message: "the temporary agent cap is reached".to_owned(),
+        })
+    }
+
+    fn remove(&self, _agent_id: AgentId) -> Result<(), CreatorError> {
+        Ok(())
+    }
+}
+
+fn temp_seed() -> AgentSeed {
+    AgentSeed {
+        name: "scratch".to_owned(),
+        command: "claude".to_owned(),
+        working_folder: None,
+        project_id: None,
+        additions: None,
+        worktree: None,
+        temp: Some(TempSeed {
+            objective: "try it".to_owned(),
+        }),
+    }
+}
+
+#[test]
+fn a_create_refused_at_the_temp_cap_adds_no_count_toward_the_automatic_hold() {
+    let fixture = fixture();
+    for _ in 0..AUTO_HOLD_REFUSAL_COUNT {
+        fixture.lifecycle(MEMBER).expect("within the limit");
+        let refusal = CapRefusingCreator.create(temp_seed()).unwrap_err();
+        assert_eq!(refusal.kind, CreatorErrorKind::Conflict);
+    }
+    // Only the slots the creates took are gone; the first limit refusal
+    // would reach the hold if the cap refusals had counted with it.
+    for _ in
+        AUTO_HOLD_REFUSAL_COUNT..usize::try_from(RateLimits::default().lifecycle).expect("small")
+    {
+        fixture.lifecycle(MEMBER).expect("within the limit");
+    }
+
+    let refusal = fixture.lifecycle(MEMBER).unwrap_err();
+
+    assert!(refusal.reason.contains("allows 10 per 60 seconds"));
+    assert_eq!(fixture.recorder.count(is_held), 0);
+    assert_eq!(fixture.recorder.count(is_notification), 0);
 }
 
 #[test]

@@ -33,3 +33,12 @@ describe("confirmations", () => {
     expect(text.isDestructive).toBe(true);
   });
 });
+
+describe("temp confirmation", () => {
+  test("ending a temp asks with the removal text", () => {
+    expect(needsConfirmation({ kind: "end_temp" })).toBe(true);
+    expect(confirmationText({ kind: "end_temp" }, "Scout").body).toBe(
+      "Scout will be removed. Work that is not merged stays in its worktree and branch. Files that git ignores are removed with a removed worktree.",
+    );
+  });
+});

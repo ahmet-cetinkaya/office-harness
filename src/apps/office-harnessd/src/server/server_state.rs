@@ -21,6 +21,7 @@ use super::notification_requests::NotificationGateway;
 use super::restart_signal::RestartSignal;
 use super::resume_requests::ResumeGateway;
 use super::server_options::ServerOptions;
+use super::temp_requests::TempGateway;
 use super::template_requests::TemplateGateway;
 use super::terminal_requests::TerminalGateway;
 use crate::bootstrap::ServerLog;
@@ -60,6 +61,9 @@ pub struct ServerState {
     /// The user's `resume.*` requests (0013). Only the user connection routes
     /// to it; the agent connection never does (A10).
     pub resume: ResumeGateway,
+    /// The user's `temp.*` requests, and the ender that the done report of a
+    /// temp calls (0020). The agent connection never routes requests to it.
+    pub temps: TempGateway,
     pub events: EventHub,
     /// Raised by `server.restart`.
     pub restart: RestartSignal,

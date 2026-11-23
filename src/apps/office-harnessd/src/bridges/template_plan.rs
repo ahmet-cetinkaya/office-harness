@@ -89,6 +89,7 @@ impl<'a> Planner<'a> {
     ) -> Option<AgentSeed> {
         let name = self.unique_name(body, team_name)?;
         let seed = AgentSeed {
+            temp: None,
             name,
             command: body.command.clone(),
             working_folder: body

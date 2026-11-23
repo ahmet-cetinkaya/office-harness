@@ -125,3 +125,13 @@ fn the_line_starts_with_the_heading_and_names_the_sender() {
         "question: which branch?"
     );
 }
+
+#[test]
+fn the_end_notice_line_names_the_temp_its_id_and_the_reason() {
+    let temp = AgentId::from_u128(MEMBER);
+
+    assert_eq!(
+        end_notice_line("T1", temp, "done"),
+        format!("[temp ended: T1 ({temp}): done]")
+    );
+}

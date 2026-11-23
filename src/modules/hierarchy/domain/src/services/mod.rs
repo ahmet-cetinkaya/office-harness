@@ -17,8 +17,8 @@ pub use kernel::visible_text;
 pub use rate_limits::{LimitKind, LimitRefusal, RATE_WINDOW_SECONDS, RateLimits};
 pub use rate_windows::{AgentAction, RateWindows};
 pub use report_rules::{
-    REPORT_MAX_CHARS, ReportKind, ReportReceiver, report_line, report_receiver, report_record_text,
-    validate_report_text,
+    REPORT_MAX_CHARS, ReportKind, ReportReceiver, end_notice_line, report_line, report_receiver,
+    report_record_text, validate_report_text,
 };
 pub use tree_rules::{
     Placement, TreeRow, check_placement, descendants_in_tree_order, descendants_of,
