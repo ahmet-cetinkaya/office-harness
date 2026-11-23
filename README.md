@@ -215,6 +215,30 @@ A directive or a report to an agent that is asleep, or is going to sleep, is ref
 
 The shapes of the requests are in [the sleep protocol](specs/changes/0018-idle-sleep/contracts/sleep-protocol.md).
 
+## Temporary agents
+
+A temporary agent, a "temp", does one job. You, the CEO, or a team lead create it with an objective. The office starts it at once and types the objective into its terminal when the CLI waits for input, with the same checks as a directive. When the temp reports `done`, the office ends it and keeps the results.
+
+To create a temp, check **Temporary agent (one job)** in the create form and write the objective on one line, up to 8,192 characters. When the folder is in a git repository, the temp gets its own branch and worktree by default; you can turn that off. An agent creates a temp with `agent.create` and `"temp": true` plus an `objective` (see [Calling the office from an agent](#calling-the-office-from-an-agent)). An agent that a temp creates is always a temp.
+
+The office ends a temp when:
+
+- it sends a `done` report that the office accepts;
+- it produced no output for the idle limit (30 minutes by default) while no hold covers it, none of its children runs, and it has no item in Needs you;
+- its CLI exits or fails by itself;
+- you or an agent stop it, alone or with an ancestor, or you end it in the **Temps** dialog;
+- you delete it or one of its ancestors, or its parent temp ends.
+
+A new task or a continued session on a temp does not end it. A temp that is `interrupted` after a restart is not ended; resume it, end it, or delete it.
+
+To end a temp, the office ends its child temps first, stops its CLI, and removes the agent. Its worktree and branch stay when the worktree has uncommitted changes or the branch has commits that its base lacks; otherwise the office removes both. Files that git ignores are not uncommitted changes, so they are removed with a removed worktree. A delete that you start still asks whether to keep or remove worktrees. The office never merges or pushes anything.
+
+Press **Temps** in the panel header to see every temp with its creator, parent, objective, status, run time, and quiet time, and every finished temp with its end reason, its `done` report, and the worktree folder and branch that stayed. **End** asks once and then ends the temp. **Dismiss** removes a finished entry only, never a folder or a branch. Finished entries stay across restarts until you dismiss them.
+
+At most 8 temps exist at once by default. A create over the cap is refused with the cap in the reason; the refusal counts toward no rate limit and no automatic hold. Set the **Temp cap** (1 to 100) and the **Temp idle limit** in minutes (5 to 1440) in the **Limits** dialog. When the office ends a temp for the idle limit, or because its CLI exited or failed, its running parent gets one line `[temp ended: <name> (<agent id>): <reason>]`; when no parent hears of an idle end, you get one notification.
+
+The shapes of the requests are in [the temp protocol](specs/changes/0020-temporary-agents/contracts/temp-protocol.md).
+
 ## Start at login
 
 The server runs only while you are logged in. Agents end when you log out or shut the machine down. After the next login the server starts again, and the agents that were running show `interrupted`. No agent starts without your action.
@@ -358,6 +382,12 @@ office-harnessd agent-call report.send '{"kind":"done","text":"tests pass"}'
 ```
 
 The office types the report into the parent's terminal as one line, `[report from <name> (<agent id>): <kind>] <text>`, with the same checks as a directive: it waits while the parent works, shows a question, or a person types there. The parent answers with `directive.send` to the id in the line. A report from the CEO, from an agent without a parent, or with `"for_person":true` goes to you instead: it joins Needs you and notifies you once. Control characters, line breaks, and bidirectional characters in the text show as visible symbols. One sender has at most one report waiting in its parent's queue (a newer one replaces it), and reports take at most 10 of the queue's 20 places. Holds and the reports limit apply. The shapes are in `specs/changes/archive/0015-upward-reports/contracts/report-protocol.md`.
+
+An agent creates a temp below it with `agent.create` and the fields `"temp": true` and `"objective"`; `"own_worktree": false` turns off its own worktree:
+
+```sh
+office-harnessd agent-call agent.create '{"name":"docs","command":"claude","role":{"kind":"member"},"temp":true,"objective":"update the changelog and report done"}'
+```
 
 An agent also creates, starts, and stops agents below it, starts new tasks on them, and sends them directives; the protocol contract lists the request shapes. Every other request type is refused, and the refusal names the rule: an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants, and send reports to its parent or the person.
 
