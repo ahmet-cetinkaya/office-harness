@@ -137,3 +137,7 @@ After this change, the office deletes the stored process identities of a session
 ## Final verification
 
 Run `/ac:verify` against this plan. Then CI must be green on the 3 OSes, and Efe's code gate runs at the exact head.
+
+## Result
+
+T1 to T3 are done, one signed commit for each task. T2 runs one TRUNCATE checkpoint for D4 and D5 (see D5). The gates pass on the final tree: 1772 tests passed, 0 failed. The byte scans ran with the stated counts and found 0 markers in `office.db`, `-wal` and `-shm`; SC-003 found 30 of 30 markers before the first start of this build and 0 after it. FR-006 is PARTIAL: the busy checkpoint is tested, and a failed `VACUUM` is only logged. No spec deviation.
