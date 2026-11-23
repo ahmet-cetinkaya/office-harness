@@ -20,6 +20,7 @@ use crate::common::models::{
     PrepareLaunch, PreparedLaunch, SessionCommand, SessionPlan, StartTerminal, TrackedSession,
     TrackingRequest,
 };
+use crate::common::session_process_recorder::SessionProcessRecorder;
 use crate::common::worktree_link::is_linked_worktree;
 
 /// What a start was asked to do.
@@ -58,6 +59,7 @@ pub struct SessionLauncher {
     adapters: Arc<dyn CliAdapters>,
     clock: Arc<dyn Clock>,
     failures: Arc<dyn FailureReporter>,
+    processes: SessionProcessRecorder,
 }
 
 /// What a launcher needs besides the stores.
@@ -66,6 +68,8 @@ pub struct LauncherServices {
     pub adapters: Arc<dyn CliAdapters>,
     pub clock: Arc<dyn Clock>,
     pub failures: Arc<dyn FailureReporter>,
+    /// Stores the identity of the CLI process right after the spawn.
+    pub processes: SessionProcessRecorder,
 }
 
 /// A start that `prepare` accepted: the new session's id, the additions it
@@ -107,6 +111,7 @@ impl SessionLauncher {
             adapters: services.adapters,
             clock: services.clock,
             failures: services.failures,
+            processes: services.processes,
         }
     }
 
@@ -278,6 +283,8 @@ impl SessionLauncher {
         if let Err(error) = started {
             return self.fail_after_start(agent, session, error.to_string());
         }
+        // Before the caller publishes the session as started (0017/FR-001).
+        self.processes.record_cli(&session);
         if let Some(tracking) = tracking {
             match kind {
                 LaunchKind::NewTask => self.follow(session.id, tracking),

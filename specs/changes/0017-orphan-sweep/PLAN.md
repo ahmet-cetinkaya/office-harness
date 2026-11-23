@@ -190,6 +190,11 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - **T1, unsafe code.** `terminal-infrastructure` denies unsafe code; only the pidfd and Windows handle modules allow it, each with its reason.
 - **For T2.** On Linux the command line can be empty for a moment right after a spawn, which reads as "not readable". The recorder retries the first read briefly before it gives up.
 
+- **T2, `agent_sessions.helpers_capped`.** Beside the D3 table, the migration adds a flag on the session row that the helper limit sets (FR-010). T4 reads it for `may_run`, because a count of open helper rows would miss a session whose helpers later ended below the limit.
+- **T2, one end path.** `SessionRepository::end_running` ends the session and its open identity rows in one transaction. Stop, CLI end, clean server stop, and a failed spawn all use it, so FR-008 holds without a second call. The unclean-stop `lost` mark does not touch the rows.
+- **T2, ports.** The agent module owns `ProcessProbe` and `SessionProcessStore`; `ProcessProbeBridge` in the server app adapts the terminal runtime and `ProcessInspector` to them, so no module depends on another.
+- **T2, scan cost.** Each `descendants` call refreshes the whole process table. With many sessions, T3 may share one snapshot per scan.
+
 ## Review log
 
 r1 (Efe, fa44fb0): M1 to M3, L1, L2 resolved as below. r2 (Efe, 350ff07): PASS for coding; N1 (macOS FR-011 residual under A10) is checked in the code review.

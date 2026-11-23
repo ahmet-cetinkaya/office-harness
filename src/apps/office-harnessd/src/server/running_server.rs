@@ -18,6 +18,7 @@ use super::event_hub::EventHub;
 use super::hierarchy_requests::HierarchyGateway;
 use super::hold_requests::HoldGateway;
 use super::notification_requests::NotificationGateway;
+use super::process_scan::spawn_process_scan;
 use super::restart_signal::RestartSignal;
 use super::resume_requests::ResumeGateway;
 use super::resume_run::ResumeContext;
@@ -40,6 +41,28 @@ pub struct Server {
     state: ServerState,
     shutdown: watch::Sender<bool>,
     announcement_path: PathBuf,
+}
+
+/// Starts the tasks that turn terminal events into statuses, lines, and
+/// notifications.
+fn spawn_terminal_bridges(services: &Services, events: &EventHub, log: &ServerLog) {
+    AgentStatusBridge {
+        change_status: services.agent.change_status.clone(),
+        end_session: services.agent.end_session.clone(),
+        runtime: Arc::clone(&services.terminal.runtime),
+        hub: events.clone(),
+        order: Arc::clone(&services.agent.status_order),
+        alerts: services.storage_alerts.clone(),
+        log: log.clone(),
+        calls: services.access.agent_calls.clone(),
+    }
+    .spawn(services.terminal.events.subscribe());
+    AgentLineBridge::new(services.terminal.events.clone(), events.clone())
+        .spawn(services.terminal.events.subscribe_lines());
+    services.notification_bridge.clone().spawn(
+        services.events.subscribe(),
+        services.terminal.events.subscribe(),
+    );
 }
 
 /// The bulk resume of 0013: it starts through the agent gateway, so every
@@ -99,23 +122,7 @@ impl Server {
 
         let events = services.events.clone();
         events.forward_storage_alerts(services.storage_alerts.subscribe(), log.clone());
-        AgentStatusBridge {
-            change_status: services.agent.change_status.clone(),
-            end_session: services.agent.end_session.clone(),
-            runtime: Arc::clone(&services.terminal.runtime),
-            hub: events.clone(),
-            order: Arc::clone(&services.agent.status_order),
-            alerts: services.storage_alerts.clone(),
-            log: log.clone(),
-            calls: services.access.agent_calls.clone(),
-        }
-        .spawn(services.terminal.events.subscribe());
-        AgentLineBridge::new(services.terminal.events.clone(), events.clone())
-            .spawn(services.terminal.events.subscribe_lines());
-        services.notification_bridge.clone().spawn(
-            services.events.subscribe(),
-            services.terminal.events.subscribe(),
-        );
+        spawn_terminal_bridges(services, &events, log);
         let holds = HoldGateway::new(
             Arc::clone(&services.hierarchy.holds),
             Arc::clone(&services.agent_bridge_store),
@@ -149,6 +156,11 @@ impl Server {
         );
         let resume = resume_gateway(services, &agents, &events, options.resume_check_period);
         let (shutdown, stopping) = watch::channel(false);
+        spawn_process_scan(
+            services.agent.process_recorder.clone(),
+            stopping.clone(),
+            log.clone(),
+        );
         let state = ServerState {
             port,
             options,

@@ -18,13 +18,15 @@ use agent_application::common::action_journal::ActionJournal;
 use agent_application::common::errors::{PortError, TerminalHostError};
 use agent_application::common::interfaces::{
     ActionRecorder, AdditionsStore, AgentStore, CliAdapter, CliAdapters, Clock, FailureReporter,
-    ProjectStore, SessionStore, SettingsStore, TerminalHost,
+    ProcessProbe, ProjectStore, SessionProcessStore, SessionStore, SettingsStore, TerminalHost,
 };
 use agent_application::common::models::{
-    AgentActionEntry, PrepareLaunch, PreparedLaunch, StartTerminal,
+    AgentActionEntry, PrepareLaunch, PreparedLaunch, ProbeError, ProcessKind, SessionProcess,
+    StartTerminal, StoredProcess,
 };
 use agent_application::common::session_ender::SessionEnder;
 use agent_application::common::session_launcher::{LauncherServices, SessionLauncher};
+use agent_application::common::session_process_recorder::SessionProcessRecorder;
 use agent_application::queries::get_office_additions::GetOfficeAdditionsHandler;
 use agent_application::queries::get_settings::GetSettingsHandler;
 use agent_application::queries::list_agents::ListAgentsHandler;
@@ -215,6 +217,10 @@ impl SessionStore for FakeSessions {
         never_called()
     }
 
+    fn running(&self) -> Result<Vec<agent_domain::entities::Session>, PortError> {
+        never_called()
+    }
+
     fn end_running(
         &self,
         _agent_id: AgentId,
@@ -222,6 +228,51 @@ impl SessionStore for FakeSessions {
         _at: Timestamp,
     ) -> Result<bool, PortError> {
         Ok(true)
+    }
+}
+
+/// A start never reaches the terminal here, so no process is recorded.
+#[derive(Default)]
+struct FakeProcesses;
+
+impl SessionProcessStore for FakeProcesses {
+    fn insert_open(
+        &self,
+        _session_id: SessionId,
+        _kind: ProcessKind,
+        _process: &SessionProcess,
+    ) -> Result<bool, PortError> {
+        never_called()
+    }
+
+    fn open_for_session(&self, _session_id: SessionId) -> Result<Vec<StoredProcess>, PortError> {
+        never_called()
+    }
+
+    fn update_command(&self, _id: i64, _process: &SessionProcess) -> Result<(), PortError> {
+        never_called()
+    }
+
+    fn drop_helper(&self, _id: i64) -> Result<(), PortError> {
+        never_called()
+    }
+
+    fn mark_helper_limit(&self, _session_id: SessionId) -> Result<(), PortError> {
+        never_called()
+    }
+}
+
+impl ProcessProbe for FakeProcesses {
+    fn cli_process_id(&self, _agent_id: AgentId) -> Option<u32> {
+        never_called()
+    }
+
+    fn read(&self, _pid: u32) -> Result<SessionProcess, ProbeError> {
+        never_called()
+    }
+
+    fn descendants(&self, _root: u32) -> Vec<u32> {
+        never_called()
     }
 }
 
@@ -370,16 +421,8 @@ fn stores() -> FakeStores {
     }
 }
 
-fn use_cases(stores: &FakeStores) -> AgentUseCases {
-    let journal = ActionJournal::new(Arc::new(RecordingRecorder), Arc::clone(&stores.clock));
-    let ender = SessionEnder::new(
-        Arc::clone(&stores.agents_trait),
-        Arc::clone(&stores.settings),
-        Arc::clone(&stores.sessions),
-        Arc::clone(&stores.terminals),
-        Arc::clone(&stores.clock),
-    );
-    let launcher = SessionLauncher::new(
+fn launcher_of(stores: &FakeStores, journal: &ActionJournal) -> SessionLauncher {
+    SessionLauncher::new(
         Arc::clone(&stores.agents_trait),
         Arc::clone(&stores.projects),
         Arc::clone(&stores.additions),
@@ -389,8 +432,27 @@ fn use_cases(stores: &FakeStores) -> AgentUseCases {
             adapters: Arc::clone(&stores.adapters),
             clock: Arc::clone(&stores.clock),
             failures: Arc::new(FakeFailures),
+            processes: SessionProcessRecorder::new(
+                Arc::clone(&stores.sessions),
+                Arc::new(FakeProcesses),
+                Arc::new(FakeProcesses),
+                journal.clone(),
+                Arc::new(FakeFailures),
+            ),
         },
+    )
+}
+
+fn use_cases(stores: &FakeStores) -> AgentUseCases {
+    let journal = ActionJournal::new(Arc::new(RecordingRecorder), Arc::clone(&stores.clock));
+    let ender = SessionEnder::new(
+        Arc::clone(&stores.agents_trait),
+        Arc::clone(&stores.settings),
+        Arc::clone(&stores.sessions),
+        Arc::clone(&stores.terminals),
+        Arc::clone(&stores.clock),
     );
+    let launcher = launcher_of(stores, &journal);
     AgentUseCases {
         create_agent: CreateAgentHandler::new(
             Arc::clone(&stores.agents_trait),
