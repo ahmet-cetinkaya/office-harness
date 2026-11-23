@@ -239,6 +239,42 @@ async fn a_sign_in_screen_in_the_first_seconds_ends_the_cli_as_not_signed_in() {
         .filter(|entry| entry["action"] == "stop" && entry["actor"] == "office")
         .collect();
     assert_eq!(stops.len(), 1, "{actions:?}");
+    let notifications = client.ask("notification.list", json!({})).await;
+    let failures = notifications["result"]
+        .as_array()
+        .expect("notifications")
+        .iter()
+        .filter(|row| row["agent_id"] == agent.as_str() && row["event"] == "failed")
+        .count();
+    assert_eq!(failures, 1, "{notifications}");
+}
+
+#[tokio::test]
+async fn a_key_typed_into_an_agent_stops_only_its_own_watch() {
+    let office = Office::open().await;
+    office.clis.add(
+        "gemini",
+        &format!("echo ready; sleep 2; echo '{SIGN_IN_SCREEN}'; sleep 30"),
+    );
+    let mut client = office.client().await;
+    let typed_into = client.create_agent(&office, "Ana", "gemini", None).await;
+    let untouched = client.create_agent(&office, "Bo", "gemini", None).await;
+    client.start(&typed_into).await;
+    client.start(&untouched).await;
+
+    let typed = client
+        .ask(
+            "terminal.input",
+            json!({"agent_id": typed_into, "data": "aGkK"}),
+        )
+        .await;
+    assert_eq!(typed["ok"], true, "{typed}");
+
+    assert_eq!(
+        wait_for_end(&mut client, &untouched, ENDED_WITHIN).await,
+        "failed"
+    );
+    assert_ne!(client.status_of(&typed_into).await, "failed");
 }
 
 #[tokio::test]

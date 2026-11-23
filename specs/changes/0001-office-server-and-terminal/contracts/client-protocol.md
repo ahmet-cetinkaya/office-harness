@@ -60,6 +60,8 @@ Every request is a JSON text frame `{"id":<u32>,"type":"<name>",...}`. The respo
 
 > Amended by 0013: a session's `exit_result` in `session.list` and the session results can also be `lost`: the session was still open when the server stopped uncleanly, and the next server start ended it. A clean stop still gives `interrupted`. A `lost` session can be continued like an `interrupted` one. Action record entries gain `detail` (a string or null). The requests `agent.resume`, `resume.plan`, and `resume.start` and the event `resume.result` are in `specs/changes/0013-bulk-resume/contracts/resume-protocol.md`.
 
+> Amended by 0019: a session's `exit_result` can also be `not-signed-in: <reason>`: the office ended the CLI at its sign-in screen in the first 20 seconds. A start whose sign-in status command says the CLI is not signed in stores a session that never ran, `spawn-error: <reason>`, where the reason starts with `<cli> is not signed in:`. On a running agent, `agent.new_task` and `session.continue` answer `refused` with that reason instead, and the running session goes on. An action record entry's `detail` can hold `the sign-in check gave no answer: <why>`. See `specs/changes/0019-cli-sign-in-check/SPEC.md`.
+
 ## Events (server to client, no `id`)
 
 | Event | Fields | FR |
