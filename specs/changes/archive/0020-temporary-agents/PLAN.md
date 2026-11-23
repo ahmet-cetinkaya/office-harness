@@ -1,6 +1,6 @@
 ---
 status: completed
-spec: specs/changes/0020-temporary-agents/SPEC.md
+spec: specs/changes/archive/0020-temporary-agents/SPEC.md
 commits: per-task
 ---
 
@@ -29,7 +29,7 @@ An agent gets an optional temp mark: its objective and its creator. The person c
 
 ## Goal
 
-Every FR and SC of `specs/changes/0020-temporary-agents/SPEC.md`, proven by unit, wire, and e2e tests, with CI green on Linux, macOS, and Windows.
+Every FR and SC of `specs/changes/archive/0020-temporary-agents/SPEC.md`, proven by unit, wire, and e2e tests, with CI green on Linux, macOS, and Windows.
 
 ## Context
 

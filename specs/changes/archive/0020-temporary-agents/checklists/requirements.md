@@ -1,6 +1,6 @@
 # Requirements checklist: 0020-temporary-agents
 
-Spec: `specs/changes/0020-temporary-agents/SPEC.md` · Status: approved (review r2 PASS at e8a6ab3) · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0003/`, `0007/`, `0008/`, `0010/`, `0012/`, `0013/`, `0015/`, and `0018/` reference was checked against the specs on this branch.
+Spec: `specs/changes/archive/0020-temporary-agents/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0003/`, `0007/`, `0008/`, `0010/`, `0012/`, `0013/`, `0015/`, and `0018/` reference was checked against the specs on this branch.
 
 ## Content quality
 

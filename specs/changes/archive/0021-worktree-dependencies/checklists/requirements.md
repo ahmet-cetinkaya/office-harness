@@ -1,6 +1,6 @@
 # Requirements checklist: 0021-worktree-dependencies
 
-Spec: `specs/changes/0021-worktree-dependencies/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0009/`, `0010/`, and `0018` reference was checked against the specs on this branch.
+Spec: `specs/changes/archive/0021-worktree-dependencies/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0009/`, `0010/`, and `0018` reference was checked against the specs on this branch.
 
 ## Content quality
 

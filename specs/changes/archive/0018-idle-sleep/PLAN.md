@@ -1,6 +1,6 @@
 ---
 status: completed
-spec: specs/changes/0018-idle-sleep/SPEC.md
+spec: specs/changes/archive/0018-idle-sleep/SPEC.md
 commits: per-task
 ---
 

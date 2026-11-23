@@ -216,7 +216,7 @@ While a session runs, the server stores the identity of its CLI process and of t
 - Each result is in the action record as `end_leftover`. When a process cannot be ended, you get a `leftover_kept` notification for the agent.
 - After the sweep, the resume warning names only the agents for which the server cannot rule out a running process.
 
-The shapes are in [the sweep protocol](specs/changes/0017-orphan-sweep/contracts/sweep-protocol.md).
+The shapes are in [the sweep protocol](specs/changes/archive/0017-orphan-sweep/contracts/sweep-protocol.md).
 
 ## Idle sleep
 
@@ -234,7 +234,7 @@ To wake an agent, give its terminal view keyboard focus and press Enter, or pres
 
 A directive or a report to an agent that is asleep, or is going to sleep, is refused. The answer says that the agent is not running because it is asleep. The refusal is in the action records.
 
-The shapes of the requests are in [the sleep protocol](specs/changes/0018-idle-sleep/contracts/sleep-protocol.md).
+The shapes of the requests are in [the sleep protocol](specs/changes/archive/0018-idle-sleep/contracts/sleep-protocol.md).
 
 ## Temporary agents
 
@@ -258,7 +258,7 @@ Press **Temps** in the panel header to see every temp with its creator, parent, 
 
 At most 8 temps exist at once by default. A create over the cap is refused with the cap in the reason; the refusal counts toward no rate limit and no automatic hold. Set the **Temp cap** (1 to 100) and the **Temp idle limit** in minutes (5 to 1440) in the **Limits** dialog. When the office ends a temp for the idle limit, or because its CLI exited or failed, its running parent gets one line `[temp ended: <name> (<agent id>): <reason>]`; when no parent hears of an idle end, you get one notification.
 
-The shapes of the requests are in [the temp protocol](specs/changes/0020-temporary-agents/contracts/temp-protocol.md).
+The shapes of the requests are in [the temp protocol](specs/changes/archive/0020-temporary-agents/contracts/temp-protocol.md).
 
 ## Start at login
 
