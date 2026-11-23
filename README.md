@@ -465,6 +465,8 @@ What the office does with a value besides sealing it: it replaces each exact occ
 
 You need Rust 1.100.0 (the repository pins it in `rust-toolchain.toml`), Bun 1.4.4, and Node 24. On Linux you also need the Tauri system packages. The list is in the `Install Linux system packages for Tauri` step of `.github/workflows/ci.yml`.
 
+With nix flakes enabled, run `nix develop` in the repository root. The shell has the Rust toolchain from `rust-toolchain.toml` (with rustfmt and clippy), Bun, Node 24, and on Linux the Tauri system packages. On macOS it has the toolchain, Bun, and Node only. The shell sets no `RUSTFLAGS`, and you do not need to. The lines below are for people without flakes.
+
 On a machine without rustup, run the Rust lint gates with scripts/lint-rust.sh through the pinned toolchain, so that a wrong rustc cannot hide lints from CI:
 
 ```sh
