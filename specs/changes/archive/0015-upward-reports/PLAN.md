@@ -1,6 +1,6 @@
 ---
-status: in_progress
-spec: specs/changes/0015-upward-reports/SPEC.md
+status: completed
+spec: specs/changes/archive/0015-upward-reports/SPEC.md
 commits: per-task
 ---
 
