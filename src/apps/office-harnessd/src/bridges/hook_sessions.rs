@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
 use agent_domain::enums::StatusEvent;
 use kernel::AgentId;
@@ -18,6 +18,10 @@ pub const DETAIL_TURN_FAILED: &str = "turn_failed";
 /// The frame detail of a change to `waiting for input` that asks for
 /// permission (0024/FR-013).
 pub const DETAIL_PERMISSION_ASKED: &str = "permission_asked";
+
+/// Called after a session's hook state changes, with the new state, or
+/// `None` when the session ended. It runs outside the record's lock.
+type ChangeListener = Arc<dyn Fn(AgentId, Option<HookState>) + Send + Sync>;
 
 /// Where the status of one session comes from (0024 Terms).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +91,7 @@ struct SessionRecord {
 pub struct HookSessions {
     sessions: Arc<Mutex<HashMap<AgentId, SessionRecord>>>,
     waits: WaitTracker,
+    listener: Arc<OnceLock<ChangeListener>>,
 }
 
 impl HookSessions {
@@ -97,6 +102,19 @@ impl HookSessions {
         Self {
             sessions: Arc::default(),
             waits,
+            listener: Arc::default(),
+        }
+    }
+
+    /// Calls `listener` after each change of a session's state, so that the
+    /// clients hear of it (0024 D9). The first listener stays.
+    pub fn on_change(&self, listener: impl Fn(AgentId, Option<HookState>) + Send + Sync + 'static) {
+        let _ = self.listener.set(Arc::new(listener));
+    }
+
+    fn notify(&self, agent_id: AgentId, state: Option<HookState>) {
+        if let Some(listener) = self.listener.get() {
+            listener(agent_id, state);
         }
     }
 
@@ -107,18 +125,23 @@ impl HookSessions {
     /// A session starts in `run`. It is `estimated` until its first report;
     /// `reason` says why it may stay so.
     pub fn session_started(&self, agent_id: AgentId, run: Option<RunId>, reason: Option<String>) {
+        let state = HookState::estimated(reason);
         self.locked().insert(
             agent_id,
             SessionRecord {
                 run,
-                state: HookState::estimated(reason),
+                state: state.clone(),
             },
         );
+        self.notify(agent_id, Some(state));
     }
 
     /// The agent's session ends for any reason.
     pub fn session_ended(&self, agent_id: AgentId) {
-        self.locked().remove(&agent_id);
+        let removed = self.locked().remove(&agent_id);
+        if removed.is_some() {
+            self.notify(agent_id, None);
+        }
     }
 
     /// The state of the agent's session, when it has one.
@@ -150,25 +173,38 @@ impl HookSessions {
     /// report was lost or the person interrupted it, so the session turns
     /// late and the quiet period decides again (0024/FR-014).
     pub fn judge_terminal_event(&self, agent_id: AgentId, event: TerminalEvent) -> TerminalVerdict {
+        let (verdict, turned_late) = self.judge_locked(agent_id, event);
+        if let Some(state) = turned_late {
+            self.notify(agent_id, Some(state));
+        }
+        verdict
+    }
+
+    /// The verdict, and the new state when the event turned the session late.
+    fn judge_locked(
+        &self,
+        agent_id: AgentId,
+        event: TerminalEvent,
+    ) -> (TerminalVerdict, Option<HookState>) {
         let mut sessions = self.locked();
         let Some(record) = sessions.get_mut(&agent_id) else {
-            return TerminalVerdict::Pass;
+            return (TerminalVerdict::Pass, None);
         };
         if record.state.source != StatusSource::Exact {
-            return TerminalVerdict::Pass;
+            return (TerminalVerdict::Pass, None);
         }
         match event {
-            TerminalEvent::OutputResumed => TerminalVerdict::Drop,
+            TerminalEvent::OutputResumed => (TerminalVerdict::Drop, None),
             TerminalEvent::QuietPeriod => {
                 if !record.state.works() {
-                    return TerminalVerdict::Drop;
+                    return (TerminalVerdict::Drop, None);
                 }
                 record.state.source = StatusSource::Late;
                 record.state.reason = Some(STALLED_TURN_REASON.to_owned());
                 self.waits.set_exact(agent_id, false);
-                TerminalVerdict::Pass
+                (TerminalVerdict::Pass, Some(record.state.clone()))
             }
-            _ => TerminalVerdict::Pass,
+            _ => (TerminalVerdict::Pass, None),
         }
     }
 
@@ -179,11 +215,25 @@ impl HookSessions {
         if report.from_helper {
             return None;
         }
+        let (outcome, before, after) = self.apply_locked(report, run)?;
+        if before != after {
+            self.notify(report.agent_id, Some(after));
+        }
+        Some(outcome)
+    }
+
+    /// The outcome of the report, and the state before and after it.
+    fn apply_locked(
+        &self,
+        report: &HookReport,
+        run: RunId,
+    ) -> Option<(ReportOutcome, HookState, HookState)> {
         let mut sessions = self.locked();
         let record = sessions.get_mut(&report.agent_id)?;
         if record.run != Some(run) {
             return None;
         }
+        let before = record.state.clone();
         if record.state.source != StatusSource::Exact {
             record.state.source = StatusSource::Exact;
             record.state.reason = None;
@@ -199,7 +249,7 @@ impl HookSessions {
             HookEventKind::CompactionEnded => state.compacting = false,
             HookEventKind::PermissionAsked => {}
         }
-        Some(ReportOutcome {
+        let outcome = ReportOutcome {
             status_event: if state.works() {
                 StatusEvent::Output
             } else {
@@ -207,23 +257,30 @@ impl HookSessions {
             },
             detail: waiting_detail(report.kind, state.works()),
             ask_opened: state.ask_open,
-        })
+        };
+        let after = state.clone();
+        Some((outcome, before, after))
     }
 
     /// A person's input reached the terminal: it ends an open permission
     /// ask, and the status event to apply follows (0024/FR-013).
     pub fn input_ends_ask(&self, agent_id: AgentId) -> Option<StatusEvent> {
-        let mut sessions = self.locked();
-        let state = &mut sessions.get_mut(&agent_id)?.state;
-        if state.source != StatusSource::Exact || !state.ask_open {
-            return None;
-        }
-        state.ask_open = false;
-        Some(if state.works() {
-            StatusEvent::Output
-        } else {
-            StatusEvent::QuietPeriodElapsed
-        })
+        let (event, state) = {
+            let mut sessions = self.locked();
+            let state = &mut sessions.get_mut(&agent_id)?.state;
+            if state.source != StatusSource::Exact || !state.ask_open {
+                return None;
+            }
+            state.ask_open = false;
+            let event = if state.works() {
+                StatusEvent::Output
+            } else {
+                StatusEvent::QuietPeriodElapsed
+            };
+            (event, state.clone())
+        };
+        self.notify(agent_id, Some(state));
+        Some(event)
     }
 }
 

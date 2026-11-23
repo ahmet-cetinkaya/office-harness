@@ -17,6 +17,7 @@ use super::dispatcher::Dispatcher;
 use super::event_hub::EventHub;
 use super::hierarchy_requests::HierarchyGateway;
 use super::hold_requests::HoldGateway;
+use super::hook_events::hook_changed_event;
 use super::hook_requests::{HookGateway, HookReportSink};
 use super::idle_sleep_run::IdleSleeper;
 use super::notification_requests::NotificationGateway;
@@ -79,6 +80,13 @@ fn spawn_terminal_bridges(
         services.events.subscribe(),
         services.terminal.events.subscribe(),
     );
+    let hook_events = events.clone();
+    services
+        .terminal
+        .hook_sessions
+        .on_change(move |agent_id, state| {
+            hook_events.publish(&hook_changed_event(agent_id, state.as_ref()));
+        });
     HookStatusBridge {
         change_status: services.agent.change_status.clone(),
         runtime: Arc::clone(&services.terminal.runtime),
@@ -317,7 +325,8 @@ impl Server {
         )
         .with_sweep_gate(sweep_gate.clone())
         .with_sign_in_checks(services.agent.sign_in_checks.clone())
-        .with_temps(temp_hooks.clone());
+        .with_temps(temp_hooks.clone())
+        .with_hook_sessions(services.terminal.hook_sessions.clone());
         let hierarchy = HierarchyGateway::new(
             Arc::clone(&services.hierarchy.handlers),
             services.agent.agent_reader.clone(),

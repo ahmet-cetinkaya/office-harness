@@ -29,11 +29,13 @@ use wire::{ErrorCode, Request, Response};
 use super::agent_call::recorded_and_published;
 use super::event_hub::EventHub;
 use super::hold_requests::HoldGateway;
+use super::hook_events::hook_json;
 use super::subtree_status::{SubtreeState, subtree_entries, time_before};
 use crate::bootstrap::StorageAlerts;
 use crate::bridges::{
-    END_CHECK_REQUEST, ENDING_MESSAGE, NeedsYouBridge, StatusOrder, StoppingFlag, SystemClock,
-    TaskOrder, TempHooks, TempSnapshot, TerminalEvents, take_recorded_events, temp_changed_event,
+    END_CHECK_REQUEST, ENDING_MESSAGE, HookSessions, HookState, NeedsYouBridge, StatusOrder,
+    StoppingFlag, SystemClock, TaskOrder, TempHooks, TempSnapshot, TerminalEvents,
+    take_recorded_events, temp_changed_event,
 };
 use crate::sweep::SweepGate;
 
@@ -110,6 +112,9 @@ pub struct AgentGateway {
     sign_in: Option<SessionLauncher>,
     /// What the gateway does around a request because of temps (0020).
     temps: Option<Arc<TempHooks>>,
+    /// What the reports of `claude` sessions say, merged into each agent's
+    /// answer as `hook` (0024).
+    hooks: Option<HookSessions>,
 }
 
 impl AgentGateway {
@@ -148,6 +153,7 @@ impl AgentGateway {
             sweep_gate: SweepGate::default(),
             sign_in: None,
             temps: None,
+            hooks: None,
         }
     }
 
@@ -157,6 +163,13 @@ impl AgentGateway {
     #[must_use]
     pub fn with_temps(mut self, temps: TempHooks) -> Self {
         self.temps = Some(Arc::new(temps));
+        self
+    }
+
+    /// Puts the `hook` object of 0024 into every agent answer.
+    #[must_use]
+    pub fn with_hook_sessions(mut self, hooks: HookSessions) -> Self {
+        self.hooks = Some(hooks);
         self
     }
 
@@ -266,6 +279,7 @@ impl AgentGateway {
             self.needs_you.forget_deleted_agents();
         }
         self.add_last_lines(&mut response);
+        self.add_hook_states(&mut response);
         if request.kind.starts_with(AGENT_PREFIX) {
             self.add_places(&mut response);
         }
@@ -433,6 +447,16 @@ impl AgentGateway {
         });
     }
 
+    /// Fills `hook` into every agent object the response carries, so that
+    /// `agent.list` shows the status source (0024/FR-019). The live updates
+    /// arrive as `hook.changed` events.
+    fn add_hook_states(&self, response: &mut Response) {
+        let (Some(hooks), Response::Success { result, .. }) = (&self.hooks, response) else {
+            return;
+        };
+        fill_hook_states(result, &|agent_id| hooks.state(agent_id));
+    }
+
     /// Fills `role` and `team` into every agent object the response
     /// carries, read from the hierarchy at answer time, so a rename or a
     /// placement shows in the next answer (hierarchy-protocol.md: `team` is
@@ -547,6 +571,22 @@ fn fill_last_lines(result: &mut Value, last_line: &dyn Fn(AgentId) -> Option<Str
         let line = last_line(agent_id).map_or(Value::Null, Value::String);
         if let Some(agent) = agent.as_object_mut() {
             agent.insert("last_line".to_owned(), line);
+        }
+    }
+}
+
+/// Writes `hook` into every agent object of a response result.
+fn fill_hook_states(result: &mut Value, state_of: &dyn Fn(AgentId) -> Option<HookState>) {
+    for agent in agent_objects(result) {
+        let Some(agent_id) = agent
+            .get("id")
+            .and_then(Value::as_str)
+            .and_then(|id| AgentId::from_str(id).ok())
+        else {
+            continue;
+        };
+        if let Some(agent) = agent.as_object_mut() {
+            agent.insert("hook".to_owned(), hook_json(state_of(agent_id).as_ref()));
         }
     }
 }

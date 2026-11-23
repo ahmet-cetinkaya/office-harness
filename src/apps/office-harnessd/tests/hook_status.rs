@@ -266,3 +266,47 @@ async fn an_open_ask_keeps_an_idle_agent_awake_even_after_its_item_is_dismissed(
     client.wait_for_status(&agent, "asleep").await;
     office.serving.stop().await;
 }
+
+async fn hook_of(client: &mut Client, agent: &str) -> Value {
+    let listed = client.ask("agent.list", json!({})).await;
+    listed["result"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .find(|entry| entry["id"] == agent)
+        .map(|entry| entry["hook"].clone())
+        .expect("the agent is listed")
+}
+
+/// Reads `hook.changed` events until one of this agent satisfies `wanted`.
+async fn wait_for_hook_event(client: &mut Client, agent: &str, wanted: impl Fn(&Value) -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let event = tokio::time::timeout(
+            deadline.saturating_duration_since(Instant::now()),
+            client.next_event("hook.changed"),
+        )
+        .await
+        .expect("a matching hook.changed event");
+        if event["agent_id"] == agent && wanted(&event["hook"]) {
+            return;
+        }
+    }
+}
+
+#[tokio::test]
+async fn the_agent_list_and_hook_changed_tell_the_status_source_and_the_ask() {
+    let (office, mut client, agent, poster) = open_agent(WAITING_CLI).await;
+    let before = hook_of(&mut client, &agent).await;
+    assert_eq!(before["source"], "estimated");
+    assert_eq!(before["reason"], "this CLI has no status hooks");
+
+    poster.report("UserPromptSubmit", "").await;
+    wait_for_hook_event(&mut client, &agent, |hook| hook["source"] == "exact").await;
+    poster.report("PermissionRequest", "").await;
+    wait_for_hook_event(&mut client, &agent, |hook| hook["ask_open"] == true).await;
+    assert_eq!(hook_of(&mut client, &agent).await["ask_open"], true);
+    poster.report("PreCompact", "").await;
+    wait_for_hook_event(&mut client, &agent, |hook| hook["compacting"] == true).await;
+    office.serving.stop().await;
+}
