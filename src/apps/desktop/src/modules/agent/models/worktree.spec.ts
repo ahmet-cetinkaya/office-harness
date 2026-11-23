@@ -39,6 +39,7 @@ const INFO: RepositoryInfo = {
   branches: ["main", "develop"],
   branch_name: "office-harness/ada",
   subfolder: "",
+  shares_dependencies: true,
 };
 
 describe("worktree models", () => {
