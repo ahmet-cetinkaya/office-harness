@@ -13,7 +13,7 @@ use hierarchy_domain::{
     AgentAction, HierarchyError, Hold, ReportKind, Role, TeamId, TreeRow, check_descendant,
     is_descendant_of,
 };
-use kernel::{Actor, AgentId, visible_text};
+use kernel::{Actor, AgentId, TextRedactor, visible_text};
 use serde_json::{Value, json};
 use tokio::sync::watch;
 use tokio::task::spawn_blocking;
@@ -99,7 +99,7 @@ pub async fn serve_agent_connection(mut socket: WebSocket, state: ServerState, g
 }
 
 async fn answer_request(state: &ServerState, grant: &AgentGrant, frame: &str) -> Response {
-    let Some(request) = Request::decode(frame) else {
+    let Some(request) = Request::decode(frame).map(|request| redacted(state, request)) else {
         return Response::failure(
             0,
             ErrorCode::Invalid,
@@ -145,6 +145,30 @@ async fn answer_request(state: &ServerState, grant: &AgentGrant, frame: &str) ->
     let reason = refusal_reason(&refusal, &request.kind);
     journal_refusal(state, grant.agent_id, &reason);
     Response::failure(request.id, ErrorCode::Refused, reason)
+}
+
+/// Replaces a secret value in every text of the request before anything
+/// stores it or passes it on: a directive, a report, a task, a startup
+/// prompt, the name or objective of a new agent or temp (0026/FR-012). The
+/// agent keeps what it knows; the office keeps the placeholder.
+fn redacted(state: &ServerState, mut request: Request) -> Request {
+    for value in request.fields.values_mut() {
+        redact_value(&*state.redactor, value);
+    }
+    request
+}
+
+fn redact_value(redactor: &dyn TextRedactor, value: &mut Value) {
+    match value {
+        Value::String(text) => *text = redactor.redact_text(text),
+        Value::Array(items) => items
+            .iter_mut()
+            .for_each(|item| redact_value(redactor, item)),
+        Value::Object(fields) => fields
+            .values_mut()
+            .for_each(|field| redact_value(redactor, field)),
+        _ => {}
+    }
 }
 
 /// Journals a refusal and publishes the entry it wrote.

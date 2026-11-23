@@ -205,6 +205,29 @@ impl SecretService {
         Ok(removed)
     }
 
+    /// Every secret that opens, with its value, for the redaction (FR-012).
+    /// A locked or empty store gives none.
+    ///
+    /// # Errors
+    /// `Storage`.
+    pub fn open_all(&self) -> Result<Vec<(SecretName, SecretValue)>> {
+        let StoreState::Ready(custody) = self.state()? else {
+            return Ok(Vec::new());
+        };
+        let key = self.open_key(custody)?;
+        let mut values = Vec::new();
+        for stored in self.ports.store.list()? {
+            if let Ok(value) = self
+                .ports
+                .sealer
+                .open(&key, &binding_of(&stored), &stored.sealed)
+            {
+                values.push((stored.name, value));
+            }
+        }
+        Ok(values)
+    }
+
     /// Removes the grants of every agent that no longer exists (FR-009). A
     /// delete of one agent, a delete of a subtree, and a start after the
     /// agents were deleted while the server was down all take this path.

@@ -107,7 +107,8 @@ fn serve_bound(mut office: RunningOffice) -> ServingOffice {
 /// Starts a server again on the data folder of a stopped one, as a restart of
 /// the server process does: new services over the same database.
 pub async fn serve_again(stopped: RunningOffice, login: LoginSetup) -> ServingOffice {
-    serve_again_with(stopped, login, ServerOptions::default()).await
+    // Boxed: the services of the stopped office make this future large.
+    Box::pin(serve_again_with(stopped, login, ServerOptions::default())).await
 }
 
 /// As `serve_again`, with the options the new server runs with.

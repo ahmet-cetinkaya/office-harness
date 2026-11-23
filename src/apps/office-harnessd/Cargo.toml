@@ -57,6 +57,11 @@ futures-util.workspace = true
 tokio-tungstenite.workspace = true
 wire = { path = "../../shared/wire" }
 
+# The server asks the OS for no memory dump (0026/FR-013), through nix's safe
+# wrappers.
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["resource", "process"] }
+
 [dev-dependencies]
 tempfile.workspace = true
 tower.workspace = true

@@ -6,7 +6,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use kernel::AgentId;
+use kernel::{AgentId, StreamRedactor};
 use portable_pty::{Child, MasterPty};
 use terminal_application::common::errors::TerminalRuntimeError;
 use terminal_application::common::interfaces::{OutputSubscriber, TerminalEventSink};
@@ -60,6 +60,10 @@ struct Subscription {
 /// a snapshot and the live subscription atomic: output cannot land between
 /// them.
 struct SessionCore {
+    /// Replaces secret values in the output before the screen and the file see
+    /// it (0026/FR-012). Subscribers get the raw bytes: the live stream is the
+    /// person's own screen.
+    redaction: Box<dyn StreamRedactor>,
     emulator: ScreenEmulator,
     store: Option<OutputStore>,
     subscribers: Vec<Subscription>,
@@ -105,6 +109,7 @@ pub struct SessionParts {
     pub agent_id: AgentId,
     pub pty: SpawnedPty,
     pub emulator: ScreenEmulator,
+    pub redaction: Box<dyn StreamRedactor>,
     pub store: OutputStore,
     pub size: TerminalSize,
     pub quiet_period: Duration,
@@ -144,6 +149,7 @@ impl TerminalSession {
             agent_id,
             pty,
             emulator,
+            redaction,
             store,
             size,
             quiet_period,
@@ -156,6 +162,7 @@ impl TerminalSession {
             process_id: pty.child.process_id(),
             runs_through_batch_interpreter: pty.runs_through_batch_interpreter,
             core: Mutex::new(SessionCore {
+                redaction,
                 emulator,
                 store: Some(store),
                 subscribers: Vec::new(),
@@ -349,16 +356,30 @@ impl TerminalSession {
                 Ok(count) => self.handle_output(&buffer[..count]),
             }
         }
+        self.flush_redaction();
         locked(&self.lifecycle).reader_finished = true;
         self.lifecycle_changed.notify_all();
+    }
+
+    /// At the end of the output, what the redaction held back (the start of
+    /// a value that never finished) goes to the screen and the file.
+    fn flush_redaction(&self) {
+        let mut core = locked(&self.core);
+        let rest = core.redaction.finish();
+        if rest.is_empty() {
+            return;
+        }
+        let _ = core.emulator.process(&rest);
+        let _ = core.record(&rest);
     }
 
     fn handle_output(&self, bytes: &[u8]) {
         let mut events = Vec::new();
         let replies = {
             let mut core = locked(&self.core);
-            let replies = core.emulator.process(bytes);
-            let (dropped_oldest, storage_event) = core.record(bytes);
+            let stored = core.redaction.push(bytes);
+            let replies = core.emulator.process(&stored);
+            let (dropped_oldest, storage_event) = core.record(&stored);
             events.extend(storage_event);
             core.broadcast(&LiveOutput::Bytes(bytes.to_vec()));
             if dropped_oldest {
