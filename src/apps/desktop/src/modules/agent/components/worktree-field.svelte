@@ -16,6 +16,8 @@
     name: string;
     /** Changes after a refused create, so the branch name is read again. */
     refreshKey?: number;
+    /** True turns the box on when it becomes true; the person can turn it off. */
+    startsOn?: boolean;
     lookup: (query: WorktreeQuery) => Promise<WorktreeInfo>;
     /** The create fields, or null while the box is off or hidden. */
     selection: WorktreeSelection | null;
@@ -26,6 +28,7 @@
     projectId = null,
     name,
     refreshKey = 0,
+    startsOn = false,
     lookup,
     selection = $bindable(null),
   }: Props = $props();
@@ -71,6 +74,10 @@
       isStale = true;
       clearTimeout(timer);
     };
+  });
+
+  $effect(() => {
+    if (startsOn) isOwn = true;
   });
 
   $effect(() => {
