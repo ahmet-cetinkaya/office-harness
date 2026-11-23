@@ -5,6 +5,7 @@
 use super::*;
 
 const SLASH_RULE: &str = "node_modules/\n";
+#[cfg(unix)]
 const NAME_RULE: &str = "node_modules\n";
 const WORKSPACE: &str = "web";
 
@@ -43,6 +44,7 @@ fn create_linked(worktrees: &GitWorktrees, folder: &Path, is_on: bool) -> Create
         .expect("created")
 }
 
+#[cfg(unix)]
 fn recording(fixture: &Fixture) -> (GitWorktrees, Arc<RecordedFailures>) {
     let failures = Arc::new(RecordedFailures::default());
     let worktrees = GitWorktrees::with_runner(fixture.root.clone(), Some(runner(&fixture.home)))
@@ -51,6 +53,7 @@ fn recording(fixture: &Fixture) -> (GitWorktrees, Arc<RecordedFailures>) {
 }
 
 /// The reported reasons, without the storage prefix of the log line.
+#[cfg(unix)]
 fn recorded(failures: &RecordedFailures) -> Vec<String> {
     let mut reasons: Vec<String> = failures
         .0
@@ -64,6 +67,7 @@ fn recorded(failures: &RecordedFailures) -> Vec<String> {
 }
 
 /// The base checkout's installed packages at both places.
+#[cfg(unix)]
 fn installed(fixture: &Fixture) -> Vec<(PathBuf, String)> {
     let mut found = listing(&fixture.repository.join("node_modules"));
     found.extend(listing(
@@ -74,6 +78,7 @@ fn installed(fixture: &Fixture) -> Vec<(PathBuf, String)> {
 
 /// Every path below `folder`, links not followed, with its content or its
 /// link target.
+#[cfg(unix)]
 fn listing(folder: &Path) -> Vec<(PathBuf, String)> {
     let mut found = Vec::new();
     let mut pending = vec![folder.to_path_buf()];
@@ -96,6 +101,7 @@ fn listing(folder: &Path) -> Vec<(PathBuf, String)> {
     found
 }
 
+#[cfg(unix)]
 fn porcelain(fixture: &Fixture, folder: &Path) -> String {
     git(
         &fixture.home,
@@ -104,6 +110,7 @@ fn porcelain(fixture: &Fixture, folder: &Path) -> String {
     )
 }
 
+#[cfg(unix)]
 fn is_link(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
 }
