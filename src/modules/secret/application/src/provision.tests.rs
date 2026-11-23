@@ -112,3 +112,18 @@ fn a_stored_key_loads() {
 
     assert!(load_store_key(&file).expect("key").matches(&key()));
 }
+
+#[test]
+fn a_keyring_that_already_holds_a_key_is_never_written_over() {
+    let keyring = FakeVault::new(Custody::OsKeyring);
+    let other = StoreKey::from_bytes([1; 32]);
+    keyring.store(&other).expect("store");
+    let file = FakeVault::new(Custody::KeyFile);
+
+    let custody = provision_store_key(&keyring, &file, &key()).expect("custody");
+
+    assert_eq!(custody, Custody::KeyFile);
+    assert!(file.holds_a_key());
+    let kept = keyring.load().expect("load").expect("key");
+    assert!(kept.matches(&other));
+}

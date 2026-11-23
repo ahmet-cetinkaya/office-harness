@@ -64,8 +64,9 @@ impl TextRedactor for SecretRedactor {
     fn redact_text(&self, text: &str) -> String {
         let (replaced, _) = scan(&current(&self.patterns), text.as_bytes(), true);
         // A value and a placeholder are whole UTF-8 text, so a replacement
-        // never cuts a character.
-        String::from_utf8(replaced).unwrap_or_else(|_| text.to_owned())
+        // never cuts a character. Were it ever not so, the text still carries
+        // no value: it is never the original.
+        String::from_utf8_lossy(&replaced).into_owned()
     }
 
     fn redact_cut_text(&self, text: &str) -> String {
