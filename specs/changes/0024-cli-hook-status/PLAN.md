@@ -46,12 +46,13 @@ Ship every requirement of spec 0024 with automated evidence. Then run the hands-
 - **D1: The report endpoint.** `POST /v1/hook/{session_id}` on the existing listener, behind `require_loopback_peer`.
   - It answers only an empty `200` for an accepted report and one empty `404` for every refusal (unknown session, wrong secret, ended session). The answer has no body, so the CLI reads no decision (FR-005).
   - Extra refusals, all `404` and logged without the secret: a request with an `Origin` header (a browser), a content type that is not JSON, a body over 64 KiB (`DefaultBodyLimit`), and a session over 50 reports per second (a per-session token bucket in memory).
+  - Rate-limit state exists only for sessions that presented a valid secret, and it is dropped with the secret at the session end, so a flood of bad reports grows no state. Refusals are counted, not listed: the log gets one line per minute with the count. No log line holds a body, a parse error text, or a secret (Efe r1 L3).
   - Secret check: header `Authorization: Bearer <secret>`, compared in constant time. The URL carries the session id (the office session id), never the secret.
   - Body: parsed as JSON into a struct with only `hook_event_name` and an optional `agent_id`. Every other key is dropped by the parser and never stored or logged (FR-009). A body that is not JSON, or an unknown `hook_event_name`, is a `200` with no effect (FR-022).
 - **D2: The secret.** A port `HookSecretStore` in the access module (`issue(agent_id, session_id) -> HookSecret`, `authorize(session_id, presented) -> Option<AgentId>`, `revoke_session`, `revoke_agent`) with an in-memory implementation next to `memory_agent_call_store.rs`. 32 random bytes from the OS source, hex text. It is issued in `TerminalHostBridge::prepare`, next to the agent call credential, and revoked at the same three places (exit in `agent_status_bridge.rs`, prepare failure, spawn failure). It is held in memory only and is never logged: the type has no `Debug` and no `Display`.
 - **D3: What the CLI gets.** `TerminalHostBridge::prepare` gains the work when the request says `status_hooks`:
   - It writes `<data folder>/hooks/<session_id>.json` with `private-fs` (owner only; the folder is created with `create_private_dir_all`). The file holds only `hooks` for `UserPromptSubmit`, `Stop`, `StopFailure`, `PermissionRequest`, `PreCompact`, and `PostCompact`. Each entry is one `http` hook: the URL of D1 with the server's port, the header `Authorization: Bearer $OFFICE_HARNESS_HOOK_SECRET`, `allowedEnvVars` with that one name, and `timeout: 2` (FR-006).
-  - It adds the environment variable `OFFICE_HARNESS_HOOK_SECRET` to the session's additions. The file holds no secret.
+  - It adds the environment variable `OFFICE_HARNESS_HOOK_SECRET` to the local list of variables that `prepare` passes to the launcher, the list that already carries the agent call credential. That list becomes the spawn environment only. The secret never enters `OfficeAdditions`, so it is not in the `additions_snapshot` of the session row or in any other stored row (Efe r1 M3). The file holds no secret.
   - It returns `extra_arguments: ["--settings", "<path>"]` in `PreparedLaunch`; `build_launch` appends them to the adapter's arguments before `validate_arguments`.
   - When it cannot write the file it returns no arguments and a reason, and the session starts estimated (edge case "settings file cannot be written"). The reason travels to the hook state (D6).
 - **D4: When the file is made.** `build_launch` sets `status_hooks` only when all hold: the adapter says `status_hooks()` (a new default-false method of `CliAdapter`, true for `ClaudeAdapter`), the setting `hook_status` is on, no argument of the command line or of the office flags is `--settings` or starts with `--settings=` (FR-004), and the version check passes. The reason of each refusal is one text for the details (D6).
@@ -76,7 +77,7 @@ Ship every requirement of spec 0024 with automated evidence. Then run the hands-
 - **D8: Person input and waits.** Every change of an exact session is prompted: `WaitTracker::set_exact(agent, bool)` makes `classify` return `Prompted` and keeps `ended_since_wait` cleared, and the work bound timer is not armed (`classify` never returns an unprompted change, so `arm_work_bound` does not run). `HookSessions::person_input(agent)` is called from the same call site as `PersonInput::stamp`; it ends an open ask. The `late` state calls `set_exact(false)`, so the 0022 rules apply again.
 - **D9: Wire and storage.** No migration for the hook state (A9). One wire event, `hook.changed` `{agent_id, source, reason?, ask_open, compacting}`, and one query, `hook.states`, which returns the same for every running agent. The `agent` JSON does not change. The new Needs you kind `permission_asked` is added to `NotificationEvent` (`ALL` goes from 9 to 10), the stored and wire name `permission_asked`, and to the migrations only if a column constraint lists the kinds (T4 checks `0001-0004`; if so one new migration widens it). The waiting kind keeps its detail column, now `turn_stopped`, `turn_failed`, or the quiet period in ms.
 - **D10: Notification and Needs you.** In `apply_frame`, a `waiting_for_input` frame with detail `permission_asked` records `NotificationEvent::PermissionAsked`; with detail `turn_stopped` or `turn_failed` it records `WaitingForInput` with that detail in place of the quiet period (`attention_detail`). `permission_asked` is not a waits-only kind, so an item with it is not plain for 0018 (FR-017) with no change to the sleep rule of 0022. It sorts in the `waiting for input` group (0008/FR-003).
-- **D11: Gates.** `DirectiveTargetBridge` readiness adds `!hooks.blocks_typing(agent)` (`ask_open || compacting`) to `screen_is_clear`'s caller; the screen check stays (PB-4). `IdleSleepGate::check` and the check right before the stop add `!hooks.ask_open(agent)` as a blocking condition (FR-017), also with no item.
+- **D11: Gates.** `DirectiveTargetBridge` readiness adds `!hooks.blocks_typing(agent)` (`ask_open || compacting`) to `screen_is_clear`'s caller; the screen check stays (PB-4). `IdleSleepGate::check` and the check right before the stop add `!hooks.ask_open(agent)` as a blocking condition (FR-017), also with no item. `keeps_from_idle_end` (the 0020 temp idle end, `temp_run.rs`) adds the same condition (FR-025, Efe r1 M2).
 - **D12: The setting.** `hook_status` joins `settings.rs` as an on or off text with default `on`, validated like `worktree_dependency_links`. `build_launch` reads it for each session start (FR-024); a running session is never changed.
 - **D13: Cleanup (FR-010).** Exit of the child deletes the file and revokes the secret in `agent_status_bridge.rs` (stop, sleep, and the server's stop end in an exit); a failed prepare or spawn deletes it in `terminal_host.rs`. At start, before any agent starts, the bootstrap deletes every file in `<data folder>/hooks/` (no session runs yet). A failed delete is logged with the path and no secret and does not stop the server.
 - **D14: Desktop.** A `hook-status` module like `worktree-dependencies`: the setting row, its help text, and its controller. The agent list and details read `hook.states`: status text gets `asks permission` or `compacting` next to it, and the details get `Status source: exact | estimated | late` with the reason text. `eventText` gets `permission_asked` ("asks permission") and the two waiting details ("finished its turn", "its turn ended with an error"); the desktop still shows the server's detail as sent for the other kinds and writes the words from the kind or the three known details.
@@ -93,6 +94,7 @@ Each task commits with its own tests. Before a heavy build: `free -g` at least 6
 ### T1: Secret store and report endpoint (D1, D2)
 - `HookSecretStore` and its memory implementation with unit tests: issue, authorize (right, wrong, other session, revoked), constant-time path.
 - The route, the refusal rules, the size and rate caps, and the empty answers. Tests in `tests/hook_reports.rs`: 100 bad reports change nothing and give one answer (SC-004), a non-loopback peer is refused, an `Origin` header is refused, a body of 1 MB is refused, 60 reports in one second drop the excess.
+- Refusals are counted, one log line per minute, no body in any log line, and no rate-limit state for a session without a valid secret (D1).
 - Traceability: FR-007, FR-008, FR-009, FR-022, SC-004.
 
 ### T2: HookSessions, status application, waits (D6, D7, D8)
@@ -103,13 +105,13 @@ Each task commits with its own tests. Before a heavy build: `free -g` at least 6
 
 ### T3: Settings file, launch, cleanup (D3, D4, D5, D12, D13)
 - `CliAdapter::status_hooks`, `PrepareLaunch.status_hooks`, `PreparedLaunch.extra_arguments`, the file writer, the version check with a cache, the `hook_status` setting, and the cleanup at the five session ends and at start.
-- Tests: file content (only `hooks`, six events, no secret, owner-only mode on Unix), no file for `codex`, `gemini`, `opencode`, and a custom command (SC-008), no file with the setting off (SC-012), no file when the flags hold `--settings` or `--settings=x` (FR-004), no file for an old or unreadable version, a failed file write, file removed after exit, failure, stop, sleep, start failure, and server stop (SC-005), stale files removed at start, a woken session gets a new file and secret (PB-8), and no change in any CLI folder (SC-009).
+- Tests: file content (only `hooks`, six events, no secret, owner-only mode on Unix), no file for `codex`, `gemini`, `opencode`, and a custom command (SC-008), no file with the setting off (SC-012), no file when the flags hold `--settings` or `--settings=x` (FR-004), no file for an old or unreadable version, a failed file write, file removed after exit, failure, stop, sleep, start failure, and server stop (SC-005), stale files removed at start, a woken session gets a new file and secret (PB-8), no change in any CLI folder (SC-009), and a search of `office.db` and the log for the secret finds 0 hits (SC-014).
 - Traceability: FR-001 to FR-006, FR-010, FR-024, SC-005, SC-008, SC-009, SC-012.
 
 ### T4: Needs you, notification, and the two gates (D10, D11)
 - The `permission_asked` kind through domain, store, wire, and the notification bridge; the two waiting details; `record_permission_ask`.
 - `hooks.blocks_typing` in the directive gate and `hooks.ask_open` in the sleep gate.
-- Tests: US2 scenarios 1 to 6 (SC-003 in miniature: 50 directives during an ask type 0 characters; a sleep with the item dismissed does not happen), the item sorts in the waiting group, an item with the ask is not plain.
+- Tests: US2 scenarios 1 to 7 (SC-003 and SC-013 in miniature: 50 directives during an ask type 0 characters; a sleep with the item dismissed does not happen), the item sorts in the waiting group, an item with the ask is not plain.
 - Traceability: FR-013, FR-016, FR-017, FR-018, 0008/FR-002, SC-003.
 
 ### T5: Desktop (D9, D14)
@@ -131,13 +133,13 @@ Each task commits with its own tests. Before a heavy build: `free -g` at least 6
 | FR-007 to FR-009, FR-022 | T1 |
 | FR-010 | T3 |
 | FR-011 to FR-015, FR-023 | T2 |
-| FR-016, FR-017, FR-018 | T4 |
+| FR-016, FR-017, FR-018, FR-025 | T4 |
 | FR-019, FR-020 | T5 |
 | FR-021 | T3 (SC-008 test) |
 | SC-001, SC-002, SC-011 | T2, T7 |
-| SC-003 | T4, T7 |
+| SC-003, SC-013 | T4, T7 |
 | SC-004 | T1 |
-| SC-005, SC-008, SC-009, SC-012 | T3 |
+| SC-005, SC-008, SC-009, SC-012, SC-014 | T3 |
 | SC-006, SC-007, SC-010 | T7, with T3 and T1 tests for the parts that need no real CLI |
 
 ## QA and evidence
