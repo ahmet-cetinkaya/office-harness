@@ -67,3 +67,48 @@ fn the_sysinfo_reader_gives_the_command_line_form_of_the_proc_reader() {
     assert_eq!(from_proc.command_hash, from_sysinfo.command_hash);
     assert_eq!(from_proc.command_display, from_sysinfo.command_display);
 }
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod pid_handle_exit {
+    use terminal_application::common::models::ProcessIdentity;
+
+    use super::super::pid_handle::exit_confirmed;
+    use super::*;
+
+    const OPENED_AT: u64 = 100;
+
+    fn identity_started_at(started_at: u64) -> ProcessIdentity {
+        ProcessIdentity::new(
+            std::process::id(),
+            started_at,
+            "a command",
+            "boot".to_owned(),
+        )
+    }
+
+    #[test]
+    fn a_process_with_the_same_start_time_has_not_exited() {
+        assert!(!exit_confirmed(
+            &Ok(identity_started_at(OPENED_AT)),
+            OPENED_AT
+        ));
+    }
+
+    #[test]
+    fn an_id_that_names_another_process_counts_as_exited() {
+        assert!(exit_confirmed(
+            &Ok(identity_started_at(OPENED_AT + 1)),
+            OPENED_AT
+        ));
+    }
+
+    #[test]
+    fn a_process_that_is_not_running_or_a_zombie_counts_as_exited() {
+        assert!(exit_confirmed(&Err(ReadError::NotRunning), OPENED_AT));
+    }
+
+    #[test]
+    fn a_process_that_cannot_be_read_may_still_run() {
+        assert!(!exit_confirmed(&Err(ReadError::NotReadable), OPENED_AT));
+    }
+}
