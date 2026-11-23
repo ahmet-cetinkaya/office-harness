@@ -31,13 +31,20 @@ const ACTION_TEXT: Record<string, string> = {
   sleep: "Put to sleep",
   wake: "Woke",
   end: "Ended",
+  secret_read: "Read a secret",
+  secret_change: "Changed a secret",
 };
 
 /**
  * Entries whose detail is not a reason but a record of what happened, so it
  * is labelled "Detail" (0017, D9).
  */
-const DETAIL_ACTIONS: readonly string[] = ["end_leftover", "helper_limit"];
+const DETAIL_ACTIONS: readonly string[] = [
+  "end_leftover",
+  "helper_limit",
+  "secret_read",
+  "secret_change",
+];
 
 /**
  * Control and format characters (which include the zero-width and the
