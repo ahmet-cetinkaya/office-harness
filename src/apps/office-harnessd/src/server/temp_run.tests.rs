@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::sync::mpsc;
+
 use agent_domain::value_objects::{AgentCommand, DisplayName, MachineId, Objective, TempMark};
+use audit_application::common::errors::AuditError;
+use audit_application::common::interfaces::ActionLog;
+use audit_domain::{ActionEntry, ActionRecord};
 use kernel::Timestamp;
 
 use super::*;
@@ -125,4 +130,66 @@ fn the_idle_end_names_the_status_the_round_read_so_a_new_task_that_took_the_orde
 
     assert_eq!(order.seen, Some(AgentStatus::WaitingForInput));
     assert_eq!(order.reason, EndReason::NoOutput { minutes: 5 });
+}
+
+/// An action record whose reads are reported on a channel, so a test sees
+/// when the record is read.
+struct WatchedLog {
+    entries: Mutex<Vec<ActionEntry>>,
+    reads: Mutex<mpsc::Sender<()>>,
+}
+
+impl ActionLog for WatchedLog {
+    fn append(&self, record: &ActionRecord) -> Result<ActionEntry, AuditError> {
+        let mut entries = self.entries.lock().expect("entries");
+        let entry = ActionEntry {
+            id: i64::try_from(entries.len()).expect("id"),
+            record: record.clone(),
+        };
+        entries.push(entry.clone());
+        Ok(entry)
+    }
+
+    fn list_for_agent(&self, _agent_id: AgentId) -> Result<Vec<ActionEntry>, AuditError> {
+        let _ = self.reads.lock().expect("reads").send(());
+        Ok(self.entries.lock().expect("entries").clone())
+    }
+
+    fn list_office_level(&self) -> Result<Vec<ActionEntry>, AuditError> {
+        Ok(Vec::new())
+    }
+}
+
+#[test]
+fn a_stop_that_saved_the_status_but_not_yet_its_entry_still_names_its_actor() {
+    let temp = AgentId::from_u128(1);
+    let boss = AgentId::from_u128(2);
+    let (reads, was_read) = mpsc::channel();
+    let log = Arc::new(WatchedLog {
+        entries: Mutex::default(),
+        reads: Mutex::new(reads),
+    });
+    let actions = ListActionsHandler::new(Arc::clone(&log) as Arc<dyn ActionLog>);
+    let status_order = StatusOrder::default();
+    // The stop request: it holds the order from the saved status to the entry.
+    let stop_in_flight = status_order.lock().expect("order");
+    let watcher = {
+        let (actions, status_order) = (actions.clone(), Arc::clone(&status_order));
+        std::thread::spawn(move || stop_actor(&actions, &status_order, temp))
+    };
+
+    let read_before_the_entry = was_read.recv_timeout(Duration::from_millis(200)).is_ok();
+    log.append(&ActionRecord {
+        actor: Actor::Agent(boss),
+        target_agent_id: Some(temp),
+        action: ActionKind::Stop,
+        result: ActionResult::Ok,
+        detail: None,
+        at: Timestamp::from_unix_millis(0),
+    })
+    .expect("append");
+    drop(stop_in_flight);
+
+    assert!(!read_before_the_entry);
+    assert_eq!(watcher.join().expect("watcher"), Actor::Agent(boss));
 }

@@ -149,6 +149,7 @@ fn temp_watcher(
         sessions: Arc::clone(&services.agent.sessions),
         settings: Arc::clone(&services.agent.settings),
         actions: services.agent.actions.clone(),
+        status_order: Arc::clone(&services.agent.status_order),
         gate: Arc::clone(&services.agent.sleep_gate),
         endings: hooks.endings.clone(),
         ender: ender.clone(),
