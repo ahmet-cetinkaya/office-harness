@@ -32,6 +32,12 @@ pub trait DirectiveTarget: Send + Sync {
     /// The store's own failure when the target cannot be read.
     fn is_running(&self, agent_id: AgentId) -> Result<bool, String>;
 
+    /// Whether the agent is asleep or going to sleep (0018), so a refusal can
+    /// say "asleep" instead of "not running". A store failure reads as not
+    /// asleep: the plain not-running reason is still true.
+    #[must_use]
+    fn is_asleep(&self, agent_id: AgentId) -> bool;
+
     /// The agent's name as the office shows it, so a refusal can name the
     /// agent instead of its id. `None` when the id cannot be resolved, for
     /// example when the agent is deleted between the tree snapshot and this

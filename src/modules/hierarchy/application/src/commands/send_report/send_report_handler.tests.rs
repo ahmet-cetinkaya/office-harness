@@ -2,7 +2,7 @@
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use hierarchy_domain::{Hold, HoldScope, LimitRefusal, RateLimits, Role, TreeRow};
+use hierarchy_domain::{HierarchyError, Hold, HoldScope, LimitRefusal, RateLimits, Role, TreeRow};
 use kernel::Timestamp;
 
 use super::*;
@@ -109,12 +109,18 @@ impl HierarchyStore for SettableRows {
 #[derive(Default)]
 struct Targets {
     stopped: Mutex<Option<AgentId>>,
+    asleep: Mutex<Option<AgentId>>,
     busy: Mutex<bool>,
+    gone: Mutex<bool>,
 }
 
 impl DirectiveTarget for Targets {
     fn is_running(&self, agent_id: AgentId) -> Result<bool, String> {
         Ok(*locked(&self.stopped) != Some(agent_id))
+    }
+
+    fn is_asleep(&self, agent_id: AgentId) -> bool {
+        *locked(&self.asleep) == Some(agent_id)
     }
 
     fn name_of(&self, agent_id: AgentId) -> Option<String> {
@@ -125,7 +131,9 @@ impl DirectiveTarget for Targets {
     }
 
     fn readiness(&self, _agent_id: AgentId) -> Result<Readiness, String> {
-        Ok(if *locked(&self.busy) {
+        Ok(if *locked(&self.gone) {
+            Readiness::Gone
+        } else if *locked(&self.busy) {
             Readiness::Busy
         } else {
             Readiness::Ready
@@ -558,6 +566,57 @@ fn a_report_to_a_stopped_parent_is_refused_in_both_records() {
         [Entry::Refused { sender, parent: Some(parent), .. }]
             if *sender == id(MEMBER) && *parent == id(LEAD)
     ));
+}
+
+#[test]
+fn a_report_to_an_asleep_parent_is_refused_as_asleep_in_both_records() {
+    let harness = harness();
+    *locked(&harness.targets.stopped) = Some(id(LEAD));
+    *locked(&harness.targets.asleep) = Some(id(LEAD));
+
+    let refused = harness.handler.handle(&report(MEMBER, "done", false));
+
+    assert!(matches!(
+        refused,
+        Err(HierarchyApplicationError::Invalid(
+            HierarchyError::Asleep { .. }
+        ))
+    ));
+    assert!(matches!(
+        locked(&harness.recorder.entries).as_slice(),
+        [Entry::Refused { sender, parent: Some(parent), .. }]
+            if *sender == id(MEMBER) && *parent == id(LEAD)
+    ));
+    assert!(
+        refusal_reasons(&harness.recorder)[0]
+            .ends_with("the agent is not running, it is asleep: agent-00000000"),
+        "{:?}",
+        refusal_reasons(&harness.recorder)
+    );
+}
+
+#[test]
+fn a_waiting_report_of_a_parent_that_went_to_sleep_is_withdrawn_as_asleep() {
+    let harness = harness();
+    *locked(&harness.targets.busy) = true;
+    harness
+        .handler
+        .handle(&report(MEMBER, "status", false))
+        .expect("waits");
+
+    *locked(&harness.targets.asleep) = Some(id(LEAD));
+    *locked(&harness.targets.gone) = true;
+    harness.directives.deliver_waiting();
+
+    assert!(locked(&harness.recorder.typed).is_empty());
+    assert!(
+        refusal_reasons(&harness.recorder)
+            .iter()
+            .any(|reason| reason
+                .starts_with("withdrawn before typing: the agent is not running, it is asleep")),
+        "{:?}",
+        refusal_reasons(&harness.recorder)
+    );
 }
 
 #[test]
