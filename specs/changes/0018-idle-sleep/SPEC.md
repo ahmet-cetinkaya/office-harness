@@ -1,11 +1,11 @@
 ---
-status: draft
+status: approved
 capability: office
 plan: specs/changes/0018-idle-sleep/PLAN.md
 supersedes: 0001/FR-014
 ---
 
-<!-- Draft for the spec review gate. Only the owner's approval, given through the review gate, changes the status. -->
+<!-- Approved for coding on 2026-11-23 through the review gate (r2 at 2418e45), under the owner's spec delegation. -->
 
 # 0018: Put idle agents to sleep
 

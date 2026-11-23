@@ -1,5 +1,5 @@
 ---
-status: draft
+status: in_progress
 spec: specs/changes/0018-idle-sleep/SPEC.md
 commits: per-task
 ---
