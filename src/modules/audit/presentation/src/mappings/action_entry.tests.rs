@@ -62,6 +62,18 @@ fn an_office_level_entry_has_the_office_actor_and_a_null_agent() {
 }
 
 #[test]
+fn a_schedule_actor_is_written_as_schedule_and_its_id() {
+    let schedule_id = kernel::ScheduleId::from_u128(3);
+    let mut entry = entry();
+    entry.record.actor = Actor::Schedule(schedule_id);
+
+    assert_eq!(
+        action_entry_json(&entry)["actor"],
+        format!("schedule:{schedule_id}")
+    );
+}
+
+#[test]
 fn a_detail_is_written_as_text() {
     let mut entry = entry();
     entry.record.detail = Some("new session: no earlier session".to_owned());

@@ -2201,6 +2201,7 @@ checksum = "34e6d07feb763c647199bd9072192b9639da3b5ffde49afd73c08b1d5ceb1469"
 dependencies = [
  "jiff-core",
  "jiff-static",
+ "jiff-tzdb",
  "jiff-tzdb-platform",
  "log",
  "portable-atomic",
@@ -2327,6 +2328,7 @@ name = "kernel"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "uuid",
 ]
@@ -3708,6 +3710,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "schedule-domain"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "kernel",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
