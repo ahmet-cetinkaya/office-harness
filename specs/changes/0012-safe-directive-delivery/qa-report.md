@@ -4,7 +4,7 @@
 
 - **Date:** 2026-11-23.
 - **Build under test:** branch `feat/0012-safe-directive-delivery`, the merge of `main` 468ad56 into 0c52856 (merge 510cddf) with the fixes of the final review (r5) on top, toolchain 1.100.0. The full gates below ran on that tree; the three repeated runs of the directive tests ran on 82b8934 and after the merge of 1d6edb6, as each row says.
-- **Overall status:** automated evidence stands for FR-001 to FR-005, the modified 0002/FR-010, and PB-1 to PB-5. The success criteria that name a count are proven with fewer directives than the count, so they are PARTIAL. Rows that need the real agent CLIs are BLOCKED. Nobody ran them.
+- **Overall status:** automated evidence stands for FR-001 to FR-005, the modified 0002/FR-010, and PB-1 to PB-5. The success criteria that name a count are proven with fewer directives than the count, so they are PARTIAL. Real CLI rows (2026-11-23, `claude` only): permission prompts, input lines, and the trust question at start PASS (agent-run); the trust question row ran on this branch at e24983c and failed on `main` b768b63 before the fix. `codex` and `gemini` are not signed in on this machine; `opencode` was not run.
 - **Status of this file:** the gate numbers come from runs on 2026-11-23. The CI result of the PR is not in this file.
 
 ### Verdict words
@@ -14,6 +14,7 @@
 | PASS (automated) | An automated test proves the criterion. The evidence column names the test. |
 | PARTIAL (automated) | Automated tests prove part of the criterion. The evidence column names what is proven and the gap. |
 | BLOCKED | A person must run the check. Nobody has run it. It is not a PASS. |
+| PASS (agent-run) | An agent ran the check by hand with the real CLI. The note says when and on which build. |
 
 ### Scope of the automated evidence
 
@@ -81,9 +82,9 @@ A cross-check against the reference behavior (see the pull request) named these 
 
 | Check | Verdict | What to do |
 |---|---|---|
-| Real CLI permission prompts | BLOCKED | Start claude, codex, gemini, and opencode agents; make each show its tool-permission question; send a directive from the lead. Expected: the answer is `waiting` and nothing is typed until the question is answered. |
-| Real CLI input lines | BLOCKED | With each of those CLIs idle at its prompt, send a short and a long (over 1,000 characters) directive. Expected: `submitted` for both; for a CLI that shows a paste placeholder, the placeholder counts. |
-| Real CLI trust question at start | BLOCKED | Start a CLI in a folder it has not seen, so it asks whether to trust the folder, and send a directive. Expected: `waiting` until the question is answered. |
+| Real CLI permission prompts | PASS (agent-run), claude | Run 2026-11-23 on Linux, `main` b768b63, a real `claude` agent as the target of a stand-in parent, started with `--permission-mode default` so that it asks. It asked "Do you want to create ohqa-12b.txt?" with numbered options. A directive sent during the question answered `waiting`; 8 s later the question was untouched and nothing was typed. After the question was answered, the directive was typed and submitted. `codex` and `gemini`: not run, not signed in on this machine. `opencode`: not run. |
+| Real CLI input lines | PASS (agent-run), claude | Run 2026-11-23 on Linux. On `main` b768b63: a short directive to the idle CLI answered `submitted`; one of 1,169 characters, sent while the CLI finished an answer, answered `waiting`, then was typed in full and submitted. On this branch at e24983c, the CLI idle each time: a short directive was typed and submitted, and a wrapped one of 381 characters (four rows at 120 columns) answered `submitted`. `claude` shows the whole text, not a placeholder. `codex`, `gemini`, `opencode`: not run (as above). |
+| Real CLI trust question at start | PASS (agent-run), claude, on this branch | Run 2026-11-23 on Linux at e24983c, a new folder. The CLI asked "Is this a project you created or one you trust?" with `❯ No, exit` over `Yes, I trust this folder`, its hidden cursor parked on the mark (column 1). A directive sent at the start answered `waiting`; at 10, 20, 30, and 40 s the question was untouched and nothing was typed. A stop of the agent withdrew it and recorded "withdrawn before typing: lead-trust is no longer running". The question was never answered with Yes. Before this fix, on `main` b768b63, the same run FAILED: the office typed the directive into the question after 6.8 s, without Enter. |
 
 ## Updates
 
