@@ -220,3 +220,70 @@ fn a_report_on_a_waiting_item_keeps_its_wait_time_and_origin() {
     assert_eq!(reported.first_event_at, Timestamp::from_unix_millis(5));
     assert_eq!(reported.origin, Some(origin));
 }
+
+#[test]
+fn a_new_item_waits_only_when_its_event_is_a_wait() {
+    let waiting = item(AgentId::generate(), AttentionKind::WaitingForInput, 1);
+    let bell = item(AgentId::generate(), AttentionKind::Bell, 1);
+
+    assert!(waiting.waits_only);
+    assert!(!bell.waits_only);
+}
+
+#[test]
+fn waits_only_stays_true_through_waits_and_turns_false_on_any_other_event() {
+    let agent = AgentId::generate();
+    let waiting = item(agent, AttentionKind::WaitingForInput, 1);
+
+    let waited_again = record_event(
+        Some(waiting.clone()),
+        agent,
+        event(AttentionKind::WaitingForInput, 2),
+        None,
+    );
+
+    assert!(waited_again.waits_only);
+    for kind in [
+        AttentionKind::Bell,
+        AttentionKind::AutoHold,
+        AttentionKind::ResumeHold,
+        AttentionKind::LeftoverKept,
+        AttentionKind::Failed,
+        AttentionKind::Exited,
+    ] {
+        let changed = record_event(Some(waiting.clone()), agent, event(kind, 3), None);
+        assert!(!changed.waits_only, "{kind:?}");
+    }
+}
+
+#[test]
+fn a_wait_after_a_bell_does_not_make_the_item_waits_only_again() {
+    let agent = AgentId::generate();
+    let rung = item(agent, AttentionKind::Bell, 1);
+
+    let waited = record_event(
+        Some(rung),
+        agent,
+        event(AttentionKind::WaitingForInput, 2),
+        None,
+    );
+
+    assert!(!waited.waits_only);
+}
+
+#[test]
+fn a_report_turns_waits_only_false_and_a_later_wait_keeps_it_false() {
+    let agent = AgentId::generate();
+    let waiting = item(agent, AttentionKind::WaitingForInput, 1);
+
+    let reported = record_report(Some(waiting), agent, report("done", "text", 2), None);
+    let waited = record_event(
+        Some(reported.clone()),
+        agent,
+        event(AttentionKind::WaitingForInput, 3),
+        None,
+    );
+
+    assert!(!reported.waits_only);
+    assert!(!waited.waits_only);
+}

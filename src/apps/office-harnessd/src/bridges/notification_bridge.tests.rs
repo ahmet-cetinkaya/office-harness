@@ -325,6 +325,8 @@ fn bridge_over(
         clock: Arc::new(FixedClock(NOW)),
         quiet_period_ms: QUIET_PERIOD_MS,
         needs_you,
+        waits: crate::bridges::WaitTracker::default(),
+        waiting_agents: Arc::default(),
         hub: hub.clone(),
         alerts: alerts.clone(),
         log,
@@ -771,6 +773,8 @@ mod needs_you_queue {
             AgentStatus::Stopped,
         ] {
             bridge.apply_frame(&frame_of("waiting_for_input", &agent));
+            // A person's input prompts the `working` that follows a wait.
+            bridge.waits.wait_end(agent.id);
             bridge.apply_frame(&status_frame(agent.id, status));
             assert_eq!(bridge.needs_you.items(), [], "{status:?}");
         }
@@ -782,6 +786,7 @@ mod needs_you_queue {
         let (bridge, _store, _agents, hub) = bridge_for(&agent, Some(RunId(1)));
         bridge.apply_frame(&frame_of("waiting_for_input", &agent));
         let mut published = hub.subscribe();
+        bridge.waits.wait_end(agent.id);
 
         bridge.apply_frame(&status_frame(agent.id, AgentStatus::Working));
 
@@ -790,6 +795,48 @@ mod needs_you_queue {
         assert_eq!(sent.len(), 1);
         assert!(sent[0].contains("needs_you.changed"), "{}", sent[0]);
         assert!(sent[0].contains("\"items\":[]"), "{}", sent[0]);
+    }
+
+    #[tokio::test]
+    async fn an_unprompted_working_leaves_the_item_alone() {
+        let agent = agent_named("Ana");
+        let (bridge, ..) = bridge_for(&agent, Some(RunId(1)));
+        bridge.apply_frame(&frame_of("waiting_for_input", &agent));
+        let waiting = bridge.needs_you.items();
+
+        bridge.apply_frame(&status_frame(agent.id, AgentStatus::Working));
+
+        assert_eq!(bridge.needs_you.items(), waiting);
+    }
+
+    #[test]
+    fn an_unprompted_wait_adds_no_notification_and_leaves_the_item_alone() {
+        let agent = agent_named("Ana");
+        let (bridge, store, ..) = bridge_for(&agent, Some(RunId(1)));
+        bridge.apply_frame(&frame_of("waiting_for_input", &agent));
+        bridge.apply_frame(&frame_of("failed", &agent));
+        let failed = bridge.needs_you.items();
+        let notifications = store.all().len();
+
+        bridge.apply_frame(&frame_of("waiting_for_input", &agent));
+
+        assert_eq!(bridge.needs_you.items(), failed);
+        assert_eq!(store.all().len(), notifications);
+    }
+
+    #[test]
+    fn a_working_that_follows_starting_is_not_judged_and_clears_the_item() {
+        let agent = agent_named("Ana");
+        let (bridge, ..) = bridge_for(&agent, Some(RunId(1)));
+        bridge.apply_frame(&frame_of("waiting_for_input", &agent));
+
+        bridge.apply_frame(&status_frame(agent.id, AgentStatus::Starting));
+        bridge.apply_frame(&frame_of("waiting_for_input", &agent));
+        bridge.apply_frame(&status_frame(agent.id, AgentStatus::Starting));
+        bridge.apply_frame(&status_frame(agent.id, AgentStatus::Working));
+
+        assert_eq!(bridge.needs_you.items(), []);
+        assert_eq!(bridge.waits.working_since(agent.id), None);
     }
 
     #[test]

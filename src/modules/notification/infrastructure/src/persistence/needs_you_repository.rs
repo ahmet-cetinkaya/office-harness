@@ -13,7 +13,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use super::notification_repository::{SharedHandle, corrupt, storage_failure};
 
 const SELECT_ITEM: &str = "SELECT agent_id, first_event_at, latest_kind, latest_detail, \
-                           latest_at, origin, report_kind, report_text, report_at \
+                           latest_at, origin, report_kind, report_text, report_at, waits_only \
                            FROM notification_needs_you";
 
 struct NeedsYouRow {
@@ -26,6 +26,7 @@ struct NeedsYouRow {
     report_kind: Option<String>,
     report_text: Option<String>,
     report_at: Option<i64>,
+    waits_only: bool,
 }
 
 impl NeedsYouRow {
@@ -40,6 +41,7 @@ impl NeedsYouRow {
             report_kind: row.get(6)?,
             report_text: row.get(7)?,
             report_at: row.get(8)?,
+            waits_only: row.get(9)?,
         })
     }
 
@@ -79,6 +81,7 @@ impl NeedsYouRow {
             },
             origin,
             report,
+            waits_only: self.waits_only,
         })
     }
 }
@@ -141,8 +144,8 @@ impl NeedsYouStore for NeedsYouRepository {
             .execute(
                 "INSERT OR REPLACE INTO notification_needs_you \
                  (agent_id, first_event_at, latest_kind, latest_detail, latest_at, origin, \
-                 report_kind, report_text, report_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                 report_kind, report_text, report_at, waits_only) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     item.agent_id.to_string(),
                     item.first_event_at.as_unix_millis(),
@@ -155,6 +158,7 @@ impl NeedsYouStore for NeedsYouRepository {
                     item.report
                         .as_ref()
                         .map(|report| report.at.as_unix_millis()),
+                    item.waits_only,
                 ],
             )
             .map_err(|error| storage_failure(&error))?;

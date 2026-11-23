@@ -78,6 +78,7 @@ fn item_with_origin(origin: Option<NotificationId>) -> NeedsYouItem {
         },
         origin,
         report: None,
+        waits_only: false,
     }
 }
 
