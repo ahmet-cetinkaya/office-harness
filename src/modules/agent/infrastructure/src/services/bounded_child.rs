@@ -74,14 +74,39 @@ fn drained(reader: Option<&ReaderResult>) -> Option<(Vec<u8>, bool)> {
     reader.recv_timeout(PIPE_DRAIN).ok()
 }
 
-pub(crate) fn wait_until(child: &mut Child, deadline: Instant) -> Option<std::process::ExitStatus> {
+/// Waits until the child has exited or the deadline passes. The child stays
+/// unreaped where the system can look without reaping, so its pid cannot be
+/// reused before `end_tree` signals the group; the caller then takes the
+/// status with `Child::wait`.
+pub(crate) fn wait_until(child: &mut Child, deadline: Instant) -> bool {
     loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return Some(status),
-            Ok(None) if Instant::now() < deadline => thread::sleep(EXIT_POLL),
-            _ => return None,
+        if has_exited(child) {
+            return true;
         }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        thread::sleep(EXIT_POLL);
     }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+fn has_exited(child: &Child) -> bool {
+    use nix::sys::wait::{Id, WaitPidFlag, WaitStatus, waitid};
+    use nix::unistd::Pid;
+    let Ok(raw) = i32::try_from(child.id()) else {
+        return true;
+    };
+    let flags = WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT;
+    // An error means there is nothing left to wait for.
+    waitid(Id::Pid(Pid::from_raw(raw)), flags) != Ok(WaitStatus::StillAlive)
+}
+
+/// No system call here looks at an exit without reaping it, so a reused pid
+/// stays possible on these systems.
+#[cfg(not(any(target_os = "linux", target_os = "android", target_os = "freebsd")))]
+fn has_exited(child: &mut Child) -> bool {
+    !matches!(child.try_wait(), Ok(None))
 }
 
 #[cfg(unix)]
@@ -99,8 +124,9 @@ pub(crate) fn own_process_group(command: &mut Command) {
     command.creation_flags(CREATE_NO_WINDOW);
 }
 
-/// Ends the child and everything it started. The terminal module has the same
-/// walk; it is repeated here to keep the module boundary.
+/// Ends the child and everything it started. The group is signalled before
+/// the child is reaped, so a pid that was reused cannot be hit. The terminal
+/// module has the same walk; it is repeated here to keep the module boundary.
 #[cfg(unix)]
 pub(crate) fn end_tree(child: &mut Child) {
     use nix::sys::signal::{Signal, killpg};
@@ -132,3 +158,7 @@ pub(crate) fn end_tree(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+#[cfg(test)]
+#[path = "bounded_child.tests.rs"]
+mod tests;

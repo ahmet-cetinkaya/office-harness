@@ -135,14 +135,30 @@ fn a_record_that_cannot_be_written_still_ends_the_gate_scope() {
 }
 
 #[test]
-fn a_child_that_ended_on_its_own_leaves_the_status_to_its_exit_event() {
+fn a_child_that_ended_on_its_own_records_a_failed_sleep_and_leaves_the_status_to_its_exit_event() {
     let office = Office::new();
     let (agent, _) = waiting_agent(&office);
+    let entries_before = office.recorder.entries().len();
     office.terminals.end_children_on_their_own();
 
-    let unchanged = office.sleep_agent().handle(agent.id, 30).expect("no-op");
+    let error = office
+        .sleep_agent()
+        .handle(agent.id, 30)
+        .expect_err("not asleep");
 
-    assert_eq!(unchanged.status, AgentStatus::WaitingForInput);
+    assert_eq!(
+        error,
+        ApplicationError::Conflict("the CLI had already ended".to_owned())
+    );
+    let entries = office.recorder.entries();
+    assert_eq!(entries.len(), entries_before + 1);
+    let entry = entries.last().expect("entry");
+    assert_eq!(entry.action, AgentAction::Sleep);
+    assert_eq!(entry.failure, Some(error.to_string()));
+    assert_eq!(
+        office.agents.status_of(agent.id),
+        Some(AgentStatus::WaitingForInput)
+    );
     assert_eq!(office.sleep_gate.calls(), ["begin", "end"]);
 }
 

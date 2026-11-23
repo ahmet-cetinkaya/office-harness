@@ -50,11 +50,15 @@ pub fn run_status_command(
         .stderr
         .take()
         .map(|pipe| bounded_reader(pipe, STATUS_OUTPUT_CAP_BYTES));
-    let Some(status) = wait_until(&mut child, deadline) else {
+    if !wait_until(&mut child, deadline) {
         end_tree(&mut child);
         return StatusRunResult::TimedOut;
-    };
+    }
     let (stdout, stderr) = exited_output(&mut child, stdout.as_ref(), stderr.as_ref());
+    let status = match child.wait() {
+        Ok(status) => status,
+        Err(error) => return StatusRunResult::CouldNotRun(error.to_string()),
+    };
     let mut output = stdout.map_or_else(Vec::new, |(bytes, _)| bytes);
     // Each stream's last line stays a line of its own.
     if !output.is_empty() && !output.ends_with(b"\n") {

@@ -23,7 +23,9 @@ use hierarchy_application::common::interfaces::HierarchyStore;
 use hierarchy_domain::Role;
 use hierarchy_infrastructure::persistence::repositories::hierarchy_repository::HierarchyRepository;
 use hierarchy_infrastructure::services::agent_places::AgentPlaces;
+use office_harnessd::server::ServerOptions;
 use serde_json::{Value, json};
+use support::fake_cli::FakeClis;
 use support::office_client::{Client, Office, wait_for};
 
 /// The real server binary that the fake CLIs run as the helper.
@@ -331,6 +333,44 @@ async fn a_lead_sees_each_status_change_of_its_member() {
         entry_of(&after_stop, &member)["last_output_at"],
         Value::Null
     );
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_read_shows_an_asleep_member_as_asleep() {
+    let office = Office::open_with_options(
+        FakeClis::new(),
+        ServerOptions {
+            idle_sleep_tick: Duration::from_millis(50),
+            idle_sleep_minute: Duration::from_millis(100),
+            ..ServerOptions::default()
+        },
+    )
+    .await;
+    let mut client = office.client().await;
+    let records = office.records_path();
+    let ceo = placed_agent(&office, &mut client, "ceo", Role::Ceo, None, "").await;
+    let member = placed_agent(
+        &office,
+        &mut client,
+        "member",
+        Role::Lead,
+        Some(&ceo),
+        "echo ready",
+    )
+    .await;
+    client.start(&ceo).await;
+    client.start(&member).await;
+    let reader = reader_of(records, "ceo").await;
+    client.wait_for_status(&member, "waiting_for_input").await;
+    // The reader's own Needs you item stays, so only the member sleeps.
+    client.dismiss_needs_you(&member).await;
+
+    client.set_setting("idle_sleep_minutes", "5").await;
+    client.wait_for_status(&member, "asleep").await;
+
+    let entries = read_subtree(&reader).await;
+    assert_eq!(entry_of(&entries, &member)["status"], "asleep");
     office.serving.stop().await;
 }
 

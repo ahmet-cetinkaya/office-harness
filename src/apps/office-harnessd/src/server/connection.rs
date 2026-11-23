@@ -36,6 +36,19 @@ const UNKNOWN_REQUEST_ID: u32 = 0;
 /// not ask for it.
 const SLEEP_REQUEST: &str = "agent.sleep";
 const OFFICE_ONLY_SLEEP: &str = "agent.sleep is made by the office only";
+/// A wake without the 0013 watch has no fallback, no hold, and no
+/// `wake.result`, so a client wakes through `wake.start`, which runs it.
+const WAKE_REQUEST: &str = "agent.wake";
+const WAKE_THROUGH_WATCH: &str = "agent.wake is made by wake.start only";
+
+/// The reason a client may not send this request itself, if it may not.
+fn refusal_for_clients(kind: &str) -> Option<&'static str> {
+    match kind {
+        SLEEP_REQUEST => Some(OFFICE_ONLY_SLEEP),
+        WAKE_REQUEST => Some(WAKE_THROUGH_WATCH),
+        _ => None,
+    }
+}
 
 /// The peer is gone: a send failed or the stream ended.
 #[derive(Debug, PartialEq, Eq)]
@@ -220,8 +233,12 @@ async fn answer_request(
             state.restart.request();
             return Ok(());
         }
-        Some(request) if request.kind == SLEEP_REQUEST => TerminalAnswer {
-            response: Response::failure(request.id, ErrorCode::Invalid, OFFICE_ONLY_SLEEP),
+        Some(request) if refusal_for_clients(&request.kind).is_some() => TerminalAnswer {
+            response: Response::failure(
+                request.id,
+                ErrorCode::Invalid,
+                refusal_for_clients(&request.kind).unwrap_or_default(),
+            ),
             snapshot_frame: None,
         },
         Some(request) if AgentGateway::accepts(&request.kind) => {
