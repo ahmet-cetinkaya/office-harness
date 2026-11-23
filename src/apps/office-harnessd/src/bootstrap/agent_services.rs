@@ -316,7 +316,8 @@ fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
         worktree_info: WorktreeInfoHandler::new(
             Arc::clone(&wiring.projects),
             Some(Arc::clone(&wiring.worktrees)),
-        ),
+        )
+        .with_settings(Arc::clone(&wiring.settings)),
         worktree_status: WorktreeStatusHandler::new(
             Arc::clone(&wiring.agents),
             Some(Arc::clone(&wiring.worktrees)),

@@ -297,6 +297,13 @@ export async function installMockCore(
       "invalid: a limit is a whole number of at least 1 and at most 1000";
     // The idle sleep setting of 0018: "0" is off, else 5 to 1440 minutes.
     const IDLE_SLEEP_KEY = "idle_sleep_minutes";
+    const DEPENDENCY_LINKS_KEY = "worktree_dependency_links";
+    const DEPENDENCY_LINKS_INVALID = "worktree_dependency_links is on or off";
+    /** What `settings.get` answers for a key nobody stored. */
+    const SETTING_DEFAULTS: Record<string, string> = {
+      [IDLE_SLEEP_KEY]: "0",
+      [DEPENDENCY_LINKS_KEY]: "on",
+    };
     const IDLE_SLEEP_INVALID =
       "idle_sleep_minutes is 0 (off) or a whole number of minutes from 5 to 1440";
     // The temp settings of 0020, with their ranges and refusal texts.
@@ -1493,6 +1500,8 @@ export async function installMockCore(
             branches: repository.branches,
             branch_name: repository.branchName,
             subfolder: repository.folder.slice(repository.root.length + 1),
+            shares_dependencies:
+              office.settings[DEPENDENCY_LINKS_KEY] !== "off",
           };
         }
         case "agent.worktree_status":
@@ -1740,7 +1749,8 @@ export async function installMockCore(
             key: fields.key,
             value:
               office.settings[String(fields.key)] ??
-              (fields.key === IDLE_SLEEP_KEY ? "0" : ""),
+              SETTING_DEFAULTS[String(fields.key)] ??
+              "",
           };
           if (
             fields.key === "last_view" &&
@@ -1778,6 +1788,9 @@ export async function installMockCore(
               Number(value) > tempRule.max)
           ) {
             refuse("invalid", tempRule.refusal);
+          }
+          if (key === DEPENDENCY_LINKS_KEY && !["on", "off"].includes(value)) {
+            refuse("invalid", DEPENDENCY_LINKS_INVALID);
           }
           office.settings[key] = value;
           settings.push({ key, value: fields.value });

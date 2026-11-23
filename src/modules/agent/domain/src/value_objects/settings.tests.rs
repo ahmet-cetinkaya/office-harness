@@ -13,6 +13,8 @@ fn defaults_follow_the_data_model() {
     assert_eq!(settings.idle_sleep_minutes, 0);
     assert_eq!(settings.temp_cap, 8);
     assert_eq!(settings.temp_idle_minutes, 30);
+    assert!(settings.worktree_dependency_links);
+    assert_eq!(settings.value_of(SettingKey::WorktreeDependencyLinks), "on");
 }
 
 #[test]
@@ -465,5 +467,43 @@ fn a_temp_setting_outside_its_range_is_refused_with_the_range_and_keeps_the_stor
             assert_eq!(error.to_string(), case.message, "{value}");
             assert_eq!(settings.value_of(case.key), case.accepted[0], "{value}");
         }
+    }
+}
+
+#[test]
+fn worktree_dependency_links_take_on_or_off() {
+    let mut settings = Settings::default();
+    settings
+        .set_from_text(SettingKey::WorktreeDependencyLinks, "off")
+        .expect("valid");
+    assert!(!settings.worktree_dependency_links);
+    assert_eq!(
+        settings.value_of(SettingKey::WorktreeDependencyLinks),
+        "off"
+    );
+    settings
+        .set_from_text(SettingKey::WorktreeDependencyLinks, "on")
+        .expect("valid");
+    assert!(settings.worktree_dependency_links);
+}
+
+#[test]
+fn worktree_dependency_links_refuse_other_text_and_keep_the_stored_value() {
+    for value in ["", "On", "true", "1", " off", "no"] {
+        let mut settings = Settings::default();
+        settings
+            .set_from_text(SettingKey::WorktreeDependencyLinks, "off")
+            .expect("valid");
+
+        let error = settings
+            .set_from_text(SettingKey::WorktreeDependencyLinks, value)
+            .expect_err(value);
+
+        assert_eq!(
+            error.to_string(),
+            "worktree_dependency_links is on or off",
+            "{value}"
+        );
+        assert!(!settings.worktree_dependency_links, "{value}");
     }
 }

@@ -5,7 +5,8 @@
 
 //! Own worktrees per agent (0010) through a real server and real git
 //! repositories: the info and status requests, create, start, keep or remove
-//! on delete, one question for a subtree, and the action record.
+//! on delete, one question for a subtree, and the action record. Also the
+//! shared installed packages of a new worktree (0021).
 
 mod support;
 
@@ -23,6 +24,8 @@ use tempfile::TempDir;
 /// A CLI that keeps running until it is stopped.
 const WAITING_CLI: &str = "echo ready\nwhile true; do sleep 0.1; done";
 const SC_002_AGENTS: usize = 10;
+const DEPENDENCY_SETTING: &str = "worktree_dependency_links";
+const WORKSPACE: &str = "web";
 
 /// An office whose login `PATH` finds the real git, and a repository with
 /// `a.txt` and `sub/b.txt` on `main`.
@@ -197,6 +200,7 @@ async fn the_choice_is_offered_only_inside_a_repository() {
             "branches": ["main"],
             "branch_name": "office-harness/lead-dev",
             "subfolder": "sub/",
+            "shares_dependencies": true,
         }),
         "{answer}"
     );
@@ -818,6 +822,111 @@ async fn a_template_made_from_an_agent_with_its_own_worktree_keeps_the_choice_an
     assert_eq!(
         fs::canonicalize(copied_folder).expect("copied folder"),
         fs::canonicalize(&subfolder).expect("subfolder"),
+    );
+    fixture.office.serving.stop().await;
+}
+
+/// Tracks an ignore rule for `node_modules/` and `web/package.json`, and
+/// installs one package in the base checkout at the top and in `web`.
+fn install_packages(repository: &Path) {
+    fs::write(repository.join(".gitignore"), "node_modules/\n").expect("ignore file");
+    let workspace = repository.join(WORKSPACE);
+    fs::create_dir_all(&workspace).expect("workspace");
+    fs::write(workspace.join("package.json"), "{}\n").expect("package file");
+    commit_all(repository, "packages");
+    for (place, name) in [(repository.to_path_buf(), "pkg"), (workspace, "lib")] {
+        let package = place.join("node_modules").join(name);
+        fs::create_dir_all(&package).expect("package");
+        fs::write(package.join("index.js"), name).expect("package file");
+    }
+}
+
+fn package_text(top: &Path, place: &str, name: &str) -> Option<String> {
+    let folder = if place.is_empty() {
+        top.to_path_buf()
+    } else {
+        top.join(place)
+    };
+    fs::read_to_string(folder.join("node_modules").join(name).join("index.js")).ok()
+}
+
+async fn shares_dependencies(fixture: &mut Fixture) -> Value {
+    let answer = fixture
+        .client
+        .ask(
+            "agent.worktree_info",
+            json!({"folder": fixture.repository(), "name": "Ana"}),
+        )
+        .await;
+    answer["result"]["shares_dependencies"].clone()
+}
+
+#[tokio::test]
+async fn a_new_worktree_shares_the_installed_packages_and_never_counts_them() {
+    let mut fixture = Fixture::open().await;
+    let repository = fixture.repository();
+    install_packages(&repository);
+    assert_eq!(shares_dependencies(&mut fixture).await, true);
+
+    let agent = fixture.create_with_worktree("Ana").await;
+
+    let folder = folder_of(&agent);
+    assert_eq!(package_text(&folder, "", "pkg").as_deref(), Some("pkg"));
+    assert_eq!(
+        package_text(&folder, WORKSPACE, "lib").as_deref(),
+        Some("lib")
+    );
+    assert_eq!(
+        git(&folder, &["status", "--porcelain", "--untracked-files=all"]),
+        ""
+    );
+    let statuses = fixture.status_of(&[&id_of(&agent)]).await;
+    assert_eq!(statuses[0]["changed_files"], 0, "{statuses:?}");
+    let answer = fixture.remove(&id_of(&agent), &statuses, json!({})).await;
+    assert_eq!(answer["ok"], true, "{answer}");
+    assert!(!folder.exists());
+    assert_eq!(package_text(&repository, "", "pkg").as_deref(), Some("pkg"));
+    assert_eq!(
+        package_text(&repository, WORKSPACE, "lib").as_deref(),
+        Some("lib")
+    );
+    fixture.office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn with_the_setting_off_a_new_worktree_gets_no_links() {
+    let mut fixture = Fixture::open().await;
+    install_packages(&fixture.repository());
+    let refused = fixture
+        .client
+        .ask(
+            "settings.set",
+            json!({"key": DEPENDENCY_SETTING, "value": "yes"}),
+        )
+        .await;
+    assert_eq!(
+        error_text(&refused).1,
+        "worktree_dependency_links is on or off",
+        "{refused}"
+    );
+
+    let answer = fixture
+        .client
+        .ask(
+            "settings.set",
+            json!({"key": DEPENDENCY_SETTING, "value": "off"}),
+        )
+        .await;
+    assert_eq!(answer["ok"], true, "{answer}");
+    assert_eq!(shares_dependencies(&mut fixture).await, false);
+    let agent = fixture.create_with_worktree("Ana").await;
+
+    assert!(!folder_of(&agent).join("node_modules").exists());
+    assert!(
+        !folder_of(&agent)
+            .join(WORKSPACE)
+            .join("node_modules")
+            .exists()
     );
     fixture.office.serving.stop().await;
 }

@@ -18,6 +18,7 @@ use agent_domain::value_objects::{
     AgentWorktree, base_ref, free_branch_name, is_commit_id, is_office_branch_name,
 };
 
+use crate::services::dependency_links::{link_dependencies, unlink_dependencies};
 use crate::services::git_runner::{
     GitFailure, GitRunner, LazyGitRunner, absolute, filter_switches,
 };
@@ -205,8 +206,23 @@ impl GitWorktrees {
         });
     }
 
+    /// Writes each place whose links were not made to the server log; the
+    /// create goes on without them (0021 D5).
+    fn report_link_failures(&self, reasons: &[String]) {
+        let Some(failures) = &self.failures else {
+            return;
+        };
+        for reason in reasons {
+            failures.report(&PortError::Storage {
+                message: reason.clone(),
+                is_disk_failure: false,
+            });
+        }
+    }
+
     /// `worktree remove` with `force` times `--force`, after the check that
-    /// the folder is the office's own.
+    /// the folder is the office's own and after the dependency links are
+    /// gone.
     fn remove_record(&self, worktree: &AgentWorktree, force: usize) -> Result<(), WorktreeError> {
         if !self.is_owned(&worktree.folder) {
             return Err(WorktreeError::Invalid(format!(
@@ -215,6 +231,7 @@ impl GitWorktrees {
             )));
         }
         let runner = self.require_runner()?;
+        unlink_linked_dependencies(runner, worktree);
         // Without `--force` git runs its own status in the folder, which
         // would run the filters too.
         let filter_switches = if force == 0 && worktree.folder.exists() {
@@ -303,6 +320,10 @@ impl GitWorktrees {
                 info.subfolder.trim_end_matches('/')
             )));
         }
+        if request.link_dependencies {
+            let failures = link_dependencies(runner, &info.top, &worktree.folder);
+            self.report_link_failures(&failures);
+        }
         Ok(CreatedWorktree {
             worktree,
             working_folder,
@@ -345,6 +366,8 @@ impl WorktreeManager for GitWorktrees {
             base_is_branch,
             branches,
             branch_name,
+            // The handler that knows the settings decides (0021 FR-008).
+            shares_dependencies: false,
         }))
     }
 
@@ -497,6 +520,15 @@ impl WorktreeManager for GitWorktrees {
         }
         leftovers.extend(self.undo_branch(worktree));
         self.report_leftovers(worktree, &leftovers);
+    }
+}
+
+/// Removes the dependency links of a worktree still linked to its
+/// repository; git would read another repository through a broken link
+/// (0021 D7).
+fn unlink_linked_dependencies(runner: &GitRunner, worktree: &AgentWorktree) {
+    if is_linked_worktree(&worktree.folder, &worktree.repository) {
+        unlink_dependencies(runner, &worktree.repository, &worktree.folder);
     }
 }
 

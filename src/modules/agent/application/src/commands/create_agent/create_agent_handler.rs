@@ -275,7 +275,12 @@ impl CreateAgentHandler {
             agent_name: name.as_str(),
             base: own.base.as_deref(),
             branch_name: own.branch_name.as_deref(),
+            link_dependencies: self.links_dependencies()?,
         })?)
+    }
+
+    fn links_dependencies(&self) -> Result<bool, ApplicationError> {
+        Ok(self.settings.load()?.worktree_dependency_links)
     }
 
     fn discard_worktree(&self, agent: &Agent) {
