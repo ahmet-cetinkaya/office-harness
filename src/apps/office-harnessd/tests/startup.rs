@@ -150,3 +150,18 @@ fn the_start_repair_moves_no_lead_when_two_ceos_exist() {
 
     assert_eq!(parent_of(&config, &agents[2]), None);
 }
+
+#[test]
+fn the_office_connection_zeroes_freed_content() {
+    let folder = tempfile::tempdir().expect("folder");
+    let config = config_in(&folder);
+    std::fs::create_dir_all(config.database_path().parent().expect("data folder"))
+        .expect("data folder");
+
+    let connection = bootstrap::open_database(&config.database_path()).expect("database");
+
+    let secure_delete: i64 = connection
+        .query_row("PRAGMA secure_delete", [], |row| row.get(0))
+        .expect("pragma");
+    assert_eq!(secure_delete, 1);
+}
