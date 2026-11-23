@@ -1,5 +1,5 @@
 ---
-status: draft
+status: completed
 spec: specs/changes/0021-worktree-dependencies/SPEC.md
 commits: per-task
 ---
@@ -67,7 +67,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - `worktree_manager.rs`: `WorktreeCreate::link_dependencies`, `WorktreeInfo::shares_dependencies`, `DEPENDENCY_LINKS_SUPPORTED`.
 - `create_agent_handler.rs`, `worktree_info_handler.rs`: settings store (D11); the `agent.worktree_info` mapping adds `shares_dependencies`; bootstrap wiring.
 - `dependency_links.rs` (new): places (D2), checks (D3, D4), link and unlink (D1, D6, D7), log reasons (D5); `git_worktrees.rs` calls `link_dependencies` after the subfolder check in `make` and `unlink_dependencies` at the start of `remove_record` (which `discard` runs).
-- `git_worktrees_dependencies.tests.rs` (real git in a temporary folder, Unix only where links are made): top and nested places linked for the rules `node_modules/` and `node_modules`; `.bin` linked, the tool caches `.vite` and `.cache` not linked; `.vite` and `.cache` not linked, `.bin` linked; `git status` empty and `status().changed_files == 0`; `git add --all` stages nothing; setting off; base folder not ignored; tracked file at the place; base folder and single packages that lead outside or to nothing are refused and logged; an unreadable base folder is logged and the create goes on; remove and discard leave the base packages unchanged; an agent's own link to an outside folder is never followed; Windows makes no link (`cfg(windows)` test).
+- `git_worktrees_dependencies.tests.rs` (real git in a temporary folder, Unix only where links are made): top and nested places linked for the rules `node_modules/` and `node_modules`; `.bin` linked, the tool caches `.vite` and `.cache` not linked; `git status` empty and `status().changed_files == 0`; `git add --all` stages nothing; setting off; base folder not ignored; tracked file at the place; base folder and single packages that lead outside or to nothing are refused and logged; an unreadable base folder is logged and the create goes on; remove and discard leave the base packages unchanged; an agent's own link to an outside folder is never followed; Windows makes no link (`cfg(windows)` test).
 - **Acceptance:** `cargo test -p agent-infrastructure -p agent-application -p agent-domain` and clippy clean.
 
 ### T2: Wire test (commit 2)
