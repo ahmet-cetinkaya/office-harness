@@ -79,6 +79,17 @@ describe("event text", () => {
     expect(eventText(item({ kind: "resume_hold", detail: "ended" }))).toBe(
       "was put on hold: ended",
     );
+    expect(
+      eventText(item({ kind: "leftover_kept", detail: "permission denied" })),
+    ).toBe("has a leftover process that could not be ended: permission denied");
+    expect(eventText(item({ kind: "leftover_kept" }))).toBe(
+      "has a leftover process that could not be ended",
+    );
+    expect(
+      readItems({
+        items: [{ agent_id: "a", kind: "leftover_kept", first_event_at: 1 }],
+      }),
+    ).toHaveLength(1);
     expect(eventText(item({ kind: "auto_hold", detail: "rate" }))).toBe(
       "put on hold by the office, limit: rate",
     );

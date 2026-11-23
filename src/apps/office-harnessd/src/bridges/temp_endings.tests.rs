@@ -83,6 +83,10 @@ impl SessionStore for FakeSessions {
         Ok(None)
     }
 
+    fn running(&self) -> Result<Vec<Session>, PortError> {
+        Ok(Vec::new())
+    }
+
     fn set_cli_session_id(&self, _id: SessionId, _cli_session_id: &str) -> Result<(), PortError> {
         Ok(())
     }

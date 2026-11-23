@@ -7,6 +7,7 @@ export type NeedsYouKind =
   | "bell"
   | "auto_hold"
   | "resume_hold"
+  | "leftover_kept"
   | "exited"
   | "report";
 
@@ -54,6 +55,7 @@ const KINDS: readonly string[] = [
   "bell",
   "auto_hold",
   "resume_hold",
+  "leftover_kept",
   "exited",
   "report",
 ];
@@ -141,6 +143,10 @@ export function eventText(item: NeedsYouItem): string {
       return item.detail === null
         ? "was put on hold"
         : `was put on hold: ${item.detail}`;
+    case "leftover_kept":
+      return item.detail === null
+        ? "has a leftover process that could not be ended"
+        : `has a leftover process that could not be ended: ${item.detail}`;
     case "bell":
       return "bell";
     case "exited":

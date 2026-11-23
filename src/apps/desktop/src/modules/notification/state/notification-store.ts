@@ -7,7 +7,9 @@ import {
 } from "../../../core/api";
 import {
   announcementText,
+  EVENT_LEFTOVER_KEPT,
   isNeverReadOnArrival,
+  leftoverKeptBody,
   sortRows,
   type NotificationRow,
 } from "../models/notification";
@@ -27,6 +29,16 @@ export const INITIAL_NOTIFICATIONS: NotificationSnapshot = {
 };
 
 const EVENT_NOTIFICATION_CREATED = "notification.created";
+const EVENT_SWEEP = "office.sweep";
+const SWEEP_DONE = "done";
+/** The OS notification of several agents has no single agent name as title. */
+const OFFICE_NOTIFICATION_TITLE = "office-harness";
+/**
+ * How long the rows of one sweep may keep arriving before the one OS
+ * notification of them goes out, when `office.sweep` done does not come
+ * first (a connection that joined late).
+ */
+const DEFAULT_LEFTOVER_BATCH_MS = 1500;
 
 /**
  * Owns the notification list and the OS-notification rule (FR-006, D5, D7).
@@ -52,6 +64,7 @@ export function createNotificationController(
    * server did not clear it (0008 D8).
    */
   onReadOnArrivalFailed: (notificationId: string) => void = () => {},
+  leftoverBatchMs: number = DEFAULT_LEFTOVER_BATCH_MS,
 ) {
   const service = createNotificationService(client);
   let snapshot: NotificationSnapshot = INITIAL_NOTIFICATIONS;
@@ -103,6 +116,30 @@ export function createNotificationController(
     };
   }
 
+  // The server stores one `leftover_kept` row per agent, but FR-006 wants one
+  // OS notification per server start naming all of them. The rows enter the
+  // list at once; only the OS notification waits for the sweep's `done`.
+  let pendingLeftoverRows: NotificationRow[] = [];
+  let leftoverTimer: ReturnType<typeof setTimeout> | null = null;
+
+  async function flushLeftovers(): Promise<void> {
+    if (leftoverTimer !== null) clearTimeout(leftoverTimer);
+    leftoverTimer = null;
+    const rows = pendingLeftoverRows;
+    pendingLeftoverRows = [];
+    if (rows.length === 0 || !(await os.isAllowed())) return;
+    os.show(
+      rows[0].agent_id,
+      OFFICE_NOTIFICATION_TITLE,
+      leftoverKeptBody(rows.map((row) => row.agent_name)),
+    );
+  }
+
+  function queueLeftover(row: NotificationRow): void {
+    pendingLeftoverRows.push(row);
+    leftoverTimer ??= setTimeout(() => void flushLeftovers(), leftoverBatchMs);
+  }
+
   async function handleCreated(event: ServerEvent): Promise<void> {
     const row = rowOf(event);
     if (row === null) return;
@@ -133,6 +170,10 @@ export function createNotificationController(
       rows: withRow(snapshot.rows, row),
       announcement: announcementText(row),
     });
+    if (row.event === EVENT_LEFTOVER_KEPT) {
+      queueLeftover(row);
+      return;
+    }
     if (await os.isAllowed()) {
       os.show(row.agent_id, row.agent_name, announcementText(row));
     }
@@ -140,6 +181,9 @@ export function createNotificationController(
 
   function handleEvent(event: ServerEvent): void {
     if (event.type === EVENT_NOTIFICATION_CREATED) void handleCreated(event);
+    if (event.type === EVENT_SWEEP && event.state === SWEEP_DONE) {
+      void flushLeftovers();
+    }
   }
 
   function markReadRow(row: NotificationRow): NotificationRow {

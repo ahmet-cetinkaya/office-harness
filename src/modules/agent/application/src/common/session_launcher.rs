@@ -21,6 +21,7 @@ use crate::common::models::{
     PrepareLaunch, PreparedLaunch, SessionCommand, SessionPlan, StartTerminal, TrackedSession,
     TrackingRequest,
 };
+use crate::common::session_process_recorder::SessionProcessRecorder;
 use crate::common::sign_in_checker::{SignInChecker, environment_pairs};
 use crate::common::sign_in_scope::{SignInDecision, SignInScope};
 use crate::common::worktree_link::is_linked_worktree;
@@ -64,6 +65,7 @@ pub struct SessionLauncher {
     adapters: Arc<dyn CliAdapters>,
     clock: Arc<dyn Clock>,
     failures: Arc<dyn FailureReporter>,
+    processes: SessionProcessRecorder,
     sign_in: SignInChecker,
 }
 
@@ -73,6 +75,8 @@ pub struct LauncherServices {
     pub adapters: Arc<dyn CliAdapters>,
     pub clock: Arc<dyn Clock>,
     pub failures: Arc<dyn FailureReporter>,
+    /// Stores the identity of the CLI process right after the spawn.
+    pub processes: SessionProcessRecorder,
     /// Runs the CLI's sign-in status command before a start (0019).
     pub status_commands: Arc<dyn StatusCommandRunner>,
     /// How long a status command may run (0019 A3).
@@ -127,6 +131,7 @@ impl SessionLauncher {
             adapters: services.adapters,
             clock: services.clock,
             failures: services.failures,
+            processes: services.processes,
         }
     }
 
@@ -348,6 +353,8 @@ impl SessionLauncher {
         if let Err(error) = started {
             return self.fail_after_start(agent, session, error.to_string());
         }
+        // Before the caller publishes the session as started (0017/FR-001).
+        self.processes.record_cli(&session);
         if let Some(tracking) = tracking {
             match kind {
                 LaunchKind::NewTask => self.follow(session.id, tracking),

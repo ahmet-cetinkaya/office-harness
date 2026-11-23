@@ -5,6 +5,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use agent_domain::enums::AgentStatus;
+use agent_domain::value_objects::SessionId;
 use hierarchy_application::queries::tree::TreeQuery;
 use hierarchy_domain::HoldScope;
 use kernel::AgentId;
@@ -12,15 +13,19 @@ use serde_json::{Map, Value, json};
 use tokio::task::spawn_blocking;
 use wire::{ErrorCode, Request, Response};
 
+use super::agent_requests::STOPPING_MESSAGE;
 use super::resume_order::start_order;
 use super::resume_run::{ResumeContext, run_resume};
+use super::unclean_stop::UncleanStop;
+use crate::sweep::{SweepGate, SweepState};
 
 const RESUME_PLAN: &str = "resume.plan";
 const RESUME_START: &str = "resume.start";
+const SWEEP_STATE: &str = "sweep.state";
 /// The wake of an asleep agent (0018) shares the 0013 start, watch, and
 /// fallback, so this gateway answers it too.
 const WAKE_START: &str = "wake.start";
-const RESUME_REQUESTS: [&str; 3] = [RESUME_PLAN, RESUME_START, WAKE_START];
+const RESUME_REQUESTS: [&str; 4] = [RESUME_PLAN, RESUME_START, SWEEP_STATE, WAKE_START];
 const AGENT_IDS_FIELD: &str = "agent_ids";
 const AGENT_ID_FIELD: &str = "agent_id";
 const MAX_AGENT_IDS: usize = 1000;
@@ -38,12 +43,25 @@ type Refusal = (ErrorCode, String);
 pub struct ResumeGateway {
     context: ResumeContext,
     tree: Arc<TreeQuery>,
+    /// The sweep of 0017: `resume.start` waits for it, and `resume.plan`
+    /// answers that it runs.
+    sweep_gate: SweepGate,
 }
 
 impl ResumeGateway {
     #[must_use]
     pub fn new(context: ResumeContext, tree: Arc<TreeQuery>) -> Self {
-        Self { context, tree }
+        Self {
+            context,
+            tree,
+            sweep_gate: SweepGate::default(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_sweep_gate(mut self, sweep_gate: SweepGate) -> Self {
+        self.sweep_gate = sweep_gate;
+        self
     }
 
     #[must_use]
@@ -53,6 +71,10 @@ impl ResumeGateway {
 
     pub async fn handle(&self, request: Request) -> Response {
         let id = request.id;
+        let starts_cli = request.kind == RESUME_START || request.kind == WAKE_START;
+        if starts_cli && self.sweep_gate.wait_until_done().await.is_err() {
+            return Response::failure(id, ErrorCode::Refused, STOPPING_MESSAGE);
+        }
         if request.kind == WAKE_START {
             return match self.wake(&request).await {
                 Ok(result) => Response::success(id, result),
@@ -96,6 +118,12 @@ impl ResumeGateway {
 
     fn answer(&self, request: &Request) -> Result<(Value, Vec<AgentId>), Refusal> {
         refuse_unknown_fields(request)?;
+        if request.kind == SWEEP_STATE {
+            return Ok((
+                json!({ "state": self.sweep_gate.state().as_str() }),
+                Vec::new(),
+            ));
+        }
         if request.kind == RESUME_PLAN {
             return Ok((self.plan()?, Vec::new()));
         }
@@ -105,8 +133,15 @@ impl ResumeGateway {
     }
 
     /// The interrupted agents in start order, with what will happen to each
-    /// (FR-002, FR-008).
+    /// (FR-002, FR-008). Each entry is `{agent_id, last_session, can_continue,
+    /// held, reason?, unclean_stop, after_unclean_stop}`: `unclean_stop` is
+    /// `null`, `{"ended": n}`, or `{"may_run": reason}` for a last session
+    /// that was `lost` (0017/D8), and `after_unclean_stop` is `true` exactly
+    /// when `may_run` is set, so an older desktop app keeps its warning.
     fn plan(&self) -> Result<Value, Refusal> {
+        if self.sweep_gate.state() == SweepState::Running {
+            return Ok(json!({ "sweeping": true, "agents": [] }));
+        }
         let interrupted: Vec<AgentId> = self
             .context
             .store
@@ -122,7 +157,7 @@ impl ResumeGateway {
             .into_iter()
             .map(|agent_id| self.plan_entry(agent_id, held.contains(&agent_id)))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(json!({ "agents": entries }))
+        Ok(json!({ "sweeping": false, "agents": entries }))
     }
 
     fn plan_entry(&self, agent_id: AgentId, held: bool) -> Result<Value, Refusal> {
@@ -139,22 +174,40 @@ impl ResumeGateway {
                 .and_then(Value::as_str)
                 .map(str::to_owned),
         };
-        let after_unclean_stop = last_session
-            .as_ref()
-            .and_then(|session| session.get("exit_result"))
-            .and_then(Value::as_str)
-            == Some(LOST_EXIT_RESULT);
+        let unclean_stop = self.unclean_stop(last_session.as_ref())?;
         let mut entry = json!({
             "agent_id": agent_id.to_string(),
             "last_session": last_session,
             "can_continue": can_continue,
             "held": held,
-            "after_unclean_stop": after_unclean_stop,
+            "unclean_stop": unclean_stop.as_ref().map(UncleanStop::to_json),
+            "after_unclean_stop": unclean_stop.as_ref().is_some_and(UncleanStop::warns),
         });
         if let Some(reason) = reason {
             entry["reason"] = json!(reason);
         }
         Ok(entry)
+    }
+
+    /// What the sweep found for the session, when it ended as `lost` (D8).
+    fn unclean_stop(&self, session: Option<&Value>) -> Result<Option<UncleanStop>, Refusal> {
+        let Some(session) = session else {
+            return Ok(None);
+        };
+        if session.get("exit_result").and_then(Value::as_str) != Some(LOST_EXIT_RESULT) {
+            return Ok(None);
+        }
+        let session_id = session
+            .get("id")
+            .and_then(Value::as_str)
+            .and_then(|text| SessionId::from_str(text).ok())
+            .ok_or_else(|| (ErrorCode::Internal, "a session has no valid id".to_owned()))?;
+        let summary = self
+            .context
+            .processes
+            .sweep_summary(session_id)
+            .map_err(|error| internal(&error))?;
+        Ok(UncleanStop::of(&summary))
     }
 
     /// The newest `session.list` entry, which carries `can_continue` and the

@@ -172,6 +172,11 @@ impl TerminalRuntime for PortableTerminalRuntime {
         self.running_session(agent_id).is_some()
     }
 
+    fn process_id(&self, agent_id: AgentId) -> Option<u32> {
+        self.running_session(agent_id)
+            .and_then(|session| session.process_id())
+    }
+
     fn current_run(&self, agent_id: AgentId) -> Option<RunId> {
         self.sessions().get(&agent_id).map(|session| session.run())
     }

@@ -4,6 +4,7 @@ mod additions_view;
 mod agent_action;
 mod file_view;
 mod session_command;
+mod session_process;
 mod session_view;
 mod sign_in;
 mod start_terminal;
@@ -15,6 +16,9 @@ pub use file_view::{
     DiffState, EntryKind, FileContent, FileDiff, FolderEntry, FolderListing, LinkTarget,
 };
 pub use session_command::{SessionCommand, SessionPlan, TrackedSession, TrackingRequest};
+pub use session_process::{
+    ProbeError, ProcessKind, SessionProcess, StoredProcess, SweepOutcome, SweepSummary,
+};
 pub use session_view::SessionView;
 pub use sign_in::{SignIn, StatusCommand, StatusRun, StatusRunResult};
 pub use start_terminal::{PrepareLaunch, PreparedLaunch, StartTerminal};

@@ -264,6 +264,7 @@ async fn a_cli_that_cannot_continue_starts_a_new_session_at_once_with_the_reason
     assert_eq!(entry["can_continue"], false);
     assert_eq!(entry["held"], false);
     assert_eq!(entry["after_unclean_stop"], false);
+    assert_eq!(entry["unclean_stop"], Value::Null);
     assert!(entry["reason"].as_str().is_some(), "{entry}");
     assert_eq!(result_names(&results), ["checking", "new_session"]);
     assert_eq!(results[0]["continued"], false);

@@ -61,8 +61,13 @@ export interface ResumeSeed {
   canContinue?: boolean;
   /** Why the session cannot be continued. */
   reason?: string;
-  /** The last session was lost at an unclean stop. */
+  /** The last session was lost at an unclean stop. Shorthand for a
+   * `may_run` finding; the answer then also carries the old boolean. */
   afterUncleanStop?: boolean;
+  /** What the sweep found for the lost session (0017, D8): `null` for
+   * nothing, `{ ended }` for leftovers it ended, `{ may_run }` with the
+   * reason for a process that may still run. */
+  uncleanStop?: { ended: number } | { may_run: string } | null;
   /** What a start does: "continues" runs the session (the default),
    * "refuses" has the CLI refuse it so that a new session starts, and
    * "fails" has the new session end too, which puts the agent on hold. */
@@ -104,6 +109,8 @@ export interface OfficeSeed {
   /** Milliseconds between the "checking" and the final result of a resume,
    * as a start with a real check period. Zero when left out. */
   resumeCheckMs?: number;
+  /** The sweep state when the page opens (0017). "done" when left out. */
+  sweep?: "running" | "done";
   /** How a wake of an asleep agent ends, by agent id, with the resume seed's
    * meaning of `canContinue`, `reason`, and `outcome`. An agent left out
    * continues its session. */
@@ -205,6 +212,7 @@ export interface NotificationSeed {
     | "bell"
     | "auto_hold"
     | "resume_hold"
+    | "leftover_kept"
     | "report";
   detail?: string | null;
   created_at: number;
@@ -256,6 +264,15 @@ declare global {
       ): void;
       /** The office puts an agent on hold by itself, as a limit does (0007). */
       autoHold(agentId: string, limitName: string): void;
+      /** Sets the sweep state and sends `office.sweep`, as the server does (0017). */
+      setSweep(state: "running" | "done"): void;
+      /** Adds one action record entry of the agent, as the server writes it. */
+      recordAction(
+        agentId: string,
+        action: string,
+        actor: string,
+        detail: string | null,
+      ): void;
       calls: RecordedCall[];
       /** Every `settings.set` invoke, oldest first, beside `calls`. */
       settings: RecordedSetting[];
@@ -368,6 +385,7 @@ export async function installMockCore(
         last_view: mock.office?.lastView ?? null,
       } as Record<string, string | null>,
       finishedTemps: structuredClone(mock.office?.finishedTemps ?? []),
+      sweep: mock.office?.sweep ?? "done",
       nextId: 1,
     };
     for (const agent of office.agents) {
@@ -1859,6 +1877,8 @@ export async function installMockCore(
             setTimeout(resolve, mock.office?.fileViewDelayMs ?? 0),
           );
           return answerFileView(kind, fields);
+        case "sweep.state":
+          return { state: office.sweep };
         case "resume.plan":
           return resumePlan();
         case "resume.start": {
@@ -1908,10 +1928,15 @@ export async function installMockCore(
               (RESUME_ROLE_RANK[second.agent.role ?? ""] ?? 0) ||
             first.index - second.index,
         );
+      const isSweeping = office.sweep === "running";
       return {
-        agents: interrupted.map(({ agent }) => {
+        sweeping: isSweeping,
+        agents: (isSweeping ? [] : interrupted).map(({ agent }) => {
           const seed = resumeSeedOf(agent.id);
           const canContinue = seed.canContinue !== false;
+          const uncleanStop =
+            seed.uncleanStop ??
+            (seed.afterUncleanStop === true ? { may_run: "not swept" } : null);
           return {
             agent_id: agent.id,
             last_session: structuredClone(
@@ -1926,7 +1951,9 @@ export async function installMockCore(
               ? {}
               : { reason: seed.reason ?? NO_CONTINUE_REASON }),
             held: heldAgent(agent.id) !== undefined,
-            after_unclean_stop: seed.afterUncleanStop === true,
+            unclean_stop: uncleanStop,
+            after_unclean_stop:
+              uncleanStop !== null && "may_run" in uncleanStop,
           };
         }),
       };
@@ -2242,6 +2269,18 @@ export async function installMockCore(
           record(agent.id, "hold", "office");
           pushHoldChanged();
           createNotification(agent, "auto_hold", limitName);
+        },
+        setSweep: (state: "running" | "done") => {
+          office.sweep = state;
+          pushEvent({ type: "office.sweep", state });
+        },
+        recordAction: (
+          agentId: string,
+          action: string,
+          actor: string,
+          detail: string | null,
+        ) => {
+          record(agentId, action, actor, detail);
         },
         calls,
         settings,

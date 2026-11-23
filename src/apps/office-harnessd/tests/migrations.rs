@@ -376,3 +376,41 @@ fn an_office_from_before_own_worktrees_keeps_every_agent_without_one() {
         .expect("agent kept");
     assert_eq!(worktree, (None, "Ana".to_owned()));
 }
+
+#[test]
+fn an_office_from_before_session_processes_keeps_its_sessions_and_stores_none() {
+    const SESSION_PROCESSES_VERSION: usize = 8;
+    let mut connection = Connection::open_in_memory().expect("database");
+    run_migrations(
+        &mut connection,
+        LEDGER_TABLE,
+        &SCRIPTS[..SESSION_PROCESSES_VERSION - 1],
+        &[],
+    )
+    .expect("version 7");
+    connection
+        .execute_batch(
+            "INSERT INTO agent_machines (id, name) VALUES ('m1', 'host');
+             INSERT INTO agent_agents (id, name, name_key, command, working_folder, machine_id, status, created_at)
+             VALUES ('a1', 'Ana', 'ana', 'claude', '/work', 'm1', 'running', 1);
+             INSERT INTO agent_sessions (id, agent_id, additions_snapshot, started_at)
+             VALUES ('s1', 'a1', '{}', 1);",
+        )
+        .expect("data at version 7");
+
+    let applied = run_migrations(&mut connection, LEDGER_TABLE, SCRIPTS, &[]).expect("forward");
+
+    // Every script from version 8 on runs once, the later ones included.
+    assert_eq!(applied, SCRIPTS.len() - (SESSION_PROCESSES_VERSION - 1));
+    assert_eq!(ledger_versions(&connection), all_versions());
+    let (sessions, processes, capped): (i64, i64, i64) = connection
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM agent_sessions), \
+             (SELECT COUNT(*) FROM agent_session_processes), \
+             (SELECT helpers_capped FROM agent_sessions WHERE id = 's1')",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("counts");
+    assert_eq!((sessions, processes, capped), (1, 0, 0));
+}
