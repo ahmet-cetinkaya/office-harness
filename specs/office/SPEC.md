@@ -25,8 +25,13 @@ Archived change specs merged here:
 - [0014-subtree-status](../changes/archive/0014-subtree-status/SPEC.md)
 - [0015-upward-reports](../changes/archive/0015-upward-reports/SPEC.md)
 - [0016-agent-file-browser](../changes/archive/0016-agent-file-browser/SPEC.md)
+- [0017-orphan-sweep](../changes/archive/0017-orphan-sweep/SPEC.md)
+- [0018-idle-sleep](../changes/archive/0018-idle-sleep/SPEC.md)
+- [0019-cli-sign-in-check](../changes/archive/0019-cli-sign-in-check/SPEC.md)
+- [0020-temporary-agents](../changes/archive/0020-temporary-agents/SPEC.md)
+- [0021-worktree-dependencies](../changes/archive/0021-worktree-dependencies/SPEC.md)
 
-Changes 0008 to 0011 merge in when they are archived. 0004, 0006, and changes after 0016 are not merged.
+Changes 0008 to 0011 merge in when they are archived. 0004 and 0006 are not merged.
 
 ## How to read this file
 
@@ -34,18 +39,21 @@ Changes 0008 to 0011 merge in when they are archived. 0004, 0006, and changes af
 - When a later change modified a requirement, this file keeps one entry under the original id with the final text, and a note names the change that modified it. The earlier text is not repeated.
 - A bare id inside a requirement text, such as `FR-001`, names a requirement of the same change as that entry.
 - Requirements removed by a later change: none.
-- Ids of 0001 keep the form `0001/FR-nnn`. The one requirement of 0001 that a merged change modified is 0001/FR-017.
+- Ids of 0001 keep the form `0001/FR-nnn`. The requirements of 0001 that a merged change modified are 0001/FR-014 and 0001/FR-017.
 
 Modified requirements:
 
 | Requirement | Modified by | Final text is under |
 |---|---|---|
+| 0001/FR-014 | 0018 | Change 0001, Requirements |
 | 0001/FR-017 | 0003 | Change 0001, Requirements |
 | 0002/FR-008 | 0014, 0015 | Change 0002, Requirements |
 | 0002/FR-009 | 0007 | Change 0002, Requirements |
 | 0002/FR-010 | 0012 | Change 0002, Requirements |
 | 0003/FR-006 (in part) | 0007, 0015 | Change 0003, Requirements |
 | 0003/FR-008 (in part) | 0005 | Change 0003, Requirements |
+| 0013/FR-008 | 0017 | Change 0013, Requirements |
+| 0015/FR-005 | 0020 | Change 0015, Requirements |
 
 ## Change 0001: Office server and terminal
 
@@ -68,7 +76,7 @@ The owner runs many AI coding agent CLIs and opens a separate terminal for each 
 - **0001/FR-011** (US1): THE SYSTEM SHALL record each create, start, stop, and delete action with its actor, its target agent, and its time, and SHALL show these entries in the target agent's details.
 - **0001/FR-012** (US1): THE SYSTEM SHALL let the user create an agent with a name, a CLI command, a working folder, and an optional project, and start, stop, and delete it from the desktop app.
 - **0001/FR-013** (US1): THE SYSTEM SHALL let the user create a project with a name and a folder, and assign each agent to at most one project.
-- **0001/FR-014** (US1): THE SYSTEM SHALL show every agent of the office with its name and its status as text, where the status is one of `starting`, `working`, `waiting for input`, `exited`, `failed`, `stopped`, or `interrupted`, and `waiting for input` means that the CLI runs and produced no output during the quiet period.
+- **0001/FR-014** (US1): THE SYSTEM SHALL show every agent of the office with its name and its status as text, where the status is one of `starting`, `working`, `waiting for input`, `exited`, `failed`, `stopped`, `interrupted`, or `asleep`, `waiting for input` means that the CLI runs and produced no output during the quiet period, and `asleep` means that the office ended the CLI after an idle time and keeps its last session for a wake (0018/FR-003). (modified by 0018)
 - **0001/FR-015** (US1): THE SYSTEM SHALL run each agent CLI in its own pseudo-terminal, so that full-screen display, colors, cursor movement, and control keys behave as in the user's native terminal.
 - **0001/FR-016** (US1): WHEN the user attaches to an agent, THE SYSTEM SHALL show the agent's recent output followed by its live output.
 - **0001/FR-017** (US1): WHILE an agent's terminal has keyboard focus, THE SYSTEM SHALL send every key to the agent's CLI except the documented app shortcuts: the shortcut that moves focus back to the panel, the agent shortcuts, and the switcher shortcut (A1). (modified by 0003) Change 0007 widened this list by one shortcut. See the note after the success criteria of change 0007. Active change 0008 (needs you queue, not shipped yet) modifies 0001/FR-017 again: it adds the jump shortcut to the list.
@@ -110,7 +118,7 @@ The owner runs many AI coding agent CLIs and opens a separate terminal for each 
 
 ### Notes from Deviations
 
-- **FR-011 lists four actions; the record holds more.** Requirement: record each create, start, stop, and delete action. Shipped: the record also holds `new_task` and `continue` (0001, T7), `team_create`, `team_delete`, `directive`, and `refused` (0002), `hold` and `release` (0007), and `task_text` (0011), 13 kinds in all (`src/modules/audit/domain/src/action_kind.rs:9`). Reason: each later change records its own actions in the same record, and the user sees them in the same details. The data model lists them. Recorded 2026-11-23 (ACF-106 archive). Changed by 0017: two more kinds, `end_leftover` and `helper_limit`, are in `specs/changes/0017-orphan-sweep/contracts/sweep-protocol.md`.
+- **FR-011 lists four actions; the record holds more.** Requirement: record each create, start, stop, and delete action. Shipped: the record also holds `new_task` and `continue` (0001, T7), `team_create`, `team_delete`, `directive`, and `refused` (0002), `hold` and `release` (0007), and `task_text` (0011), 13 kinds in all (`src/modules/audit/domain/src/action_kind.rs:9`). Reason: each later change records its own actions in the same record, and the user sees them in the same details. The data model lists them. Recorded 2026-11-23 (ACF-106 archive). Changed by 0017: two more kinds, `end_leftover` and `helper_limit`, are in `specs/changes/archive/0017-orphan-sweep/contracts/sweep-protocol.md`.
 - **Status wire value is `waiting_for_input` (FR-014).** The display text is `waiting for input`. The server stores and sends `waiting_for_input` (`src/modules/agent/domain/src/enums/agent_status.rs:48`). Reason: the wire value is one token. Recorded 2026-11-23 (ACF-106 archive).
 - **A clean server stop sets running agents to `interrupted` at once (FR-004).** A signal and `server.restart` stop each child, set the agent and its session to `interrupted`, and tell the connected clients before they close. FR-004 still covers an unclean stop, where the status changes at the next server start.
 - **Windows stop uses `taskkill`, not a Job Object (FR-006, SC-002).** The server ends the process tree with `taskkill /PID <pid> /T /F`, because a Job Object needs `unsafe` code and the workspace forbids it outside `private-fs`. `/T` follows parent links, so it misses a descendant whose parent already exited. The Windows checks stay open until someone runs them on a Windows machine. Accepted on 2026-11-15; the project owner may revisit it.
@@ -187,7 +195,7 @@ The owner named switching and searching between agents as his main problem: othe
 - **0003/FR-009** (US2): WHEN the user opens a notification, or opens the terminal of an agent that has unread notifications, THE SYSTEM SHALL show those notifications of that agent as read.
 
 FR-002 states R9 criterion 2. FR-006 notifies only for the four events it lists: a status change that the user caused (`stopped`) and `interrupted` after a server restart notify nobody.
-Later additions to the shortcuts and the events (recorded 2026-11-23, ACF-106 archive; no requirement of this spec changed). The fixed shortcuts are `Ctrl+Shift+F1` to `Ctrl+Shift+F10` here. Change 0008 added `Ctrl+Shift+F11` (jump to the agent that needs you), and change 0007 added `Ctrl+Shift+H` (the office hold). The server holds 12 reserved shortcuts in all (`src/modules/agent/domain/src/value_objects/settings.rs:33`). Change 0007 (FR-008) added the notification event `auto_hold` to the four events of FR-006, so the server knows five (`src/modules/notification/domain/src/enums/notification_event.rs:21`). Change 0008 added the Needs you queue. It is a separate queue with its own requests and event, not a notification event. Changed by 0017: the notification event `leftover_kept` is added; see `specs/changes/0017-orphan-sweep/contracts/sweep-protocol.md`.
+Later additions to the shortcuts and the events (recorded 2026-11-23, ACF-106 archive; no requirement of this spec changed). The fixed shortcuts are `Ctrl+Shift+F1` to `Ctrl+Shift+F10` here. Change 0008 added `Ctrl+Shift+F11` (jump to the agent that needs you), and change 0007 added `Ctrl+Shift+H` (the office hold). The server holds 12 reserved shortcuts in all (`src/modules/agent/domain/src/value_objects/settings.rs:33`). Change 0007 (FR-008) added the notification event `auto_hold` to the four events of FR-006, so the server knows five (`src/modules/notification/domain/src/enums/notification_event.rs:21`). Change 0008 added the Needs you queue. It is a separate queue with its own requests and event, not a notification event. Changed by 0017: the notification event `leftover_kept` is added; see `specs/changes/archive/0017-orphan-sweep/contracts/sweep-protocol.md`.
 
 This change modified: 0001/FR-017. The final text is under Change 0001, Requirements.
 
@@ -394,7 +402,10 @@ After a server restart, the user must resume each interrupted agent one by one: 
 - **0013/FR-005** (US3): IF a new session that this action started ends by itself within the check period, or does not start, THEN THE SYSTEM SHALL NOT start the agent again, SHALL put the agent on hold (0007/FR-003) with the office as actor and the reason, and SHALL notify the user once, naming the agent.
 - **0013/FR-006** (US1, US2, US3): THE SYSTEM SHALL show the result of each checked agent as text as soon as it is known: checking (during the check period), continued, new session (with the reason), on hold (with the reason), or skipped (with the reason).
 - **0013/FR-007** (US2): WHEN this action starts a new session instead of continuing the last one, for any reason, THE SYSTEM SHALL keep the reason with that start's entry in the agent's action record, so the user sees in the agent's details that the CLI's earlier context was not carried over.
-- **0013/FR-008** (US1): WHERE the last session of a listed agent was still open when the server stopped uncleanly, THE SYSTEM SHALL mark that agent in the list, SHALL show, before the user confirms, a warning that the CLI processes of those agents from before the stop may still run and that resuming can start a second copy of a CLI next to them, and SHALL keep Confirm unavailable while a marked agent is checked until the user acknowledges the warning.
+- **0013/FR-008** (US1): WHERE the last session of a listed agent was still open when the server stopped uncleanly, THE SYSTEM SHALL mark that agent in the list with what the sweep (0017/FR-003) found for it, and SHALL keep Confirm unavailable while an agent with the warning is checked, until the user acknowledges the warning. (modified by 0017) The mark is one of these:
+  - every leftover ended (ended or ended by force): a note with the number of processes from before the stop that the office ended, and no warning;
+  - a leftover that could not be ended, a stored process identity that was not readable, a process that matched except for a boot time that changed, or no complete stored process identities for the session (a session from before 0017, a failed store, a session over the helper limit, or a sweep that could not run): the warning, shown before the user confirms, that a CLI process of that agent from before the stop may still run and that resuming can start a second copy of a CLI next to it;
+  - no leftover found: no mark and no warning.
 
 ### Preserved behaviors
 
@@ -475,7 +486,7 @@ Directives go down the tree (0002), and a parent can read its descendants' state
 - **0015/FR-002** (US1, US2): THE SYSTEM SHALL send an accepted report to the sender's parent as the tree is at the moment of the report, or to the person when the sender has no parent or marks the report for the person, and SHALL NOT take any input that names another agent as the report's receiver.
 - **0015/FR-003** (US3): WHEN the system accepts a report, THE SYSTEM SHALL replace each control character (C0, DEL, C1, including line breaks), escape code, and bidirectional format character in the text with its visible form, and SHALL use only the visible form in the parent's terminal, in Needs you, and in the action record.
 - **0015/FR-004** (US1): WHEN a report goes to a parent, THE SYSTEM SHALL type the report heading and the report text into the parent's terminal as one line, in the parent's queue together with its directives, under the rules of 0012/FR-001 to 0012/FR-005 as they apply to a directive whose target is the parent, and SHALL answer the sender that the report was submitted, waits with its place in the queue, or was left unsubmitted.
-- **0015/FR-005** (US1): IF the sender's parent is not running, THEN THE SYSTEM SHALL refuse a report to it, say that the parent is not running, and record the refusal; IF a waiting report's sender is no longer a child of the report's parent, THEN THE SYSTEM SHALL withdraw it as 0012/FR-005 withdraws a directive whose target left the sender's subtree.
+- **0015/FR-005** (US1): IF the sender's parent is not running, THEN THE SYSTEM SHALL refuse a report to it, say that the parent is not running, and record the refusal; IF a waiting report's sender is no longer a child of the report's parent, THEN THE SYSTEM SHALL withdraw it as 0012/FR-005 withdraws a directive whose target left the sender's subtree, EXCEPT a waiting report or end notice of a temp that the system ended, which stays in the queue. (modified by 0020)
 - **0015/FR-006** (US3): THE SYSTEM SHALL treat sending a report as an agent-made action under 0007: the office hold and an agent hold that covers the sender refuse it (0007/FR-002, 0007/FR-004), and a rate limit "reports sent by one agent", 5 per rolling 60 seconds by default, refuses a report beyond it (0007/FR-007), counts toward the automatic hold (0007/FR-008), and is changed by the user in the office settings like the other limits (0007/FR-009).
 - **0015/FR-007** (US2): WHEN the system accepts a report for the person, THE SYSTEM SHALL record it as an attention event of the sender, notify the owner with the sender's name and the report's kind as 0003/FR-006 (as modified) allows, and answer the sender that the report is in Needs you.
 - **0015/FR-008** (US2): WHILE an item in Needs you holds a report, THE SYSTEM SHALL keep showing that report on the item when later attention events change the item's latest event, and SHALL replace it only with the sender's next report for the person.
@@ -557,15 +568,15 @@ None stored. Every answer is read from the root and its git data at the moment o
 
 ### Success criteria
 
-- **SC-001:** Of 20 requests for paths outside the root (parent parts, absolute paths, a link to a file outside, a link to a folder outside, a link inside a linked folder, and a link chain that leaves the root), 100% are refused, and 0 bytes of the outside files reach the desktop app.
-- **SC-002:** A file of exactly 512 KiB shows in full; a file of 512 KiB plus 1 byte shows its size and 0 bytes of content; a diff over 512 KiB shows its size and 0 lines.
-- **SC-003:** In a folder with 10 secret-looking files that are also changed files, opening the tree, each file, the Changes part, and each diff sends 0 bytes of their content to the desktop app until a reveal; after one reveal, exactly that one file's content arrives; after opening another file, it is hidden again. A `.env` renamed to `notes.txt`, in the Changes part and in a commit, sends 0 bytes of its diff until a reveal.
-- **SC-004:** After a session that lists every folder, opens every file, the changes, every diff, the history, and every commit of a test repository, the root and its git data are byte for byte the same as before, with the same modification times, no lock file was created, and a hook, a diff driver, a text conversion, a content filter, a signature check program, and a file system monitor that the repository names each wrote 0 marker files.
-- **SC-005:** In a repository with one modified, one staged new, one deleted, one renamed, and one untracked file inside the root and one modified file outside it, the Changes part lists exactly the 5 files inside the root, each with its kind, and each diff holds the removed and added lines of that file.
-- **SC-006:** With 120 commits that change the root and 10 that change only another folder of the repository, the History part shows 50, then 100, then 120 commits, newest first, none of the 10 others.
-- **SC-007:** Each visible state appears in a test with its text, and every action of the flow completes with the keyboard alone.
-- **SC-008:** A file and a commit message that hold `<script>`, an image tag, a terminal escape code (U+001B), and a right-to-left override (U+202E) show as text, with U+001B and U+202E as visible symbols, and 0 scripts run and 0 images load.
-- **SC-009:** In a working folder of 50,000 files, a folder of 1,000 entries lists within 2 seconds, a 512 KiB file shows within 2 seconds, and the Changes part of 1,000 changed files lists within 5 seconds.
+- **0016/SC-001:** Of 20 requests for paths outside the root (parent parts, absolute paths, a link to a file outside, a link to a folder outside, a link inside a linked folder, and a link chain that leaves the root), 100% are refused, and 0 bytes of the outside files reach the desktop app.
+- **0016/SC-002:** A file of exactly 512 KiB shows in full; a file of 512 KiB plus 1 byte shows its size and 0 bytes of content; a diff over 512 KiB shows its size and 0 lines.
+- **0016/SC-003:** In a folder with 10 secret-looking files that are also changed files, opening the tree, each file, the Changes part, and each diff sends 0 bytes of their content to the desktop app until a reveal; after one reveal, exactly that one file's content arrives; after opening another file, it is hidden again. A `.env` renamed to `notes.txt`, in the Changes part and in a commit, sends 0 bytes of its diff until a reveal.
+- **0016/SC-004:** After a session that lists every folder, opens every file, the changes, every diff, the history, and every commit of a test repository, the root and its git data are byte for byte the same as before, with the same modification times, no lock file was created, and a hook, a diff driver, a text conversion, a content filter, a signature check program, and a file system monitor that the repository names each wrote 0 marker files.
+- **0016/SC-005:** In a repository with one modified, one staged new, one deleted, one renamed, and one untracked file inside the root and one modified file outside it, the Changes part lists exactly the 5 files inside the root, each with its kind, and each diff holds the removed and added lines of that file.
+- **0016/SC-006:** With 120 commits that change the root and 10 that change only another folder of the repository, the History part shows 50, then 100, then 120 commits, newest first, none of the 10 others.
+- **0016/SC-007:** Each visible state appears in a test with its text, and every action of the flow completes with the keyboard alone.
+- **0016/SC-008:** A file and a commit message that hold `<script>`, an image tag, a terminal escape code (U+001B), and a right-to-left override (U+202E) show as text, with U+001B and U+202E as visible symbols, and 0 scripts run and 0 images load.
+- **0016/SC-009:** In a working folder of 50,000 files, a folder of 1,000 entries lists within 2 seconds, a 512 KiB file shows within 2 seconds, and the Changes part of 1,000 changed files lists within 5 seconds.
 
 ### Notes from Deviations
 
@@ -580,3 +591,295 @@ None stored. Every answer is read from the root and its git data at the moment o
 - **Race and hard links.** An agent that swaps a folder for a link between the check and the read, or that adds a hard link to an outside file, can still make the view show that file.
 - **Unix only.** The link, named pipe, and hook marker tests run on Linux and macOS, not on Windows. The `.git` refusal compares ASCII case only on Windows.
 - **No hands-on run of the packaged app.** The desktop flow ran against the mock core and the server against real repositories, not together on a real agent.
+
+## Change 0017: End the processes left over from an unclean stop
+
+### Intent
+
+When the background server stops uncleanly (SIGKILL, a crash, or a power loss of the server process only), some agent CLI processes and their helper processes keep running. The next server start does not see them. They keep spending the owner's quota unseen, and they can keep a session busy, which can break the resume of 0013. This change makes the server remember, for each session, which processes belong to it. At the next start, before the user can resume anything, the server ends only the processes that are still exactly those processes, and records each end. The resume warning of 0013 then names only the agents that really had processes left.
+
+### Requirements
+
+- **0017/FR-001** (US1): WHEN the office starts a session, THE SYSTEM SHALL store the process identity of the session's CLI process before the session shows as started, and SHALL make it readable only by the OS user who owns the office (as 0001/FR-009). THE SYSTEM SHALL store the command line as a hash of the whole line, for the match, and as a display text of at most 1,000 characters.
+- **0017/FR-002** (US1): WHILE a session runs, THE SYSTEM SHALL store the process identity of each process that descends from the session's CLI process within 10 seconds after that process starts, SHALL keep it while that process runs, also after it leaves the CLI's process tree, and SHALL drop it when that process ends.
+- **0017/FR-003** (US1, US2): WHEN the server starts and finds `lost` sessions, THE SYSTEM SHALL run the sweep before it shows the list of the "Resume interrupted" action and before it starts any agent, SHALL ask each leftover to end and end by force each leftover that still runs after the grace period, and SHALL check the match again just before each end request. Where the OS lets the office hold a process (Linux 5.3 and later, and Windows), THE SYSTEM SHALL send each end request only to the process that it just checked, so that a process that gets the same process id later is never ended. On macOS, and on a Linux kernel without this, the time between the check and the end request is a known risk (see Notes from Deviations).
+- **0017/FR-004** (US1): WHEN the sweep ends a leftover, THE SYSTEM SHALL add an entry to the agent's action record with the office as actor, the session, the process id, the command line in visible form, and the result "ended" or "ended by force".
+- **0017/FR-005** (US2): IF a stored process identity of a `lost` session does not match a running process, THEN THE SYSTEM SHALL NOT end any process for it and SHALL add a "left" entry to the agent's action record with the office as actor, the session, the process id, the command line in visible form, and the reason: not running, machine restarted, boot time changed, other start time, other command line, or not readable.
+- **0017/FR-006** (US1): IF a leftover still runs after the forced end, or the OS refuses to end it, THEN THE SYSTEM SHALL add a "could not end" entry with the reason and the command line in visible form to the agent's action record and SHALL notify the user once per server start, naming each agent with such a leftover.
+- **0017/FR-007** (US1): WHILE the sweep runs, THE SYSTEM SHALL show, in the panel and in the "Resume interrupted" dialog, that the office ends processes left from the last run, and SHALL keep each start, new task, and continue request of the user waiting until the sweep ends, then run it.
+- **0017/FR-008** (US2): WHEN a session ends while the server runs (a stop, an end of its CLI, or a clean server stop), THE SYSTEM SHALL mark every stored process identity of that session as ended, so that no later sweep ends a process for it or records anything for it.
+- **0017/FR-009** (US1, US2): WHEN the sweep records the sweep result of a stored process identity, THE SYSTEM SHALL mark that identity as ended in the same step, so that a later sweep, also after the server is killed during this sweep, neither ends a process for it nor records a second sweep result for it.
+- **0017/FR-010** (US1): WHILE a session runs, THE SYSTEM SHALL store at most 200 open helper identities for it (the helper limit). WHEN a new helper would pass the limit, THE SYSTEM SHALL stop storing helpers of that session, SHALL add one entry to the agent's action record that names the limit, and the session SHALL count as having no complete stored process identities.
+- **0017/FR-011** (US1): WHILE a session runs and a stored session process keeps its process id and start time but runs another command line (it replaced itself with another program), THE SYSTEM SHALL replace the stored command line with the new one within 10 seconds, and SHALL NOT mark that identity as ended.
+
+This change modified: 0013/FR-008. The final text is under the change that owns that id.
+
+### Preserved behaviors
+
+- **0017/PB-1:** The server starts no agent by itself at its start (0001/FR-004). The sweep only ends processes; every `lost` agent stays `interrupted` until the user acts.
+- **0017/PB-2:** office-harness creates, changes, or deletes nothing in a CLI's configuration (0001/FR-021). The sweep reads process identities and ends processes; it does not touch any CLI file.
+- **0017/PB-3:** The stop action ends the CLI and every process that descends from it at the time of the stop, first with a request and then by force after the grace period (0001/FR-012, 0001 A3), as today.
+- **0017/PB-4:** The office never ends a process that it did not start: a process that is not a session process of a `lost` session is never ended by the sweep, also when its command line is the same as an agent's.
+- **0017/PB-5:** The user's own actions work as before once the sweep ends, and the "Resume interrupted" action behaves as 0013/FR-001 to 0013/FR-007 define.
+- **0017/PB-6:** After an unclean stop, the open sessions still end as `lost`, and the user can still continue a `lost` session (0013 Key entities, Session; 0001/FR-025).
+
+### Key entities
+
+| Entity | Represents | Key attributes | Identity and relationships |
+|---|---|---|---|
+| Stored process identity | One session process that the office knows. | process id, start time, hash of the whole command line, display text of the command line (at most 1,000 characters), machine run, kind (CLI or helper), state (open or ended). At most 200 open helpers per session (FR-010). | Belongs to one session of one agent. Readable only by the office owner (FR-001). |
+| Sweep result | What one sweep did with one stored process identity. | result (ended, ended by force, could not end, left), reason | Exactly one per stored process identity of a `lost` session (FR-009). Kept as an action record entry. |
+| Session (extends 0013) | One run of an agent CLI. | sweep finding of a `lost` session: leftovers ended (with the number), may still run, or none found | Drives the mark of 0013/FR-008 (modified). |
+| Action record entry (extends 0001, 0007) | One recorded action. | action now also "end leftover"; result ended, ended by force, could not end, or left; process id; command line in visible form; session | Actor is the office. Shows in the details of the agent that owns the session. |
+
+### Success criteria
+
+- **0017/SC-001:** In a test where 30 stand-in CLIs, each with one helper in a session of its own, outlive a forced kill of the server, 100% of the 60 processes have ended before the "Resume interrupted" list shows, on Linux, macOS, and Windows in CI.
+- **0017/SC-002:** In the same test, 0 unrelated processes end: a process with a stored command line and another start time, a process that got a stored process id with another command line, and a process that the office did not start all still run after the sweep, and each stored identity that they meet has exactly 1 "left" entry with its reason.
+- **0017/SC-003:** With 30 `lost` sessions and the default grace period, the "Resume interrupted" list shows within 30 seconds after the server start.
+- **0017/SC-004:** 100% of ended leftovers have exactly 1 action record entry with the office as actor, the agent, the session, the process id, and the command line in visible form (control characters shown as escapes, at most 1,000 characters, then an ellipsis and the hash start). A stand-in that ignores the request to end is ended by force after the grace period and has the result "ended by force".
+- **0017/SC-005:** With 4 agents after a forced kill of the server (one leftover that ends, one that cannot be ended, one CLI that ended on the hang-up, and one session from before this change), the list shows the note for exactly 1 agent, the warning for exactly 2 agents, and no mark for exactly 1 agent.
+- **0017/SC-006:** After 10 clean server stops and 10 normal agent stops, each followed by a server start, the sweep ends 0 processes and 0 agents start without an action of the user.
+- **0017/SC-007:** When the server gets a forced kill during a sweep and started again, 100% of the leftovers have ended after the second start, and each stored process identity of the `lost` sessions has exactly 1 sweep result in the action record.
+- **0017/SC-008:** With a session whose CLI starts 500 helper processes that stay alive, the office stores at most 200 open helper identities for it, adds exactly 1 limit entry to the action record, and after a forced kill of the server the agent shows the 0013 warning.
+- **0017/SC-009:** With a stand-in CLI that replaces itself with another program while the session runs, after a forced kill of the server 100% of such processes end at the next start with the new command line in the action record.
+
+### Notes from Deviations
+
+- **One notification for each agent, one OS notification for each server start (0017/FR-006).** The server writes one `leftover_kept` notification for each agent with a leftover that could not be ended, because a notification refers to one agent and each agent keeps its own Needs you item. The desktop app sends one OS notification for each server start that names all those agents. It sends it when `office.sweep` says `done`, or 1.5 seconds after the first row for a client that connected during the sweep. A client that is not connected during the sweep shows the rows in its list, but no OS notification.
+- **Platforms of the 60-process test (0017/SC-001).** The test with real stand-in processes runs on Linux only, because it reads process start times from `/proc`. On macOS and Windows the cover is the process inspection tests, which read the identity of real child processes and end them through the handle in CI on all three systems, and the sweep unit tests with a fake inspector. A port of the test to macOS is a separate follow-up.
+- **Race on macOS and on a Linux kernel before 5.3 (assumption A10 of 0017).** There the OS gives no handle to a process, so the office checks the match and then sends the end request to the process id. A process that exits and whose id is reused in that short time can be ended wrongly. The office accepts this risk only on these systems. On macOS the start time is in whole seconds, so the recorder also cannot tell a process that replaced itself by `exec` from a new process that took the same id within the same second; the recorder then takes the new command line for the stored row.
+
+## Change 0018: Put idle agents to sleep
+
+### Intent
+
+With 20 to 30 agents, many of them wait for input for hours. Each idle CLI, and the helper servers that it starts, keeps its memory all that time. This change adds an "Idle sleep" setting, off by default. When the person turns it on, the office puts an agent to sleep after it stays idle longer than a set time: it ends the CLI with the normal stop, keeps the session, and keeps the last screen visible. One key or one button wakes the agent, and the office continues the same session. When the CLI cannot continue it, the office uses the fallback and the hold of 0013.
+
+### Requirements
+
+- **0018/FR-001** (US1): THE SYSTEM SHALL let the person turn idle sleep on and off in the office settings, with idle sleep off by default and an idle time of 30 minutes when the person first turns it on; SHALL accept an idle time only as a whole number of minutes from 5 to 1440, and refuse any other value with that rule and keep the previous value; SHALL keep the setting in the background server across server and machine restarts; and SHALL apply each change at once, without a restart.
+- **0018/FR-002** (US1): WHILE idle sleep is on, THE SYSTEM SHALL begin to put an agent to sleep within 60 seconds of the first moment at which the agent has been idle for at least the idle time since its idle-since moment and none of these blocking conditions holds: (a) the agent is not idle; (b) it has an item in Needs you (0008); (c) a hold covers it (0007/FR-004); (d) a directive or a report waits in its queue (0012, 0015); (e) pending office text or unsent person text waits at its input line (0012); (f) one of its children runs; and THE SYSTEM SHALL check all six conditions again right before it ends the CLI, and SHALL NOT end it when one of them holds.
+- **0018/FR-003** (US1): WHEN the system puts an agent to sleep, THE SYSTEM SHALL end the agent's CLI as the person's stop does (0001 A3), SHALL show the agent as `asleep` once the CLI has ended, SHALL keep the last session as the session that a wake continues, SHALL keep the recent output of that session with the lines that the CLI printed while it ended, SHALL add one action record entry for the sleep, and no separate stop entry, with the office as actor and the reason "idle for N minutes", and SHALL NOT notify the person or add a Needs you item for the sleep or for the end of the CLI that the sleep caused.
+- **0018/FR-004** (US1, US2): WHILE an agent is asleep, THE SYSTEM SHALL keep it `asleep` across server and machine restarts and after idle sleep is turned off, until the person wakes it, the person or an agent-made action stops it (it then shows `stopped`), deletes it, starts a new task on it (0001/FR-024), or continues one of its sessions (0001/FR-025), or an agent-made action starts it as 0002/FR-008 allows for an agent that is not running; and SHALL NOT list it in "Resume interrupted" (0013/FR-001).
+- **0018/FR-005** (US4): WHILE an agent is going to sleep or asleep, THE SYSTEM SHALL refuse a directive to it and a report to it, SHALL answer the sender that the receiver is not running because it is asleep, and SHALL record the refusal as 0002/FR-011 and 0015/FR-009 require; and WHEN a directive or a report still waits in the queue of an agent that is going to sleep, THE SYSTEM SHALL withdraw it with the reason that the receiver is asleep and record the withdrawal as 0012/FR-005 requires.
+- **0018/FR-006** (US2): WHILE an agent is asleep, THE SYSTEM SHALL offer the person a Wake button in the agent's details and in its terminal view; WHILE an agent is asleep and its terminal view has keyboard focus, THE SYSTEM SHALL wake the agent when the person presses Enter and SHALL send no key from that view to any CLI; and THE SYSTEM SHALL carry out a wake while the office or the agent is on hold.
+- **0018/FR-007** (US2, US3): WHEN the person wakes an agent, THE SYSTEM SHALL continue the agent's last session where its CLI supports it (0001/FR-025) and otherwise start a new session at once with the reason, SHALL apply the fallback of 0013/FR-004 and the hold of 0013/FR-005 to this start as 0013 applies them to a start of its action, and SHALL add one action record entry for the wake with the person as actor, with the reason when the wake started a new session; IF the agent is not asleep when the system carries out the wake, THEN THE SYSTEM SHALL start nothing and tell the person that the agent is no longer asleep.
+- **0018/FR-008** (US2, US3): THE SYSTEM SHALL show the result of each wake as text in the agent's details and terminal view as soon as it is known: waking, checking (during the check period), continued, new session (with the reason), on hold (with the reason), or no longer asleep.
+- **0018/FR-009** (US1): IF the agent's CLI does not end when the system puts the agent to sleep (the 0001 stop fails), THEN THE SYSTEM SHALL leave the agent's status as the CLI shows it, SHALL record the failure once in the agent's action record with the office as actor and the reason, and SHALL NOT try to put that agent to sleep again until it has left `waiting for input` and has been idle for the idle time again.
+
+This change modified: 0001/FR-014. The final text is under the change that owns that id.
+
+### Preserved behaviors
+
+- **0018/PB-1:** No agent starts without an explicit action. The office starts no agent by itself, at a server start or at any other time (0001/FR-004, 0013 PB-1). The fallback of FR-007 follows only the person's wake.
+- **0018/PB-2:** While idle sleep is off, the office behaves as before this change: it ends no CLI and starts nothing because of idle time.
+- **0018/PB-3:** A hold refuses only agent-made actions. The office carries out the person's own actions, Wake included, as before (0007 PB-1, PB-2). A hold stops no CLI by itself; a hold keeps an agent awake (FR-002 c).
+- **0018/PB-4:** The person's stop, new task, continue, and delete do what they did before (0001/FR-012, FR-024, FR-025). Each start, continue, stop, and hold is recorded in the action record with its actor (0001/FR-011, 0007/FR-010).
+- **0018/PB-5:** Person input reaches the terminal of every agent whose CLI runs at once and unchanged, and the app shortcuts still leave a focused terminal (0001/FR-017 as modified by 0003, 0012 PB-5).
+- **0018/PB-6:** The notification of a wake hold is a notification of an automatic hold under 0003/FR-006 as modified by 0007: it names the agent and the event, and the focused-terminal exception does not apply to it (0013 PB-6).
+- **0018/PB-7:** Every status, `asleep` included, shows as text, never color alone, in the agent list, the office scene, and the subtree read of 0014/FR-001 (0001/FR-014, 0005 PB-3, 0014/FR-001).
+- **0018/PB-8:** office-harness creates, changes, or deletes nothing in a CLI's configuration (0001/FR-021).
+
+### Key entities
+
+| Entity | Represents | Key attributes | Identity and relationships |
+|---|---|---|---|
+| Idle sleep setting | Whether the office puts idle agents to sleep. | on or off, idle time in minutes, when it was last turned on or changed | One per office; kept by the background server. |
+| Agent (extends 0001) | One agent. | status: also `asleep`; idle since (kept only while the background server runs) | As in 0001. |
+| Session (extends 0001) | One run of an agent CLI. | the last session of an asleep agent is the one a wake continues | As in 0001. |
+| Action record entry (extends 0001) | One recorded action. | actions now also sleep, failed sleep, and wake; reason (optional) | Belongs to the agent it names (0001/FR-011). |
+| Wake result | What a wake did. | agent, result (waking, checking, continued, new session, on hold, no longer asleep), reason | Shown in the agent's details and terminal view; not stored; it shows until the agent's next sleep, the person's next action on the agent, or a server restart. |
+
+### Success criteria
+
+- **0018/SC-001:** With idle sleep never turned on, 10 agents that wait for input for 24 hours cause 0 sleeps, 0 starts by the office, and 0 sleep entries in the action record.
+- **0018/SC-002:** With an idle time of 5 minutes and 10 idle agents for which no blocking condition holds, 100% of them show `asleep` within 6 minutes and 10 seconds of their idle-since moment (5 minutes of idle time, at most 60 seconds to begin, at most 10 seconds of stop grace time).
+- **0018/SC-003:** For each of the blocking conditions (b) to (f) of FR-002, an idle agent for which only that condition holds is put to sleep 0 times in 3 times the idle time; for condition (a), an agent that changes to `working` between the first and the last check is stopped 0 times in 10 tries.
+- **0018/SC-004:** After the person turns idle sleep on with 30 minutes, 10 agents that were idle for 3 hours cause 0 sleeps in the first 30 minutes.
+- **0018/SC-005:** For an asleep agent whose CLI can continue its session, 1 key press (Enter) or 1 button press wakes it, and in 100% of 20 wakes the agent runs its last session again within 10 seconds of the press.
+- **0018/SC-006:** Over 20 sleep and wake cycles, each sleep adds exactly 1 action record entry (office as actor) and each successful wake adds exactly 1 (person as actor), and the sleeps cause 0 notifications and 0 Needs you items.
+- **0018/SC-007:** A wake of an agent whose CLI ends within 1 second of every start starts the agent at most 2 times; then the agent is on hold and exactly 1 notification names it.
+- **0018/SC-008:** After 10 server restarts, 5 of them after a SIGKILL of the server, 100% of the agents that were asleep still show `asleep`, 0 of them start without a person action, and "Resume interrupted" lists 0 of them.
+- **0018/SC-009:** 100% of the directives and reports sent to an asleep agent are refused, and each answer says that the receiver is asleep.
+
+### Notes from Deviations
+
+- **A sleep whose CLI ended on its own (0018/FR-009).** A sleep whose CLI ended on its own just before the stop records one failed `sleep` entry with the reason "the CLI had already ended", answers `conflict` with that text, and changes no status: the exit event of the CLI sets it as for any exit. The agent is not asleep then. The office does not bar the agent, because the stop did not fail, and it has left `waiting for input` anyway.
+- **A client cannot wake an agent past the watch.** A user client cannot send `agent.wake`. It gets `invalid` "agent.wake is made by wake.start only", as for `agent.sleep`, because a bare wake skips the 0013 watch. `wake.start` and the bulk resume run it inside the server. The desktop app sends only `wake.start`.
+- **Refused directive to an asleep agent (0018/FR-005).** The action record shows the refusal with the same `invalid: ` prefix that the not-running refusal has. The wire message is the contract text "the agent is not running, it is asleep: <name>".
+- **Idle time check in two places.** The desktop app checks the idle time (0, or 5 to 1440) before it sends `settings.set`, and the server checks it again. The server decides.
+- **Sign-in check before a wake.** `agent.wake` is a starting request, so the sign-in check of 0019 also runs before a wake, and a stopping server refuses a wake as it refuses any start.
+- **The wake result is not stored (assumption A13 of 0018).** It shows until the agent's next sleep, the person's next action on the agent, or a server restart. The action record, the status, and the hold list keep what happened.
+
+## Change 0019: Check that the CLI is signed in before a start
+
+### Intent
+
+When an agent's CLI is not signed in, a start today looks like a success: the agent shows `starting`, then `waiting for input`, and the CLI waits at its sign-in screen. Nobody is there to sign in. The user finds out only when the agent does no work, and a parent agent or a bulk resume cannot tell at all. This change asks the CLI before each start whether it is signed in, with the CLI's own read-only status command, and also watches the first seconds of the CLI's screen for a sign-in screen. When the CLI is not signed in, the start ends with one clear reason that says so and what to do. When the check cannot tell, the start works as it does today.
+
+### Requirements
+
+- **0019/FR-001** (US1, US2): WHEN a session of an agent is about to start (a start, a new task, a continue, an agent-made start, or a start of a bulk resume) AND the agent's CLI has a known status command (A1) AND none of the conditions of FR-010 holds, THE SYSTEM SHALL run that status command before it starts the CLI, and SHALL start the CLI only when the answer is not "not signed in".
+- **0019/FR-002** (US1): IF the status command ends with a non-zero exit AND its output contains the CLI's not-signed-in words (A2), THEN THE SYSTEM SHALL NOT start the CLI, and SHALL record the request in the action record with the not-signed-in reason as its failure; for an agent that does not run, it SHALL store the session as one that never started with that reason and show the agent as `failed`; for an agent that runs (a new task or a continue), it SHALL refuse the request with that reason and leave the running session as it is.
+- **0019/FR-003** (US2): IF the status command has not ended 5 seconds after it began, THEN THE SYSTEM SHALL end the status command and every process it started, and SHALL go on with the start as if no status command were known.
+- **0019/FR-004** (US2): IF the sign-in check gives no answer (A2), or the agent's command, working folder, or office additions changed between the check and the start, THEN THE SYSTEM SHALL go on with the start as if no status command were known, and SHALL note in the start's action record entry that the sign-in check gave no answer and why: timed out, could not run, unclear answer, or the agent changed during the check.
+- **0019/FR-005** (US3): WHILE a session is in its watch period AND neither a person nor the office typed into its terminal (the startup prompt aside, A5), WHEN the bottom of the CLI's screen shows the sign-in screen words of that CLI (A5), THE SYSTEM SHALL end the CLI, SHALL end the session as not signed in with the not-signed-in reason, SHALL show the agent as `failed`, SHALL record the end in the action record with the office as actor and the not-signed-in reason, and SHALL notify the user once as for a failed agent (0003/FR-006).
+- **0019/FR-006** (US1, US2): THE SYSTEM SHALL run the status command without input and without a terminal, with the agent's program, working folder, login environment, and office additions (0001/FR-020), without the office's agent-call credential (0002), SHALL keep at most 64 KiB of its output in memory only, and SHALL read and write no file for the sign-in check.
+- **0019/FR-007** (US1, US3): THE SYSTEM SHALL use one not-signed-in reason that names the CLI, says that it is not signed in, says how the office found it (the status command it ran, or the sign-in screen), says to sign in to the CLI in the user's own terminal and then start the agent again, and quotes at most one line of what the CLI showed, in visible form and at most 200 characters long.
+- **0019/FR-008** (US1, US2, US3): THE SYSTEM SHALL NOT show, record, store, or log any output of a status command except the one quoted line of FR-007 after a not-signed-in answer, and SHALL NOT show, record, store, or log any screen text of the watch except the one quoted row of FR-007 after a match.
+- **0019/FR-009** (US2): WHILE a status command runs, THE SYSTEM SHALL let other start, stop, new task, continue, and exit handling go on without waiting for it.
+- **0019/FR-010** (US2): IF the agent's command has arguments of its own, OR the office additions hold flags, OR a sign-in key variable of the CLI (A11) is set in the office additions or the login environment, THEN THE SYSTEM SHALL run no status command for that start and SHALL start the CLI as if no status command were known.
+- **0019/FR-011** (US3): IF the startup prompt holds one of the CLI's sign-in screen words, THEN THE SYSTEM SHALL NOT watch that session for a sign-in screen.
+
+### Preserved behaviors
+
+- **0019/PB-1:** office-harness creates, changes, or deletes no file in an agent CLI's configuration (0001/FR-021). A status command is the CLI's own program; what it writes into its own folders is the same as at any start of that CLI (A4).
+- **0019/PB-2:** A start of an agent whose CLI has no known status command, and that shows no sign-in screen, works as before: no command runs before it and nothing ends it.
+- **0019/PB-3:** The startup prompt is typed in after the first output and is never submitted (0001, D5); the check does not change this.
+- **0019/PB-4:** A start of a bulk resume that ends as not signed in counts as a start that does not start (0013/FR-004, 0013/FR-005): the fallback start is tried once, and then the agent is put on hold with the reason.
+- **0019/PB-5:** No agent starts without an action of the user or of an agent (0001/FR-004). The sign-in check starts no CLI session.
+- **0019/PB-6:** Each start, stop, and failure is recorded in the action record with its actor (0001/FR-011).
+
+### Key entities
+
+| Entity | Represents | Key attributes | Identity and relationships |
+|---|---|---|---|
+| Sign-in check result | What the check found for one start. | answer (signed in, not signed in, no answer), reason of no answer (timed out, could not run, unclear answer), the quoted line | Not stored by itself. A not-signed-in answer is kept as the never-started reason of the session and the failure of the action record entry; a no answer is kept as a note on the entry. |
+| Session (extends 0001) | One run of an agent CLI. | end result: also "not signed in", with the reason, when the office ended it at a sign-in screen | As in 0001. |
+| Action record entry (extends 0001) | One recorded action. | note (optional): the sign-in check gave no answer, and why | Belongs to the agent it names (0001/FR-011). |
+
+### Success criteria
+
+- **0019/SC-001:** With a test CLI whose status command says it is not signed in, 100% of 12 starts of agents that do not run (3 each of start, new task, continue, and agent-made start) end `failed` with the not-signed-in reason in the answer, the session list, and the action record, and 0 CLI sessions run.
+- **0019/SC-002:** With a test status command that never ends, 100% of 5 starts begin their CLI within 6 seconds of the request, and 1 second after each timeout 0 processes of the status command run.
+- **0019/SC-003:** With a test CLI that shows a known sign-in screen within its first 2 seconds, 100% of 5 starts end within 3 seconds of the screen, each with exactly 1 action record entry with the office as actor and exactly 1 notification.
+- **0019/SC-004:** With a test CLI that shows the sign-in words after the person typed into its terminal, or after its first 20 seconds, 0 of 5 sessions are ended by the office.
+- **0019/SC-005:** With test CLIs whose status command and screen print 10 KiB that hold control characters, bidirectional marks, and a line shaped like a secret key, 0 bytes of a signed-in or no-answer output appear in an answer, the action record, the session list, or the server log, and 100% of shown reasons quote at most 200 characters with 0 raw control or bidirectional characters.
+- **0019/SC-006:** A sign-in check against a test CLI whose status command writes nothing leaves its home folder and the office's data folder with 0 created, changed, or deleted files.
+- **0019/SC-007:** With a real `claude` and a real `codex`, each signed in and each not signed in, 100% of the 4 starts behave as US1 says (checked by hand on Linux; the result goes into the QA report).
+- **0019/SC-008:** While a test status command hangs for one agent, 100% of 5 stops of another running agent end within 1 second of the request.
+- **0019/SC-009:** With a test status command that always says not signed in, 0 of 9 starts are refused when the agent's command has its own arguments (3), the office additions hold a flag (3), or a sign-in key variable is set (3), and each of them starts its CLI.
+- **0019/SC-010:** With a test CLI that shows the sign-in words only inside the startup prompt or inside a directive typed in its first 20 seconds, 0 of 6 sessions are ended by the office.
+
+### Notes from Deviations
+
+- **A stop between the mark and the exit.** A person's stop that comes after the watch marked the run but before the run exits leaves the agent `stopped`: the exit then gives no `failed` status and the office adds no `stop` entry. The office records its `stop` entry only after the status followed.
+- **Group signal before the child is reaped.** Where the system can look at an exit without reaping it (Linux, Android, FreeBSD), the group of a status command or git child is signalled before the child is reaped, and the caller takes its status after that. On other systems the process id of a reaped child could be reused before the signal; the window needs a helper that holds a pipe after the child exited and then left the group.
+- **Assumptions that the requirements name.** A bare `A1`, `A2`, `A4`, `A5`, or `A11` in the requirements above names an assumption of 0019, kept here:
+  - **A1:** The known status commands are `claude auth status --text` for `claude` and `codex login status` for `codex`. `gemini` and every other command have none. The CLI is known by the program name of the agent's command.
+  - **A2:** The answer is "not signed in" only when the status command ends with a non-zero exit and its output contains the CLI's not-signed-in words: `not logged in` for both `claude` and `codex`, compared without case. Exit 0 is "signed in". Every other result is "no answer" (unclear answer).
+  - **A4:** The status command is the CLI's own program, run with the agent's environment. Like any start of the CLI, it can write the CLI's own files in the CLI's own folders. The office itself opens no file of a CLI for the check and writes none.
+  - **A5:** The watch period is the first 20 seconds of a session. The office reads the bottom 15 rows that show anything, as 0012 does, and compares the sign-in words of the CLI without case. The watch ends at the first key the person types into the terminal, at the first directive the office types into it, at the end of the watch period, or when the session ends. The startup prompt does not end the watch, because a prompt that holds a sign-in word turns the watch off for that session (0019/FR-011).
+  - **A11:** The sign-in key variables are the names that the archived 0019 spec lists, for `claude` and for `codex`. With one of them, or with arguments of its own, a CLI can work while its status command says it is not signed in. The office skips the check (0019/FR-010). Only a variable's name is checked, never its value.
+  - The timeout of 5 seconds (0019/FR-003) is not a setting.
+
+## Change 0020: Temporary agents
+
+### Intent
+
+A lead that gives a member one small job keeps that member in the tree after the job is done: only the person deletes agents (0002 A4), so helpers pile up, each with its CLI, its memory, and its place in the tree. This change adds the temporary agent, a "temp": an agent that the person or a parent agent creates for one job, with an objective. A temp starts at once, works in its own branch and worktree by default when its folder is in a git repository (0010), and reports `done` through the upward report channel (0015). The office then ends it: it stops the CLI, removes the agent, and keeps the results. A worktree or branch that holds work that is not merged stays, and the done report stays visible in a list of finished temps until the person dismisses it. A cap limits how many temps exist at once, an idle limit ends a temp that stops producing output, a temp whose parent goes away ends with it, and the person sees and can end every temp in one view.
+
+### Requirements
+
+- **0020/FR-001** (US1, US2): WHEN the person, or a running agent as 0002/FR-008 allows, creates an agent with the temp choice on and an objective that follows the text rules of a directive (0002), THE SYSTEM SHALL create the agent as a temp at the place the 0002 rules allow, start it at once, and put the objective into the temp's queue as its first entry, typed under the rules of 0012 as for a directive whose sender is the creator; IF the objective is missing or breaks those rules, THEN THE SYSTEM SHALL create nothing, give the reason, and record the refusal; and WHEN a temp creates an agent, THE SYSTEM SHALL create it as a temp.
+- **0020/FR-002** (US1): WHERE the working folder of a new temp is inside a git repository, THE SYSTEM SHALL create the temp with its own branch and worktree as 0010/FR-002 does, unless the creator turns own worktree off in the create; WHERE the folder is not inside a git repository, THE SYSTEM SHALL create the temp without one.
+- **0020/FR-003** (US3): IF a create would make the number of temps in the office greater than the temp cap, THEN THE SYSTEM SHALL create nothing, refuse it with a reason that names the cap and its value, record the refusal, and SHALL NOT count the refusal toward any rate limit or the automatic hold (0007/FR-008); THE SYSTEM SHALL let the person set the temp cap in the office settings as a whole number from 1 to 100, 8 by default, and SHALL apply a changed value to the next create without ending any temp.
+- **0020/FR-004** (US3): WHILE a temp is running or asleep, no child of it runs, no hold covers it, and it has no item in Needs you (0008), THE SYSTEM SHALL end the temp within 60 seconds after the time since its quiet-since moment reaches the idle limit, with the reason that it produced no output for that many minutes; THE SYSTEM SHALL let the person set the idle limit in the office settings as a whole number of minutes from 5 to 1440, 30 by default, and SHALL apply a changed value at the next check.
+- **0020/FR-005** (US1, US2, US3, US4): THE SYSTEM SHALL end a temp, with the reason in brackets, WHEN it accepts a `done` report from the temp (done), WHEN FR-004 applies (no output for N minutes), WHEN the temp's CLI exits or fails other than by a stop or a sleep (exited with its exit code, or failed with its reason), WHEN the person or an agent stops the temp, alone or with an ancestor (stopped by the actor), WHEN the person ends it from the temps view (ended by the person), WHEN the person deletes it, alone or with an ancestor (deleted by the person, or its parent was deleted), and WHEN its parent temp ends (its parent ended); SHALL decide each end on the temp's status as it is under the office's order of status changes, so that a status that a new task or a continued session (0001/FR-024, 0001/FR-025) passes through ends no temp; and SHALL NOT end a temp only because it is `interrupted`.
+- **0020/FR-006** (US1, US4): WHEN the system ends a temp, THE SYSTEM SHALL end its child temps first, stop its CLI as the person's stop does when it runs, apply the keep rule to its own worktree (or, for a delete, the person's keep or remove answer of 0010/FR-005), remove the agent as a delete does, add one finished temp entry, and add one action record entry for the end with the reason and with the person, the stopping agent, or the office as the actor; and IF the office cannot remove a worktree or a branch that the keep rule removes, THEN THE SYSTEM SHALL keep it and name it and the failure in the finished entry.
+- **0020/FR-007** (US3): WHEN the system ends a temp because of the idle limit or because its CLI exited or failed, THE SYSTEM SHALL put one end notice, with the temp's name in visible form, its id, and the reason, into the parent's queue under 0015/FR-004 and 0015/FR-010 as a report of that temp WHERE the parent runs and its queue has room; and, for an end because of the idle limit whose notice reaches no queue, THE SYSTEM SHALL notify the person once with the temp's name and the reason (an exit or a failure notifies the person under 0003/FR-006 as before).
+- **0020/FR-008** (US1, US2): THE SYSTEM SHALL keep each finished temp entry across server and machine restarts until the person dismisses it, and a dismiss SHALL remove only the entry, never a worktree, a branch, or a file.
+- **0020/FR-009** (US2): THE SYSTEM SHALL show the person, in one temps view of the desktop app, every temp with its name, its creator, its parent, its objective, its status, its run time, and its quiet time, and every finished temp entry, newest first; SHALL let the person end each temp and dismiss each entry from that view with the keyboard alone, ending after one confirmation that says the temp will be removed, that work not merged stays, and that files git ignores are removed with a removed worktree, and SHALL ask the same confirmation when the person stops a single temp from its details or its terminal view; and SHALL mark a temp as "temp", as text, in its details.
+
+This change modified: 0015/FR-005. The final text is under the change that owns that id.
+
+### Preserved behaviors
+
+- **0020/PB-1:** An agent that is not a temp keeps every behavior it has: the office does not end, remove, or idle-limit it, and an agent-made create of an agent that is not a temp has no own worktree (0010 A7).
+- **0020/PB-2:** The 0002 tree rules stay as they are: the CEO creates team leads, a team lead creates members of its team, a member creates no agents, and every other agent request is refused and recorded (0002/FR-008, 0002/FR-009). A temp create follows them.
+- **0020/PB-3:** Holds and rate limits apply to a temp create as to any agent-made create (0007); the person's own actions are never held or rate-limited (0007/PB-1). The temp cap is not a rate limit; it applies to every create of a temp.
+- **0020/PB-4:** A delete by the person still asks once whether to keep or remove own worktrees, with keep as the default, and asks again for a worktree with uncommitted changes (0010/FR-005, 0010/FR-006). The office removes no worktree with uncommitted changes and no branch with commits that its base lacks without that answer.
+- **0020/PB-5:** A temp's reports follow every 0015 rule: the parent from the tree, the visible form, the queue and its limits, the rate limit, and Needs you for a report for the person. An objective and an end notice are typed under the 0012 rules: queue, readiness, question check, and the input-line check before Enter.
+- **0020/PB-6:** The office starts no agent by itself after a restart (0001/FR-004, 0013/PB-1); an `interrupted` temp waits until the person resumes, ends, or deletes it.
+- **0020/PB-7:** office-harness creates, changes, or deletes nothing in a CLI's configuration (0001/FR-021).
+
+### Key entities
+
+| Entity | Represents | Key attributes | Identity and relationships |
+|---|---|---|---|
+| Temp (an agent, extended) | An agent for one job. | the temp mark, objective, creator, created time | An agent of 0001 and 0002; its children are temps; removed when it ends. |
+| Finished temp entry | What stays of a temp after it ends. | temp name and id, objective, creator, parent, start and end time, end reason, last `done` report (kind, text), kept worktree folder and branch or none, a removal failure | One per ended temp; kept until the person dismisses it; no link to a live agent. |
+| Temp settings | The office bounds of temps. | temp cap (1 to 100, default 8), idle limit (5 to 1440 minutes, default 30) | One set per office, with the 0007 settings. |
+
+### Success criteria
+
+- **0020/SC-001:** The person creates a temp with an objective in a git repository; 1 of 1 starts in its own worktree, and its terminal receives the objective with Enter once its CLI waits for input.
+- **0020/SC-002:** A lead creates 3 member temps; each sends a `done` report. 3 of 3 reports reach the lead's terminal, 3 of 3 temps are no longer agents within 10 seconds after their report, and 3 finished entries show the reports.
+- **0020/SC-003:** Of 4 temps that end with a clean worktree, an uncommitted change, a new commit, and both, the clean one's worktree and branch are removed and 3 of 3 others keep both, with 0 changed files lost.
+- **0020/SC-004:** With the cap at 3 and 3 temps in the office, a 4th create by an agent and one by the person are refused with the cap and its value in the reason (2 of 2), 0 agents are created, and 5 such refusals of one agent within 60 seconds put it on 0 holds.
+- **0020/SC-005:** With the idle limit at 5 minutes, a temp with no output and no Needs you item ends within 6 minutes, its finished entry says "no output for 5 minutes", and its running parent's terminal shows 1 end notice. A temp that prints one line every 60 seconds for 15 minutes, a temp under a hold for 10 minutes, and a temp whose Needs you item stays for 10 minutes, are not ended (0 of 3).
+- **0020/SC-006:** The person deletes a lead with 3 member temps and keeps the worktrees: 3 of 3 finished entries name the deleted parent, and 3 of 3 worktrees and branches stay.
+- **0020/SC-007:** A lead temp with 2 running member temps sends `done`: both members end before the lead, with the reason that their parent ended (2 of 2).
+- **0020/SC-008:** 5 finished entries survive a server restart (5 of 5); dismissing 1 removes the entry and 0 files, worktrees, or branches.
+- **0020/SC-009:** With 10 temps in the office at several places in the tree, the temps view lists 10 of 10, and the person ends 1 with the keyboard alone.
+- **0020/SC-010:** A temp's `done` report that waits in a working parent's queue when the temp ends is typed into the parent's terminal once the parent is ready (1 of 1).
+- **0020/SC-011:** A temp whose CLI exits with code 1 before any `done` report ends within 5 seconds, and its finished entry names exit code 1 (1 of 1).
+- **0020/SC-012:** Of 10 new tasks and 10 continued sessions on running temps, 0 end a temp.
+
+### Notes from Deviations
+
+- **Dismiss record.** A dismiss adds a `dismiss` entry (actor `user`, detail the entry id) to the ended temp's action record.
+- **Refused from the role path.** An agent's create through the role path returns the cap refusal as `refused`, not as `internal`.
+- **Temp create and the 0017 sweep gate.** A person's temp create starts its CLI inside the create, so it waits for the sweep gate like `agent.start`: no CLI starts while the sweep runs. An agent cannot create a temp during the sweep, because no agent CLI runs before a gated start.
+
+## Change 0021: Installed packages in new agent worktrees
+
+### Intent
+
+When the office creates an agent's own worktree (0010), the new worktree has no installed packages, because git does not check out the files that it ignores. The agent must run a full install before it can build or test, and many agents mean many installs. This change gives a new worktree links to the installed Node.js packages of the base checkout, so the agent's CLI can build and test at once. The links never count as work: git ignores them, the delete question does not count them, and the office removes them without following them, so it never changes the base checkout. A new office setting, "Worktree dependencies", on by default, lets the person turn this off.
+
+### Requirements
+
+- **0021/FR-001** (US3): THE SYSTEM SHALL let the person turn "Worktree dependencies" on and off in the office settings, on by default, with a help text that says that new own worktrees share the checkout's installed Node.js packages and that an install, update, or removal of packages in such a worktree changes the checkout's packages; SHALL keep the setting in the background server across server and machine restarts; SHALL apply a change to the creates that begin after it and leave the dependency links of existing worktrees as they are; and SHALL show the state of the setting as text: loading, on, off, the reason when it cannot be loaded, and the reason when a change cannot be saved, with the previous value kept.
+- **0021/FR-002** (US1): WHEN the office creates an agent's own worktree (0010/FR-002, 0010/FR-009) WHILE Worktree dependencies is on, THE SYSTEM SHALL make dependency links at each dependency place that meets the conditions of FR-003, before the agent's CLI starts, so that the worktree's dependency folder at that place gives the installed packages of the base checkout at the same place.
+- **0021/FR-003** (US1, US2): THE SYSTEM SHALL make dependency links at a dependency place only when all of these hold: (a) Worktree dependencies is on; (b) the office does not run on Windows; (c) the base checkout has a dependency folder at that place; (d) git ignores that dependency folder in the base checkout; (e) git, inside the new worktree, ignores a dependency folder at that place; (f) the new worktree has nothing (no file, folder, or link) named `node_modules` at that place; and at any other place THE SYSTEM SHALL make, change, and remove nothing, and SHALL create the agent as 0010 does.
+- **0021/FR-004** (US2): IF a dependency link would reach an outside target after every link on its way is followed, THEN THE SYSTEM SHALL NOT make that link, SHALL write the place and the reason to the background server's log, and SHALL go on with the other dependency links and with the create.
+- **0021/FR-005** (US2): WHILE a worktree has dependency links, THE SYSTEM SHALL keep them out of every list of changes: git inside the worktree ignores them, so the delete question (0010/FR-005, 0010/FR-006) counts none of them and the agent's own `git status` lists none of them; and THE SYSTEM SHALL write nothing for them into the repository's git data or configuration beyond the branch and the worktree record of 0010 (no ignore or exclude entries), and nothing into the base checkout.
+- **0021/FR-006** (US2): WHEN the office removes a worktree (0010/FR-007) or undoes a create that failed (0010/FR-004), THE SYSTEM SHALL first remove each dependency link that it made in that worktree and that still points into the base checkout, without following it, also after a restart of the background server; SHALL then remove the worktree as 0010 does; and SHALL follow no link during the removal, so that it changes and removes no file or folder in the base checkout or anywhere else outside the worktree folder.
+- **0021/FR-007** (US1): IF the office cannot make a dependency link at a dependency place (for example, the disk is full or the file system has no links), THEN THE SYSTEM SHALL remove the dependency links that it made at that place and leave nothing else that it made there, SHALL write the place and the reason to the background server's log, SHALL go on with the other places, and SHALL create the agent; THE SYSTEM SHALL NOT fail a create because of a dependency link.
+- **0021/FR-008** (US3): WHILE own worktree is on in the create form, THE SYSTEM SHALL show a note that says that untracked files, such as local environment files, are not copied (0010 A8), and, WHILE Worktree dependencies is on and the office does not run on Windows, that installed Node.js packages are shared from the checkout and that an install, update, or removal of packages in the worktree changes the checkout's packages; otherwise, that installed packages are not shared, so the agent installs them.
+
+### Preserved behaviors
+
+- **0021/PB-1:** An agent created without own worktree starts in its chosen folder as the person's shell would, with no dependency link (0010 PB-1, 0001/FR-020).
+- **0021/PB-2:** The office creates, changes, or deletes nothing in a CLI's configuration (0001/FR-021), and nothing in the person's own repository folder; it adds only a branch and a worktree record to the repository's git data (0010 PB-2).
+- **0021/PB-3:** The delete question still lists each worktree with whether it has uncommitted changes, and the second confirmation still counts every changed, added, deleted, or untracked file that git does not ignore (0010/FR-005, 0010/FR-006).
+- **0021/PB-4:** IF an agent's worktree folder is missing when the agent starts, THEN the office does not start the CLI and says that the worktree folder is missing (0010/FR-008).
+- **0021/PB-5:** Other files that git ignores in a worktree are still not counted as uncommitted changes and are still removed with the worktree (0010 A9).
+- **0021/PB-6:** A create that fails for a reason of 0010 still creates no agent and leaves no branch, folder, or dependency link behind (0010/FR-004).
+- **0021/PB-7:** Each create and delete is recorded in the action record with its actor, as before (0001/FR-011, 0010 PB-4). The dependency links add no entry.
+
+### Key entities
+
+| Entity | Represents | Key attributes | Identity and relationships |
+|---|---|---|---|
+| Worktree dependencies setting | Whether the office makes dependency links in new own worktrees. | on or off | One per office; kept by the background server. |
+| Dependency link | One link that the office made in an agent worktree to installed packages of the base checkout. | place in the worktree, target in the base checkout | Belongs to exactly one agent worktree; removed before that worktree. In a kept worktree, it belongs to no agent. |
+| Agent worktree (extends 0010) | The branch and folder of an agent with own worktree. | the dependency links that the office made in it, kept across restarts | As in 0010. |
+
+### Success criteria
+
+- **0021/SC-001:** In a repository whose base checkout has installed, ignored dependency folders at the top and in one workspace folder, an agent in a new own worktree runs the project's test command with 0 installs before it, and the command passes.
+- **0021/SC-002:** Right after the create, `git status` in the worktree lists 0 entries, and the delete question counts 0 changed files for the worktree.
+- **0021/SC-003:** After the office removes 10 such worktrees, 5 of them after a restart of the background server, and undoes 3 failed creates, 0 files in the base checkout's dependency folders are changed or missing, compared by name, size, and content with a listing made before the creates.
+- **0021/SC-004:** With Worktree dependencies off, 10 creates with own worktree make 0 dependency links.
+- **0021/SC-005:** In a base checkout where one package of the top dependency folder is a link to a folder outside the base checkout, and the dependency folder of a second place is itself a link to a folder outside it, a create makes 0 dependency links that reach an outside target, makes a link for every other package, and creates the agent.
+- **0021/SC-006:** On Windows, 10 creates with own worktree make 0 dependency links, and 100% of them create the agent as 0010 does.
+- **0021/SC-007:** On a file system without links, 10 creates with own worktree create 10 agents, leave 0 dependency links, and write 1 log line with the reason for each place that met the conditions of FR-003.
+
+### Notes from Deviations
+
+- **Log line.** The reasons of 0021/FR-004 and 0021/FR-007 reach the background server's log as plain lines. Each line starts with `dependency links: ` and then names the place and the reason. No storage alert shows in the app.
+- **Where a place's links are found at removal (0021/FR-006).** The office finds the dependency places again from the worktree's tracked `package.json` files. A place whose `package.json` the agent deleted keeps its links until git removes the worktree. Git's removal deletes a link without following it, so the base checkout is still never changed.
+- **None of the notes defers or changes a requirement.**
