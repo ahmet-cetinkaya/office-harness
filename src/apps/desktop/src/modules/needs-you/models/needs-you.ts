@@ -141,8 +141,8 @@ export function eventText(item: NeedsYouItem): string {
         : `put on hold by the office, limit: ${item.detail}`;
     case "resume_hold":
       return item.detail === null
-        ? "was put on hold after its resume failed"
-        : `was put on hold after its resume failed: ${item.detail}`;
+        ? "was put on hold"
+        : `was put on hold: ${item.detail}`;
     case "leftover_kept":
       return item.detail === null
         ? "has a leftover process that could not be ended"

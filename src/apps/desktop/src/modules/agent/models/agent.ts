@@ -9,6 +9,7 @@ const STATUS_TEXT: Record<string, string> = {
   failed: "failed",
   stopped: "stopped",
   interrupted: "interrupted",
+  asleep: "asleep",
 };
 
 const ACTIVE_STATUSES: readonly string[] = [

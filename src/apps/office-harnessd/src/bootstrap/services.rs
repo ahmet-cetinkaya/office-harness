@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use agent_application::common::interfaces::Clock;
 use agent_domain::entities::Machine;
@@ -25,7 +26,9 @@ use super::{
     build_agent_services, build_hierarchy_services, build_notification_services,
     build_template_services, build_terminal_services, open_database, run_migrations,
 };
-use crate::bridges::{AgentCalls, CallHelper, NeedsYouBridge, NotificationBridge, SystemClock};
+use crate::bridges::{
+    AgentCalls, CallHelper, GateInputs, NeedsYouBridge, NotificationBridge, SystemClock,
+};
 use crate::config::Config;
 use crate::server::EventHub;
 use crate::sweep::{LeftoverSweep, OrphanSweep, SharedLedger};
@@ -201,7 +204,7 @@ pub fn start_with(
         &storage_alerts,
     );
     let session_processes = Arc::new(SessionProcessRepository::new(connection.clone()));
-    Ok(Services {
+    let services = Services {
         machine,
         agents,
         projects: ProjectRepository::new(connection),
@@ -219,7 +222,24 @@ pub fn start_with(
         agent_bridge_store,
         orphan_sweep,
         session_processes,
-    })
+    };
+    connect_sleep_gate(&services, startup_settings.quiet_period_ms);
+    Ok(services)
+}
+
+/// Gives the idle sleep gate the services its checks read, which are built
+/// after the agent module that holds it (0018).
+fn connect_sleep_gate(services: &Services, quiet_period_ms: u64) {
+    services.agent.sleep_gate.connect(GateInputs {
+        agents: Arc::clone(&services.agent_bridge_store),
+        tree: Arc::clone(&services.hierarchy.tree),
+        holds: Arc::clone(&services.hierarchy.holds),
+        needs_you: services.needs_you_bridge.clone(),
+        directives: Arc::clone(&services.hierarchy.send_directive),
+        person_input: services.terminal.person_input.clone(),
+        runtime: Arc::clone(&services.terminal.runtime),
+        quiet_period: Duration::from_millis(quiet_period_ms),
+    });
 }
 
 /// The sweep over the identities that the unclean stop left open. It reads

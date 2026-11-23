@@ -12,6 +12,7 @@ pub mod resume_agent;
 pub mod set_office_additions;
 pub mod set_setting;
 pub mod set_task_text;
+pub mod sleep_agent;
 pub mod start_agent;
 pub mod start_new_task;
 pub mod stop_agent;

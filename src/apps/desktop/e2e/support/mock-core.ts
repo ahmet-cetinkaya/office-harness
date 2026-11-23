@@ -107,6 +107,13 @@ export interface OfficeSeed {
   resumeCheckMs?: number;
   /** The sweep state when the page opens (0017). "done" when left out. */
   sweep?: "running" | "done";
+  /** How a wake of an asleep agent ends, by agent id, with the resume seed's
+   * meaning of `canContinue`, `reason`, and `outcome`. An agent left out
+   * continues its session. */
+  wake?: Record<string, ResumeSeed>;
+  /** Milliseconds between the "checking" and the final result of a wake, as a
+   * start with a real check period. Zero when left out. */
+  wakeCheckMs?: number;
   /** Limit settings that differ from the server's defaults, by key. */
   limits?: Record<string, string>;
   /** The stored `last_view` JSON text, as `settings.get` answers with it. */
@@ -291,6 +298,11 @@ export async function installMockCore(
     };
     const LIMIT_INVALID =
       "invalid: a limit is a whole number of at least 1 and at most 1000";
+    // The idle sleep setting of 0018: "0" is off, else 5 to 1440 minutes.
+    const IDLE_SLEEP_KEY = "idle_sleep_minutes";
+    const IDLE_SLEEP_INVALID =
+      "idle_sleep_minutes is 0 (off) or a whole number of minutes from 5 to 1440";
+    const NO_LONGER_ASLEEP = "the agent is no longer asleep";
     let nextCallbackId = 1;
     let current = mock.initialState;
     let loginStartRegistered = mock.loginStart?.registered ?? false;
@@ -1619,7 +1631,9 @@ export async function installMockCore(
         case "settings.get": {
           const answer = {
             key: fields.key,
-            value: office.settings[String(fields.key)] ?? "",
+            value:
+              office.settings[String(fields.key)] ??
+              (fields.key === IDLE_SLEEP_KEY ? "0" : ""),
           };
           if (
             fields.key === "last_view" &&
@@ -1642,6 +1656,12 @@ export async function installMockCore(
             refuse("invalid", LIMIT_INVALID);
           if (isLimit && (Number(value) < 1 || Number(value) > 1000)) {
             refuse("invalid", LIMIT_INVALID);
+          }
+          const isIdleMinutes =
+            /^[0-9]+$/.test(value) &&
+            (value === "0" || (Number(value) >= 5 && Number(value) <= 1440));
+          if (key === IDLE_SLEEP_KEY && !isIdleMinutes) {
+            refuse("invalid", IDLE_SLEEP_INVALID);
           }
           office.settings[key] = value;
           settings.push({ key, value: fields.value });
@@ -1721,6 +1741,13 @@ export async function installMockCore(
           }
           startResume(ids as string[]);
           return { order: ids };
+        }
+        case "wake.start": {
+          const agent = findAgent(fields.agent_id);
+          if (agent.status !== "asleep") {
+            refuse("conflict", NO_LONGER_ASLEEP);
+          }
+          return startWake(agent);
         }
         case "office.actions":
           return office.actions
@@ -1872,6 +1899,84 @@ export async function installMockCore(
           mock.office?.resumeCheckMs ?? 0,
         );
       }, 0);
+    };
+
+    // The wake of 0018: it records the wake, starts a session, and reports the
+    // check as `wake.result` events after the answer, as the server does.
+    const wakeSeedOf = (agentId: string) => mock.office?.wake?.[agentId] ?? {};
+    const pushWakeResult = (
+      agentId: string,
+      result: string,
+      extra: { continued?: boolean; reason?: string },
+      isFinal: boolean,
+    ) => {
+      pushEvent({
+        type: "wake.result",
+        agent_id: agentId,
+        result,
+        ...extra,
+        is_final: isFinal,
+      });
+    };
+    const finishWake = (agent: Agent) => {
+      const seed = wakeSeedOf(agent.id);
+      if (seed.outcome === "fails") {
+        setStatus(agent, "failed");
+        office.holds.agents.push({
+          agent_id: agent.id,
+          set_by: "office",
+          reason: RESUME_FAILED_REASON,
+          since: Date.now(),
+        });
+        record(agent.id, "hold", "office");
+        pushHoldChanged();
+        recordAttention(
+          agent,
+          "resume_hold",
+          `the wake failed: ${RESUME_FAILED_REASON}`,
+          Date.now(),
+        );
+        pushWakeResult(
+          agent.id,
+          "held",
+          { reason: RESUME_FAILED_REASON },
+          true,
+        );
+        return;
+      }
+      setStatus(agent, "working");
+      if (seed.canContinue === false) {
+        pushWakeResult(
+          agent.id,
+          "new_session",
+          { reason: seed.reason ?? NO_CONTINUE_REASON },
+          true,
+        );
+        return;
+      }
+      pushWakeResult(agent.id, "continued", {}, true);
+    };
+    const startWake = (agent: Agent) => {
+      const seed = wakeSeedOf(agent.id);
+      const canContinue = seed.canContinue !== false;
+      const lastSession = office.sessions[agent.id]?.[0];
+      const session = startSession(
+        agent,
+        canContinue ? (lastSession?.id ?? null) : null,
+      );
+      record(
+        agent.id,
+        "wake",
+        "user",
+        canContinue
+          ? null
+          : `new session: ${seed.reason ?? NO_CONTINUE_REASON}`,
+      );
+      setTimeout(() => {
+        pushWakeResult(agent.id, "checking", { continued: canContinue }, false);
+        setTimeout(() => finishWake(agent), mock.office?.wakeCheckMs ?? 0);
+      }, 0);
+      return { session, continued: canContinue };
     };
 
     const internals = {

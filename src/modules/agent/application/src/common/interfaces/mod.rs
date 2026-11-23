@@ -12,6 +12,7 @@ mod project_store;
 mod session_process_store;
 mod session_store;
 mod settings_store;
+mod sleep_gate;
 mod status_command_runner;
 mod terminal_host;
 mod worktree_manager;
@@ -28,6 +29,7 @@ pub use project_store::ProjectStore;
 pub use session_process_store::SessionProcessStore;
 pub use session_store::SessionStore;
 pub use settings_store::SettingsStore;
+pub use sleep_gate::SleepGate;
 pub use status_command_runner::StatusCommandRunner;
 pub use terminal_host::TerminalHost;
 pub use worktree_manager::{

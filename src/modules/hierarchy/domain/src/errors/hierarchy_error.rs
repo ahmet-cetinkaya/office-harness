@@ -50,6 +50,8 @@ pub enum HierarchyError {
     NotADescendant { actor: String },
     #[error("the agent is not running: {name}")]
     NotRunning { name: String },
+    #[error("the agent is not running, it is asleep: {name}")]
+    Asleep { name: String },
     #[error("the confirmation counted {confirmed} descendants, but there are {actual}")]
     DescendantCountChanged { confirmed: usize, actual: usize },
     #[error("storage failed: {0}")]

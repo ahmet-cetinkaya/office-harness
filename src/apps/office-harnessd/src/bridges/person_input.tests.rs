@@ -76,3 +76,29 @@ fn clones_share_one_record() {
     input.clone().office_text_left(agent(), RUN);
     assert!(input.holds_directives(agent(), Some(RUN)));
 }
+
+#[test]
+fn sent_keys_hold_no_text_but_unsent_keys_and_office_text_do() {
+    let input = PersonInput::default();
+    input.stamp(agent(), SENT);
+    assert!(!input.holds_text(agent(), Some(RUN)));
+
+    input.stamp(agent(), b"half a line");
+    assert!(input.holds_text(agent(), Some(RUN)));
+
+    let other = AgentId::from_u128(10);
+    input.office_text_left(other, RUN);
+    assert!(input.holds_text(other, Some(RUN)));
+    assert!(!input.holds_text(other, Some(NEWER_RUN)));
+}
+
+#[test]
+fn the_time_since_the_last_input_is_known_only_after_an_input() {
+    let input = PersonInput::default();
+    assert_eq!(input.since_last_input(agent()), None);
+    input.stamp(agent(), SENT);
+    let since = input
+        .since_last_input(agent())
+        .expect("an input was stamped");
+    assert!(since < PERSON_TYPING_PAUSE);
+}

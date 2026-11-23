@@ -106,6 +106,7 @@
     void panel.hold.watch();
     void panel.resume.watch();
     void panel.sweep.watch();
+    void panel.sleep.watch();
     void panel.needsYou.watch();
     void hierarchy.watch();
     void panel.templates.watch();
@@ -225,6 +226,7 @@
         bind:openAgentId
         onreopen={(agentId) => void panel.notifications.readAgent(agentId)}
         needsYou={panel.needsYou}
+        sleep={panel.sleep}
       />
     {/if}
     {#if isCreatingFromTemplate}

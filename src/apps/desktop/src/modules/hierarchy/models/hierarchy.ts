@@ -11,6 +11,7 @@ const STATUS_TEXT: Record<string, string> = {
   failed: "failed",
   stopped: "stopped",
   interrupted: "interrupted",
+  asleep: "asleep",
 };
 
 /** The role words the tree answer carries (FR-001). */
