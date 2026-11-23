@@ -4,10 +4,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use agent_domain::errors::AgentError;
-use agent_domain::value_objects::ProjectId;
+use agent_domain::value_objects::{ProjectId, Settings};
 
 use crate::common::errors::ApplicationError;
-use crate::common::interfaces::{ProjectStore, WorktreeInfo, WorktreeManager};
+use crate::common::interfaces::{
+    DEPENDENCY_LINKS_SUPPORTED, ProjectStore, SettingsStore, WorktreeInfo, WorktreeManager,
+};
 use crate::common::lookup::require_project;
 
 /// Whether a folder is inside a git repository, with the base and the
@@ -16,6 +18,8 @@ use crate::common::lookup::require_project;
 pub struct WorktreeInfoHandler {
     projects: Arc<dyn ProjectStore>,
     worktrees: Option<Arc<dyn WorktreeManager>>,
+    /// Absent takes the default settings (0021 FR-008).
+    settings: Option<Arc<dyn SettingsStore>>,
 }
 
 impl WorktreeInfoHandler {
@@ -29,14 +33,24 @@ impl WorktreeInfoHandler {
         Self {
             projects,
             worktrees,
+            settings: None,
         }
+    }
+
+    /// Attaches the office settings, so the answer says whether a create
+    /// would share the installed packages (0021 FR-008).
+    #[must_use]
+    pub fn with_settings(mut self, settings: Arc<dyn SettingsStore>) -> Self {
+        self.settings = Some(settings);
+        self
     }
 
     /// `None` when the folder is not inside a git repository.
     ///
     /// # Errors
     /// `Invalid` for no folder and no project, or a relative folder;
-    /// `NotFound` for an unknown project.
+    /// `NotFound` for an unknown project; `Storage` when the settings
+    /// cannot be read.
     pub fn handle(
         &self,
         folder: Option<PathBuf>,
@@ -62,6 +76,18 @@ impl WorktreeInfoHandler {
         let Some(worktrees) = &self.worktrees else {
             return Ok(None);
         };
-        Ok(worktrees.info(&chosen, agent_name)?)
+        let Some(mut info) = worktrees.info(&chosen, agent_name)? else {
+            return Ok(None);
+        };
+        info.shares_dependencies = DEPENDENCY_LINKS_SUPPORTED && self.links_dependencies()?;
+        Ok(Some(info))
+    }
+
+    fn links_dependencies(&self) -> Result<bool, ApplicationError> {
+        let settings = match &self.settings {
+            Some(store) => store.load()?,
+            None => Settings::default(),
+        };
+        Ok(settings.worktree_dependency_links)
     }
 }
