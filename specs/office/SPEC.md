@@ -30,6 +30,8 @@ Archived change specs merged here:
 - [0019-cli-sign-in-check](../changes/archive/0019-cli-sign-in-check/SPEC.md)
 - [0020-temporary-agents](../changes/archive/0020-temporary-agents/SPEC.md)
 - [0021-worktree-dependencies](../changes/archive/0021-worktree-dependencies/SPEC.md)
+- [0022-waiting-item-sleep](../changes/archive/0022-waiting-item-sleep/SPEC.md)
+- [0023-drop-ended-commands](../changes/archive/0023-drop-ended-commands/SPEC.md)
 
 Changes 0008 to 0011 merge in when they are archived. 0004 and 0006 are not merged.
 
@@ -41,7 +43,7 @@ Changes 0008 to 0011 merge in when they are archived. 0004 and 0006 are not merg
 - Requirements removed by a later change: none.
 - Ids of 0001 keep the form `0001/FR-nnn`. The requirements of 0001 that a merged change modified are 0001/FR-014 and 0001/FR-017.
 
-Modified requirements:
+Modified requirements (0008 is not merged yet: 0022 modified 0008/FR-001 and 0008/FR-005, and their final text is in the MODIFIED section of [0022](../changes/archive/0022-waiting-item-sleep/SPEC.md)):
 
 | Requirement | Modified by | Final text is under |
 |---|---|---|
@@ -50,10 +52,15 @@ Modified requirements:
 | 0002/FR-008 | 0014, 0015 | Change 0002, Requirements |
 | 0002/FR-009 | 0007 | Change 0002, Requirements |
 | 0002/FR-010 | 0012 | Change 0002, Requirements |
-| 0003/FR-006 (in part) | 0007, 0015 | Change 0003, Requirements |
+| 0003/FR-006 (in part) | 0007, 0015, 0022 | Change 0003, Requirements |
+| 0003/SC-004 | 0022 | Change 0003, Success criteria |
 | 0003/FR-008 (in part) | 0005 | Change 0003, Requirements |
 | 0013/FR-008 | 0017 | Change 0013, Requirements |
 | 0015/FR-005 | 0020 | Change 0015, Requirements |
+| 0017/FR-008 | 0023 | Change 0017, Requirements |
+| 0018/FR-002 | 0022 | Change 0018, Requirements |
+| 0018/FR-009 | 0022 | Change 0018, Requirements |
+| 0018 Terms, Idle and Idle since | 0022 | Change 0022, Terms |
 
 ## Change 0001: Office server and terminal
 
@@ -189,7 +196,7 @@ The owner named switching and searching between agents as his main problem: othe
 - **0003/FR-003** (US1): WHERE the office has a hierarchy from 0002, THE SYSTEM SHALL also show each agent's role and team in the agent list.
 - **0003/FR-004** (US1, R9 criterion 1): WHEN the user clicks an agent in the panel or presses that agent's keyboard shortcut, THE SYSTEM SHALL open that agent's live terminal.
 - **0003/FR-005** (US1, R9 criterion 3): WHEN the user picks one project or "All projects" in the project switcher, THE SYSTEM SHALL show only the agents of that choice.
-- **0003/FR-006** (in part) (US3): WHEN an agent exits, fails, changes from `working` to `waiting for input`, rings the terminal bell, is put on hold automatically (0007/FR-008), or sends a report for the person (0015/FR-007), THE SYSTEM SHALL notify the user with the agent's name and the event, EXCEPT that (a) while an unread bell notification of that agent exists, a further bell adds none, and while an unread report notification of that agent exists, a further report adds none, and (b) for the agent whose terminal is open in the focused desktop app window, an exit, failure, `waiting for input`, or bell event shows in the notification list as read and sends no OS notification. Exception (b) does not apply to the automatic hold or to a report, because the terminal does not show them. (modified by 0007, 0015)
+- **0003/FR-006** (in part) (US3): WHEN an agent exits, fails, changes from `working` to `waiting for input`, rings the terminal bell, is put on hold automatically (0007/FR-008), or sends a report for the person (0015/FR-007), THE SYSTEM SHALL notify the user with the agent's name and the event, EXCEPT that (a) while an unread bell notification of that agent exists, a further bell adds none, and while an unread report notification of that agent exists, a further report adds none; (b) for the agent whose terminal is open in the focused desktop app window, an exit, failure, `waiting for input`, or bell event shows in the notification list as read and sends no OS notification, and exception (b) does not apply to the automatic hold or to a report, because the terminal does not show them; and (c) an unprompted change to `waiting for input` (0022 Terms) adds no notification and sends no OS notification. (modified by 0007, 0015, 0022)
 - **0003/FR-007** (US2): IF a notification occurs while the desktop app is closed, THEN THE SYSTEM SHALL show it as unread when the app opens.
 - **0003/FR-008** (US2): WHEN the user opens the desktop app, THE SYSTEM SHALL show the current state of the office with the last view, where the last view now also names the open view (panel or scene), and SHALL open that view. This changes steps 1 and 6 of the 0003 Flow, which now read "the open view" where they read "the panel", and 0003/SC-006, which now measures the open view. (modified by 0005)
 - **0003/FR-009** (US2): WHEN the user opens a notification, or opens the terminal of an agent that has unread notifications, THE SYSTEM SHALL show those notifications of that agent as read.
@@ -220,7 +227,7 @@ This change modified: 0001/FR-017. The final text is under Change 0001, Requirem
 - **0003/SC-001:** With 30 agents across 3 projects that run at the same time, the agent list in one window shows all 30, and each status change and each change of the last output line shows in the list within 2 seconds.
 - **0003/SC-002:** From the panel, the user opens any agent's live terminal with 1 click or 1 shortcut, and the terminal shows live output within 1 second.
 - **0003/SC-003:** The user switches from one project to another, or to "All projects", with 1 action.
-- **0003/SC-004:** While the desktop app runs, the user gets a notification within 10 seconds after an agent exits, fails, rings the bell, or changes to `waiting for input` (that is, within 10 seconds after the quiet period ends).
+- **0003/SC-004:** While the desktop app runs, the user gets a notification within 10 seconds after an agent exits, fails, rings the bell, or makes a prompted change to `waiting for input` (that is, within 10 seconds after the quiet period ends). (modified by 0022)
 - **0003/SC-005:** After the desktop app was closed while 3 agents changed status, 100% of those notifications show as unread on reopen.
 - **0003/SC-006:** When the user opens the desktop app, the panel shows the last view within 3 seconds.
 - **0003/SC-007:** With 30 agents running, a user finds the agent that waits for him and types into its terminal within 10 seconds of the notification.
@@ -493,7 +500,7 @@ Directives go down the tree (0002), and a parent can read its descendants' state
 - **0015/FR-009** (US1, US2, US3): THE SYSTEM SHALL add each accepted report to the action record with the sender as the actor, the kind, and the text in visible form, under the parent for a report to a parent and under the sender for a report for the person, and SHALL record each refusal in the sender's action record and, when the report had a parent, in the parent's.
 - **0015/FR-010** (US1): WHILE reports wait in a parent's queue, THE SYSTEM SHALL keep at most one waiting report per sender, replacing a sender's waiting report with its newer report in the same place and recording the replaced one as withdrawn, and SHALL keep at most 10 waiting reports per queue, refusing a further report with the reason that the parent's queue has no room for reports, and SHALL NOT count such a refusal toward any rate limit or automatic hold.
 
-This change modified: 0002/FR-008, 0003/FR-006, 0008/FR-002, 0008/FR-003, 0008/FR-005. The final text of 0002/FR-008 and 0003/FR-006 is under the change that owns each id. 0008 is not in this file yet: the final text of 0008/FR-002, FR-003, and FR-005 is in the MODIFIED section of [0015](../changes/archive/0015-upward-reports/SPEC.md), and the fold of 0008 takes that text.
+This change modified: 0002/FR-008, 0003/FR-006, 0008/FR-002, 0008/FR-003, 0008/FR-005. The final text of 0002/FR-008 and 0003/FR-006 is under the change that owns each id. 0008 is not in this file yet: the final text of 0008/FR-002 and FR-003 is in the MODIFIED section of [0015](../changes/archive/0015-upward-reports/SPEC.md). Change 0022 modified 0008/FR-005 again, so its final text is in the MODIFIED section of [0022](../changes/archive/0022-waiting-item-sleep/SPEC.md). The fold of 0008 takes that text.
 
 ### Preserved behaviors
 
@@ -607,12 +614,14 @@ When the background server stops uncleanly (SIGKILL, a crash, or a power loss of
 - **0017/FR-005** (US2): IF a stored process identity of a `lost` session does not match a running process, THEN THE SYSTEM SHALL NOT end any process for it and SHALL add a "left" entry to the agent's action record with the office as actor, the session, the process id, the command line in visible form, and the reason: not running, machine restarted, boot time changed, other start time, other command line, or not readable.
 - **0017/FR-006** (US1): IF a leftover still runs after the forced end, or the OS refuses to end it, THEN THE SYSTEM SHALL add a "could not end" entry with the reason and the command line in visible form to the agent's action record and SHALL notify the user once per server start, naming each agent with such a leftover.
 - **0017/FR-007** (US1): WHILE the sweep runs, THE SYSTEM SHALL show, in the panel and in the "Resume interrupted" dialog, that the office ends processes left from the last run, and SHALL keep each start, new task, and continue request of the user waiting until the sweep ends, then run it.
-- **0017/FR-008** (US2): WHEN a session ends while the server runs (a stop, an end of its CLI, or a clean server stop), THE SYSTEM SHALL mark every stored process identity of that session as ended, so that no later sweep ends a process for it or records anything for it.
+- **0017/FR-008** (US2): WHEN a session ends while the server runs (a stop, an end of its CLI, a start failure, an end at the sign-in screen, or a clean server stop), THE SYSTEM SHALL remove every stored process identity of that session in the same step as the session end, so that no later sweep ends a process for it or records anything for it, and the office keeps no command line of that session's processes. (modified by 0023)
 - **0017/FR-009** (US1, US2): WHEN the sweep records the sweep result of a stored process identity, THE SYSTEM SHALL mark that identity as ended in the same step, so that a later sweep, also after the server is killed during this sweep, neither ends a process for it nor records a second sweep result for it.
 - **0017/FR-010** (US1): WHILE a session runs, THE SYSTEM SHALL store at most 200 open helper identities for it (the helper limit). WHEN a new helper would pass the limit, THE SYSTEM SHALL stop storing helpers of that session, SHALL add one entry to the agent's action record that names the limit, and the session SHALL count as having no complete stored process identities.
 - **0017/FR-011** (US1): WHILE a session runs and a stored session process keeps its process id and start time but runs another command line (it replaced itself with another program), THE SYSTEM SHALL replace the stored command line with the new one within 10 seconds, and SHALL NOT mark that identity as ended.
 
 This change modified: 0013/FR-008. The final text is under the change that owns that id.
+
+Change 0023 modified 0017/FR-008. The text above is final.
 
 ### Preserved behaviors
 
@@ -659,16 +668,18 @@ With 20 to 30 agents, many of them wait for input for hours. Each idle CLI, and 
 ### Requirements
 
 - **0018/FR-001** (US1): THE SYSTEM SHALL let the person turn idle sleep on and off in the office settings, with idle sleep off by default and an idle time of 30 minutes when the person first turns it on; SHALL accept an idle time only as a whole number of minutes from 5 to 1440, and refuse any other value with that rule and keep the previous value; SHALL keep the setting in the background server across server and machine restarts; and SHALL apply each change at once, without a restart.
-- **0018/FR-002** (US1): WHILE idle sleep is on, THE SYSTEM SHALL begin to put an agent to sleep within 60 seconds of the first moment at which the agent has been idle for at least the idle time since its idle-since moment and none of these blocking conditions holds: (a) the agent is not idle; (b) it has an item in Needs you (0008); (c) a hold covers it (0007/FR-004); (d) a directive or a report waits in its queue (0012, 0015); (e) pending office text or unsent person text waits at its input line (0012); (f) one of its children runs; and THE SYSTEM SHALL check all six conditions again right before it ends the CLI, and SHALL NOT end it when one of them holds.
+- **0018/FR-002** (US1): WHILE idle sleep is on, THE SYSTEM SHALL begin to put an agent to sleep within 60 seconds of the first moment at which the agent shows `waiting for input`, the idle time has passed since its idle-since moment, and none of these blocking conditions holds: (a) the agent does not show `waiting for input`; (b) it has an item in Needs you that is not a plain waiting item, that is, an item that recorded a bell, a failure, an exit, an automatic hold, a resume hold, or a kept leftover, an item that holds a report for the person, or a waiting item whose agent's screen shows an open question under the question check of 0012/FR-002; (c) a hold covers it (0007/FR-004); (d) a directive or a report waits in its queue (0012, 0015); (e) pending office text or unsent person text waits at its input line (0012); (f) one of its children runs. The idle-since moment is the latest of the agent's last prompted change to `waiting for input`, the last person input that reached its terminal, and the last time the person turned idle sleep on or changed the idle time; an unprompted change does not move it. THE SYSTEM SHALL check all six conditions again right before it ends the CLI, and SHALL NOT end it when one of them holds. (modified by 0022)
 - **0018/FR-003** (US1): WHEN the system puts an agent to sleep, THE SYSTEM SHALL end the agent's CLI as the person's stop does (0001 A3), SHALL show the agent as `asleep` once the CLI has ended, SHALL keep the last session as the session that a wake continues, SHALL keep the recent output of that session with the lines that the CLI printed while it ended, SHALL add one action record entry for the sleep, and no separate stop entry, with the office as actor and the reason "idle for N minutes", and SHALL NOT notify the person or add a Needs you item for the sleep or for the end of the CLI that the sleep caused.
 - **0018/FR-004** (US1, US2): WHILE an agent is asleep, THE SYSTEM SHALL keep it `asleep` across server and machine restarts and after idle sleep is turned off, until the person wakes it, the person or an agent-made action stops it (it then shows `stopped`), deletes it, starts a new task on it (0001/FR-024), or continues one of its sessions (0001/FR-025), or an agent-made action starts it as 0002/FR-008 allows for an agent that is not running; and SHALL NOT list it in "Resume interrupted" (0013/FR-001).
 - **0018/FR-005** (US4): WHILE an agent is going to sleep or asleep, THE SYSTEM SHALL refuse a directive to it and a report to it, SHALL answer the sender that the receiver is not running because it is asleep, and SHALL record the refusal as 0002/FR-011 and 0015/FR-009 require; and WHEN a directive or a report still waits in the queue of an agent that is going to sleep, THE SYSTEM SHALL withdraw it with the reason that the receiver is asleep and record the withdrawal as 0012/FR-005 requires.
 - **0018/FR-006** (US2): WHILE an agent is asleep, THE SYSTEM SHALL offer the person a Wake button in the agent's details and in its terminal view; WHILE an agent is asleep and its terminal view has keyboard focus, THE SYSTEM SHALL wake the agent when the person presses Enter and SHALL send no key from that view to any CLI; and THE SYSTEM SHALL carry out a wake while the office or the agent is on hold.
 - **0018/FR-007** (US2, US3): WHEN the person wakes an agent, THE SYSTEM SHALL continue the agent's last session where its CLI supports it (0001/FR-025) and otherwise start a new session at once with the reason, SHALL apply the fallback of 0013/FR-004 and the hold of 0013/FR-005 to this start as 0013 applies them to a start of its action, and SHALL add one action record entry for the wake with the person as actor, with the reason when the wake started a new session; IF the agent is not asleep when the system carries out the wake, THEN THE SYSTEM SHALL start nothing and tell the person that the agent is no longer asleep.
 - **0018/FR-008** (US2, US3): THE SYSTEM SHALL show the result of each wake as text in the agent's details and terminal view as soon as it is known: waking, checking (during the check period), continued, new session (with the reason), on hold (with the reason), or no longer asleep.
-- **0018/FR-009** (US1): IF the agent's CLI does not end when the system puts the agent to sleep (the 0001 stop fails), THEN THE SYSTEM SHALL leave the agent's status as the CLI shows it, SHALL record the failure once in the agent's action record with the office as actor and the reason, and SHALL NOT try to put that agent to sleep again until it has left `waiting for input` and has been idle for the idle time again.
+- **0018/FR-009** (US1): IF the agent's CLI does not end when the system puts the agent to sleep (the 0001 stop fails), THEN THE SYSTEM SHALL leave the agent's status as the CLI shows it, SHALL record the failure once in the agent's action record with the office as actor and the reason, and SHALL NOT try to put that agent to sleep again until it has made a prompted change to `waiting for input` after the failure and the idle time has passed since that change; an unprompted change SHALL NOT allow a new try. (modified by 0022)
 
 This change modified: 0001/FR-014. The final text is under the change that owns that id.
+
+Change 0022 modified 0018/FR-002, 0018/FR-009, and the Terms Idle and Idle since. The text above is final. The Terms are under Change 0022, Terms.
 
 ### Preserved behaviors
 
@@ -883,3 +894,137 @@ When the office creates an agent's own worktree (0010), the new worktree has no 
 - **Log line.** The reasons of 0021/FR-004 and 0021/FR-007 reach the background server's log as plain lines. Each line starts with `dependency links: ` and then names the place and the reason. No storage alert shows in the app.
 - **Where a place's links are found at removal (0021/FR-006).** The office finds the dependency places again from the worktree's tracked `package.json` files. A place whose `package.json` the agent deleted keeps its links until git removes the worktree. Git's removal deletes a link without following it, so the base checkout is still never changed.
 - **None of the notes defers or changes a requirement.**
+
+## Change 0022: Idle agents sleep past their waiting item, and one wait gives one item
+
+### Intent
+
+A hands-on run of idle sleep (0018) with a real `claude` showed two faults. First, each change from `working` to `waiting for input` adds a Needs you item, and any item keeps the agent awake, so an idle agent sleeps only after the person opens its terminal or dismisses the item. Second, `claude` redraws a hint line now and then while it waits. The office reads that output as `working` for a moment, the item leaves, and the return to `waiting for input` adds a new item and a new notification: the run saw 4 to 8 of them per agent with no input. With 20 to 30 agents, an idle `claude` that nobody looks at never sleeps, and the person learns to ignore the alerts. This change lets an item that only says "waiting for input" stop keeping an agent awake, keeps every other item kind as a blocker, and makes one wait give one item and one notification.
+
+### Requirements
+
+- **0022/FR-001** (US1): WHEN the system puts an agent that has a plain waiting item to sleep, THE SYSTEM SHALL keep that item in Needs you with its wait time and its latest event, SHALL record no event on it for the sleep, and SHALL remove it only as 0008/FR-004 and 0008/FR-005 say, for example when the person opens the agent's terminal, dismisses the item, or wakes the agent and it changes to `starting`.
+- **0022/FR-002** (US1): IF the system cannot read the screen of an agent that has a waiting item at a check of 0018/FR-002, THEN THE SYSTEM SHALL treat that item as not plain and SHALL NOT put the agent to sleep at that check.
+
+This change modified: 0003/FR-006, 0003/SC-004, 0008/FR-001, 0008/FR-005, 0018/FR-002, 0018/FR-009, and the 0018 Terms Idle and Idle since. The final text of 0003/FR-006, 0003/SC-004, 0018/FR-002, 0018/FR-009, and the Terms is under the change that owns each id, or under Terms below. 0008 is not in this file yet: the final text of 0008/FR-001 and 0008/FR-005 is in the MODIFIED section of [0022](../changes/archive/0022-waiting-item-sleep/SPEC.md), and the fold of 0008 takes that text.
+
+### Preserved behaviors
+
+- **0022/PB-1:** An item that recorded a bell, an automatic hold, a resume hold, or a kept leftover, an item that holds a report for the person, and a waiting item whose agent's screen shows an open question under the 0012 question check keep the agent awake (0018/FR-002 b, as modified). Holds, waiting directives and reports, pending office text, unsent person text, and running children keep it awake as before (0018/FR-002 c to f).
+- **0022/PB-2:** When the person opens an agent's terminal by any route or dismisses its item, the item leaves Needs you at once (0008/FR-004), and opening the terminal marks the agent's notifications read (0003/FR-009). Dismiss changes no status and is not recorded (0008 A4).
+- **0022/PB-3:** An agent that works after a wait end, such as a person input, a directive, a report, or office text, and then changes back to `waiting for input` gets a new item and 1 notification, under the read rule of 0003/FR-006 (b), and its earlier item leaves when it changes to `working` (0008 US1 scenario 5).
+- **0022/PB-4:** A bell, an exit, a failure, an automatic hold, a resume hold, a kept leftover, and a report for the person notify and change the item as before, with the coalescing of 0003/FR-006 (a). This change touches only the change between `working` and `waiting for input`.
+- **0022/PB-5:** The status that the office shows does not change: an unprompted change still shows `working` for as long as the CLI prints, in the agent list, the office scene, and the subtree read of 0014 (0001/FR-014).
+- **0022/PB-6:** While idle sleep is off, the office puts no agent to sleep and starts nothing because of idle time (0018 PB-2). A sleep adds no notification and no item (0018/FR-003).
+- **0022/PB-7:** A failed sleep leaves the agent's status as the CLI shows it and adds exactly 1 action record entry, with the office as actor and the reason (0018/FR-009, as modified).
+- **0022/PB-8:** office-harness creates, changes, or deletes nothing in a CLI's configuration, and the question check reads only the screen copy that the office keeps (0001/FR-021, 0012 PB-4).
+
+### Terms
+
+Terms that this change defines. The other terms are as in 0001, 0003, 0007, 0008, 0012, 0013, 0015, 0017, and 0018.
+
+| Term | Meaning |
+|---|---|
+| Work bound | The quiet period plus 10 seconds: 15 seconds with the default quiet period of 5 seconds (A10). |
+| Wait end | One of these events for one agent: (1) a person input reaches its terminal; (2) the office types text into its terminal, such as a directive, a report, a startup prompt, or other office text, with or without Enter; (3) a session of its CLI starts, continues, or ends for any reason (exit, failure, stop, sleep, sign-in check, server stop); (4) the agent has shown `working` without a break for longer than the work bound. |
+| Unprompted change | A change of an agent's status from `waiting for input` to `working`, or from `working` back to `waiting for input`, when no wait end occurred since the agent last changed to `waiting for input` in its current session. A redraw of a hint line is one example. A change to `working` is unprompted at first; when that stretch of `working` passes the work bound, the stretch is a wait end (4), and the return to `waiting for input` is prompted. |
+| Prompted change | A change of status between `working` and `waiting for input` that is not unprompted. The first change to `waiting for input` in a session is always prompted, because the start of the session is a wait end. |
+| Wait | The time from an agent's prompted change to `waiting for input` until its next wait end. Unprompted changes stay inside the same wait. |
+| Waiting item | An item in Needs you that recorded only changes to `waiting for input` since it was added and that holds no report for the person. |
+| Plain waiting item | A waiting item for which the question check finds no open question on the agent's screen at a check of 0018/FR-002. |
+
+Modified terms of 0018 (final text):
+
+- **Idle:** The agent's status is `waiting for input`. The idle time counts from the idle-since moment, which an unprompted change (0022 Terms) does not move.
+- **Idle since:** The latest of three moments: the agent's last prompted change to `waiting for input` (0022 Terms), the last person input that reached its terminal, and the last time the person turned idle sleep on or changed the idle time. An unprompted change does not move it.
+
+### Key entities
+
+| Entity | Represents | Key attributes | Identity and relationships |
+|---|---|---|---|
+| Wait | The time from a prompted change to `waiting for input` until the next wait end. | agent, start time, whether a wait end has occurred, start of the current stretch of `working` | At most one open wait per agent. It ends at a wait end. It is not shown and lives only while the session runs; a server stop is a wait end. |
+| Item (extends 0008) | One agent that waits for the person. | adds: whether it recorded any event other than a change to `waiting for input` | As in 0008: at most one per agent, kept by the background server. Whether it is a waiting item follows from this attribute and its report; whether a waiting item is plain follows from the question check at each sleep check. |
+
+### Success criteria
+
+- **0022/SC-001:** With an idle time of 5 minutes and 10 idle agents that each have a plain waiting item and no other blocking condition, and with no person action, 100% of them show `asleep` within 6 minutes and 10 seconds of their idle-since moment, and 100% of their items are still in Needs you afterwards.
+- **0022/SC-002:** For each of these item kinds alone, a recorded bell, a recorded automatic hold, a recorded resume hold, a report for the person, and an open question on the screen (a yes-or-no choice, a choice list with a selection mark, and a request for permission), an idle agent whose only blocking condition is that item is put to sleep 0 times in 3 times the idle time.
+- **0022/SC-003:** A test CLI that answers one prompt and then prints one line on its own every 30 seconds for 20 minutes, with no input, causes exactly 1 `waiting for input` notification and exactly 1 item, and the item's wait time at the end is at least 20 minutes.
+- **0022/SC-004:** With a real `claude` that answers one prompt and then gets no input for 30 minutes, the person gets exactly 1 `waiting for input` notification for that agent (the 0018 hands-on run saw 4 to 8), and with an idle time of 5 minutes the agent shows `asleep` within 6 minutes and 10 seconds of its prompted change, with 0 dismisses and 0 terminal opens.
+- **0022/SC-005:** In 10 rounds in which a directive reaches an agent that has an item, 10 of 10 items leave when the agent changes to `working`, and 10 of 10 returns to `waiting for input` each add exactly 1 new item and 1 notification.
+- **0022/SC-006:** In 10 sleep checks of an agent that has a waiting item and whose screen cannot be read, the agent is put to sleep 0 times.
+- **0022/SC-007:** In 10 rounds in which the person opens an agent's item and the agent then works for 2 minutes on its own, with no input, and returns to `waiting for input`, 10 of 10 returns each add exactly 1 new item and 1 notification, and with an idle time of 5 minutes the agent is put to sleep 0 times before 5 minutes have passed since that return.
+
+### Notes from Deviations
+
+- **No requirement is deferred or changed.** The Deviations section of 0022 is empty.
+- **Criteria that tests ran with fewer rounds or shorter times (QA report).** 0022/SC-001, 0022/SC-003, 0022/SC-005, and 0022/SC-007 ran with fewer agents or rounds, a shortened quiet period, a shortened idle time, or a shorter run than the criterion states. 0022/SC-004 passed in a 30-minute run with a real signed-in `claude`: 1 notification, and a sleep 311.4 seconds after the prompted wait, with no dismiss and no terminal view open.
+- **A failing stop (0018/FR-009, as modified).** The fake CLIs cannot make a stop fail, so a unit test covers the rule that a failed sleep bars the agent until a prompted wait, and no integration test covers it.
+- **Assumption that the text names.** The bare `A10` in the Terms above names this assumption of 0022:
+  **A10:** The work bound is the quiet period plus 10 seconds. The redraw output of a hint line lasts well under 1 second, but the status stays `working` until one quiet period passes with no output, so a redraw shows `working` for about one quiet period. A fixed 10 seconds would make every redraw count as work once the person sets a quiet period of 10 seconds or more. 10 more seconds keep redraws inside the bound and still end the wait for real work within seconds. A CLI that prints by itself without a break for longer than the bound while it waits, such as a long animation, gives 1 new item and 1 notification at its return.
+
+## Change 0023: Keep no command lines of ended sessions
+
+### Intent
+
+Change 0017 stores the identity of each session process: its process id, its start time, a hash of its whole command line, and a display text of up to 1,000 characters of that command line. When a session ends normally, the office marks these identities as ended but keeps them. Nothing reads them after that, but a helper command line can hold a secret, for example `curl -H "Authorization: ..."`. This change makes the office remove the stored identities of a session when it ends normally, remove identities that an earlier build left behind, and remove the identities of an interrupted session once the "Resume interrupted" list no longer reads them. It also makes sure that, after the next server start, the database files keep no copy of a command line that left the store: a removed identity, a dropped helper, a replaced command line, or a deleted agent's identities, also when an earlier build freed it. The sweep, its match, and the action record stay as they are.
+
+### Requirements
+
+- **0023/FR-001** (US3): WHEN the office stores a new session of an agent, THE SYSTEM SHALL remove each ended stored process identity of every earlier `lost` session of that agent.
+- **0023/FR-002** (US2): WHEN the server starts, THE SYSTEM SHALL, after it ends the sessions that are still open as `lost`, remove each stored process identity of a session that ended normally, and each ended stored process identity of a `lost` session that is not the last session of its agent.
+- **0023/FR-003** (US2, US3): THE SYSTEM SHALL keep each open stored process identity of a `lost` session, and each stored process identity of a `lost` session that is the last session of its agent, until FR-001 or FR-002 removes it or its agent is deleted.
+- **0023/FR-004** (US1, US2): WHEN the server starts, THE SYSTEM SHALL leave in the office database no copy of a display text freed before that start (Terms: a removed identity, a dropped helper, a replaced command line, or a deleted agent's identity), other than a copy inside an action record entry or inside a stored process identity that the office still keeps.
+- **0023/FR-005** (US2): WHEN the server starts for the first time under this build, THE SYSTEM SHALL leave in the office database no copy of a display text that an earlier build freed, other than a copy inside an action record entry or inside a stored process identity that the office still keeps.
+- **0023/FR-006** (US2): IF the server cannot finish FR-004 or FR-005 at a start, THEN THE SYSTEM SHALL write the reason to the server's log, SHALL start as it would otherwise, and SHALL try again at each later start until it finishes.
+
+This change modified: 0017/FR-008. The final text is under the change that owns that id.
+
+### Preserved behaviors
+
+- **0023/PB-1:** After an unclean stop, the sweep still checks every open stored process identity of every `lost` session, ends each leftover with the same match, and records exactly one sweep result for each identity before the "Resume interrupted" list shows (0017/FR-003 to 0017/FR-007, 0017/FR-009).
+- **0023/PB-2:** The "Resume interrupted" list still marks an agent whose last session is `lost` with the same finding: a note with the number of ended leftovers, the warning that a CLI process may still run (could not end, not readable, boot time changed, no complete stored identities, helper limit, not swept), or no mark (0013/FR-008 as modified by 0017).
+- **0023/PB-3:** Each action record entry of the sweep keeps its text: the office as actor, the session, the process id, the command line in visible form, and the result (0017/FR-004 to 0017/FR-006).
+- **0023/PB-4:** After clean server stops and normal agent stops, the next server start ends 0 processes and starts 0 agents without an action of the person (0017/SC-006, 0001/FR-004).
+- **0023/PB-5:** While a session runs, the office still stores the CLI identity before the session shows as started, stores helper identities within 10 seconds, drops a helper identity when the helper ends, replaces the command line after an `exec`, and applies the helper limit of 200 (0017/FR-001, 0017/FR-002, 0017/FR-010, 0017/FR-011).
+- **0023/PB-6:** The person can still continue any previous session of an agent from its details, also a `lost` one (0013/PB-2, 0001/FR-025).
+
+### Terms
+
+Terms that this change defines. The other terms are as in 0001, 0013, 0017, and 0019.
+
+| Term | Meaning |
+|---|---|
+| Session ended normally | A session that ended while the server ran: a stop, an end of its CLI, a start failure, an end at the sign-in screen (0019), or a clean server stop (0017/FR-008). Every session end except `lost`. |
+| Remove | Delete the stored process identity with all its values. Blanking only the display text is not a remove (A2). |
+| Office database | The owner-only storage of the office (0001/FR-009): the database file and its write log and shared-memory files (`-wal`, `-shm`), with the freed space inside them. Not the disk blocks that the OS freed when one of these files shrank (A4). |
+| Freed display text | The display text of a stored process identity after it leaves the store: the identity is removed (FR-001, FR-002, 0017/FR-008), a helper identity is dropped when its helper ends (0017/FR-002), the old command line is replaced after an `exec` (0017/FR-011), or the identity is deleted with its agent. |
+
+### Key entities
+
+| Entity | Represents | Key attributes | Identity and relationships |
+|---|---|---|---|
+| Stored process identity (changes 0017) | One session process that the office knows. | As in 0017. The lifetime changes: it exists while its session runs; after a `lost` end, while it is open or while its session is the last session of its agent. | Belongs to one session of one agent. Removed with its session end, with a new session of its agent, or at a server start, as FR-001, FR-002, and 0017/FR-008 define. Once its display text is freed (Terms), no copy of it stays in the office database after the next server start (FR-004). |
+| Session (extends 0013, 0017) | One run of an agent CLI. | end result: ended normally or `lost` | A session that ended normally has no stored process identity. Only the last session of an agent, when it is `lost`, keeps ended identities. |
+| Action record entry of the sweep (0017) | What the sweep did with one stored identity. | unchanged | Keeps its text after the identity it names is removed. |
+
+### Success criteria
+
+- **0023/SC-001:** After 20 sessions end normally (10 stops by the person, 5 ends of the CLI, 5 by clean server stops), each with a CLI and a helper whose command line holds a unique marker that no terminal output shows, the office holds 0 stored process identities of those 20 sessions right after each end.
+- **0023/SC-002:** After the next server start that follows those 20 ends, a byte search of the database file and its `-wal` and `-shm` files finds 0 of the 20 markers.
+- **0023/SC-003:** With an office database from the 0017 build that holds 10 sessions that ended normally, each with a marker in a stored command line, plus 10 markers in helper identities that the 0017 build dropped and 10 markers in command lines that it replaced after `exec`, the first start of this build leaves 0 identities of those sessions, the byte search of the database file and its `-wal` and `-shm` files finds 0 of the 30 markers, and the sweep ends 0 processes.
+- **0023/SC-004:** In the 0017/SC-005 test (4 agents after a forced kill of the server: one leftover that ends, one that cannot be ended, one CLI that ended on the hang-up, one session from before 0017), the "Resume interrupted" list shows the note for exactly 1 agent, the warning for exactly 2 agents, and no mark for exactly 1 agent, also after a second server start without a resume.
+- **0023/SC-005:** After the person resumes the 4 agents of SC-004, the office holds 0 ended identities of their `lost` sessions, and 100% of the sweep entries of those sessions in the action record show the same text as before the resume.
+- **0023/SC-006:** In the 0017/SC-001 test (30 stand-in CLIs, each with one helper, outlive a forced kill of the server), 100% of the 60 processes still end before the "Resume interrupted" list shows.
+- **0023/SC-007:** In 10 sessions, each with a helper whose command line holds a unique marker (as in SC-001) and that ends 15 seconds after it starts while its session still runs, the byte search of the database file and its `-wal` and `-shm` files after the next server start finds 0 of the 10 markers.
+- **0023/SC-008:** In 10 sessions whose CLI replaces itself with another program after the office stored it, with a unique marker only in the old command line, the byte search of the database file and its `-wal` and `-shm` files after the next server start finds 0 of the 10 old markers.
+
+### Notes from Deviations
+
+- **No requirement is deferred or changed.** The Deviations section of 0023 is empty.
+- **One checkpoint for two steps (plan D4 and D5).** The checkpoint after the start deletes and the checkpoint after the rebuild share one `wal_checkpoint(TRUNCATE)`, which runs after the `VACUUM` when the rebuild is pending. Two checkpoints would log a busy result twice on the first start. One checkpoint after the rebuild still leaves the write log empty.
+- **Linux only for the sweep test (0023/SC-004, 0023/SC-005).** These criteria need the sweep of 0017, which runs on Linux only, so their test runs on Linux only. The other tests of the change run on Linux and macOS in CI.
+- **The VACUUM error path is only logged.** No test makes the `VACUUM` fail. The busy checkpoint is tested (0023/FR-006).
+- **Assumptions that the text names.** The bare `A2` and `A4` in the text above name these assumptions of 0023:
+  - **A2:** The office removes the whole stored identity (option a), and does not only blank the display text and keep the hash (option b). Reasons: an ended identity of a session that ended normally has no reader at all, so the hash, process id, and start time have no use either; a hash of a short secret can be found by trying values; a remove also stops the store from growing with each session. Nothing reads these identities, so the remove changes no visible behavior.
+  - **A4:** Between the time a display text is freed and the next server start, a copy of it can stay in the office database, readable only by the owner (0001/FR-009). FR-004 bounds this to the next server start (Clarifications). The byte search of FR-004, FR-005, and the criteria covers the database file and its `-wal` and `-shm` files, with the freed space inside them. It does not cover disk blocks that the OS freed when one of these files shrank or was truncated, nor swap or file system journals. The office cannot reach them, as A8 says for backup copies, so a test does not scan the disk.
