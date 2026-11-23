@@ -24,10 +24,11 @@ pub enum ActionKind {
     Report,
     Sleep,
     Wake,
+    End,
 }
 
 impl ActionKind {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::Create,
         Self::Start,
         Self::Stop,
@@ -44,6 +45,7 @@ impl ActionKind {
         Self::Report,
         Self::Sleep,
         Self::Wake,
+        Self::End,
     ];
 
     /// The stored and wire name.
@@ -66,6 +68,7 @@ impl ActionKind {
             Self::Report => "report",
             Self::Sleep => "sleep",
             Self::Wake => "wake",
+            Self::End => "end",
         }
     }
 }

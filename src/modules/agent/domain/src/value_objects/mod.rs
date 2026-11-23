@@ -6,9 +6,11 @@ mod display_name;
 mod entity_ids;
 mod env_entry;
 mod exit_result;
+mod objective;
 mod office_additions;
 mod settings;
 mod task_text;
+mod temp_mark;
 
 pub use agent_command::AgentCommand;
 pub use agent_worktree::{
@@ -16,11 +18,13 @@ pub use agent_worktree::{
     is_office_branch_name,
 };
 pub use display_name::DisplayName;
-pub use entity_ids::{MachineId, SessionId};
+pub use entity_ids::{FinishedTempId, MachineId, SessionId};
 pub use env_entry::{EnvEntry, RESERVED_ENV_PREFIX};
 pub use exit_result::ExitResult;
 // The project id belongs to the shared kernel; the agent module re-exports it.
 pub use kernel::ProjectId;
+pub use objective::{OBJECTIVE_MAX_CHARS, Objective};
 pub use office_additions::OfficeAdditions;
 pub use settings::{SettingKey, Settings};
 pub use task_text::{TASK_TEXT_MAX_CHARS, TaskSource, TaskText};
+pub use temp_mark::{TempMark, creator_text, parse_creator};

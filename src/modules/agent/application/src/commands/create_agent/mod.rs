@@ -3,5 +3,5 @@
 mod create_agent_handler;
 
 pub use create_agent_handler::{
-    CreateAgentHandler, CreateAgentRequest, NEEDS_REPOSITORY, OwnWorktree,
+    CreateAgentHandler, CreateAgentRequest, NEEDS_REPOSITORY, NewTemp, OwnWorktree, TempCapLock,
 };

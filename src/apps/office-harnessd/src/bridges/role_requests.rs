@@ -195,6 +195,7 @@ impl AgentCreator for AgentCreatorBridge {
                         base: own.base,
                         branch_name: own.branch_name,
                     }),
+                    temp: None,
                 },
             )
             .map_err(|error| agent_failure(&error))?;

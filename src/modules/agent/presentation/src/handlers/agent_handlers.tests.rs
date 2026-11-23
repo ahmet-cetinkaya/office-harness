@@ -104,7 +104,7 @@ impl AgentStore for FakeAgents {
     }
 
     fn list(&self) -> Result<Vec<Agent>, PortError> {
-        never_called()
+        Ok(locked(&self.agents).clone())
     }
 
     fn update_status(&self, agent_id: AgentId, status: AgentStatus) -> Result<(), PortError> {
@@ -185,7 +185,7 @@ impl AdditionsStore for FakeAdditions {
     }
 
     fn save(&self, _agent_id: AgentId, _record: &AdditionsRecord) -> Result<(), PortError> {
-        never_called()
+        Ok(())
     }
 }
 
@@ -449,6 +449,7 @@ fn use_cases(stores: &FakeStores) -> AgentUseCases {
             Arc::clone(&stores.projects),
             Arc::clone(&stores.additions),
             Arc::clone(&stores.clock),
+            Arc::clone(&stores.settings),
             journal.clone(),
             MachineId::generate(),
         ),
@@ -1001,4 +1002,66 @@ fn a_files_request_maps_the_failures_to_the_contract_codes() {
         failure_of(&internal),
         ("internal", "git is not available".to_owned())
     );
+}
+
+fn temp_create_fields(name: &str) -> Value {
+    json!({
+        "name": name,
+        "command": "claude",
+        "working_folder": std::env::temp_dir().to_string_lossy(),
+        "temp": true,
+        "objective": "fix the failing build",
+    })
+}
+
+#[test]
+fn a_user_create_with_temp_answers_the_mark_with_the_user_as_creator() {
+    let (agents, handlers) = single_agent_office();
+
+    let handled = handlers.handle(&request("agent.create", &temp_create_fields("Ana")));
+
+    let Response::Success { result, .. } = &handled.response else {
+        panic!("expected success, got {:?}", handled.response);
+    };
+    let result: Value = serde_json::from_str(&result.to_string()).expect("json");
+    assert_eq!(
+        result["temp"],
+        json!({"objective": "fix the failing build", "creator": "user"})
+    );
+    assert_eq!(locked(&agents.agents).len(), 1);
+}
+
+#[test]
+fn a_create_past_the_temp_cap_is_refused_with_the_cap_in_the_text() {
+    let (agents, handlers) = single_agent_office();
+    for number in 0..8 {
+        let handled = handlers.handle(&request(
+            "agent.create",
+            &temp_create_fields(&format!("Temp {number}")),
+        ));
+        assert!(matches!(handled.response, Response::Success { .. }));
+    }
+
+    let handled = handlers.handle(&request("agent.create", &temp_create_fields("Temp 8")));
+
+    assert_eq!(
+        failure_of(&handled),
+        (
+            "refused",
+            "the temp cap is 8; end a temp or raise the cap".to_owned()
+        )
+    );
+    assert_eq!(locked(&agents.agents).len(), 8);
+}
+
+#[test]
+fn a_temp_with_a_role_is_refused_and_creates_nothing() {
+    let (agents, handlers) = single_agent_office();
+    let mut fields = temp_create_fields("Ana");
+    fields["role"] = json!({"kind": "member"});
+
+    let handled = handlers.handle(&request("agent.create", &fields));
+
+    assert_eq!(failure_of(&handled).0, "invalid");
+    assert!(locked(&agents.agents).is_empty());
 }

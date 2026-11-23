@@ -82,5 +82,6 @@ fn action_kind(action: AgentAction) -> ActionKind {
         AgentAction::Report => ActionKind::Report,
         AgentAction::Sleep => ActionKind::Sleep,
         AgentAction::Wake => ActionKind::Wake,
+        AgentAction::End => ActionKind::End,
     }
 }
