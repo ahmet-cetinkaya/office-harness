@@ -188,10 +188,11 @@ impl AgentGateway {
 
     pub async fn handle(&self, request: Request) -> Response {
         let id = request.id;
-        // Before the status order: a waiting start must not hold it.
-        if STARTING_REQUESTS.contains(&request.kind.as_str())
-            && self.sweep_gate.wait_until_done().await.is_err()
-        {
+        // Before the status order: a waiting start must not hold it. A temp
+        // create starts its CLI at once, so it waits too (0017/FR-007).
+        let starts_cli =
+            STARTING_REQUESTS.contains(&request.kind.as_str()) || is_temp_create(&request);
+        if starts_cli && self.sweep_gate.wait_until_done().await.is_err() {
             return Response::failure(id, ErrorCode::Refused, STOPPING_MESSAGE);
         }
         let gateway = self.clone();

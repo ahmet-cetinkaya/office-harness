@@ -569,6 +569,60 @@ async fn a_start_a_new_task_and_a_continue_sent_during_the_sweep_run_after_it() 
 }
 
 #[tokio::test]
+async fn a_temp_create_sent_during_the_sweep_starts_no_cli_until_the_sweep_is_over() {
+    let mut scenario = Scenario::new();
+    let mut server = scenario.spawn();
+    wait_until_started(&scenario.config, 1).await;
+    let mut client = scenario.client().await;
+    set_grace(&mut client, LONG_GRACE_MS).await;
+    scenario
+        .create_and_start(&mut client, "Stubborn", STUBBORN_CLI)
+        .await;
+    let marks = scenario.wait_for_stored_processes(1).await;
+    kill_server(&mut server);
+    drop(client);
+
+    let _second = scenario.spawn();
+    wait_until_started(&scenario.config, 2).await;
+    let mut client = scenario.client().await;
+    let plan = client.ask("resume.plan", json!({})).await;
+    assert_eq!(plan["result"], json!({"sweeping": true, "agents": []}));
+    let clis_before = scenario.pids_in("cli-pids").len();
+    let sent = Instant::now();
+    let create = client
+        .send(
+            "agent.create",
+            json!({
+                "name": "Temp",
+                "command": QUICK_CLI,
+                "working_folder": scenario.work_path,
+                "temp": true,
+                "objective": "check the build",
+            }),
+        )
+        .await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        scenario.pids_in("cli-pids").len(),
+        clis_before,
+        "no CLI starts while the sweep runs"
+    );
+
+    let answer = client.answer_of(create).await;
+
+    assert_eq!(answer["ok"], true, "{answer}");
+    assert_all_gone(&marks);
+    assert!(
+        sent.elapsed() >= Duration::from_millis(1500),
+        "the create waited for the grace period of the sweep"
+    );
+    wait_for("the temp's CLI", || {
+        (scenario.pids_in("cli-pids").len() > clis_before).then_some(())
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn a_kill_of_the_server_during_the_sweep_leaves_one_result_for_each_identity() {
     let mut scenario = Scenario::new();
     let mut server = scenario.spawn();
