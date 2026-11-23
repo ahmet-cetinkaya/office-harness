@@ -1441,7 +1441,7 @@ async fn the_end_of_a_temp_that_is_the_target_switches_the_schedule_off() {
 }
 
 #[tokio::test]
-async fn fifty_schedules_due_in_the_same_minute_for_agents_that_wait_all_run() {
+async fn twelve_schedules_due_in_the_same_minute_for_agents_that_wait_all_run() {
     let mut world = World::open().await;
     let mut ids = Vec::new();
     let mut names = Vec::new();
