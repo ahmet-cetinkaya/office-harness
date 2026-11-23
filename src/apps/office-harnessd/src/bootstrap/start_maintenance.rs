@@ -32,12 +32,12 @@ pub fn clear_freed_text(connection: &SharedConnection, log: &ServerLog) {
     }
 }
 
+/// A removal that works writes nothing to the log (0023 A6).
 fn delete_unkept_identities(connection: &SharedConnection, log: &ServerLog) {
-    match SessionProcessRepository::new(connection.clone()).delete_unkept() {
-        Ok(deleted) => log.info(&format!("process identities deleted at start: {deleted}")),
-        Err(error) => log.error(&format!(
+    if let Err(error) = SessionProcessRepository::new(connection.clone()).delete_unkept() {
+        log.error(&format!(
             "could not delete the process identities that are no longer kept: {error}"
-        )),
+        ));
     }
 }
 
@@ -55,10 +55,7 @@ fn is_rebuild_pending(maintenance: &MaintenanceRepository, log: &ServerLog) -> b
 
 fn rebuild_file(maintenance: &MaintenanceRepository, log: &ServerLog) -> bool {
     match maintenance.rebuild_file() {
-        Ok(()) => {
-            log.info("office database rebuilt to clear freed text");
-            true
-        }
+        Ok(()) => true,
         Err(error) => {
             log.error(&format!("could not rebuild the office database: {error}"));
             false
