@@ -1,9 +1,11 @@
 ---
-status: draft
+status: approved
 capability: office
 plan: specs/changes/0020-temporary-agents/PLAN.md
 supersedes: 0015/FR-005
 ---
+
+<!-- Approved for coding on 2026-11-23 through the review gate (r2 at e8a6ab3), under the owner's spec delegation. -->
 
 # 0020: Temporary agents
 

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 spec: specs/changes/0020-temporary-agents/SPEC.md
 commits: per-task
 ---
@@ -57,8 +57,8 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - **D5 Start and objective.** After a temp create succeeds, the host runs `agent.start` as the creator (user or agent; through `AgentGateway::run` under `ActorScope`), then `SendDirectiveHandler::queue_objective(temp, text, creator)`: a new entry point that skips the sender and descendant checks, the directive rate limits, and the hold check, and pushes a `WaitingDirective` with `sender = temp`, `origin: Origin::Objective(creator)`. It is recorded once as a `directive` entry in the temp's record with the creator as actor. A start failure leaves the temp `failed`, and the watcher ends it (FR-005).
 - **D6 Queue origins.** `WaitingDirective::report: Option<String>` becomes `origin: Origin` with `Directive`, `Report { text }`, `Objective { by: Actor }`, and `EndNotice { text }`. `recheck` skips the sender check for `Objective`, and for `Report` and `EndNotice` whose sender is no longer an agent and was a temp (the queue keeps a `from_temp: bool` on the entry, set at push). `EndNotice` is pushed with `push_report` (one place per sender, the 10-report share). Line format: `[temp ended: <name in visible form> (<agent id>): <reason>]`.
 - **D7 Temp ender.** `TempEnder` in `H/bridges/temp_ender.rs`, one shared instance. `end(agent_id, reason: EndReason, actor: Actor)`:
-  0. For a watcher end of a `stopped`, `exited`, or `failed` temp: `temp.end_check` (D8); a changed status returns `StatusChanged` and ends nothing.
-  1. Joins the `ending` set or returns `AlreadyEnding`.
+  0. For a watcher end of a `stopped`, `exited`, or `failed` temp: `temp.end_check` (D8); a changed status returns `StatusChanged` and ends nothing. `temp.end_check` joins the `ending` set inside the order, so no start slips in between the check and the delete (Efe r2 N1).
+  1. Joins the `ending` set (when step 0 has not) or returns `AlreadyEnding`. While a temp is in the set, `AgentGateway::run` refuses `agent.start`, `agent.new_task`, `session.continue`, `agent.resume`, and `agent.wake` for it with `conflict` "the temp is ending"; the ender's own requests pass.
   2. Ends each child temp first (tree rows), reason `ParentEnded { name }`.
   3. Runs `agent.stop` through `AgentGateway::run` as `actor` when the temp runs.
   4. Reads `WorktreeManager::status`; when `reachable`, `changed_files == 0`, and `own_commits == Some(0)`, uses `DeleteWorktrees::Remove({id: status_hash})`, else `Keep`.
