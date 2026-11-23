@@ -20,6 +20,7 @@ use template_infrastructure::persistence::{
     LEDGER_TABLE as TEMPLATE_LEDGER_TABLE, SCRIPTS as TEMPLATE_SCRIPTS,
 };
 
+use super::start_maintenance::clear_freed_text;
 use super::{
     AccessServices, AgentServices, HierarchyServices, LoginSetup, NotificationServices, ServerLog,
     StartupError, StorageAlerts, TemplateServices, TerminalServices, build_access_services,
@@ -125,6 +126,7 @@ pub fn start_with(
     log.info(&format!(
         "agents marked interrupted at start: {interrupted}"
     ));
+    clear_freed_text(&connection, log);
 
     let machine = MachineRepository::new(connection.clone()).ensure_local(&host_name())?;
     let settings = SettingsRepository::new(connection.clone());

@@ -30,6 +30,7 @@ pub const SCRIPTS: &[&str] = &[
     include_str!("0007_agent_worktree.sql"),
     include_str!("0008_session_processes.sql"),
     include_str!("0009_agent_temp.sql"),
+    include_str!("0010_agent_maintenance.sql"),
 ];
 
 /// The data checks the server runs before it steps a database forward. Each

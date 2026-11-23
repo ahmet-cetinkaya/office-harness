@@ -54,6 +54,7 @@ After this change, the office deletes the stored process identities of a session
   - At start, after D4: when no row `freed_text_cleared` exists, run `VACUUM`, then `PRAGMA wal_checkpoint(TRUNCATE)`. Insert the row only when both finished, which means no error and no busy result.
   - Otherwise, write the reason to the log and try again at the next start (Efe r2).
   - `VACUUM` needs no open transaction and no other connection writing, so it runs before the server takes requests.
+  - As built (T2): D4 and D5 share one TRUNCATE checkpoint, run after the `VACUUM` when the rebuild is pending. Two checkpoints would log a busy result twice on the first start; one checkpoint after the rebuild still leaves the write log empty, because the rebuild's old pages stay in the log until it is truncated.
 - **D6: No other change.** The sweep, the match, the finding, the action record text and the wire protocol stay as they are (PB-1 to PB-6).
 - **D7: Constitution check.**
   - The removals stay inside the agent module's persistence, and the start sequence is in the server bootstrap, so no module boundary changes.
