@@ -199,8 +199,9 @@ impl FakeClis {
     #[cfg(windows)]
     pub fn add(&self, name: &str, body: &str) {
         let path = self.tool_folder.join(format!("{name}.cmd"));
+        // One line, not a block: the `)` of the answer would close a block.
         let version = format!(
-            "if \"%~1\"==\"--version\" (\r\necho {} (Claude Code)\r\nexit /b 0\r\n)",
+            "if \"%~1\"==\"--version\" echo {} (Claude Code)& exit /b 0",
             self.cli_version
         );
         let lines: Vec<&str> = ["@echo off", version.as_str(), SIGNED_IN_STATUS]
