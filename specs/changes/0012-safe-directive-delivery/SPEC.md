@@ -238,3 +238,7 @@ Implementation notes. None of them defers or changes a requirement.
 - **Input-line check by count.** The plan compared the text's end with the end of the line before typing. The check counts how often the text's end, and a paste placeholder, show at the input line before and after typing, so a line that already held the same text elsewhere does not count (A9).
 - **Commits.** The plan named one commit per task. The hierarchy change and the server change do not build apart, so T2 to T4 code and tests are one commit, and the documents are another.
 
+
+## Updates
+
+- 2026-11-23: a hands-on run showed that the question check missed a choice list whose entries have no numbers, as in a trust question at start. FR-002 already names "a choice list with a selection mark"; the check now reads such a list also without numbers, when it has 2 or more entries and ends the screen. No requirement changed.
