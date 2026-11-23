@@ -2,6 +2,8 @@
 
 use std::time::Duration;
 
+use crate::bridges::WORK_BOUND_EXTRA;
+
 /// How many connections may be in the handshake at once. Each can buffer up
 /// to one maximum frame before it proves anything, so this bounds that memory.
 pub const MAX_CONCURRENT_HANDSHAKES: usize = 8;
@@ -41,6 +43,9 @@ pub struct ServerOptions {
     pub temp_tick: Duration,
     /// One minute of the temp idle limit; tests shorten it.
     pub temp_minute: Duration,
+    /// The time added to the quiet period to make the work bound (0022 D3);
+    /// tests shorten it.
+    pub work_bound_extra: Duration,
 }
 
 impl Default for ServerOptions {
@@ -53,6 +58,7 @@ impl Default for ServerOptions {
             idle_sleep_minute: IDLE_SLEEP_MINUTE,
             temp_tick: TEMP_TICK,
             temp_minute: TEMP_MINUTE,
+            work_bound_extra: WORK_BOUND_EXTRA,
         }
     }
 }
