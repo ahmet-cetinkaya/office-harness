@@ -11,6 +11,7 @@ pub const DEFAULT_DIRECTIVE_TARGET_LIMIT: u32 = 3;
 pub const DEFAULT_CREATE_LIMIT: u32 = 5;
 pub const DEFAULT_LIFECYCLE_LIMIT: u32 = 10;
 pub const DEFAULT_REPORT_LIMIT: u32 = 5;
+pub const DEFAULT_SECRET_READ_LIMIT: u32 = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LimitKind {
@@ -19,6 +20,7 @@ pub enum LimitKind {
     Create,
     Lifecycle,
     Report,
+    SecretRead,
 }
 
 impl LimitKind {
@@ -31,6 +33,7 @@ impl LimitKind {
             Self::Create => "agents created by one agent",
             Self::Lifecycle => "starts, stops, and new tasks by one agent",
             Self::Report => "reports sent by one agent",
+            Self::SecretRead => "reads of secrets by one agent",
         }
     }
 }
@@ -43,6 +46,7 @@ pub struct RateLimits {
     pub create: u32,
     pub lifecycle: u32,
     pub report: u32,
+    pub secret_read: u32,
 }
 
 impl Default for RateLimits {
@@ -53,6 +57,7 @@ impl Default for RateLimits {
             create: DEFAULT_CREATE_LIMIT,
             lifecycle: DEFAULT_LIFECYCLE_LIMIT,
             report: DEFAULT_REPORT_LIMIT,
+            secret_read: DEFAULT_SECRET_READ_LIMIT,
         }
     }
 }
@@ -66,6 +71,7 @@ impl RateLimits {
             LimitKind::Create => self.create,
             LimitKind::Lifecycle => self.lifecycle,
             LimitKind::Report => self.report,
+            LimitKind::SecretRead => self.secret_read,
         }
     }
 }
