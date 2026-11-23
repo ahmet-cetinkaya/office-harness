@@ -40,10 +40,10 @@ A lead that gives a member one small job keeps that member in the tree after the
 | Temp cap | An office setting: the highest number of temps that exist at the same time. |
 | Idle limit | An office setting: the time in minutes after which the office ends a temp that produced no output. |
 | Quiet time | The time since the temp's quiet-since moment. |
-| Quiet since | The latest of these moments: the start of the temp's current run, its last terminal output, the last person input that reached its terminal, the end of the last hold that covered it, and the moment its last running child stopped running. |
+| Quiet since | The latest of these moments: the start of the temp's current run, its last terminal output, the last person input that reached its terminal, the end of the last hold that covered it, the moment its last running child stopped running, and the moment its last Needs you item left. |
 | End (a temp) | The office ends the temp's child temps, stops its CLI, keeps or removes its worktree, removes the agent, and adds a finished temp entry (FR-006). |
 | Keep rule | A temp's worktree and branch stay when the worktree has uncommitted changes or the branch has commits that its base lacks; otherwise the office removes both as 0010/FR-007 does. |
-| Finished temp entry | What the office keeps of a temp after it ends: its name, id, objective, creator, parent, start and end time, the end reason, its last `done` report, and the worktree folder and branch that stayed, or that nothing stayed. |
+| Finished temp entry | What the office keeps of a temp after it ends: its name, id, objective, creator, parent, start and end time, the end reason, its last `done` report, and the worktree folder and branch that stayed, or that nothing stayed and that files git ignores were removed with the worktree. |
 | End notice | One line that the office types into a parent's queue to say that one of its temps ended and why (FR-007). |
 | Temps view | The desktop app view that lists every temp and every finished temp entry (FR-009). |
 
@@ -104,6 +104,7 @@ The person creates a temp from the create form with an objective. The temps view
 4. Given the person ends a temp from the temps view and confirms, Then the office ends it with the reason that the person ended it.
 5. Given the person stops a temp from its details or its terminal view, Then the office ends it in the same way.
 6. Given a finished entry, When the person dismisses it, Then the entry leaves and every kept worktree and branch stays.
+7. Given a temp runs, When the person or its parent starts a new task on it or continues one of its sessions, Then the temp stays a temp and does not end.
 
 ### US3 — Temps are bounded (Priority: P1)
 
@@ -111,7 +112,7 @@ The office never holds more temps than the cap, and it ends a temp that produced
 
 **Why this priority:** without the bounds temps are a new way for one looping agent to fill the machine, and a stuck temp would wait forever.
 
-**Independent test:** set the cap to 3 and the idle limit to 5 minutes. With 3 temps, a 4th create, by an agent and by the person, is refused with the cap in the reason. Let one temp wait for input with no output: within 6 minutes it ends, its finished entry says "no output for 5 minutes", and its parent's terminal shows the end notice.
+**Independent test:** set the cap to 3 and the idle limit to 5 minutes. With 3 temps, a 4th create, by an agent and by the person, is refused with the cap in the reason. Let one temp wait for input with no output and dismiss its Needs you item: within 6 minutes it ends, its finished entry says "no output for 5 minutes", and its parent's terminal shows the end notice.
 
 **Scenarios:**
 
@@ -120,7 +121,7 @@ The office never holds more temps than the cap, and it ends a temp that produced
 3. Given the person lowers the cap below the number of temps, Then the office ends no temp and refuses new temps until the count is below the cap.
 4. Given a temp produced no output for the idle limit, no child of it runs, and no hold covers it, Then the office ends it within 60 seconds with the reason that it produced no output for that many minutes.
 5. Given a temp prints output more often than the idle limit, Then the office does not end it.
-6. Given a hold covers a temp, or one of its children runs, Then the office does not end it for the idle limit.
+6. Given a hold covers a temp, one of its children runs, or it has an item in Needs you, Then the office does not end it for the idle limit.
 7. Given the office ends a temp for the idle limit and its parent runs, Then the parent's queue gets one end notice that names the temp, its id, and the reason; when it has no running parent, the person gets one notification.
 
 ### US4 — A temp whose parent goes away ends with it (Priority: P2)
@@ -144,12 +145,12 @@ When the person deletes a temp's parent, or a temp's parent is itself a temp tha
 - **FR-001** (US1, US2): WHEN the person, or a running agent as 0002/FR-008 allows, creates an agent with the temp choice on and an objective that follows the text rules of a directive (0002), THE SYSTEM SHALL create the agent as a temp at the place the 0002 rules allow, start it at once, and put the objective into the temp's queue as its first entry, typed under the rules of 0012 as for a directive whose sender is the creator; IF the objective is missing or breaks those rules, THEN THE SYSTEM SHALL create nothing, give the reason, and record the refusal; and WHEN a temp creates an agent, THE SYSTEM SHALL create it as a temp.
 - **FR-002** (US1): WHERE the working folder of a new temp is inside a git repository, THE SYSTEM SHALL create the temp with its own branch and worktree as 0010/FR-002 does, unless the creator turns own worktree off in the create; WHERE the folder is not inside a git repository, THE SYSTEM SHALL create the temp without one.
 - **FR-003** (US3): IF a create would make the number of temps in the office greater than the temp cap, THEN THE SYSTEM SHALL create nothing, refuse it with a reason that names the cap and its value, record the refusal, and SHALL NOT count the refusal toward any rate limit or the automatic hold (0007/FR-008); THE SYSTEM SHALL let the person set the temp cap in the office settings as a whole number from 1 to 100, 8 by default, and SHALL apply a changed value to the next create without ending any temp.
-- **FR-004** (US3): WHILE a temp is running or asleep, no child of it runs, and no hold covers it, THE SYSTEM SHALL end the temp within 60 seconds after the time since its quiet-since moment reaches the idle limit, with the reason that it produced no output for that many minutes; THE SYSTEM SHALL let the person set the idle limit in the office settings as a whole number of minutes from 5 to 1440, 30 by default, and SHALL apply a changed value at the next check.
-- **FR-005** (US1, US2, US3, US4): THE SYSTEM SHALL end a temp, with the reason in brackets, WHEN it accepts a `done` report from the temp (done), WHEN FR-004 applies (no output for N minutes), WHEN the temp's CLI exits or fails other than by a stop or a sleep (exited with its exit code, or failed with its reason), WHEN the person or an agent stops the temp, alone or with an ancestor (stopped by the actor), WHEN the person ends it from the temps view (ended by the person), WHEN the person deletes it, alone or with an ancestor (deleted by the person, or its parent was deleted), and WHEN its parent temp ends (its parent ended); and SHALL NOT end a temp only because it is `interrupted`.
+- **FR-004** (US3): WHILE a temp is running or asleep, no child of it runs, no hold covers it, and it has no item in Needs you (0008), THE SYSTEM SHALL end the temp within 60 seconds after the time since its quiet-since moment reaches the idle limit, with the reason that it produced no output for that many minutes; THE SYSTEM SHALL let the person set the idle limit in the office settings as a whole number of minutes from 5 to 1440, 30 by default, and SHALL apply a changed value at the next check.
+- **FR-005** (US1, US2, US3, US4): THE SYSTEM SHALL end a temp, with the reason in brackets, WHEN it accepts a `done` report from the temp (done), WHEN FR-004 applies (no output for N minutes), WHEN the temp's CLI exits or fails other than by a stop or a sleep (exited with its exit code, or failed with its reason), WHEN the person or an agent stops the temp, alone or with an ancestor (stopped by the actor), WHEN the person ends it from the temps view (ended by the person), WHEN the person deletes it, alone or with an ancestor (deleted by the person, or its parent was deleted), and WHEN its parent temp ends (its parent ended); SHALL decide each end on the temp's status as it is under the office's order of status changes, so that a status that a new task or a continued session (0001/FR-024, 0001/FR-025) passes through ends no temp; and SHALL NOT end a temp only because it is `interrupted`.
 - **FR-006** (US1, US4): WHEN the system ends a temp, THE SYSTEM SHALL end its child temps first, stop its CLI as the person's stop does when it runs, apply the keep rule to its own worktree (or, for a delete, the person's keep or remove answer of 0010/FR-005), remove the agent as a delete does, add one finished temp entry, and add one action record entry for the end with the reason and with the person, the stopping agent, or the office as the actor; and IF the office cannot remove a worktree or a branch that the keep rule removes, THEN THE SYSTEM SHALL keep it and name it and the failure in the finished entry.
 - **FR-007** (US3): WHEN the system ends a temp because of the idle limit or because its CLI exited or failed, THE SYSTEM SHALL put one end notice, with the temp's name in visible form, its id, and the reason, into the parent's queue under 0015/FR-004 and 0015/FR-010 as a report of that temp WHERE the parent runs and its queue has room; and, for an end because of the idle limit whose notice reaches no queue, THE SYSTEM SHALL notify the person once with the temp's name and the reason (an exit or a failure notifies the person under 0003/FR-006 as before).
 - **FR-008** (US1, US2): THE SYSTEM SHALL keep each finished temp entry across server and machine restarts until the person dismisses it, and a dismiss SHALL remove only the entry, never a worktree, a branch, or a file.
-- **FR-009** (US2): THE SYSTEM SHALL show the person, in one temps view of the desktop app, every temp with its name, its creator, its parent, its objective, its status, its run time, and its quiet time, and every finished temp entry, newest first; SHALL let the person end each temp and dismiss each entry from that view with the keyboard alone, ending after one confirmation that says the temp will be removed and that work not merged stays, and SHALL ask the same confirmation when the person stops a single temp from its details or its terminal view; and SHALL mark a temp as "temp", as text, in its details.
+- **FR-009** (US2): THE SYSTEM SHALL show the person, in one temps view of the desktop app, every temp with its name, its creator, its parent, its objective, its status, its run time, and its quiet time, and every finished temp entry, newest first; SHALL let the person end each temp and dismiss each entry from that view with the keyboard alone, ending after one confirmation that says the temp will be removed, that work not merged stays, and that files git ignores are removed with a removed worktree, and SHALL ask the same confirmation when the person stops a single temp from its details or its terminal view; and SHALL mark a temp as "temp", as text, in its details.
 
 ### MODIFIED
 
@@ -222,13 +223,14 @@ When the person deletes a temp's parent, or a temp's parent is itself a temp tha
 - **SC-002:** A lead creates 3 member temps; each sends a `done` report. 3 of 3 reports reach the lead's terminal, 3 of 3 temps are no longer agents within 10 seconds after their report, and 3 finished entries show the reports.
 - **SC-003:** Of 4 temps that end with a clean worktree, an uncommitted change, a new commit, and both, the clean one's worktree and branch are removed and 3 of 3 others keep both, with 0 changed files lost.
 - **SC-004:** With the cap at 3 and 3 temps in the office, a 4th create by an agent and one by the person are refused with the cap and its value in the reason (2 of 2), 0 agents are created, and 5 such refusals of one agent within 60 seconds put it on 0 holds.
-- **SC-005:** With the idle limit at 5 minutes, a temp with no output ends within 6 minutes, its finished entry says "no output for 5 minutes", and its running parent's terminal shows 1 end notice. A temp that prints one line every 60 seconds for 15 minutes, and a temp under a hold for 10 minutes, are not ended (0 of 2).
+- **SC-005:** With the idle limit at 5 minutes, a temp with no output and no Needs you item ends within 6 minutes, its finished entry says "no output for 5 minutes", and its running parent's terminal shows 1 end notice. A temp that prints one line every 60 seconds for 15 minutes, a temp under a hold for 10 minutes, and a temp whose Needs you item stays for 10 minutes, are not ended (0 of 3).
 - **SC-006:** The person deletes a lead with 3 member temps and keeps the worktrees: 3 of 3 finished entries name the deleted parent, and 3 of 3 worktrees and branches stay.
 - **SC-007:** A lead temp with 2 running member temps sends `done`: both members end before the lead, with the reason that their parent ended (2 of 2).
 - **SC-008:** 5 finished entries survive a server restart (5 of 5); dismissing 1 removes the entry and 0 files, worktrees, or branches.
 - **SC-009:** With 10 temps in the office at several places in the tree, the temps view lists 10 of 10, and the person ends 1 with the keyboard alone.
 - **SC-010:** A temp's `done` report that waits in a working parent's queue when the temp ends is typed into the parent's terminal once the parent is ready (1 of 1).
 - **SC-011:** A temp whose CLI exits with code 1 before any `done` report ends within 5 seconds, and its finished entry names exit code 1 (1 of 1).
+- **SC-012:** Of 10 new tasks and 10 continued sessions on running temps, 0 end a temp.
 
 ## Edge cases
 
@@ -251,13 +253,15 @@ When the person deletes a temp's parent, or a temp's parent is itself a temp tha
 | A `done` report waits in the parent's queue when the temp ends. | Concurrent | It stays and is typed when the parent is ready (0015/FR-005 as modified). |
 | A `done` report and the idle limit arrive at the same moment. | Concurrent | The temp ends once, with the reason of the event that the office handled first. |
 | The person ends a temp that is already ending. | Concurrent | It ends once; the person is told that it already ended. |
-| A temp is waiting for a person's answer to a question in its terminal. | Boundary | Its quiet time grows; the person's input resets it; with no input it ends at the idle limit (FR-004). |
+| The person or the parent starts a new task on a temp, or continues one of its sessions. | Concurrent | The temp stays a temp; the stop and start inside that action end nothing (FR-005). |
+| A temp is waiting for a person's answer to a question in its terminal. | Boundary | While its Needs you item stays, the idle limit does not run; after the person opens its terminal or dismisses the item, its quiet time counts from then, and the person's input resets it (FR-004). |
 | A temp is asleep (0018). | Boundary | Its quiet time keeps growing, and the idle limit ends it (FR-004). |
-| A hold covers the temp, or one of its children runs. | Boundary | The idle limit does not end it; its quiet-since moment moves to the end of the hold or the child's run (FR-004). |
+| A hold covers the temp, one of its children runs, or it has a Needs you item. | Boundary | The idle limit does not end it; its quiet-since moment moves to the end of the hold, the child's run, or the item (FR-004). |
 | The server or the machine restarts with temps. | Failure | Temps are `interrupted` and are not ended or started by the office (FR-005, PB-6); they still count toward the cap. |
 | The temp's parent is stopped, but not deleted or ended. | Boundary | The temp keeps running; a `done` report to the stopped parent is refused (0015/FR-005), and the temp may mark it for the person. If the temp later ends for the idle limit, the person gets the notification (FR-007). |
 | The person deletes a temp. | Boundary | The 0010 keep or remove question applies; the temp ends with the reason that the person deleted it (FR-005, PB-4). |
 | The office cannot remove a worktree or a branch that the keep rule removes. | Failure | It stays; the finished entry names it and the failure (FR-006). |
+| A temp wrote its results only to files that git ignores. | Boundary | Ignored files are not uncommitted changes (0010 A9), so a worktree with no other change is removed with them; the End confirmation and the finished entry say that ignored files are removed with a removed worktree. |
 | The server stops while a temp ends. | Failure | An end that did not finish leaves the temp as an agent (`interrupted` after the restart); the person ends it again. |
 | The parent's queue has no room for an end notice. | Boundary | The notice is not queued; for an idle-limit end the person is notified once instead (FR-007), and the finished entry keeps the reason (FR-008). |
 | The person stops a lead with its descendants (0002/FR-007) and temps are among them. | Boundary | The 0002 offer applies as before; each temp among them ends with the reason that the person stopped it (FR-005, A6). |
@@ -276,6 +280,7 @@ When the person deletes a temp's parent, or a temp's parent is itself a temp tha
 - **A9:** A finished entry keeps the last `done` report only, not the other reports and not the terminal output. The action record keeps every report (0015/FR-009).
 - **A10:** The office never removes a kept worktree or branch later, and never merges, pushes, or rebases anything (0010 A4, A6).
 - **A11:** An agent-made create of a temp passes the same fields as a create of another agent (0002, 0010) plus the temp choice and the objective, and may turn own worktree off. The details of the request are in the contract.
+- **A12:** The idle limit counts only while the temp has no Needs you item, as 0018/FR-002 (b) keeps an agent with an item awake. A temp that went quiet with an item waits until the person opens its terminal or dismisses the item; only then can the idle limit end it.
 
 ## Clarifications
 
@@ -286,6 +291,12 @@ When the person deletes a temp's parent, or a temp's parent is itself a temp tha
 - Q: Does the cap apply to the person's own creates? → A: Yes; it bounds the machine, not the agent's behavior. The person can raise it (FR-003). It is not a rate limit, so 0007/PB-1 stays true.
 - Q: Does a temp exit end it? → A: Yes, with the exit code as the reason (FR-005); the person learns of it through the end notice or one notification (FR-007).
 - Q: Does idle sleep (0018) apply to temps? → A: It may put a temp to sleep; the idle limit counts the sleep as quiet time and ends the temp (FR-004), so 0018 needs no change.
+
+### Session 2026-11-23 (spec review r1)
+
+- Q: Does a new task or a continued session on a temp end it? → A: No; the end is decided on the status under the office's order of status changes, so the stop and start inside those actions end nothing (FR-005, SC-012).
+- Q: Does the idle limit end a temp that waits on a person's question? → A: Not while its Needs you item stays; the quiet time counts from when the item leaves (FR-004, A12). The first draft ended it.
+- Q: Are a temp's results in files that git ignores kept? → A: No; they are not uncommitted changes (0010 A9), so the confirmation and the finished entry say that they go with a removed worktree.
 
 ## Out of scope
 
