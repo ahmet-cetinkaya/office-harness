@@ -13,10 +13,14 @@ pub(crate) const RATE_WINDOW_MILLIS: i64 = RATE_WINDOW_SECONDS as i64 * MILLIS_P
 /// An agent-made action the rate limits count (A3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentAction {
-    Directive { target: AgentId },
+    Directive {
+        target: AgentId,
+    },
     Create,
     Lifecycle,
     Report,
+    /// One read of a secret by an agent (0026).
+    SecretRead,
 }
 
 /// Timestamps of passed actions inside a rolling window, per key. Only
@@ -72,6 +76,7 @@ pub struct RateWindows {
     creates: SlidingWindows<AgentId>,
     lifecycles: SlidingWindows<AgentId>,
     reports: SlidingWindows<AgentId>,
+    secret_reads: SlidingWindows<AgentId>,
 }
 
 impl RateWindows {
@@ -126,6 +131,15 @@ impl RateWindows {
                     return Err(refusal(LimitKind::Report, limits));
                 }
                 self.reports.record(caller, now_millis);
+            }
+            AgentAction::SecretRead => {
+                if self
+                    .secret_reads
+                    .is_full(caller, limits.secret_read, now_millis)
+                {
+                    return Err(refusal(LimitKind::SecretRead, limits));
+                }
+                self.secret_reads.record(caller, now_millis);
             }
         }
         Ok(())

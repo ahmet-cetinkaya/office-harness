@@ -50,8 +50,9 @@ use audit_presentation::AuditHandlers;
 
 use super::{ServerLog, StorageAlerts, TerminalServices};
 use crate::bridges::{
-    ActionRecorderBridge, AgentCalls, IdleSleepGate, ProcessProbeBridge, SavedOutputs, SignInWatch,
-    StatusCommandBridge, StatusOrder, StoppingFlag, SystemClock, TaskOrder, TerminalHostBridge,
+    ActionRecorderBridge, AgentCalls, IdleSleepGate, ProcessProbeBridge, RedactingActionLog,
+    RedactingProcessStore, SavedOutputs, SignInWatch, StatusCommandBridge, StatusOrder,
+    StoppingFlag, SystemClock, TaskOrder, TerminalHostBridge,
 };
 
 /// The agent and audit modules, wired: the use cases behind their handlers,
@@ -136,7 +137,10 @@ pub fn build_agent_services(
     agent_calls: AgentCalls,
 ) -> AgentServices {
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
-    let action_log: Arc<dyn ActionLog> = Arc::new(ActionRepository::new(connection.handle()));
+    let action_log: Arc<dyn ActionLog> = Arc::new(RedactingActionLog::new(
+        Arc::new(ActionRepository::new(connection.handle())),
+        Arc::clone(&terminal.redactor),
+    ));
     let record_action = RecordActionHandler::new(Arc::clone(&action_log));
     let recorder = Arc::new(ActionRecorderBridge::new(
         record_action.clone(),
@@ -146,7 +150,10 @@ pub fn build_agent_services(
     let journal = ActionJournal::new(recorder, Arc::clone(&clock));
     let process_recorder = SessionProcessRecorder::new(
         Arc::clone(&sessions),
-        Arc::new(SessionProcessRepository::new(connection.clone())),
+        Arc::new(RedactingProcessStore::new(
+            Arc::new(SessionProcessRepository::new(connection.clone())),
+            Arc::clone(&terminal.redactor),
+        )),
         Arc::new(ProcessProbeBridge::new(
             Arc::clone(&terminal.runtime),
             Arc::clone(&terminal.inspector),

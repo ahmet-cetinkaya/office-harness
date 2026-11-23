@@ -75,6 +75,21 @@ export interface ResumeSeed {
 }
 
 /** What the faked office holds when the page opens. */
+/** What `secret.list` answers with when the page opens (0026). */
+export interface SecretsSeed {
+  store?: { state: string; custody?: string; locked_reason?: string };
+  secrets?: {
+    name: string;
+    version: number;
+    unreadable?: boolean;
+    grants?: {
+      agent_id: string;
+      last_read_version: number | null;
+      last_read_at: number | null;
+    }[];
+  }[];
+}
+
 export interface OfficeSeed {
   agents?: SeededAgent[];
   projects?: Project[];
@@ -103,6 +118,9 @@ export interface OfficeSeed {
   setTaskDelayMs?: number;
   /** The holds the faked server keeps. None when left out. */
   holds?: Partial<HoldState>;
+  /** The secrets the faked server keeps (0026). None, and an empty store,
+   * when left out. */
+  secrets?: SecretsSeed;
   /** How each interrupted agent resumes, by agent id. An agent left out
    * continues its session. A held agent is one of `holds`. */
   resume?: Record<string, ResumeSeed>;
@@ -309,6 +327,7 @@ export async function installMockCore(
       limit_creates_per_agent: "5",
       limit_lifecycle_per_agent: "10",
       limit_reports_per_agent: "5",
+      limit_secret_reads_per_agent: "20",
     };
     const LIMIT_INVALID =
       "invalid: a limit is a whole number of at least 1 and at most 1000";
@@ -374,6 +393,16 @@ export async function installMockCore(
       templates: (mock.office?.templates ?? []).map((seed) => ({
         ...structuredClone(seed),
         updated_at: 1,
+      })),
+      secretStore: structuredClone(
+        mock.office?.secrets?.store ?? { state: "empty" },
+      ) as Record<string, unknown>,
+      secrets: (mock.office?.secrets?.secrets ?? []).map((seed) => ({
+        updated_at: 1,
+        created_at: 1,
+        unreadable: false,
+        grants: [] as Record<string, unknown>[],
+        ...structuredClone(seed),
       })),
       holds: {
         office: mock.office?.holds?.office ?? null,
@@ -1819,6 +1848,106 @@ export async function installMockCore(
           office.settings[key] = value;
           settings.push({ key, value: fields.value });
           return { key, value: fields.value };
+        }
+        case "secret.list":
+          return {
+            store: structuredClone(office.secretStore),
+            secrets: structuredClone(office.secrets),
+          };
+        case "secret.set": {
+          if (office.secretStore.state === "locked") {
+            refuse(
+              "refused",
+              `the secret store is locked: ${String(office.secretStore.locked_reason)}`,
+            );
+          }
+          const name = String(fields.name);
+          const value = String(fields.value);
+          if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) {
+            refuse(
+              "invalid",
+              "the secret name must start with a letter A to Z",
+            );
+          }
+          if (value.length < 8) {
+            refuse("invalid", "the secret value is shorter than 8 bytes");
+          }
+          const known = office.secrets.find((secret) => secret.name === name);
+          if (known === undefined) {
+            office.secrets.push({
+              name,
+              version: 1,
+              updated_at: Date.now(),
+              created_at: Date.now(),
+              unreadable: false,
+              grants: [],
+            });
+          } else {
+            known.version += 1;
+            known.updated_at = Date.now();
+            known.unreadable = false;
+          }
+          if (office.secretStore.state === "empty") {
+            office.secretStore = { state: "ready", custody: "os_keyring" };
+          }
+          pushEvent({
+            type: "secret.changed",
+            cause: known === undefined ? "saved" : "replaced",
+            name,
+          });
+          return {};
+        }
+        case "secret.delete": {
+          const name = String(fields.name);
+          if (!office.secrets.some((secret) => secret.name === name)) {
+            refuse("not_found", `no secret named ${name}`);
+          }
+          office.secrets = office.secrets.filter(
+            (secret) => secret.name !== name,
+          );
+          pushEvent({ type: "secret.changed", cause: "deleted", name });
+          return {};
+        }
+        case "secret.grant":
+        case "secret.revoke": {
+          const secret =
+            office.secrets.find((known) => known.name === fields.name) ??
+            refuse("not_found", `no secret named ${String(fields.name)}`);
+          const held = secret.grants.some(
+            (grant) => grant.agent_id === fields.agent_id,
+          );
+          if (kind === "secret.grant") {
+            if (held) refuse("conflict", "the agent already holds this grant");
+            secret.grants.push({
+              agent_id: String(fields.agent_id),
+              last_read_version: null,
+              last_read_at: null,
+            });
+          } else {
+            if (!held) refuse("conflict", "the agent holds no grant");
+            secret.grants = secret.grants.filter(
+              (grant) => grant.agent_id !== fields.agent_id,
+            );
+          }
+          pushEvent({
+            type: "secret.changed",
+            cause: kind === "secret.grant" ? "granted" : "revoked",
+            name: secret.name,
+          });
+          return {};
+        }
+        case "secret.reset": {
+          if (fields.confirm_count !== office.secrets.length) {
+            refuse(
+              "conflict",
+              `the store holds ${office.secrets.length} secrets, not ${String(fields.confirm_count)}`,
+            );
+          }
+          const removed = office.secrets.length;
+          office.secrets = [];
+          office.secretStore = { state: "empty" };
+          pushEvent({ type: "secret.changed", cause: "reset" });
+          return { removed };
         }
         case "hold.list":
           return structuredClone(office.holds);

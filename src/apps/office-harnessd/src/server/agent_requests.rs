@@ -30,6 +30,7 @@ use super::agent_call::recorded_and_published;
 use super::event_hub::EventHub;
 use super::hold_requests::HoldGateway;
 use super::hook_events::hook_json;
+use super::secret_requests::SecretGateway;
 use super::subtree_status::{SubtreeState, subtree_entries, time_before};
 use crate::bootstrap::StorageAlerts;
 use crate::bridges::{
@@ -115,6 +116,8 @@ pub struct AgentGateway {
     /// What the reports of `claude` sessions say, merged into each agent's
     /// answer as `hook` (0024).
     hooks: Option<HookSessions>,
+    /// Drops the grants of deleted agents (0026/FR-009).
+    secrets: Option<SecretGateway>,
 }
 
 impl AgentGateway {
@@ -154,6 +157,7 @@ impl AgentGateway {
             sign_in: None,
             temps: None,
             hooks: None,
+            secrets: None,
         }
     }
 
@@ -170,6 +174,13 @@ impl AgentGateway {
     #[must_use]
     pub fn with_hook_sessions(mut self, hooks: HookSessions) -> Self {
         self.hooks = Some(hooks);
+        self
+    }
+
+    /// Lets a delete drop the secret grants of the agents it removed (0026).
+    #[must_use]
+    pub fn with_secrets(mut self, secrets: SecretGateway) -> Self {
+        self.secrets = Some(secrets);
         self
     }
 
@@ -277,6 +288,10 @@ impl AgentGateway {
             self.holds.forget_deleted_agents();
             // The same for the Needs you items (0008 D2).
             self.needs_you.forget_deleted_agents();
+            // And the secret grants (0026/FR-009).
+            if let Some(secrets) = &self.secrets {
+                secrets.forget_deleted_agents();
+            }
         }
         self.add_last_lines(&mut response);
         self.add_hook_states(&mut response);

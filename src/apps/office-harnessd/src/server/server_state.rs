@@ -8,6 +8,7 @@ use hierarchy_application::commands::hold::HoldService;
 use hierarchy_application::commands::send_directive::SendDirectiveHandler;
 use hierarchy_application::commands::send_report::SendReportHandler;
 use hierarchy_application::queries::tree::TreeQuery;
+use kernel::TextRedactor;
 use tokio::sync::{Semaphore, watch};
 
 use crate::bridges::DirectiveJournalBridge;
@@ -21,6 +22,7 @@ use super::hook_requests::HookGateway;
 use super::notification_requests::NotificationGateway;
 use super::restart_signal::RestartSignal;
 use super::resume_requests::ResumeGateway;
+use super::secret_requests::SecretGateway;
 use super::server_options::ServerOptions;
 use super::temp_requests::TempGateway;
 use super::template_requests::TemplateGateway;
@@ -59,6 +61,12 @@ pub struct ServerState {
     /// answers with the session secret, never with the office token.
     pub hooks: HookGateway,
     pub notification: NotificationGateway,
+    /// The user's `secret.*` requests and the agent's `secret.available` and
+    /// `secret.get` (0026). Only the agent connection routes the second pair.
+    pub secrets: SecretGateway,
+    /// Replaces secret values in the text an agent sends, before any use case
+    /// stores or passes it on (0026/FR-012).
+    pub redactor: Arc<dyn TextRedactor>,
     /// The user's `template.*` requests. Only the user connection routes to
     /// it; the agent connection never does (0009).
     pub templates: TemplateGateway,
