@@ -400,3 +400,118 @@ describe("notification controller", () => {
     expect(state().rows).toEqual([]);
   });
 });
+
+describe("leftover_kept coalescing (0017, FR-006)", () => {
+  const LEFTOVER_REASON = "Operation not permitted (os error 1)";
+  const kept = (id: string, agentId: string, name: string) =>
+    row({
+      id,
+      agent_id: agentId,
+      agent_name: name,
+      event: "leftover_kept",
+      detail: LEFTOVER_REASON,
+    });
+
+  async function watching(batchMs: number) {
+    const { client, push } = fakeClient(() => []);
+    const { os, shown } = fakeOs();
+    const controller = createNotificationController(
+      client,
+      os,
+      () => null,
+      () => false,
+      () => {},
+      () => {},
+      batchMs,
+    );
+    let last = controller.snapshot;
+    controller.subscribe((next) => (last = next));
+    await controller.watch();
+    return { push, shown, state: () => last };
+  }
+
+  test("rows that arrive in one sweep give one OS notification naming every agent when the sweep is done", async () => {
+    const { push, shown, state } = await watching(60_000);
+
+    push({
+      type: "notification.created",
+      notification: kept("k1", "a1", "Ada"),
+    });
+    push({
+      type: "notification.created",
+      notification: kept("k2", "a2", "Bo"),
+    });
+    await settle();
+    expect(shown).toEqual([]);
+    expect(
+      state()
+        .rows.map((entry) => entry.id)
+        .sort(),
+    ).toEqual(["k1", "k2"]);
+
+    push({ type: "office.sweep", state: "done" });
+    await settle();
+
+    expect(shown).toEqual([
+      {
+        agentId: "a1",
+        title: "office-harness",
+        body: "Could not end a leftover process of: Ada, Bo",
+      },
+    ]);
+  });
+
+  test("without a done event the batch goes out after the short wait", async () => {
+    const { push, shown } = await watching(5);
+
+    push({
+      type: "notification.created",
+      notification: kept("k1", "a1", "Ada"),
+    });
+    push({
+      type: "notification.created",
+      notification: kept("k2", "a2", "Bo"),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(shown).toHaveLength(1);
+    expect(shown[0].body).toContain("Ada, Bo");
+  });
+
+  test("a done event with no kept rows shows nothing, and a second done shows nothing again", async () => {
+    const { push, shown } = await watching(60_000);
+
+    push({ type: "office.sweep", state: "done" });
+    push({
+      type: "notification.created",
+      notification: kept("k1", "a1", "Ada"),
+    });
+    push({ type: "office.sweep", state: "done" });
+    push({ type: "office.sweep", state: "done" });
+    await settle();
+
+    expect(shown).toHaveLength(1);
+  });
+
+  test("a leftover row stays unread in a focused terminal and keeps its reason as text", async () => {
+    const { client, push } = fakeClient(() => []);
+    const { os } = fakeOs();
+    const { state } = observe(
+      client,
+      os,
+      () => "a1",
+      () => true,
+    );
+
+    push({
+      type: "notification.created",
+      notification: kept("k1", "a1", "Ada"),
+    });
+    await settle();
+
+    expect(state().rows[0].read_at).toBeNull();
+    expect(state().announcement).toBe(
+      `Ada has a leftover process that could not be ended: ${LEFTOVER_REASON}`,
+    );
+  });
+});

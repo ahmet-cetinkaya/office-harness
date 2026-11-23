@@ -2,6 +2,7 @@
 
 //! In-memory fakes of the ports, shared by the unit tests.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -30,16 +31,18 @@ use crate::common::action_journal::ActionJournal;
 use crate::common::errors::{PortError, TerminalHostError};
 use crate::common::interfaces::{
     ActionRecorder, AdditionsStore, AgentStore, CliAdapter, CliAdapters, Clock, CreatedWorktree,
-    FailureReporter, ProjectStore, SessionStore, SessionTracking, SettingsStore, SleepGate,
-    StatusCommandRunner, TerminalHost, WorktreeCreate, WorktreeError, WorktreeInfo,
-    WorktreeManager, WorktreeStatus,
+    FailureReporter, ProcessProbe, ProjectStore, SessionProcessStore, SessionStore,
+    SessionTracking, SettingsStore, SleepGate, StatusCommandRunner, TerminalHost, WorktreeCreate,
+    WorktreeError, WorktreeInfo, WorktreeManager, WorktreeStatus,
 };
 use crate::common::models::{
-    AgentActionEntry, PrepareLaunch, PreparedLaunch, SessionCommand, SessionPlan, SignIn,
-    StartTerminal, StatusCommand, StatusRun, StatusRunResult, TrackedSession, TrackingRequest,
+    AgentActionEntry, PrepareLaunch, PreparedLaunch, ProbeError, ProcessKind, SessionCommand,
+    SessionPlan, SessionProcess, SignIn, StartTerminal, StatusCommand, StatusRun, StatusRunResult,
+    StoredProcess, TrackedSession, TrackingRequest,
 };
 use crate::common::session_ender::SessionEnder;
 use crate::common::session_launcher::{LauncherServices, SessionLauncher};
+use crate::common::session_process_recorder::SessionProcessRecorder;
 use crate::common::sign_in_check::SIGN_IN_TIMEOUT;
 use crate::queries::get_office_additions::GetOfficeAdditionsHandler;
 use crate::queries::list_sessions::ListSessionsHandler;
@@ -303,6 +306,14 @@ impl SessionStore for MemorySessions {
             })?;
         session.cli_session_id = Some(cli_session_id.to_owned());
         Ok(())
+    }
+
+    fn running(&self) -> Result<Vec<Session>, PortError> {
+        Ok(locked(&self.0)
+            .iter()
+            .filter(|session| session.is_running())
+            .cloned()
+            .collect())
     }
 
     fn end_running(
@@ -631,6 +642,155 @@ impl TerminalHost for FakeTerminals {
     }
 }
 
+/// Session process rows in memory.
+#[derive(Default)]
+pub struct MemoryProcessStore {
+    rows: Mutex<Vec<StoredProcess>>,
+    limited: Mutex<Vec<SessionId>>,
+}
+
+impl MemoryProcessStore {
+    #[must_use]
+    pub fn rows(&self) -> Vec<StoredProcess> {
+        locked(&self.rows).clone()
+    }
+
+    /// The sessions that were marked as over the helper limit.
+    #[must_use]
+    pub fn limited(&self) -> Vec<SessionId> {
+        locked(&self.limited).clone()
+    }
+}
+
+impl SessionProcessStore for MemoryProcessStore {
+    fn insert_open(
+        &self,
+        session_id: SessionId,
+        kind: ProcessKind,
+        process: &SessionProcess,
+    ) -> Result<bool, PortError> {
+        let mut rows = locked(&self.rows);
+        let exists = rows.iter().any(|row| {
+            row.session_id == session_id
+                && row.process.pid == process.pid
+                && row.process.started_at == process.started_at
+        });
+        if exists {
+            return Ok(false);
+        }
+        let id = i64::try_from(rows.len()).expect("row count") + 1;
+        rows.push(StoredProcess {
+            id,
+            session_id,
+            kind,
+            process: process.clone(),
+        });
+        Ok(true)
+    }
+
+    fn open_for_session(&self, session_id: SessionId) -> Result<Vec<StoredProcess>, PortError> {
+        Ok(locked(&self.rows)
+            .iter()
+            .filter(|row| row.session_id == session_id)
+            .cloned()
+            .collect())
+    }
+
+    fn update_command(&self, id: i64, process: &SessionProcess) -> Result<(), PortError> {
+        for row in locked(&self.rows).iter_mut().filter(|row| row.id == id) {
+            row.process.command_hash = process.command_hash;
+            row.process
+                .command_display
+                .clone_from(&process.command_display);
+        }
+        Ok(())
+    }
+
+    fn drop_helper(&self, id: i64) -> Result<(), PortError> {
+        locked(&self.rows).retain(|row| !(row.id == id && row.kind == ProcessKind::Helper));
+        Ok(())
+    }
+
+    fn mark_helper_limit(&self, session_id: SessionId) -> Result<(), PortError> {
+        locked(&self.limited).push(session_id);
+        Ok(())
+    }
+}
+
+/// A process table that a test sets: the CLI process of each agent, the
+/// descendants of a process, and what a read of each process id gives.
+#[derive(Default)]
+pub struct FakeProbe {
+    cli: Mutex<HashMap<AgentId, u32>>,
+    descendants: Mutex<Vec<u32>>,
+    reads: Mutex<HashMap<u32, Result<SessionProcess, ProbeError>>>,
+    unreadable_reads_left: Mutex<u32>,
+}
+
+impl FakeProbe {
+    pub fn set_cli(&self, agent_id: AgentId, pid: u32) {
+        locked(&self.cli).insert(agent_id, pid);
+    }
+
+    pub fn set_descendants(&self, pids: &[u32]) {
+        *locked(&self.descendants) = pids.to_vec();
+    }
+
+    /// The next `count` reads of any process answer `NotReadable`.
+    pub fn make_next_reads_unreadable(&self, count: u32) {
+        *locked(&self.unreadable_reads_left) = count;
+    }
+
+    pub fn set_read(&self, pid: u32, read: Result<SessionProcess, ProbeError>) {
+        locked(&self.reads).insert(pid, read);
+    }
+}
+
+impl ProcessProbe for FakeProbe {
+    fn cli_process_id(&self, agent_id: AgentId) -> Option<u32> {
+        locked(&self.cli).get(&agent_id).copied()
+    }
+
+    fn read(&self, pid: u32) -> Result<SessionProcess, ProbeError> {
+        let mut unreadable = locked(&self.unreadable_reads_left);
+        if *unreadable > 0 {
+            *unreadable -= 1;
+            return Err(ProbeError::NotReadable);
+        }
+        drop(unreadable);
+        locked(&self.reads)
+            .get(&pid)
+            .cloned()
+            .unwrap_or(Err(ProbeError::NotRunning))
+    }
+
+    fn descendants(&self, _root: u32) -> Vec<u32> {
+        locked(&self.descendants).clone()
+    }
+}
+
+/// A process identity whose command line is `command`.
+#[must_use]
+pub fn process_running(pid: u32, started_at: u64, command: &str) -> SessionProcess {
+    SessionProcess {
+        pid,
+        started_at,
+        command_hash: digest_of(command),
+        command_display: command.to_owned(),
+        boot: "boot".to_owned(),
+    }
+}
+
+fn digest_of(text: &str) -> [u8; 32] {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    // Only equality matters to these tests, so a cheap digest does.
+    let mut digest = [0_u8; 32];
+    let mut hasher = DefaultHasher::new();
+    text.hash(&mut hasher);
+    digest[..8].copy_from_slice(&hasher.finish().to_le_bytes());
+    digest
+}
+
 /// A sleep gate that blocks with the reason it is given, if any, and keeps
 /// the order of `begin` and `end` calls.
 #[derive(Default)]
@@ -674,6 +834,8 @@ pub struct Office {
     pub settings: Arc<MemorySettings>,
     pub recorder: Arc<RecordingRecorder>,
     pub terminals: Arc<FakeTerminals>,
+    pub processes: Arc<MemoryProcessStore>,
+    pub probe: Arc<FakeProbe>,
     pub sleep_gate: Arc<FakeSleepGate>,
     pub status_commands: Arc<FakeStatusCommands>,
     pub machine_id: MachineId,
@@ -691,6 +853,8 @@ impl Office {
             settings: Arc::new(MemorySettings::default()),
             recorder: Arc::new(RecordingRecorder::default()),
             terminals: Arc::new(FakeTerminals::default()),
+            processes: Arc::new(MemoryProcessStore::default()),
+            probe: Arc::new(FakeProbe::default()),
             sleep_gate: Arc::new(FakeSleepGate::default()),
             status_commands: Arc::new(FakeStatusCommands::default()),
             machine_id: MachineId::generate(),
@@ -732,6 +896,17 @@ impl Office {
         Arc::new(FixedClock)
     }
 
+    #[must_use]
+    pub fn process_recorder(&self) -> SessionProcessRecorder {
+        SessionProcessRecorder::new(
+            self.sessions.clone(),
+            self.processes.clone(),
+            self.probe.clone(),
+            self.journal(),
+            Arc::new(IgnoredFailures),
+        )
+    }
+
     fn ender(&self) -> SessionEnder {
         SessionEnder::new(
             self.agents.clone(),
@@ -754,6 +929,7 @@ impl Office {
                 adapters: Arc::new(FakeAdapters),
                 clock: Arc::new(FixedClock),
                 failures: Arc::new(IgnoredFailures),
+                processes: self.process_recorder(),
                 status_commands: self.status_commands.clone(),
                 sign_in_timeout: SIGN_IN_TIMEOUT,
             },

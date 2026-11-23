@@ -14,8 +14,19 @@ export interface PlanEntry {
   /** Why the last session cannot be continued. */
   reason: string | null;
   isHeld: boolean;
-  isAfterUncleanStop: boolean;
+  uncleanStop: UncleanStopFinding;
 }
+
+/**
+ * What the orphan sweep found for the agent's lost session (0017, D8):
+ * nothing to say, leftovers it ended, or a process that may still run.
+ */
+export type UncleanStopFinding =
+  | { kind: "none" }
+  | { kind: "ended"; count: number }
+  | { kind: "may_run"; reason: string | null };
+
+const NO_FINDING: UncleanStopFinding = { kind: "none" };
 
 /** How the dialog names an agent: its name and its role as text. */
 export interface AgentIdentity {
@@ -47,6 +58,12 @@ export const AFTER_UNCLEAN_STOP_TEXT =
   "Was running when the server stopped uncleanly";
 export const WAITING_FOR_RESULT_TEXT = "Waiting to start";
 
+/** The note of an entry whose leftovers the sweep ended (0017, D9). */
+export function endedLeftoversText(count: number): string {
+  const noun = count === 1 ? "process" : "processes";
+  return `Ended ${count} ${noun} left from the last run`;
+}
+
 const RESULT_KINDS: readonly string[] = [
   "checking",
   "continued",
@@ -64,6 +81,22 @@ function readText(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
+function readFinding(fields: Record<string, unknown>): UncleanStopFinding {
+  const finding = fields.unclean_stop;
+  if (typeof finding === "object" && finding !== null) {
+    const { ended, may_run: mayRun } = finding as Record<string, unknown>;
+    if (typeof mayRun === "string") return { kind: "may_run", reason: mayRun };
+    if (typeof ended === "number" && ended > 0) {
+      return { kind: "ended", count: ended };
+    }
+    return NO_FINDING;
+  }
+  // An older server sends only the boolean, which is true for may_run.
+  return fields.unclean_stop === undefined && fields.after_unclean_stop === true
+    ? { kind: "may_run", reason: null }
+    : NO_FINDING;
+}
+
 function readPlanEntry(value: unknown): PlanEntry | null {
   if (typeof value !== "object" || value === null) return null;
   const fields = value as Record<string, unknown>;
@@ -76,7 +109,7 @@ function readPlanEntry(value: unknown): PlanEntry | null {
     canContinue: fields.can_continue === true,
     reason: readText(fields.reason),
     isHeld: fields.held === true,
-    isAfterUncleanStop: fields.after_unclean_stop === true,
+    uncleanStop: readFinding(fields),
   };
 }
 
@@ -85,6 +118,11 @@ export function readPlan(value: unknown): PlanEntry[] {
   const agents = (value as { agents?: unknown } | null)?.agents;
   if (!Array.isArray(agents)) return [];
   return agents.flatMap((agent) => readPlanEntry(agent) ?? []);
+}
+
+/** True while the server's sweep runs and the plan is not ready (0017, FR-007). */
+export function isSweepingPlan(value: unknown): boolean {
+  return (value as { sweeping?: unknown } | null)?.sweeping === true;
 }
 
 /** The `resume.result` event as a result, or null when it is not one. */
@@ -117,7 +155,17 @@ export function planText(entry: PlanEntry): string {
 export function marksOf(entry: PlanEntry): string[] {
   const marks: string[] = [];
   if (entry.isHeld) marks.push(ON_HOLD_TEXT);
-  if (entry.isAfterUncleanStop) marks.push(AFTER_UNCLEAN_STOP_TEXT);
+  const { uncleanStop } = entry;
+  if (uncleanStop.kind === "ended") {
+    marks.push(endedLeftoversText(uncleanStop.count));
+  }
+  if (uncleanStop.kind === "may_run") {
+    marks.push(
+      uncleanStop.reason === null
+        ? AFTER_UNCLEAN_STOP_TEXT
+        : `${AFTER_UNCLEAN_STOP_TEXT}: ${uncleanStop.reason}`,
+    );
+  }
   return marks;
 }
 
@@ -143,6 +191,11 @@ export function resultText(result: ResumeResult): string {
   }
 }
 
+/** True when the sweep could not rule out a second copy (0013/FR-008, 0017). */
+function isMayRun(entry: PlanEntry): boolean {
+  return entry.uncleanStop.kind === "may_run";
+}
+
 /** Why Confirm is unavailable, or null when it may be pressed (FR-002, FR-008). */
 export type ConfirmBlock = "nothing_checked" | "needs_acknowledgement";
 
@@ -153,12 +206,12 @@ export function confirmBlock(
 ): ConfirmBlock | null {
   if (checkedIds.length === 0) return "nothing_checked";
   const isMarkedChecked = entries.some(
-    (entry) => entry.isAfterUncleanStop && checkedIds.includes(entry.agent_id),
+    (entry) => isMayRun(entry) && checkedIds.includes(entry.agent_id),
   );
   return isMarkedChecked && !isAcknowledged ? "needs_acknowledgement" : null;
 }
 
-/** True when any listed agent is marked, so the warning shows (FR-008). */
+/** True when any listed agent may still run, so the warning shows (FR-008). */
 export function hasUncleanStopMark(entries: PlanEntry[]): boolean {
-  return entries.some((entry) => entry.isAfterUncleanStop);
+  return entries.some(isMayRun);
 }

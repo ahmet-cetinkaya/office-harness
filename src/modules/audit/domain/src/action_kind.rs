@@ -21,13 +21,16 @@ pub enum ActionKind {
     Hold,
     Release,
     TaskText,
+    HelperLimit,
+    /// The sweep after an unclean stop ended, or left, a stored process (0017).
+    EndLeftover,
     Report,
     Sleep,
     Wake,
 }
 
 impl ActionKind {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 18] = [
         Self::Create,
         Self::Start,
         Self::Stop,
@@ -41,6 +44,8 @@ impl ActionKind {
         Self::Hold,
         Self::Release,
         Self::TaskText,
+        Self::HelperLimit,
+        Self::EndLeftover,
         Self::Report,
         Self::Sleep,
         Self::Wake,
@@ -63,6 +68,8 @@ impl ActionKind {
             Self::Hold => "hold",
             Self::Release => "release",
             Self::TaskText => "task_text",
+            Self::HelperLimit => "helper_limit",
+            Self::EndLeftover => "end_leftover",
             Self::Report => "report",
             Self::Sleep => "sleep",
             Self::Wake => "wake",

@@ -4,7 +4,9 @@ import { describe, expect, test } from "bun:test";
 import {
   announcementText,
   eventText,
+  isNeverReadOnArrival,
   isUnread,
+  leftoverKeptBody,
   rowText,
   sortRows,
   unreadCount,
@@ -48,6 +50,22 @@ describe("notification rows", () => {
   test("an automatic hold without a detail still says it was put on hold", () => {
     expect(announcementText(row({ event: "auto_hold" }))).toBe(
       "Ada was put on hold after 3 refusals",
+    );
+  });
+
+  test("a leftover that could not be ended names the OS reason (0017)", () => {
+    expect(
+      announcementText(row({ event: "leftover_kept", detail: "denied" })),
+    ).toBe("Ada has a leftover process that could not be ended: denied");
+    expect(announcementText(row({ event: "leftover_kept" }))).toBe(
+      "Ada has a leftover process that could not be ended",
+    );
+    expect(isNeverReadOnArrival("leftover_kept")).toBe(true);
+  });
+
+  test("the one OS notification names each agent once", () => {
+    expect(leftoverKeptBody(["Ada", "Bo", "Ada"])).toBe(
+      "Could not end a leftover process of: Ada, Bo",
     );
   });
 

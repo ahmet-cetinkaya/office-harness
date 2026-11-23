@@ -639,6 +639,24 @@ fn a_resume_hold_row_carries_the_reason_as_its_detail_and_reaches_the_clients() 
     assert!(published_events(&mut frames)[0].contains("resume_hold"));
 }
 
+#[test]
+fn a_leftover_kept_row_carries_the_os_reason_as_its_detail_and_reaches_the_clients() {
+    let agent = agent_named("Ana");
+    let (bridge, store, _agents, hub) = bridge_for(&agent, None);
+    let mut frames = hub.subscribe();
+
+    bridge.record_leftover_kept(agent.id, "Operation not permitted (os error 1)");
+
+    let rows = store.all();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].event, NotificationEvent::LeftoverKept);
+    assert_eq!(
+        rows[0].detail.as_deref(),
+        Some("Operation not permitted (os error 1)")
+    );
+    assert!(published_events(&mut frames)[0].contains("leftover_kept"));
+}
+
 mod needs_you_queue {
     use super::*;
 

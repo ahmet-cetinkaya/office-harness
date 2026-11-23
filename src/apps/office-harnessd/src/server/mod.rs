@@ -11,6 +11,7 @@ mod hierarchy_requests;
 mod hold_requests;
 mod idle_sleep_run;
 mod notification_requests;
+mod process_scan;
 mod restart_signal;
 mod resume_order;
 mod resume_requests;
@@ -24,6 +25,7 @@ mod server_state;
 mod subtree_status;
 mod template_requests;
 mod terminal_requests;
+mod unclean_stop;
 mod upgrade_check;
 
 pub use agent_call::recorded_and_published;
