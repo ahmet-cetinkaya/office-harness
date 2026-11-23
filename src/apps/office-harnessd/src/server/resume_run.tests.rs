@@ -5,10 +5,10 @@ use std::time::Duration;
 use kernel::AgentId;
 use serde_json::{Value, json};
 
-use super::{ResumeResult, SessionEnd, Started, end_of, hold_reason, status_of};
+use super::{Flow, ResumeResult, SessionEnd, Started, end_of, hold_reason, status_of};
 
 fn event_body(result: &ResumeResult, agent_id: AgentId) -> Value {
-    serde_json::from_str(&result.event(agent_id).encode()).expect("event json")
+    serde_json::from_str(&result.event(Flow::Resume, agent_id).encode()).expect("event json")
 }
 
 fn started(continued: bool, did_not_start: Option<&str>) -> Started {
@@ -106,11 +106,15 @@ fn the_hold_reason_names_how_the_new_session_failed() {
     };
 
     assert_eq!(
-        hold_reason(&started(false, None), ended),
+        hold_reason(Flow::Resume, &started(false, None), ended),
         "the resume failed: the new session ended 1 s after its start"
     );
     assert_eq!(
-        hold_reason(&started(false, Some("no such program")), ended),
+        hold_reason(
+            Flow::Resume,
+            &started(false, Some("no such program")),
+            ended
+        ),
         "the resume failed: the new session did not start: no such program"
     );
 }
@@ -130,4 +134,22 @@ fn a_status_is_read_only_from_this_agents_status_events() {
     );
     assert_eq!(status_of(&foreign.to_string(), agent_id), None);
     assert_eq!(status_of(&line.to_string(), agent_id), None);
+}
+
+#[test]
+fn a_wake_result_has_its_own_event_and_the_hold_names_the_wake() {
+    let agent_id = AgentId::from_u128(3);
+    let event: Value =
+        serde_json::from_str(&ResumeResult::Continued.event(Flow::Wake, agent_id).encode())
+            .expect("event json");
+    assert_eq!(event["type"], json!("wake.result"));
+    assert_eq!(event["result"], json!("continued"));
+
+    let ended = SessionEnd::ByItself {
+        after: Duration::from_secs(1),
+    };
+    assert_eq!(
+        hold_reason(Flow::Wake, &started(false, None), ended),
+        "the wake failed: the new session ended 1 s after its start"
+    );
 }

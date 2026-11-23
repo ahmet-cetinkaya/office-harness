@@ -62,6 +62,24 @@ pub struct HierarchyServices {
     pub creator: Arc<dyn AgentCreator>,
 }
 
+/// One target bridge for directives and reports: both read whether the
+/// receiver runs and what it is called the same way. An agent going to
+/// sleep counts as asleep (0018/FR-005).
+fn directive_targets(
+    agents: &Arc<dyn AgentStore>,
+    agent: &AgentServices,
+    terminal: &TerminalServices,
+) -> Arc<dyn DirectiveTarget> {
+    Arc::new(
+        DirectiveTargetBridge::new(
+            Arc::clone(agents),
+            Arc::clone(&terminal.runtime),
+            terminal.person_input.clone(),
+        )
+        .with_sleeping(agent.sleep_gate.sleeping()),
+    )
+}
+
 /// Runs the hierarchy migrations and builds its services. The subtree ports
 /// call the agent module's own stop and delete use cases, so a subtree stop
 /// or delete behaves exactly like the single-agent one (FR-006, FR-007). The
@@ -149,13 +167,7 @@ pub fn build_hierarchy_services(
         needs_you,
     )?;
     prune_holds(&holds, agents.as_ref(), log);
-    // One target bridge for directives and reports: both read whether the
-    // receiver runs and what it is called the same way.
-    let targets: Arc<dyn DirectiveTarget> = Arc::new(DirectiveTargetBridge::new(
-        Arc::clone(&agents),
-        Arc::clone(&terminal.runtime),
-        terminal.person_input.clone(),
-    ));
+    let targets = directive_targets(&agents, agent, terminal);
     let send_directive = Arc::new(
         SendDirectiveHandler::new(DirectivePorts {
             store: Arc::clone(&store),

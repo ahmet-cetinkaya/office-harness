@@ -14,13 +14,14 @@ use agent_application::commands::resume_agent::ResumeAgentHandler;
 use agent_application::commands::set_office_additions::SetOfficeAdditionsHandler;
 use agent_application::commands::set_setting::SetSettingHandler;
 use agent_application::commands::set_task_text::SetTaskTextHandler;
+use agent_application::commands::sleep_agent::SleepAgentHandler;
 use agent_application::commands::start_agent::StartAgentHandler;
 use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
 use agent_application::common::action_journal::ActionJournal;
 use agent_application::common::interfaces::{
     AdditionsStore, AgentStore, CliAdapters, Clock, FileView, ProjectStore, SessionStore,
-    SettingsStore, StatusCommandRunner, TerminalHost, WorktreeManager,
+    SettingsStore, SleepGate, StatusCommandRunner, TerminalHost, WorktreeManager,
 };
 use agent_application::common::session_ender::SessionEnder;
 use agent_application::common::session_launcher::{LauncherServices, SessionLauncher};
@@ -48,8 +49,8 @@ use audit_presentation::AuditHandlers;
 
 use super::{ServerLog, StorageAlerts, TerminalServices};
 use crate::bridges::{
-    ActionRecorderBridge, AgentCalls, SavedOutputs, SignInWatch, StatusCommandBridge, StatusOrder,
-    StoppingFlag, SystemClock, TaskOrder, TerminalHostBridge,
+    ActionRecorderBridge, AgentCalls, IdleSleepGate, SavedOutputs, SignInWatch,
+    StatusCommandBridge, StatusOrder, StoppingFlag, SystemClock, TaskOrder, TerminalHostBridge,
 };
 
 /// The agent and audit modules, wired: the use cases behind their handlers,
@@ -82,6 +83,12 @@ pub struct AgentServices {
     /// Reads back an agent that another module's request created (the lead
     /// of `team.create`), so its `agent.changed` event can be sent.
     pub agent_reader: ListAgentsHandler,
+    /// Decides which idle agents may sleep (0018). The services it reads are
+    /// built after this module, so startup connects them later.
+    pub sleep_gate: Arc<IdleSleepGate>,
+    /// The settings as the use cases read them; the idle sleep task reads
+    /// the idle time here on every round.
+    pub settings: Arc<dyn SettingsStore>,
     /// Runs a start's sign-in check before the status order (0019 D13).
     pub sign_in_checks: SessionLauncher,
 }
@@ -101,6 +108,7 @@ struct Wiring {
     alerts: StorageAlerts,
     worktrees: Arc<dyn WorktreeManager>,
     file_view: Arc<dyn FileView>,
+    sleep_gate: Arc<dyn SleepGate>,
 }
 
 /// Joins the agent use cases to the SQLite stores, the terminal, the clock,
@@ -122,6 +130,7 @@ pub fn build_agent_services(
         record_action.clone(),
         alerts.clone(),
     ));
+    let sleep_gate = Arc::new(IdleSleepGate::default());
     let wiring = Wiring {
         agents: Arc::new(AgentRepository::new(connection.clone())),
         projects: Arc::new(ProjectRepository::new(connection.clone())),
@@ -152,6 +161,7 @@ pub fn build_agent_services(
         clock,
         worktrees: Arc::clone(&terminal.worktrees),
         file_view: Arc::clone(&terminal.file_view),
+        sleep_gate: Arc::clone(&sleep_gate) as Arc<dyn SleepGate>,
     };
     AgentServices {
         handlers: Arc::new(AgentHandlers::new(use_cases(&wiring, machine_id))),
@@ -177,6 +187,8 @@ pub fn build_agent_services(
         task_order: TaskOrder::default(),
         stopping: StoppingFlag::default(),
         journal: wiring.journal.clone(),
+        sleep_gate,
+        settings: Arc::clone(&wiring.settings),
     }
 }
 
@@ -194,6 +206,15 @@ fn launcher_of(wiring: &Wiring) -> SessionLauncher {
             status_commands: Arc::clone(&wiring.status_commands),
             sign_in_timeout: SIGN_IN_TIMEOUT,
         },
+    )
+}
+
+fn sleep_handler(wiring: &Wiring, ender: SessionEnder) -> SleepAgentHandler {
+    SleepAgentHandler::new(
+        Arc::clone(&wiring.agents),
+        ender,
+        wiring.journal.clone(),
+        Arc::clone(&wiring.sleep_gate),
     )
 }
 
@@ -244,7 +265,7 @@ fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
             Arc::clone(&wiring.agents),
             Arc::clone(&wiring.sessions),
             Arc::clone(&wiring.adapters),
-            ender,
+            ender.clone(),
             launcher.clone(),
             journal.clone(),
         ),
@@ -255,6 +276,7 @@ fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
             launcher,
             journal.clone(),
         ),
+        sleep_agent: sleep_handler(wiring, ender),
         set_office_additions: SetOfficeAdditionsHandler::new(
             Arc::clone(&wiring.agents),
             Arc::clone(&wiring.additions),

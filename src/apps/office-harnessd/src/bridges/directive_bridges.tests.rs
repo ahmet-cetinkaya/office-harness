@@ -232,6 +232,49 @@ fn a_stopped_or_exited_member_is_not_running() {
     assert_eq!(bridge.is_running(agent_id), Ok(false));
 }
 
+#[test]
+fn only_an_asleep_member_is_asleep_and_it_is_not_running() {
+    let agent_id = AgentId::generate();
+    let asleep = target_bridge(Arc::new(OneAgent(agent_with_status(
+        agent_id,
+        "Ana",
+        AgentStatus::Asleep,
+    ))));
+    let stopped = target_bridge(Arc::new(OneAgent(agent_with_status(
+        agent_id,
+        "Ana",
+        AgentStatus::Stopped,
+    ))));
+
+    assert!(asleep.is_asleep(agent_id));
+    assert_eq!(asleep.is_running(agent_id), Ok(false));
+    assert!(!stopped.is_asleep(agent_id));
+    assert!(!asleep.is_asleep(AgentId::generate()));
+}
+
+#[test]
+fn a_running_member_going_to_sleep_is_asleep_and_not_running() {
+    use agent_application::common::interfaces::SleepGate;
+
+    let agent_id = AgentId::generate();
+    let gate = crate::bridges::IdleSleepGate::default();
+    let bridge = target_bridge(Arc::new(OneAgent(agent_with_status(
+        agent_id,
+        "Ana",
+        AgentStatus::WaitingForInput,
+    ))))
+    .with_sleeping(gate.sleeping());
+    assert!(!bridge.is_asleep(agent_id));
+    assert_eq!(bridge.is_running(agent_id), Ok(true));
+
+    gate.begin(agent_id);
+    assert!(bridge.is_asleep(agent_id));
+    assert_eq!(bridge.is_running(agent_id), Ok(false));
+
+    gate.end(agent_id);
+    assert!(!bridge.is_asleep(agent_id));
+}
+
 /// A store that cannot read: the bridge surfaces its failure instead of
 /// dressing it as a stopped member (Efe r2 LOW).
 struct BrokenStore;

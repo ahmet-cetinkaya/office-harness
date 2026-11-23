@@ -46,6 +46,7 @@
   } from "../../needs-you";
   import { FileViewDialog } from "../../files";
   import { interruptedCount, ResumeAction } from "../../resume";
+  import { IdleSleepDialog } from "../../sleep";
   import { SaveAsTemplateDialog, TemplatesView } from "../../template";
   import {
     isJumpUnbound,
@@ -178,6 +179,7 @@
   /** The project the agent form opens with, from an empty-project offer. */
   let createAgentInProject = $state<string | null>(null);
   let isCreatingProject = $state(false);
+  let isEditingIdleSleep = $state(false);
   let isSwitchingAgent = $state(false);
   let isShowingNotifications = $state(false);
   let isShowingTemplates = $state(false);
@@ -428,7 +430,7 @@
         />
         <Button onclick={() => offerAgentForm(null)}>New agent</Button>
       </div>
-      <div class="basis-full">
+      <div class="flex basis-full flex-wrap items-start gap-3">
         <OfficeHoldBar
           controller={store.hold}
           isOfficeHeld={holds.office !== null}
@@ -436,6 +438,9 @@
           isPending={holdSnapshot.isOfficeRequestPending}
           ontoggle={() => void toggleOfficeHold()}
         />
+        <Button variant="secondary" onclick={() => (isEditingIdleSleep = true)}>
+          Idle sleep
+        </Button>
       </div>
     {/if}
   </header>
@@ -561,6 +566,7 @@
               {#key agentId}
                 <AgentDetails
                   {client}
+                  sleep={store.sleep}
                   agent={selected}
                   details={office.details}
                   statusDetail={office.statusDetails[agentId] ?? null}
@@ -670,6 +676,12 @@
     stoppingAgentIds={office.stoppingAgentIds}
     onchoose={chooseFromSwitcher}
     onclose={() => (isSwitchingAgent = false)}
+  />
+{/if}
+{#if isEditingIdleSleep}
+  <IdleSleepDialog
+    controller={store.sleep}
+    onclose={() => (isEditingIdleSleep = false)}
   />
 {/if}
 {#if isCreatingProject}

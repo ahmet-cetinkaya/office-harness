@@ -116,9 +116,36 @@ impl PersonInput {
         let typed_recently = terminal
             .last_input
             .is_some_and(|at| now.duration_since(at) < PERSON_TYPING_PAUSE);
-        let text_waits =
-            terminal.pending_office_text.is_some() && terminal.pending_office_text == current_run;
-        typed_recently || terminal.draft.is_unsent() || text_waits
+        typed_recently || terminal.has_waiting_text(current_run)
+    }
+
+    /// True while the person's typed text waits unsent at the input line, or
+    /// office text waits for them in the agent's current run. A sleep would
+    /// lose that text (0018/FR-002 e).
+    #[must_use]
+    pub fn holds_text(&self, agent_id: AgentId, current_run: Option<RunId>) -> bool {
+        self.locked()
+            .get(&agent_id)
+            .is_some_and(|terminal| terminal.has_waiting_text(current_run))
+    }
+
+    /// How long ago a person's input last reached the agent's terminal, or
+    /// `None` when none did since the server started.
+    #[must_use]
+    pub fn since_last_input(&self, agent_id: AgentId) -> Option<Duration> {
+        self.locked()
+            .get(&agent_id)
+            .and_then(|terminal| terminal.last_input)
+            .map(|at| at.elapsed())
+    }
+}
+
+impl TerminalInput {
+    /// Office text from an older run is ignored.
+    fn has_waiting_text(&self, current_run: Option<RunId>) -> bool {
+        let office_text_waits =
+            self.pending_office_text.is_some() && self.pending_office_text == current_run;
+        self.draft.is_unsent() || office_text_waits
     }
 }
 

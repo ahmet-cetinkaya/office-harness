@@ -17,8 +17,12 @@ use super::resume_run::{ResumeContext, run_resume};
 
 const RESUME_PLAN: &str = "resume.plan";
 const RESUME_START: &str = "resume.start";
-const RESUME_REQUESTS: [&str; 2] = [RESUME_PLAN, RESUME_START];
+/// The wake of an asleep agent (0018) shares the 0013 start, watch, and
+/// fallback, so this gateway answers it too.
+const WAKE_START: &str = "wake.start";
+const RESUME_REQUESTS: [&str; 3] = [RESUME_PLAN, RESUME_START, WAKE_START];
 const AGENT_IDS_FIELD: &str = "agent_ids";
+const AGENT_ID_FIELD: &str = "agent_id";
 const MAX_AGENT_IDS: usize = 1000;
 const SESSION_LIST: &str = "session.list";
 const LOST_EXIT_RESULT: &str = "lost";
@@ -49,6 +53,12 @@ impl ResumeGateway {
 
     pub async fn handle(&self, request: Request) -> Response {
         let id = request.id;
+        if request.kind == WAKE_START {
+            return match self.wake(&request).await {
+                Ok(result) => Response::success(id, result),
+                Err((code, message)) => Response::failure(id, code, message),
+            };
+        }
         let gateway = self.clone();
         let answered = spawn_blocking(move || gateway.answer(&request)).await;
         match answered {
@@ -68,6 +78,22 @@ impl ResumeGateway {
     }
 
     /// The answer and, for `resume.start`, the agents to start in order.
+    async fn wake(&self, request: &Request) -> Result<Value, Refusal> {
+        refuse_unknown_fields(request)?;
+        let agent_id = request
+            .fields
+            .get(AGENT_ID_FIELD)
+            .and_then(Value::as_str)
+            .and_then(|text| AgentId::from_str(text).ok())
+            .ok_or_else(|| {
+                (
+                    ErrorCode::Invalid,
+                    "agent_id must be an agent id".to_owned(),
+                )
+            })?;
+        self.context.wake(agent_id).await
+    }
+
     fn answer(&self, request: &Request) -> Result<(Value, Vec<AgentId>), Refusal> {
         refuse_unknown_fields(request)?;
         if request.kind == RESUME_PLAN {
@@ -219,10 +245,10 @@ fn agent_ids_of(request: &Request) -> Result<Vec<AgentId>, Refusal> {
 
 /// `invalid` for a field the request does not take.
 fn refuse_unknown_fields(request: &Request) -> Result<(), Refusal> {
-    let known: &[&str] = if request.kind == RESUME_START {
-        &[AGENT_IDS_FIELD]
-    } else {
-        &[]
+    let known: &[&str] = match request.kind.as_str() {
+        RESUME_START => &[AGENT_IDS_FIELD],
+        WAKE_START => &[AGENT_ID_FIELD],
+        _ => &[],
     };
     match request
         .fields

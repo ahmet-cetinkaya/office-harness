@@ -15,11 +15,18 @@ const DEFAULT_LIMIT_DIRECTIVES_PER_TARGET: u32 = 3;
 const DEFAULT_LIMIT_CREATES_PER_AGENT: u32 = 5;
 const DEFAULT_LIMIT_LIFECYCLE_PER_AGENT: u32 = 10;
 const DEFAULT_LIMIT_REPORTS_PER_AGENT: u32 = 5;
+/// Idle sleep is off until the person turns it on (0018 D1).
+const DEFAULT_IDLE_SLEEP_MINUTES: u32 = 0;
 
 /// The range of a rate limit (0007 D4). The upper bound keeps a typo from
 /// turning the limit off.
 const LIMIT_MIN: u32 = 1;
 const LIMIT_MAX: u32 = 1_000;
+
+/// The range of the idle time in minutes (0018 D1); 0 turns idle sleep off.
+const IDLE_SLEEP_OFF: u32 = 0;
+const IDLE_SLEEP_MIN: u32 = 5;
+const IDLE_SLEEP_MAX: u32 = 1_440;
 
 /// The longest stored text of one setting, in bytes (0003 data model).
 const LAST_VIEW_MAX_BYTES: usize = 1_024;
@@ -103,6 +110,7 @@ pub struct Settings {
     pub limit_creates_per_agent: u32,
     pub limit_lifecycle_per_agent: u32,
     pub limit_reports_per_agent: u32,
+    pub idle_sleep_minutes: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,10 +125,11 @@ pub enum SettingKey {
     LimitCreatesPerAgent,
     LimitLifecyclePerAgent,
     LimitReportsPerAgent,
+    IdleSleepMinutes,
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::QuietPeriodMs,
         Self::OutputLineLimit,
         Self::FocusShortcut,
@@ -131,6 +140,7 @@ impl SettingKey {
         Self::LimitCreatesPerAgent,
         Self::LimitLifecyclePerAgent,
         Self::LimitReportsPerAgent,
+        Self::IdleSleepMinutes,
     ];
 
     #[must_use]
@@ -146,6 +156,7 @@ impl SettingKey {
             Self::LimitCreatesPerAgent => "limit_creates_per_agent",
             Self::LimitLifecyclePerAgent => "limit_lifecycle_per_agent",
             Self::LimitReportsPerAgent => "limit_reports_per_agent",
+            Self::IdleSleepMinutes => "idle_sleep_minutes",
         }
     }
 
@@ -172,6 +183,7 @@ impl Default for Settings {
             limit_creates_per_agent: DEFAULT_LIMIT_CREATES_PER_AGENT,
             limit_lifecycle_per_agent: DEFAULT_LIMIT_LIFECYCLE_PER_AGENT,
             limit_reports_per_agent: DEFAULT_LIMIT_REPORTS_PER_AGENT,
+            idle_sleep_minutes: DEFAULT_IDLE_SLEEP_MINUTES,
         }
     }
 }
@@ -192,13 +204,14 @@ impl Settings {
             SettingKey::LimitCreatesPerAgent => self.limit_creates_per_agent.to_string(),
             SettingKey::LimitLifecyclePerAgent => self.limit_lifecycle_per_agent.to_string(),
             SettingKey::LimitReportsPerAgent => self.limit_reports_per_agent.to_string(),
+            SettingKey::IdleSleepMinutes => self.idle_sleep_minutes.to_string(),
         }
     }
 
     /// Sets one setting from its stored text.
     ///
     /// # Errors
-    /// `InvalidNumber`, `NotPositive`, `InvalidLimit`, or `Empty`, naming the setting;
+    /// `InvalidNumber`, `NotPositive`, `InvalidLimit`, `InvalidIdleSleep`, or `Empty`, naming the setting;
     /// `InvalidLastView`, `TooLarge`, or `ReservedShortcut` for the 0003 keys.
     pub fn set_from_text(&mut self, key: SettingKey, text: &str) -> Result<(), AgentError> {
         match key {
@@ -225,6 +238,9 @@ impl Settings {
             }
             SettingKey::LimitReportsPerAgent => {
                 self.limit_reports_per_agent = parse_limit(key, text)?;
+            }
+            SettingKey::IdleSleepMinutes => {
+                self.idle_sleep_minutes = parse_idle_sleep_minutes(key, text)?;
             }
         }
         Ok(())
@@ -268,6 +284,18 @@ fn parse_limit(key: SettingKey, text: &str) -> Result<u32, AgentError> {
         .ok()
         .filter(|number| (LIMIT_MIN..=LIMIT_MAX).contains(number))
         .ok_or(AgentError::InvalidLimit {
+            field: key.as_str(),
+        })
+}
+
+/// `0` (off) or a whole number from `IDLE_SLEEP_MIN` to `IDLE_SLEEP_MAX`.
+fn parse_idle_sleep_minutes(key: SettingKey, text: &str) -> Result<u32, AgentError> {
+    text.parse::<u32>()
+        .ok()
+        .filter(|minutes| {
+            *minutes == IDLE_SLEEP_OFF || (IDLE_SLEEP_MIN..=IDLE_SLEEP_MAX).contains(minutes)
+        })
+        .ok_or(AgentError::InvalidIdleSleep {
             field: key.as_str(),
         })
 }

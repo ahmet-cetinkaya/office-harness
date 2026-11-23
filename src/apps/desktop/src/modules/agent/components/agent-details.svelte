@@ -5,6 +5,12 @@
   import type { CoreClient } from "../../../core/api";
   import { ActionRecord } from "../../audit";
   import { AGENT_ON_HOLD_TEXT } from "../../hold";
+  import {
+    ASLEEP_STATUS,
+    INITIAL_SLEEP,
+    isWakeBusy,
+    type SleepController,
+  } from "../../sleep";
   import { TerminalView } from "../../terminal";
   import {
     isActive,
@@ -25,6 +31,8 @@
 
   interface Props {
     client: CoreClient;
+    /** Wakes the agent when it is asleep (0018). */
+    sleep: SleepController;
     agent: Agent;
     details: AgentDetails;
     /** The text that came with the status, for example why the agent failed. */
@@ -57,6 +65,7 @@
 
   let {
     client,
+    sleep,
     agent,
     details,
     statusDetail,
@@ -82,6 +91,9 @@
 
   let confirmation = $state<Confirmation | null>(null);
   const isRunning = $derived(isActive(agent.status));
+  const isAsleep = $derived(agent.status === ASLEEP_STATUS);
+  let sleepSnapshot = $state(INITIAL_SLEEP);
+  $effect(() => sleep.subscribe((next) => (sleepSnapshot = next)));
 
   function ask(next: Confirmation): void {
     // The delete of an agent with a worktree asks its own question, which
@@ -157,6 +169,13 @@
         >
           Stop agent
         </Button>
+      {:else if isAsleep}
+        <Button
+          disabled={isWakeBusy(sleepSnapshot.wakes[agent.id])}
+          onclick={() => void sleep.wake(agent.id)}
+        >
+          Wake
+        </Button>
       {:else}
         <Button disabled={isBusy} onclick={onstart}>Start agent</Button>
       {/if}
@@ -193,6 +212,8 @@
       agentId={agent.id}
       agentName={agent.name}
       {isRunning}
+      status={agent.status}
+      {sleep}
     />
   {/key}
 

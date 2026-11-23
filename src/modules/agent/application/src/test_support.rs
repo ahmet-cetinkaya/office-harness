@@ -22,6 +22,7 @@ use crate::commands::end_session::EndSessionHandler;
 use crate::commands::resume_agent::ResumeAgentHandler;
 use crate::commands::set_office_additions::SetOfficeAdditionsHandler;
 use crate::commands::set_task_text::SetTaskTextHandler;
+use crate::commands::sleep_agent::SleepAgentHandler;
 use crate::commands::start_agent::StartAgentHandler;
 use crate::commands::start_new_task::StartNewTaskHandler;
 use crate::commands::stop_agent::StopAgentHandler;
@@ -29,7 +30,7 @@ use crate::common::action_journal::ActionJournal;
 use crate::common::errors::{PortError, TerminalHostError};
 use crate::common::interfaces::{
     ActionRecorder, AdditionsStore, AgentStore, CliAdapter, CliAdapters, Clock, CreatedWorktree,
-    FailureReporter, ProjectStore, SessionStore, SessionTracking, SettingsStore,
+    FailureReporter, ProjectStore, SessionStore, SessionTracking, SettingsStore, SleepGate,
     StatusCommandRunner, TerminalHost, WorktreeCreate, WorktreeError, WorktreeInfo,
     WorktreeManager, WorktreeStatus,
 };
@@ -529,6 +530,7 @@ pub struct FakeTerminals {
     batch_programs: Mutex<Vec<String>>,
     ended_on_its_own: Mutex<bool>,
     ignores_stop_requests: Mutex<bool>,
+    refuses_stop_requests: Mutex<bool>,
 }
 
 impl FakeTerminals {
@@ -559,6 +561,11 @@ impl FakeTerminals {
     /// ignores the request and is forced at the end.
     pub fn ignore_stop_requests(&self) {
         *locked(&self.ignores_stop_requests) = true;
+    }
+
+    /// From now on a stop fails, as when the child cannot be ended.
+    pub fn refuse_stop_requests(&self) {
+        *locked(&self.refuses_stop_requests) = true;
     }
 
     pub fn make_unstartable(&self, program: &str) {
@@ -611,11 +618,50 @@ impl TerminalHost for FakeTerminals {
         if *locked(&self.ended_on_its_own) {
             return Err(TerminalHostError::NotRunning);
         }
+        if *locked(&self.refuses_stop_requests) {
+            return Err(TerminalHostError::Failed(
+                "the child ignored the end".to_owned(),
+            ));
+        }
         if *locked(&self.ignores_stop_requests) {
             thread::sleep(grace);
         }
         locked(&self.stopped).push((agent_id, grace));
         Ok(())
+    }
+}
+
+/// A sleep gate that blocks with the reason it is given, if any, and keeps
+/// the order of `begin` and `end` calls.
+#[derive(Default)]
+pub struct FakeSleepGate {
+    reason: Mutex<Option<String>>,
+    calls: Mutex<Vec<&'static str>>,
+}
+
+impl FakeSleepGate {
+    pub fn block_with(&self, reason: &str) {
+        *locked(&self.reason) = Some(reason.to_owned());
+    }
+
+    /// `"begin"` and `"end"`, in the order the gate was told.
+    #[must_use]
+    pub fn calls(&self) -> Vec<&'static str> {
+        locked(&self.calls).clone()
+    }
+}
+
+impl SleepGate for FakeSleepGate {
+    fn blocking_reason(&self, _agent_id: AgentId) -> Option<String> {
+        locked(&self.reason).clone()
+    }
+
+    fn begin(&self, _agent_id: AgentId) {
+        locked(&self.calls).push("begin");
+    }
+
+    fn end(&self, _agent_id: AgentId) {
+        locked(&self.calls).push("end");
     }
 }
 
@@ -628,6 +674,7 @@ pub struct Office {
     pub settings: Arc<MemorySettings>,
     pub recorder: Arc<RecordingRecorder>,
     pub terminals: Arc<FakeTerminals>,
+    pub sleep_gate: Arc<FakeSleepGate>,
     pub status_commands: Arc<FakeStatusCommands>,
     pub machine_id: MachineId,
 }
@@ -644,6 +691,7 @@ impl Office {
             settings: Arc::new(MemorySettings::default()),
             recorder: Arc::new(RecordingRecorder::default()),
             terminals: Arc::new(FakeTerminals::default()),
+            sleep_gate: Arc::new(FakeSleepGate::default()),
             status_commands: Arc::new(FakeStatusCommands::default()),
             machine_id: MachineId::generate(),
         }
@@ -753,6 +801,16 @@ impl Office {
     #[must_use]
     pub fn stop_agent(&self) -> StopAgentHandler {
         StopAgentHandler::new(self.agents.clone(), self.ender(), self.journal())
+    }
+
+    #[must_use]
+    pub fn sleep_agent(&self) -> SleepAgentHandler {
+        SleepAgentHandler::new(
+            self.agents.clone(),
+            self.ender(),
+            self.journal(),
+            self.sleep_gate.clone(),
+        )
     }
 
     #[must_use]

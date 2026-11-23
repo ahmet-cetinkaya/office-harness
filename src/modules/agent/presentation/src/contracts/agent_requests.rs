@@ -215,6 +215,47 @@ impl ResumeAgentRequest {
     }
 }
 
+/// `agent.wake`: the agent to wake, nothing else.
+#[derive(Debug)]
+pub struct WakeAgentRequest {
+    pub agent_id: String,
+}
+
+impl WakeAgentRequest {
+    /// # Errors
+    /// The text names the field at fault.
+    pub fn read(body: &Map<String, Value>) -> Result<Self, String> {
+        let fields = Fields(body);
+        fields.refuse_other_than("agent.wake", &["agent_id"])?;
+        Ok(Self {
+            agent_id: fields.required_text("agent_id")?,
+        })
+    }
+}
+
+/// `agent.sleep`: the agent and the idle time that the record keeps as the
+/// reason. Only the office sends it.
+#[derive(Debug)]
+pub struct SleepAgentRequest {
+    pub agent_id: String,
+    pub idle_minutes: u32,
+}
+
+impl SleepAgentRequest {
+    /// # Errors
+    /// The text names the field at fault.
+    pub fn read(body: &Map<String, Value>) -> Result<Self, String> {
+        let fields = Fields(body);
+        fields.refuse_other_than("agent.sleep", &["agent_id", "idle_minutes"])?;
+        Ok(Self {
+            agent_id: fields.required_text("agent_id")?,
+            idle_minutes: fields
+                .optional_u32("idle_minutes")?
+                .ok_or_else(|| "idle_minutes is required".to_owned())?,
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct CreateProjectRequest {
     pub name: String,
