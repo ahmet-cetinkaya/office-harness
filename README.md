@@ -282,6 +282,17 @@ office-harness starts each CLI with your home folder, your login environment, an
 
 The startup prompt is pasted into the terminal after the first output of the CLI. office-harness never presses Enter for you. If the CLI shows a question first, for example a trust question, you answer it and press Enter to submit the prompt. A change to the additions of a running agent applies at the next session start.
 
+### Sign-in check
+
+Before a session of `claude` or `codex` starts, the office asks the CLI whether it is signed in, with its own read-only command (`claude auth status --text`, `codex login status`). The command gets the agent's folder, login environment, and additions, never the office's agent credential, and runs for at most 5 seconds. Other requests do not wait for it.
+
+- When the CLI says it is not signed in, the agent shows `failed`, and the reason says so and tells you to sign in to the CLI in your own terminal. On a running agent, a new task or a continue is refused with that reason, and the running session goes on.
+- When the command times out, cannot run, or gives an answer the office does not know, the start goes on as before, with a note in the action record.
+- No check runs when the agent's command has its own arguments, the additions hold flags, or a sign-in key variable is set (for example `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`), because the status command cannot see what those change.
+- For the first 20 seconds of a `claude`, `codex`, or `gemini` session, the office reads the bottom of the screen for the CLI's sign-in screen. When it shows and nobody typed into the terminal, the office ends the CLI, the session ends as not signed in, and you get one notification. A startup prompt that holds the sign-in words turns this watch off.
+
+The office shows at most one line of what the CLI printed, at most 200 characters, with control characters made visible. It never shows or keeps the output of a signed-in answer.
+
 ## Calling the office from an agent
 
 While an agent's session runs, office-harness gives that session three environment variables. They are additions to the session environment only; office-harness writes nothing to the configuration of the CLI.
