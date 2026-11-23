@@ -218,3 +218,17 @@ fn an_ended_session_has_no_state() {
     assert_eq!(sessions.state(agent()), None);
     assert!(!sessions.blocks_typing(agent()));
 }
+
+#[test]
+fn a_late_session_forgets_its_open_work_so_a_later_compaction_ends_in_a_wait() {
+    let sessions = sessions();
+    apply(&sessions, HookEventKind::TurnStarted);
+    sessions.judge_terminal_event(agent(), TerminalEvent::QuietPeriod);
+    let state = sessions.state(agent()).expect("state");
+    assert_eq!(state.source, StatusSource::Late);
+    assert!(!state.turn_open && !state.compacting);
+
+    apply(&sessions, HookEventKind::CompactionStarted);
+    let ended = apply(&sessions, HookEventKind::CompactionEnded);
+    assert_eq!(ended.status_event, StatusEvent::QuietPeriodElapsed);
+}

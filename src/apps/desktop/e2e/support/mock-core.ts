@@ -316,10 +316,13 @@ export async function installMockCore(
     const IDLE_SLEEP_KEY = "idle_sleep_minutes";
     const DEPENDENCY_LINKS_KEY = "worktree_dependency_links";
     const DEPENDENCY_LINKS_INVALID = "worktree_dependency_links is on or off";
+    const HOOK_STATUS_KEY = "hook_status";
+    const HOOK_STATUS_INVALID = "hook_status is on or off";
     /** What `settings.get` answers for a key nobody stored. */
     const SETTING_DEFAULTS: Record<string, string> = {
       [IDLE_SLEEP_KEY]: "0",
       [DEPENDENCY_LINKS_KEY]: "on",
+      [HOOK_STATUS_KEY]: "on",
     };
     const IDLE_SLEEP_INVALID =
       "idle_sleep_minutes is 0 (off) or a whole number of minutes from 5 to 1440";
@@ -1809,6 +1812,9 @@ export async function installMockCore(
           }
           if (key === DEPENDENCY_LINKS_KEY && !["on", "off"].includes(value)) {
             refuse("invalid", DEPENDENCY_LINKS_INVALID);
+          }
+          if (key === HOOK_STATUS_KEY && !["on", "off"].includes(value)) {
+            refuse("invalid", HOOK_STATUS_INVALID);
           }
           office.settings[key] = value;
           settings.push({ key, value: fields.value });

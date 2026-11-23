@@ -2,12 +2,19 @@
 
 import type { ServerEvent } from "../../../core/api";
 import type { ActionEntry } from "../../audit";
-import type { AdditionsView, Agent, AgentTask } from "../models/agent";
+import {
+  readHook,
+  type AdditionsView,
+  type Agent,
+  type AgentHook,
+  type AgentTask,
+} from "../models/agent";
 
 export const EVENT_AGENT_STATUS = "agent.status";
 export const EVENT_AGENT_CHANGED = "agent.changed";
 export const EVENT_AGENT_LINE = "agent.line";
 export const EVENT_AGENT_TASK = "agent.task";
+export const EVENT_HOOK_CHANGED = "hook.changed";
 export const EVENT_AGENT_DELETED = "agent.deleted";
 export const EVENT_PROJECT_CHANGED = "project.changed";
 export const EVENT_ADDITIONS_CHANGED = "agent.additions.changed";
@@ -58,6 +65,23 @@ export function withTask(
   return agents.map((agent) =>
     agent.id === agentId ? { ...agent, task } : agent,
   );
+}
+
+export function withHook(
+  agents: Agent[],
+  agentId: string,
+  hook: AgentHook | null,
+): Agent[] {
+  return agents.map((agent) =>
+    agent.id === agentId ? { ...agent, hook } : agent,
+  );
+}
+
+export function readHookEvent(event: ServerEvent) {
+  return {
+    agentId: event.agent_id as string,
+    hook: readHook(event.hook),
+  };
 }
 
 export function readTaskEvent(event: ServerEvent) {

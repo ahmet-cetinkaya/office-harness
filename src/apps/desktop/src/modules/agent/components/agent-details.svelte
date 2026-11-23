@@ -15,6 +15,7 @@
   import {
     isActive,
     shownStatusText,
+    statusSourceText,
     type Additions,
     type Agent,
   } from "../models/agent";
@@ -94,6 +95,7 @@
 
   let confirmation = $state<Confirmation | null>(null);
   const isRunning = $derived(isActive(agent.status));
+  const sourceText = $derived(statusSourceText(agent));
   const isAsleep = $derived(agent.status === ASLEEP_STATUS);
   let sleepSnapshot = $state(INITIAL_SLEEP);
   $effect(() => sleep.subscribe((next) => (sleepSnapshot = next)));
@@ -134,6 +136,10 @@
         <!-- A live region, so a screen reader hears "Stopping" at once. -->
         <span role="status">{shownStatusText(agent, isStopping)}</span>
       </dd>
+      {#if sourceText !== null}
+        <dt class="font-medium">Status source</dt>
+        <dd>{sourceText}</dd>
+      {/if}
       {#if isOnHold}
         <dt class="font-medium">Hold</dt>
         <dd>{AGENT_ON_HOLD_TEXT}{holdNote === null ? "" : `. ${holdNote}`}</dd>

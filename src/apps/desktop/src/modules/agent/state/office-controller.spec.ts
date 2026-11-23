@@ -7,7 +7,7 @@ import {
   type ServerEvent,
 } from "../../../core/api";
 import type { ActionEntry } from "../../audit";
-import type { Agent, AdditionsView } from "../models/agent";
+import type { Agent, AdditionsView, AgentHook } from "../models/agent";
 import {
   createOfficeController,
   type OfficeSnapshot,
@@ -210,6 +210,25 @@ describe("office controller", () => {
 
     expect(state().agents).toHaveLength(1);
     expect(state().agents[0].status).toBe("working");
+  });
+
+  test("a hook event sets the hook of the agent, and a bad shape clears it", async () => {
+    const { client, push } = fakeClient(officeHandler([agent("a")]));
+    const { controller, state } = observe(client);
+    await controller.watch();
+    await controller.load();
+
+    const hook: AgentHook = {
+      source: "exact",
+      reason: null,
+      ask_open: true,
+      compacting: false,
+    };
+    push({ type: "hook.changed", agent_id: "a", hook });
+    expect(state().agents[0].hook).toEqual(hook);
+
+    push({ type: "hook.changed", agent_id: "a", hook: "nonsense" });
+    expect(state().agents[0].hook).toBeNull();
   });
 
   test("a line event replaces the agent's last line in place", async () => {

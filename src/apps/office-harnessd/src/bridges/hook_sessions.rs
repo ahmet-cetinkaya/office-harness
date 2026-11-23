@@ -201,6 +201,10 @@ impl HookSessions {
                 }
                 record.state.source = StatusSource::Late;
                 record.state.reason = Some(STALLED_TURN_REASON.to_owned());
+                // The report that would have closed the work was lost, so the work
+                // is presumed over: a later report starts from a clean state.
+                record.state.turn_open = false;
+                record.state.compacting = false;
                 self.waits.set_exact(agent_id, false);
                 (TerminalVerdict::Pass, Some(record.state.clone()))
             }

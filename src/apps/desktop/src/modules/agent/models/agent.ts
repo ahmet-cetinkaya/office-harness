@@ -41,6 +41,18 @@ export interface AgentTemp {
   creator: string;
 }
 
+/** Where an agent's status comes from (0024 FR-019). */
+export type HookSource = "estimated" | "exact" | "late";
+
+/** The hook state of an agent with a running session (0024 D9). */
+export interface AgentHook {
+  source: HookSource;
+  /** Why the status is not exact; null for an exact one. */
+  reason: string | null;
+  ask_open: boolean;
+  compacting: boolean;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -58,6 +70,8 @@ export interface Agent {
   worktree?: AgentWorktree | null;
   /** Null, or absent, for an agent that is not a temp. */
   temp?: AgentTemp | null;
+  /** Null, or absent, for an agent with no running session. */
+  hook?: AgentHook | null;
 }
 
 export interface Project {
@@ -159,4 +173,44 @@ export const STOPPING_TEXT = "Stopping";
 /** The status text to show: "Stopping" while a stop request is open. */
 export function shownStatusText(agent: Agent, isStopping: boolean): string {
   return isStopping ? STOPPING_TEXT : statusText(agent.status);
+}
+
+const HOOK_SOURCES: readonly unknown[] = ["estimated", "exact", "late"];
+export const ASKS_PERMISSION_TEXT = "asks permission";
+export const COMPACTING_TEXT = "compacting";
+
+/** The hook state from the wire; a missing or badly shaped one is null. */
+export function readHook(value: unknown): AgentHook | null {
+  if (typeof value !== "object" || value === null) return null;
+  const fields = value as Record<string, unknown>;
+  if (!HOOK_SOURCES.includes(fields.source)) return null;
+  return {
+    source: fields.source as HookSource,
+    reason: typeof fields.reason === "string" ? fields.reason : null,
+    ask_open: fields.ask_open === true,
+    compacting: fields.compacting === true,
+  };
+}
+
+/** The words next to the status while a permission ask or a compaction applies; the ask wins. */
+function hookNote(agent: Agent): string | null {
+  const hook = readHook(agent.hook);
+  if (hook?.ask_open) return ASKS_PERMISSION_TEXT;
+  return hook?.compacting ? COMPACTING_TEXT : null;
+}
+
+/** The status text of a list row: the status, then the hook note when one applies. */
+export function listStatusText(agent: Agent, isStopping: boolean): string {
+  const status = shownStatusText(agent, isStopping);
+  const note = hookNote(agent);
+  return note === null ? status : `${status}, ${note}`;
+}
+
+/** The status source line of the details; null without a running session. */
+export function statusSourceText(agent: Agent): string | null {
+  const hook = readHook(agent.hook);
+  if (hook === null) return null;
+  return hook.source !== "exact" && hook.reason !== null
+    ? `${hook.source} (${hook.reason})`
+    : hook.source;
 }

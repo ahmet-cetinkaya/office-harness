@@ -18,9 +18,16 @@ const EVENT_TEXT: Record<string, string> = {
   exited: "exited",
   failed: "failed",
   waiting_for_input: "waits for your input",
+  permission_asked: "asks permission",
   bell: "rang the bell",
 };
 
+const EVENT_WAITING_FOR_INPUT = "waiting_for_input";
+/** The details an exact session gives a waiting notification (0024 D10). */
+const TURN_DETAIL_TEXT: Record<string, string> = {
+  turn_stopped: "finished its turn",
+  turn_failed: "its turn ended with an error",
+};
 const EVENT_AUTO_HOLD = "auto_hold";
 const EVENT_RESUME_HOLD = "resume_hold";
 const EVENT_REPORT = "report";
@@ -67,6 +74,9 @@ export function eventText(event: string, detail: string | null = null): string {
   }
   if (event === EVENT_REPORT) {
     return detail === null ? "sent a report" : `sent a report: ${detail}`;
+  }
+  if (event === EVENT_WAITING_FOR_INPUT && detail !== null) {
+    return TURN_DETAIL_TEXT[detail] ?? EVENT_TEXT[event];
   }
   if (event === EVENT_TEMP_ENDED) {
     return detail === null ? "ended" : `ended: ${detail}`;
