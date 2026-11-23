@@ -3,7 +3,7 @@
 ## Summary
 
 - **Date:** 2026-11-23.
-- **Build under test:** branch `feat/0019-cli-sign-in-check` on `main` 6e2a8bd, the implementation commits (Rust, desktop, docs), the local nix clippy 1.99 and rustc 1.99; CI uses toolchain 1.100.0.
+- **Build under test:** branch `feat/0019-cli-sign-in-check` with `main` bdb4d20 merged (88bff7f), the implementation commits (Rust, desktop, docs), the local nix clippy 1.99 and rustc 1.99; CI uses toolchain 1.100.0. The Rust gates ran again on the merged tree; the desktop gates ran before the merge, and the merge changed no desktop file.
 - **Overall status:** the automated evidence stands for FR-001 to FR-011 and PB-1 to PB-6. SC-002, SC-003, SC-005, SC-008, and SC-010 are proven in behavior with fewer runs than the stated counts, so they are PARTIAL. SC-007 (real CLIs) is BLOCKED: the answers of the real status commands were checked by hand (research R1), the start with a real CLI was not run.
 - **Status of this file:** the gate numbers come from local runs on 2026-11-23. The CI result is in the PR, not here.
 
@@ -29,7 +29,7 @@
 |---|---|---|
 | `cargo fmt --all --check` | workspace | PASS |
 | `cargo clippy --all-targets -D warnings` | workspace without `office-harness-desktop`; `-A clippy::must_use_candidate` only for a finding that the local clippy 1.99 raises on `main` too (`cli/run.rs`) | PASS (clean) |
-| `cargo test --no-fail-fast` | workspace without `office-harness-desktop`: 1455 passed, 0 failed | PASS |
+| `cargo test --no-fail-fast` | workspace without `office-harness-desktop`, merged tree: 1466 passed, 0 failed | PASS |
 | `tests/sign_in_check.rs` | 8 tests | PASS |
 | `scripts/check-boundaries.sh` | repository | PASS (boundaries ok) |
 | `bun test src` | desktop: 393 passed, 0 failed | PASS |
