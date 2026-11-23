@@ -5,13 +5,14 @@ use std::sync::{Arc, Mutex, PoisonError};
 use audit_application::common::errors::AuditError;
 use audit_application::common::interfaces::ActionLog;
 use audit_domain::{ActionEntry, ActionKind, ActionRecord, ActionResult};
-use kernel::{Actor, AgentId, Timestamp};
+use kernel::{Actor, AgentId, ScheduleId, Timestamp};
 use rusqlite::ffi::ErrorCode;
 use rusqlite::{Connection, Row, params};
 
 const USER_ACTOR: &str = "user";
 const OFFICE_ACTOR: &str = "office";
 const AGENT_ACTOR_PREFIX: &str = "agent:";
+const SCHEDULE_ACTOR_PREFIX: &str = "schedule:";
 /// The newest office-level entries one query returns.
 const OFFICE_LEVEL_LIMIT: i64 = 500;
 
@@ -76,6 +77,7 @@ fn actor_text(actor: Actor) -> String {
         Actor::User => USER_ACTOR.to_owned(),
         Actor::Office => OFFICE_ACTOR.to_owned(),
         Actor::Agent(agent_id) => format!("{AGENT_ACTOR_PREFIX}{agent_id}"),
+        Actor::Schedule(schedule_id) => format!("{SCHEDULE_ACTOR_PREFIX}{schedule_id}"),
     }
 }
 
@@ -84,6 +86,12 @@ fn parse_actor(text: &str) -> Result<Actor, AuditError> {
         USER_ACTOR => return Ok(Actor::User),
         OFFICE_ACTOR => return Ok(Actor::Office),
         _ => {}
+    }
+    if let Some(id) = text.strip_prefix(SCHEDULE_ACTOR_PREFIX) {
+        return id
+            .parse::<ScheduleId>()
+            .map(Actor::Schedule)
+            .map_err(|_| corrupt("actor", text));
     }
     text.strip_prefix(AGENT_ACTOR_PREFIX)
         .and_then(|id| id.parse().ok())

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[package]
+name = "schedule-domain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+jiff.workspace = true
+kernel = { path = "../../../kernel" }
+thiserror.workspace = true
+
+[dev-dependencies]
+# The tests name zones such as America/New_York; the machine may have no
+# zone database, so the tests carry their own.
+jiff = { workspace = true, features = ["tzdb-bundle-always"] }
+
+[lints]
+workspace = true

@@ -49,6 +49,8 @@ nix = { version = "0.28", default-features = false }
 sysinfo = { version = "=0.40.1", default-features = false, features = ["system"] }
 # The pidfd system calls that nix 0.28 has no wrapper for (0017 plan D1).
 libc = "0.2"
+# Time zone and daylight saving arithmetic for schedule due times (0025 plan D1).
+jiff = "=0.2.45"
 tauri = { version = "=2.12.5", features = [] }
 tauri-build = "=2.7.4"
 # OS notifications for the 0003 panel (research R7, plan D7).

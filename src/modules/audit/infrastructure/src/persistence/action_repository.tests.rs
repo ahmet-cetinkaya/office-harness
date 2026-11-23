@@ -237,3 +237,28 @@ fn a_detail_reads_back_and_an_entry_from_before_the_detail_column_reads_as_none(
     assert_eq!(listed[0].record.detail, None);
     assert_eq!(listed[1].record, detailed);
 }
+
+#[test]
+fn a_schedule_actor_survives_the_round_trip_as_schedule_text() {
+    let repository = repository();
+    let actor = Actor::Schedule(kernel::ScheduleId::from_u128(5));
+    let mut record = office_record(ActionKind::Hold, 1);
+    record.actor = actor;
+
+    let appended = repository.append(&record).expect("append");
+
+    assert_eq!(
+        actor_text(actor),
+        "schedule:00000000-0000-0000-0000-000000000005"
+    );
+    assert_eq!(repository.list_office_level().expect("list"), [appended]);
+}
+
+#[test]
+fn a_schedule_actor_with_a_bad_id_is_corrupt() {
+    assert!(parse_actor("schedule:not-an-id").is_err());
+    assert_eq!(
+        parse_actor("schedule:00000000-0000-0000-0000-000000000005").expect("parse"),
+        Actor::Schedule(kernel::ScheduleId::from_u128(5))
+    );
+}

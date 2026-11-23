@@ -34,6 +34,7 @@ fn actor_text(actor: Actor) -> String {
         Actor::User => "user".to_owned(),
         Actor::Office => "office".to_owned(),
         Actor::Agent(agent_id) => format!("agent:{agent_id}"),
+        Actor::Schedule(schedule_id) => format!("schedule:{schedule_id}"),
     }
 }
 

@@ -5,7 +5,8 @@ use super::*;
 #[test]
 fn a_creator_round_trips_through_its_text() {
     let agent = Actor::Agent(AgentId::generate());
-    for creator in [Actor::User, Actor::Office, agent] {
+    let schedule = Actor::Schedule(kernel::ScheduleId::generate());
+    for creator in [Actor::User, Actor::Office, agent, schedule] {
         assert_eq!(parse_creator(&creator_text(creator)), Some(creator));
     }
 }
