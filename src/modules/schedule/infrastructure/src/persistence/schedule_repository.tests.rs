@@ -278,7 +278,7 @@ fn an_open_run_settles_and_a_waiting_run_settles_again() {
 }
 
 #[test]
-fn open_runs_are_failed_at_a_start_and_settled_ones_stay() {
+fn open_and_waiting_runs_are_failed_at_a_start_and_settled_ones_stay() {
     let repository = memory_repository();
     repository.save(&hourly(1, "One"), cap(50)).expect("one");
     let open = repository.record_run(&run(1, 1, None)).expect("open");
@@ -289,7 +289,7 @@ fn open_runs_are_failed_at_a_start_and_settled_ones_stay() {
         .record_run(&run(1, 3, Some(outcome(RunResult::Waiting))))
         .expect("waiting");
 
-    assert_eq!(repository.fail_open_runs("the server stopped"), Ok(1));
+    assert_eq!(repository.fail_open_runs("the server stopped"), Ok(2));
 
     let failed = repository
         .get_run(open)
@@ -303,13 +303,55 @@ fn open_runs_are_failed_at_a_start_and_settled_ones_stay() {
         repository.get_run(done).expect("get").expect("row").outcome,
         Some(outcome(RunResult::Submitted))
     );
-    assert_eq!(
+    let failed_waiting = repository
+        .get_run(waiting)
+        .expect("get")
+        .expect("row")
+        .outcome
+        .expect("outcome");
+    assert_eq!(failed_waiting.result, RunResult::Failed);
+    assert_eq!(failed_waiting.reason.as_deref(), Some("the server stopped"));
+}
+
+#[test]
+fn the_history_trim_keeps_open_and_waiting_rows() {
+    let repository = memory_repository();
+    repository.save(&hourly(1, "One"), cap(50)).expect("one");
+    let open = repository.record_run(&run(1, 1, None)).expect("open");
+    let waiting = repository
+        .record_run(&run(1, 2, Some(outcome(RunResult::Waiting))))
+        .expect("waiting");
+    for due in 3..=30 {
         repository
-            .get_run(waiting)
-            .expect("get")
-            .expect("row")
-            .outcome,
-        Some(outcome(RunResult::Waiting))
+            .record_run(&run(1, due, Some(outcome(RunResult::Submitted))))
+            .expect("run");
+    }
+    for id in [open, waiting] {
+        assert!(repository.get_run(id).expect("get").is_some());
+    }
+    let rows: i64 = repository
+        .connection()
+        .query_row("SELECT COUNT(*) FROM schedule_runs", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(rows, 22);
+}
+
+#[test]
+fn a_settled_run_takes_no_late_result() {
+    let repository = memory_repository();
+    repository.save(&hourly(1, "One"), cap(50)).expect("one");
+    let id = repository.record_run(&run(1, 1, None)).expect("open");
+    assert_eq!(
+        repository.settle_run(id, &outcome(RunResult::Submitted)),
+        Ok(true)
+    );
+    assert_eq!(
+        repository.settle_run(id, &outcome(RunResult::Waiting)),
+        Ok(false)
+    );
+    assert_eq!(
+        repository.get_run(id).expect("get").expect("row").outcome,
+        Some(outcome(RunResult::Submitted))
     );
 }
 

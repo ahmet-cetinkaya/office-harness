@@ -444,3 +444,16 @@ fn a_request_of_another_type_is_not_found() {
     let handled = handlers().handle(&request("schedule.nothing", &json!({})));
     assert_eq!(failure_of(&handled).0, ErrorCode::NotFound);
 }
+
+#[test]
+fn a_weekday_named_twice_is_kept_once() {
+    let mut fields = save_fields("Weekly");
+    fields["repeat"] = json!({"kind": "weekly", "days": ["mon", "fri", "mon"], "time": "08:00"});
+
+    let handled = handlers().handle(&request(SAVE, &fields));
+
+    assert_eq!(
+        result_of(&handled)["schedule"]["repeat"]["days"],
+        json!(["mon", "fri"])
+    );
+}

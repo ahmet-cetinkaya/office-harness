@@ -36,7 +36,7 @@ fn hourly() -> Repeat {
 #[test]
 fn nothing_is_due_before_the_next_due_time() {
     let schedule = schedule(hourly(), NOW);
-    let plan = RoundPlanner::plan(at(NOW + HOUR - 1), &TimeZone::UTC, &[schedule]);
+    let plan = RoundPlanner::plan(at(NOW + HOUR - 1), at(NOW), &TimeZone::UTC, &[schedule]);
     assert_eq!(plan, Plan::default());
 }
 
@@ -44,7 +44,12 @@ fn nothing_is_due_before_the_next_due_time() {
 fn a_due_time_within_the_grace_is_a_run() {
     let schedule = schedule(hourly(), NOW);
     let now = at(NOW + HOUR + GRACE_MILLIS);
-    let plan = RoundPlanner::plan(now, &TimeZone::UTC, std::slice::from_ref(&schedule));
+    let plan = RoundPlanner::plan(
+        now,
+        at(NOW),
+        &TimeZone::UTC,
+        std::slice::from_ref(&schedule),
+    );
     assert_eq!(
         plan.runs,
         [DueRun {
@@ -61,7 +66,7 @@ fn a_due_time_within_the_grace_is_a_run() {
 fn a_due_time_past_the_grace_is_missed() {
     let schedule = schedule(hourly(), NOW);
     let now = at(NOW + HOUR + GRACE_MILLIS + 1);
-    let plan = RoundPlanner::plan(now, &TimeZone::UTC, &[schedule]);
+    let plan = RoundPlanner::plan(now, at(NOW), &TimeZone::UTC, &[schedule]);
     assert_eq!(plan.runs, []);
     assert_eq!(plan.missed.len(), 1);
     assert_eq!(plan.missed[0].count, 1);
@@ -71,7 +76,12 @@ fn a_due_time_past_the_grace_is_missed() {
 fn three_missed_hourly_due_times_make_one_batch() {
     let schedule = schedule(hourly(), NOW);
     let now = at(NOW + 3 * HOUR + 30 * 60_000);
-    let plan = RoundPlanner::plan(now, &TimeZone::UTC, std::slice::from_ref(&schedule));
+    let plan = RoundPlanner::plan(
+        now,
+        at(NOW),
+        &TimeZone::UTC,
+        std::slice::from_ref(&schedule),
+    );
     assert_eq!(plan.runs, []);
     assert_eq!(
         plan.missed,
@@ -93,7 +103,7 @@ fn three_missed_hourly_due_times_make_one_batch() {
 fn missed_and_fresh_due_times_split_in_one_round() {
     let schedule = schedule(hourly(), NOW);
     let now = at(NOW + 3 * HOUR + 60_000);
-    let plan = RoundPlanner::plan(now, &TimeZone::UTC, &[schedule]);
+    let plan = RoundPlanner::plan(now, at(NOW), &TimeZone::UTC, &[schedule]);
     assert_eq!(plan.runs.len(), 1);
     assert_eq!(plan.missed[0].count, 2);
     assert_eq!(plan.missed[0].last, at(NOW + 2 * HOUR));
@@ -107,7 +117,7 @@ fn a_once_schedule_that_missed_is_switched_off_with_the_time_missed_reason() {
     };
     let schedule = schedule(once, NOW);
     let now = at(NOW + 5 * HOUR);
-    let plan = RoundPlanner::plan(now, &TimeZone::UTC, &[schedule]);
+    let plan = RoundPlanner::plan(now, at(NOW), &TimeZone::UTC, &[schedule]);
     assert_eq!(plan.missed.len(), 1);
     let changed = &plan.changed[0];
     assert!(!changed.switched_on);
@@ -122,7 +132,7 @@ fn a_once_schedule_that_ran_is_switched_off_without_a_reason() {
         time: time(13, 0, 0, 0),
     };
     let schedule = schedule(once, NOW);
-    let plan = RoundPlanner::plan(at(NOW + HOUR + 1_000), &TimeZone::UTC, &[schedule]);
+    let plan = RoundPlanner::plan(at(NOW + HOUR + 1_000), at(NOW), &TimeZone::UTC, &[schedule]);
     assert_eq!(plan.runs.len(), 1);
     let changed = &plan.changed[0];
     assert!(!changed.switched_on);
@@ -133,18 +143,18 @@ fn a_once_schedule_that_ran_is_switched_off_without_a_reason() {
 fn a_clock_set_back_repeats_nothing() {
     let mut schedule = schedule(hourly(), NOW);
     let now = at(NOW + 5 * HOUR + 1_000);
-    let first = RoundPlanner::plan(now, &TimeZone::UTC, &[schedule.clone()]);
+    let first = RoundPlanner::plan(now, at(NOW), &TimeZone::UTC, &[schedule.clone()]);
     assert_eq!(first.runs.len(), 1);
     schedule = first.changed[0].clone();
 
     let back = at(NOW + 2 * HOUR);
     assert_eq!(
-        RoundPlanner::plan(back, &TimeZone::UTC, &[schedule.clone()]),
+        RoundPlanner::plan(back, at(NOW), &TimeZone::UTC, &[schedule.clone()]),
         Plan::default()
     );
     // Back at the same moment as the last run: still nothing.
     assert_eq!(
-        RoundPlanner::plan(now, &TimeZone::UTC, &[schedule]),
+        RoundPlanner::plan(now, at(NOW), &TimeZone::UTC, &[schedule]),
         Plan::default()
     );
 }
@@ -154,7 +164,7 @@ fn a_schedule_that_is_off_is_left_alone() {
     let mut schedule = schedule(hourly(), NOW);
     schedule.switched_on = false;
     assert_eq!(
-        RoundPlanner::plan(at(NOW + 9 * HOUR), &TimeZone::UTC, &[schedule]),
+        RoundPlanner::plan(at(NOW + 9 * HOUR), at(NOW), &TimeZone::UTC, &[schedule]),
         Plan::default()
     );
 }
@@ -164,7 +174,7 @@ fn a_hundred_year_jump_is_one_bounded_batch() {
     let schedule = schedule(hourly(), NOW);
     let now = at(NOW + 100 * 365 * 24 * HOUR + HOUR / 2);
     let started = std::time::Instant::now();
-    let plan = RoundPlanner::plan(now, &TimeZone::UTC, &[schedule]);
+    let plan = RoundPlanner::plan(now, at(NOW), &TimeZone::UTC, &[schedule]);
     assert!(started.elapsed() < std::time::Duration::from_secs(5));
     assert!(plan.missed[0].count > 800_000);
     assert_eq!(plan.runs.len(), 0);
@@ -178,8 +188,34 @@ fn a_zone_change_gives_the_new_next_due() {
     let in_utc = schedule(daily, NOW);
     assert_eq!(in_utc.next_due, Some(at(NOW + 21 * HOUR)));
     let berlin = TimeZone::get("Europe/Berlin").expect("zone");
-    let plan = RoundPlanner::plan(at(NOW), &berlin, &[in_utc]);
+    let plan = RoundPlanner::plan(at(NOW), at(NOW), &berlin, &[in_utc]);
     // 09:00 CEST on 2026-06-02 is 07:00 UTC.
     assert_eq!(plan.changed[0].next_due, Some(at(NOW + 19 * HOUR)));
+    assert_eq!(plan.runs, []);
+}
+
+#[test]
+fn a_due_time_within_the_grace_but_before_the_start_is_missed() {
+    let schedule = schedule(hourly(), NOW);
+    let now = at(NOW + HOUR + 1_000);
+    let started = at(NOW + HOUR + 500);
+    let plan = RoundPlanner::plan(now, started, &TimeZone::UTC, &[schedule]);
+    assert_eq!(plan.runs, []);
+    assert_eq!(plan.missed.len(), 1);
+    assert_eq!(plan.missed[0].count, 1);
+}
+
+#[test]
+fn a_once_schedule_with_no_due_time_left_is_switched_off() {
+    let once = Repeat::Once {
+        date: date(2026, 6, 1),
+        time: time(13, 0, 0, 0),
+    };
+    let schedule = schedule(once, NOW + 2 * HOUR);
+    assert!(schedule.switched_on && schedule.next_due.is_none());
+    let plan = RoundPlanner::plan(at(NOW + 2 * HOUR), at(NOW), &TimeZone::UTC, &[schedule]);
+    let changed = &plan.changed[0];
+    assert!(!changed.switched_on);
+    assert_eq!(changed.off_reason, Some(OffReason::TimeMissed));
     assert_eq!(plan.runs, []);
 }

@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use kernel::{AgentId, ScheduleId};
 use schedule_domain::{
-    FieldError, NAME_FIELD, Repeat, Rule, Schedule, TARGET_FIELD, ZoneSource, validate_fields,
+    FieldError, NAME_FIELD, Repeat, Rule, Schedule, TARGET_FIELD, ZoneSource, normalize_name,
+    validate_fields,
 };
 
 use crate::common::errors::{ScheduleApplicationError, SwitchRefusal};
@@ -80,7 +81,8 @@ impl ScheduleService {
     /// # Errors
     /// `Invalid` with every failing field, `CapReached`, `NotFound` for an
     /// unknown `id`, `Storage`.
-    pub fn save(&self, input: SaveInput) -> Result<Schedule, ScheduleApplicationError> {
+    pub fn save(&self, mut input: SaveInput) -> Result<Schedule, ScheduleApplicationError> {
+        input.name = normalize_name(&input.name);
         let now = self.clock.now();
         let zone = self.zone.current();
         let existing = input.id.map(|id| self.get(id)).transpose()?;

@@ -379,11 +379,13 @@ fn insert_run(connection: &mut Connection, run: &NewRun) -> rusqlite::Result<Run
     )?;
     let id = transaction.last_insert_rowid();
     transaction.execute(
-        "DELETE FROM schedule_runs WHERE schedule_id = ?1 AND id NOT IN \
+        "DELETE FROM schedule_runs WHERE schedule_id = ?1 \
+         AND result IS NOT NULL AND result <> ?3 AND id NOT IN \
          (SELECT id FROM schedule_runs WHERE schedule_id = ?1 ORDER BY id DESC LIMIT ?2)",
         params![
             schedule_id,
-            i64::try_from(HISTORY_LIMIT).unwrap_or(i64::MAX)
+            i64::try_from(HISTORY_LIMIT).unwrap_or(i64::MAX),
+            RunResult::Waiting.as_str()
         ],
     )?;
     transaction.commit()?;
@@ -469,12 +471,15 @@ impl ScheduleStore for ScheduleRepository {
         let changed = self
             .connection()
             .execute(
-                "UPDATE schedule_runs SET result = ?2, reason = ?3, queue_entry = ?4 WHERE id = ?1",
+                "UPDATE schedule_runs SET result = ?2, reason = ?3, queue_entry = ?4 \
+                 WHERE id = ?1 AND (result IS NULL OR (result = ?5 AND ?6))",
                 params![
                     id.0,
                     outcome.result.as_str(),
                     outcome.reason,
-                    outcome.queue_entry
+                    outcome.queue_entry,
+                    RunResult::Waiting.as_str(),
+                    outcome.result.settles_a_waiting_run()
                 ],
             )
             .map_err(|error| storage_failure(&error))?;
@@ -505,8 +510,13 @@ impl ScheduleStore for ScheduleRepository {
     fn fail_open_runs(&self, reason: &str) -> Result<usize, ScheduleApplicationError> {
         self.connection()
             .execute(
-                "UPDATE schedule_runs SET result = ?1, reason = ?2 WHERE result IS NULL",
-                params![RunResult::Failed.as_str(), reason],
+                "UPDATE schedule_runs SET result = ?1, reason = ?2 \
+                 WHERE result IS NULL OR result = ?3",
+                params![
+                    RunResult::Failed.as_str(),
+                    reason,
+                    RunResult::Waiting.as_str()
+                ],
             )
             .map_err(|error| storage_failure(&error))
     }

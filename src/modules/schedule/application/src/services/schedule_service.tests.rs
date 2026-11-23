@@ -298,3 +298,26 @@ fn delete_removes_the_schedule_and_says_so_when_it_is_gone() {
         Err(ScheduleApplicationError::NotFound(_))
     ));
 }
+
+#[test]
+fn a_name_with_spaces_at_its_ends_is_the_same_name_and_is_saved_trimmed() {
+    let fixture = fixture();
+    let first = fixture
+        .service
+        .save(input("Nightly", daily_at_eight(), false))
+        .expect("first");
+    let Err(ScheduleApplicationError::Invalid(errors)) =
+        fixture
+            .service
+            .save(input("Nightly ", daily_at_eight(), false))
+    else {
+        panic!("expected invalid");
+    };
+    assert_eq!((errors[0].field, errors[0].rule), ("name", Rule::NameTaken));
+    let padded = fixture
+        .service
+        .save(input("  Weekly  ", daily_at_eight(), false))
+        .expect("padded");
+    assert_eq!(first.name, "Nightly");
+    assert_eq!(padded.name, "Weekly");
+}

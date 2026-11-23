@@ -51,6 +51,7 @@ sysinfo = { version = "=0.40.1", default-features = false, features = ["system"]
 libc = "0.2"
 # Time zone and daylight saving arithmetic for schedule due times (0025 plan D1).
 jiff = "=0.2.45"
+icu_normalizer = "=2.4.0"
 # Seals the 0026 secret values (RustCrypto, pure Rust, same result on every OS).
 chacha20poly1305 = "=0.11.0"
 # Clears the 0026 secret and store key buffers when they drop.

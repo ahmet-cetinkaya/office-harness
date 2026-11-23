@@ -32,7 +32,7 @@ pub trait ScheduleStore: Send + Sync {
     fn delete(&self, id: ScheduleId) -> Result<bool, ScheduleApplicationError>;
 
     /// Adds a history row and, in the same transaction, drops the schedule's
-    /// rows beyond the newest 20.
+    /// settled rows beyond the newest 20; an open or waiting row stays.
     ///
     /// # Errors
     /// `Storage`.
@@ -42,7 +42,9 @@ pub trait ScheduleStore: Send + Sync {
     /// `Storage`.
     fn get_run(&self, id: RunId) -> Result<Option<ScheduleRun>, ScheduleApplicationError>;
 
-    /// Writes the outcome of a run; `false` when the row is gone.
+    /// Writes the outcome of a run in one step, when the run can still take it
+    /// (`RunResult::can_follow`); `false` when the row is gone or already
+    /// settled, so two writers never overwrite each other.
     ///
     /// # Errors
     /// `Storage`.
@@ -55,8 +57,9 @@ pub trait ScheduleStore: Send + Sync {
     /// `Storage`.
     fn history(&self, id: ScheduleId) -> Result<Vec<ScheduleRun>, ScheduleApplicationError>;
 
-    /// Settles every open run (no result yet) as `failed` with `reason`, at
-    /// a server start; returns how many.
+    /// Settles every open run (no result yet) and every run that waits as
+    /// `failed` with `reason`, at a server start, when the queue that held
+    /// them is gone; returns how many.
     ///
     /// # Errors
     /// `Storage`.

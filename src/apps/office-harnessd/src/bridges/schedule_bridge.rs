@@ -229,7 +229,7 @@ impl ScheduleBridge {
         }
         self.publish_changed(off.id);
         if was_on {
-            self.notify_once(&off, TARGET_REMOVED_NOTICE);
+            self.notify_once(&off, TARGET_REMOVED_NOTICE, None);
         }
     }
 
@@ -238,20 +238,19 @@ impl ScheduleBridge {
     }
 
     /// Sends the notification of a result that FR-011 names, unless one went
-    /// out since the schedule's last successful run, and remembers it. The
+    /// out since the schedule's last successful run, and remembers it. `about`
+    /// is the target the row names, or `None` when the target is deleted. The
     /// caller holds the schedule lock.
-    pub(super) fn notify_once(&self, schedule: &Schedule, detail: &str) {
+    pub(super) fn notify_once(&self, schedule: &Schedule, detail: &str, about: Option<AgentId>) {
         let Ok(Some(mut current)) = self.parts.store.get(schedule.id) else {
             return;
         };
         if current.notified_since_success {
             return;
         }
-        self.parts.notifications.record_schedule_result(
-            &current.name,
-            current.target,
-            detail.to_owned(),
-        );
+        self.parts
+            .notifications
+            .record_schedule_result(&current.name, about, detail.to_owned());
         current.notified_since_success = true;
         self.save_quietly(&current);
     }
@@ -322,7 +321,7 @@ impl ScheduleBridge {
         }
     }
 
-    pub(super) fn report_storage(&self, error: &ScheduleApplicationError) {
+    pub fn report_storage(&self, error: &ScheduleApplicationError) {
         let message = format!("the schedule store failed: {error}");
         if error.is_disk_failure() {
             self.parts.alerts.report_disk_failure(&message);
@@ -438,7 +437,7 @@ impl ScheduleBridge {
             Some(reason) => format!("{target}: {}: {reason}", result.as_str()),
             None => format!("{target}: {}", result.as_str()),
         };
-        self.notify_once(&schedule, &detail);
+        self.notify_once(&schedule, &detail, Some(schedule.target));
     }
 }
 

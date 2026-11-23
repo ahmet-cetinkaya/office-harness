@@ -297,7 +297,7 @@ fn classify_runs_what_is_within_the_grace_and_misses_the_rest() {
     let repeat = Repeat::EveryHours { hours: 1 };
     let now = utc(2026, 6, 1, 5, 1);
     let counted = window(&repeat, anchor, "UTC", anchor, now);
-    let split = classify(&counted, now, GRACE);
+    let split = classify(&counted, now, anchor, GRACE);
     assert_eq!(split.runs, [utc(2026, 6, 1, 5, 0)]);
     assert_eq!(
         split.missed,
@@ -317,6 +317,7 @@ fn classify_has_no_missed_batch_when_every_due_time_is_fresh() {
     let split = classify(
         &window(&repeat, anchor, "UTC", anchor, millis(now)),
         millis(now),
+        anchor,
         GRACE,
     );
     assert_eq!(split.runs, [utc(2026, 6, 1, 1, 0)]);
@@ -328,7 +329,12 @@ fn classify_misses_all_when_none_is_within_the_grace() {
     let anchor = utc(2026, 6, 1, 0, 0);
     let repeat = Repeat::EveryHours { hours: 1 };
     let now = millis(utc(2026, 6, 1, 3, 0).as_unix_millis() + GRACE + MINUTE);
-    let split = classify(&window(&repeat, anchor, "UTC", anchor, now), now, GRACE);
+    let split = classify(
+        &window(&repeat, anchor, "UTC", anchor, now),
+        now,
+        anchor,
+        GRACE,
+    );
     assert_eq!(split.runs, []);
     assert_eq!(
         split.missed,
@@ -342,7 +348,31 @@ fn classify_misses_all_when_none_is_within_the_grace() {
 
 #[test]
 fn classify_an_empty_window_is_empty() {
-    let split = classify(&DueWindow::default(), millis(0), GRACE);
+    let split = classify(&DueWindow::default(), millis(0), millis(0), GRACE);
     assert_eq!(split.runs, []);
     assert_eq!(split.missed, None);
+}
+
+#[test]
+fn classify_misses_a_fresh_due_time_that_is_before_the_start() {
+    let anchor = utc(2026, 6, 1, 0, 0);
+    let repeat = Repeat::EveryHours { hours: 1 };
+    let due = utc(2026, 6, 1, 1, 0);
+    let now = millis(due.as_unix_millis() + MINUTE);
+    let started = millis(due.as_unix_millis() + MINUTE / 2);
+    let split = classify(
+        &window(&repeat, anchor, "UTC", anchor, now),
+        now,
+        started,
+        GRACE,
+    );
+    assert_eq!(split.runs, []);
+    assert_eq!(
+        split.missed,
+        Some(Missed {
+            count: 1,
+            first: due,
+            last: due
+        })
+    );
 }

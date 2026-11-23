@@ -19,6 +19,6 @@ pub use schedule::{OffReason, Schedule};
 pub use schedule_cap::{ScheduleCap, ScheduleCapError};
 pub use validation::{
     FieldError, NAME_FIELD, NAME_MAX_CHARS, REPEAT_FIELD, Rule, TARGET_FIELD, TEXT_FIELD,
-    TEXT_MAX_CHARS, validate_fields,
+    TEXT_MAX_CHARS, normalize_name, validate_fields,
 };
 pub use zone_source::ZoneSource;

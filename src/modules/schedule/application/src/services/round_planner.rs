@@ -42,20 +42,34 @@ impl RoundPlanner {
     /// time up to `now` are runs (within the grace) or one missed batch. The
     /// handled due time moves to the last of them, so a clock set back runs
     /// nothing twice. A once schedule that has a run or a missed batch is
-    /// switched off, with the off reason `TimeMissed` when it only missed.
-    /// A schedule whose next due time differs from the stored one (a zone
-    /// change) is returned with the new one.
+    /// switched off, with the off reason `TimeMissed` when it only missed. A
+    /// due time before `started`, the moment the office began to run, is
+    /// missed even within the grace (FR-005). A schedule whose next due time
+    /// differs from the stored one (a zone change) is returned with the new
+    /// one; a once schedule that has no due time left is switched off with
+    /// the off reason `TimeMissed`.
     #[must_use]
-    pub fn plan(now: Timestamp, zone: &TimeZone, schedules: &[Schedule]) -> Plan {
+    pub fn plan(
+        now: Timestamp,
+        started: Timestamp,
+        zone: &TimeZone,
+        schedules: &[Schedule],
+    ) -> Plan {
         let mut plan = Plan::default();
         for schedule in schedules.iter().filter(|schedule| schedule.switched_on) {
-            plan_one(now, zone, schedule, &mut plan);
+            plan_one(now, started, zone, schedule, &mut plan);
         }
         plan
     }
 }
 
-fn plan_one(now: Timestamp, zone: &TimeZone, schedule: &Schedule, plan: &mut Plan) {
+fn plan_one(
+    now: Timestamp,
+    started: Timestamp,
+    zone: &TimeZone,
+    schedule: &Schedule,
+    plan: &mut Plan,
+) {
     let after = schedule.last_handled_due.unwrap_or(schedule.anchor);
     let window = due_times_in(
         &schedule.repeat,
@@ -65,7 +79,7 @@ fn plan_one(now: Timestamp, zone: &TimeZone, schedule: &Schedule, plan: &mut Pla
         now,
         MAX_STEPS,
     );
-    let split = classify(&window, now, GRACE_MILLIS);
+    let split = classify(&window, now, started, GRACE_MILLIS);
 
     let mut updated = schedule.clone();
     if let Some(last) = window.last() {
@@ -92,6 +106,12 @@ fn plan_one(now: Timestamp, zone: &TimeZone, schedule: &Schedule, plan: &mut Pla
         updated.off_reason = (split.runs.is_empty()).then_some(OffReason::TimeMissed);
     }
     updated.recompute_next_due(now, zone);
+    // A zone change or a clock set back can leave a once schedule with a due
+    // time that is already handled: it would stay on with nothing to run.
+    if updated.switched_on && updated.next_due.is_none() {
+        updated.switched_on = false;
+        updated.off_reason = Some(OffReason::TimeMissed);
+    }
     if updated != *schedule {
         plan.changed.push(updated);
     }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use icu_normalizer::ComposingNormalizerBorrowed;
 use jiff::tz::TimeZone;
 use kernel::Timestamp;
 use thiserror::Error;
@@ -16,6 +17,16 @@ pub const NAME_FIELD: &str = "name";
 pub const TEXT_FIELD: &str = "text";
 pub const REPEAT_FIELD: &str = "repeat";
 pub const TARGET_FIELD: &str = "target";
+
+/// The name as the office keeps it: without the spaces at its ends and in
+/// Unicode normalization form C, so "Nightly" and "Nightly " are one name and
+/// a letter with an accent has one spelling.
+#[must_use]
+pub fn normalize_name(name: &str) -> String {
+    ComposingNormalizerBorrowed::new_nfc()
+        .normalize(name.trim())
+        .into_owned()
+}
 
 /// The rule that a field broke.
 #[derive(Debug, Clone, Copy, Error, PartialEq, Eq)]

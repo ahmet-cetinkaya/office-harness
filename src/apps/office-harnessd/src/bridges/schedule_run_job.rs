@@ -200,7 +200,8 @@ impl ScheduleBridge {
         let target = schedule.target;
         let held = self
             .blocking(move |bridge| bridge.hold_refusal(target))
-            .await;
+            .await
+            .and_then(|checked| checked);
         match held {
             Ok(Some(reason)) => return Ended::refused_by_hold(reason),
             Ok(None) => {}
@@ -213,8 +214,26 @@ impl ScheduleBridge {
             .await;
         match woke {
             WakeResult::Continued | WakeResult::NewSession => self.queue(schedule, run).await,
-            WakeResult::Held(reason) | WakeResult::Refused(reason) => Ended::failed(reason),
-            WakeResult::Unfinished => Ended::failed(WAKE_DID_NOT_END),
+            WakeResult::Held(reason) => Ended::failed(reason),
+            WakeResult::Refused(reason) => self.queue_if_running(schedule, run, reason).await,
+            WakeResult::Unfinished => {
+                self.queue_if_running(schedule, run, WAKE_DID_NOT_END.to_owned())
+                    .await
+            }
+        }
+    }
+
+    /// The wake gave no answer of its own: another run may have woken the
+    /// target first, or the answer was lost. A target that runs now takes the
+    /// directive in the queue; any other state fails with `reason`.
+    async fn queue_if_running(&self, schedule: &Schedule, run: RunId, reason: String) -> Ended {
+        let target = schedule.target;
+        let state = self
+            .blocking(move |bridge| bridge.target_state(target))
+            .await;
+        match state {
+            Ok(TargetState::Running) => self.queue(schedule, run).await,
+            Ok(_) | Err(_) => Ended::failed(reason),
         }
     }
 
@@ -226,15 +245,15 @@ impl ScheduleBridge {
     }
 
     /// The reason a hold refuses a run on the target now, from the tree as it
-    /// is now (FR-007).
-    fn hold_refusal(&self, target: AgentId) -> Option<String> {
+    /// is now (FR-007). A tree that cannot be read is an error, not "no
+    /// hold": the run fails before it wakes or queues anything.
+    fn hold_refusal(&self, target: AgentId) -> Result<Option<String>, String> {
         match self.parts.tree.store_snapshot() {
-            Ok(rows) => self.parts.holds.scheduled_refusal(target, &rows),
+            Ok(rows) => Ok(self.parts.holds.scheduled_refusal(target, &rows)),
             Err(error) => {
-                self.parts.log.error(&format!(
-                    "a schedule run cannot read the tree for the hold check: {error}"
-                ));
-                None
+                let message = format!("the hold check cannot read the tree: {error}");
+                self.parts.log.error(&format!("a schedule run: {message}"));
+                Err(message)
             }
         }
     }
@@ -242,8 +261,10 @@ impl ScheduleBridge {
     /// The hold check at the start, then the queue, which checks again and
     /// takes the slot of the schedule window.
     fn queue_blocking(&self, schedule: &Schedule, run: RunId) -> Ended {
-        if let Some(reason) = self.hold_refusal(schedule.target) {
-            return Ended::refused_by_hold(reason);
+        match self.hold_refusal(schedule.target) {
+            Ok(Some(reason)) => return Ended::refused_by_hold(reason),
+            Ok(None) => {}
+            Err(message) => return Ended::failed(message),
         }
         let directive = ScheduledDirective {
             schedule: schedule.id,
@@ -280,7 +301,7 @@ impl ScheduleBridge {
     fn ended_by(&self, error: &HierarchyApplicationError, target: AgentId) -> Ended {
         match error {
             HierarchyApplicationError::Refused(reason) => Ended {
-                is_hold_refusal: self.hold_refusal(target).is_some(),
+                is_hold_refusal: matches!(self.hold_refusal(target), Ok(Some(_))),
                 ..Ended::with_reason(RunResult::Refused, reason.clone())
             },
             HierarchyApplicationError::Invalid(_) => Ended::skipped(error.to_string()),

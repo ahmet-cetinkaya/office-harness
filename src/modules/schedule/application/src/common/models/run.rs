@@ -37,6 +37,25 @@ impl RunResult {
         }
     }
 
+    /// Whether a run that is open (`None`) or has the result `current` can
+    /// take this result: an open run takes any result; a run that waits
+    /// takes `submitted`, `unsubmitted`, or `withdrawn`; a settled run takes
+    /// nothing more.
+    #[must_use]
+    pub const fn can_follow(self, current: Option<Self>) -> bool {
+        match current {
+            None => true,
+            Some(Self::Waiting) => self.settles_a_waiting_run(),
+            Some(_) => false,
+        }
+    }
+
+    /// Whether this result can end a run that waits in a queue.
+    #[must_use]
+    pub const fn settles_a_waiting_run(self) -> bool {
+        matches!(self, Self::Submitted | Self::Unsubmitted | Self::Withdrawn)
+    }
+
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
         [

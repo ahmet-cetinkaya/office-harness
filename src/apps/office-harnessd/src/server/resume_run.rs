@@ -283,7 +283,8 @@ impl ResumeContext {
     /// Wakes the agent for `actor` and waits for the final `wake.result` of
     /// its watch, so a schedule run goes on only when the agent runs again
     /// (0025/FR-010). The wait ends with `Unfinished` when the watch gives no
-    /// final result within two check periods and a margin.
+    /// final result within two check periods and a margin, or when events are
+    /// dropped.
     pub async fn wake_and_wait(&self, agent_id: AgentId, actor: Actor) -> WakeResult {
         // Subscribed before the wake, so no result of this wake is missed.
         let mut results = self.events.subscribe();
@@ -299,8 +300,11 @@ impl ResumeContext {
                         return result;
                     }
                 }
-                Ok(Err(RecvError::Lagged(_))) => {}
-                Ok(Err(RecvError::Closed)) => return WakeResult::Unfinished,
+                // Events were dropped, and the final result may be one of
+                // them: the caller looks at the agent instead of waiting.
+                Ok(Err(RecvError::Lagged(_) | RecvError::Closed)) => {
+                    return WakeResult::Unfinished;
+                }
             }
         }
     }
@@ -486,7 +490,8 @@ pub enum WakeResult {
     /// The wake's first start was refused, for example because the agent is no
     /// longer asleep.
     Refused(String),
-    /// The watch gave no final result in time.
+    /// The watch gave no final result in time, or the events that carry it
+    /// were dropped; the agent may be running.
     Unfinished,
 }
 
