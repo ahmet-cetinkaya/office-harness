@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: completed
 spec: specs/changes/0018-idle-sleep/SPEC.md
 commits: per-task
 ---
@@ -127,3 +127,10 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - The repository's boundary check script.
 - CI green on Linux, macOS, and Windows.
 - Hands-on: a real `claude` agent put to sleep and woken with Enter, when the owner or the gate runs it. Otherwise the qa row stays BLOCKED, never PASS.
+
+## Result
+
+T1 to T5 are done. The work landed as one commit for each of T1 to T4, a merge of `main` (the Rust and desktop work was then checked on the merged tree), and one refactor commit that builds the notification gateway in its own function so that `bind` stays in the line limit of the linter. T5 is this documentation: the contract, the README section, `qa-report.md`, and the spec Deviations.
+
+The notes "Amended by 0018" in the 0001 documents are not added. Those files moved to `specs/changes/archive/` and stay as they were; the contract `contracts/sleep-protocol.md` names them by path instead. The Turkish HTML report is not part of this repository and is not covered here.
+

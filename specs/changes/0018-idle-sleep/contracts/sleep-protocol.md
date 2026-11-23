@@ -1,6 +1,6 @@
 # Contract: sleep protocol (0018)
 
-Date: 2026-11-23. Extends the 0001 wire protocol, the 0007 hold contract, and the 0013 resume contract. Error codes stay `invalid`, `conflict`, `not_found`, `refused`, `internal`.
+Date: 2026-11-23. Extends the 0001 client protocol (`specs/changes/archive/0001-office-server-and-terminal/contracts/client-protocol.md`), the 0007 hold contract (`specs/changes/archive/0007-hold-and-limits/contracts/hold-protocol.md`), and the 0013 resume contract (`specs/changes/archive/0013-bulk-resume/contracts/resume-protocol.md`). Error codes stay `invalid`, `conflict`, `not_found`, `refused`, `internal`.
 
 ## Changed shapes
 

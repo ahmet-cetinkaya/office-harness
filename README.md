@@ -197,6 +197,24 @@ When the background server stops while agents run (a crash, a logout, a restart 
 
 The shapes of the requests are in [the resume protocol](specs/changes/archive/0013-bulk-resume/contracts/resume-protocol.md).
 
+## Idle sleep
+
+Idle sleep is off by default. When you turn it on, the office puts an agent to sleep after it stays idle for a set time. A sleeping agent uses no memory for its CLI or for the helper servers that the CLI started.
+
+Press **Idle sleep** in the panel header to open the setting. Turn the switch on and set the idle time in minutes, a whole number from 5 to 1440. The field shows 30 when you first turn it on. A change applies at once, and the count starts again from that moment, so no agent that was idle for hours sleeps before the idle time has passed. The background server keeps the setting and applies it while the desktop app is closed.
+
+- An agent is idle when its status is `waiting for input` without a break. The idle time counts from the latest of three moments: the agent changed to `waiting for input`, your last key reached its terminal, and you last turned idle sleep on or changed the idle time.
+- An idle agent stays awake when it has an item in Needs you, when a hold covers it, when a directive or a report waits in its queue, when pending office text or unsent text of yours waits at its input line, or when one of its children runs. The office checks these again right before it ends the CLI.
+- A sleep ends the CLI as your stop does. The agent shows `asleep`. The terminal view keeps the last output, with the lines that the CLI printed while it ended. The office keeps the session so that a wake can continue it. The action record gets one `sleep` entry with the office as actor and the reason "idle for N minutes". A sleep sends no notification and adds no Needs you item.
+- **Warning:** a sleep also ends every program that the CLI started and that still runs, such as a background task or a development server. The office does not detect these programs, and their work is lost.
+- An asleep agent stays asleep when the server restarts and when you turn idle sleep off. It is not listed in **Resume interrupted**. Nothing starts it except your action.
+
+To wake an agent, give its terminal view keyboard focus and press Enter, or press **Wake** in the terminal view or in the agent's details. No other key reaches the CLI while the agent is asleep. The office continues the last session. When the CLI cannot continue it, the office starts one new session with the reason. When a continued session ends within 20 seconds, the office starts one new session. When that session also ends within 20 seconds, the office puts the agent on hold with the reason and notifies you once, as it does for a resume. The result shows as text in the details and in the terminal view. A hold does not stop a wake, and the hold stays. The wake is in the action record with you as actor.
+
+A directive or a report to an agent that is asleep, or is going to sleep, is refused. The answer says that the agent is not running because it is asleep. The refusal is in the action records.
+
+The shapes of the requests are in [the sleep protocol](specs/changes/0018-idle-sleep/contracts/sleep-protocol.md).
+
 ## Start at login
 
 The server runs only while you are logged in. Agents end when you log out or shut the machine down. After the next login the server starts again, and the agents that were running show `interrupted`. No agent starts without your action.
