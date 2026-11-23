@@ -183,12 +183,13 @@ impl TempWatcher {
             AgentStatus::Starting
             | AgentStatus::Working
             | AgentStatus::WaitingForInput
-            | AgentStatus::Asleep => self.judge_quiet(state, agent.id, minutes),
+            | AgentStatus::Asleep => self.judge_quiet(state, agent, minutes),
         }
     }
 
     /// The quiet-since moment, or the end when it is as old as the idle limit.
-    fn judge_quiet(&self, state: &mut RoundState, agent_id: AgentId, minutes: u32) -> Verdict {
+    fn judge_quiet(&self, state: &mut RoundState, agent: &Agent, minutes: u32) -> Verdict {
+        let agent_id = agent.id;
         let now = Instant::now();
         if self.gate.keeps_from_idle_end(agent_id) {
             state.blocked_at.insert(agent_id, now);
@@ -200,12 +201,7 @@ impl TempWatcher {
             state.blocked_at.get(&agent_id).copied(),
         );
         if idle_limit_reached(now, since, self.minute * minutes) {
-            return Verdict::End(EndOrder {
-                agent_id,
-                reason: EndReason::NoOutput { minutes },
-                actor: Actor::Office,
-                seen: None,
-            });
+            return Verdict::End(idle_end_of(agent, minutes));
         }
         Verdict::Quiet(since)
     }
@@ -262,6 +258,18 @@ fn end_of(agent: &Agent, reason: EndReason) -> Verdict {
         actor: Actor::Office,
         seen: Some(agent.status),
     })
+}
+
+/// The idle end of a temp. It goes on only while the temp has the status the
+/// round read, so a new task that holds the status order first wins and the
+/// ender never stops the fresh session (D7 step 0).
+fn idle_end_of(agent: &Agent, minutes: u32) -> EndOrder {
+    EndOrder {
+        agent_id: agent.id,
+        reason: EndReason::NoOutput { minutes },
+        actor: Actor::Office,
+        seen: Some(agent.status),
+    }
 }
 
 /// The moment a temp has been quiet since (0020 D8): the latest of the last

@@ -277,6 +277,17 @@ fn the_end_check_claims_nothing_when_the_status_changed_or_the_agent_is_no_temp(
 }
 
 #[test]
+fn an_idle_end_that_read_a_waiting_temp_claims_nothing_once_a_new_task_made_it_work() {
+    let working_again = agent(1, AgentStatus::Working, true);
+    let endings = endings(vec![working_again.clone()], Vec::new());
+
+    let answer = check(&endings, working_again.id, "waiting_for_input");
+
+    assert_eq!(ending_of(&answer), json!(false));
+    assert!(!endings.contains(working_again.id));
+}
+
+#[test]
 fn the_end_check_names_a_request_without_its_fields_invalid() {
     let endings = endings(Vec::new(), Vec::new());
 

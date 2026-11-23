@@ -24,6 +24,8 @@ Date: 2026-11-23. Extends the 0001 client protocol (`specs/changes/archive/0001-
 
 The server sends it to itself. A user client gets `invalid` "agent.sleep is made by the office only"; the agent-call allowlist does not name it.
 
+Errors: `conflict` when the agent does not wait for input, when the gate names a reason to stay awake (both leave no record), or when the CLI had already ended (a failed `sleep` entry "the CLI had already ended", no status change); `internal` when the CLI cannot be ended (a failed `sleep` entry, the status stays).
+
 ## New requests (user client only)
 
 The agent connection never answers these; they are outside its allowlist and are refused as not allowed (0002 contract). A field that a request does not name below is refused with `invalid` and the message `<field> is not a field of <request>`.
@@ -34,7 +36,7 @@ The agent connection never answers these; they are outside its allowlist and are
 |---|---|---|
 | `agent_id` | string | the agent to wake |
 
-The one-agent step: the agent must be `asleep`. The server continues its last session when the CLI can continue it, otherwise it starts a new session. Result: `{session, continued: bool, reason?}` as `agent.resume`. It starts no fallback and no watch; clients use `wake.start`.
+The one-agent step: the agent must be `asleep`. The server continues its last session when the CLI can continue it, otherwise it starts a new session. Result: `{session, continued: bool, reason?}` as `agent.resume`. It starts no fallback and no watch; clients use `wake.start`. A user client cannot send it: the answer is `invalid` "agent.wake is made by wake.start only", and `wake.start` runs it inside the server.
 
 Errors: `conflict` "the agent is no longer asleep"; `not_found` for an unknown agent; `refused` "the server is stopping and starts no agent".
 

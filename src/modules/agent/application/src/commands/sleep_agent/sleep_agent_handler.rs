@@ -66,8 +66,9 @@ impl SleepAgentHandler {
     /// # Errors
     /// `NotFound`; `Conflict` when the agent does not wait for input or the
     /// gate names a reason to stay awake, both without a record; `Internal`
-    /// when the child cannot be ended, which leaves the status as it was and
-    /// records the failure.
+    /// when the child cannot be ended, and `Conflict` when it had ended on
+    /// its own, both of which record the failure and leave the status to the
+    /// CLI (FR-009).
     pub fn handle(&self, agent_id: AgentId, idle_minutes: u32) -> Result<Agent, ApplicationError> {
         let mut agent = require_agent(&*self.agents, agent_id)?;
         if agent.status != AgentStatus::WaitingForInput {
@@ -90,8 +91,6 @@ impl SleepAgentHandler {
             Some(&detail),
         )?;
         outcome?;
-        // The stored status is the truth: a child that ended on its own just
-        // before changed nothing here, so the copy read above may be stale.
         require_agent(&*self.agents, agent_id)
     }
 }

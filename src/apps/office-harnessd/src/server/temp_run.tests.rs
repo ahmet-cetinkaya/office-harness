@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use agent_domain::value_objects::{AgentCommand, DisplayName, MachineId, Objective, TempMark};
+use kernel::Timestamp;
+
 use super::*;
 
 const LIMIT: Duration = Duration::from_secs(300);
@@ -98,4 +101,28 @@ fn the_board_reports_the_quiet_time_of_the_last_round() {
     assert!(board.quiet_for(agent).is_some());
     board.replace(HashMap::new());
     assert_eq!(board.quiet_for(agent), None);
+}
+
+#[test]
+fn the_idle_end_names_the_status_the_round_read_so_a_new_task_that_took_the_order_wins() {
+    let mut temp = Agent::new(
+        AgentId::from_u128(1),
+        DisplayName::parse("name", "quiet").expect("name"),
+        AgentCommand::parse("claude").expect("command"),
+        Some(std::env::temp_dir()),
+        None,
+        MachineId::generate(),
+        Timestamp::from_unix_millis(0),
+    )
+    .expect("agent");
+    temp.status = AgentStatus::WaitingForInput;
+    temp.temp = Some(TempMark {
+        objective: Objective::new("job").expect("objective"),
+        creator: Actor::User,
+    });
+
+    let order = idle_end_of(&temp, 5);
+
+    assert_eq!(order.seen, Some(AgentStatus::WaitingForInput));
+    assert_eq!(order.reason, EndReason::NoOutput { minutes: 5 });
 }

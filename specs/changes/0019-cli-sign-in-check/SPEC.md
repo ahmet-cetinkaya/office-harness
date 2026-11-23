@@ -209,3 +209,8 @@ When the CLI starts and shows a sign-in screen, the office ends it and shows the
 - A setting for the timeout, the watch period, or the words (A3, A5).
 - Reusing an answer across starts (A7).
 - A status command for `gemini` or `opencode` (research R1).
+
+## Deviations
+
+- A person's stop that comes after the watch marked the run but before the run exits leaves the agent `stopped`: the exit then gives no `failed` status and the office adds no `stop` entry. The bridge records the office's `stop` entry only after the status followed (`a_persons_stop_between_the_mark_and_the_exit_keeps_stopped_and_adds_no_entry`, `a_sign_in_stop_that_ends_a_working_run_records_one_office_stop`).
+- The group of a status command or git child is signalled before the child is reaped, where the system can look at an exit without reaping it (Linux, Android, FreeBSD): `wait_until` leaves the exited child as a zombie, and the caller takes its status after `end_tree` (`an_exited_child_stays_unreaped_until_the_caller_takes_its_status`). On other systems the pid of a reaped child could be reused before the signal; the window needs a helper that holds a pipe after the child exited and then left the group.

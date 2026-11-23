@@ -276,6 +276,27 @@ async fn a_client_cannot_ask_for_a_sleep() {
 }
 
 #[tokio::test]
+async fn a_client_cannot_wake_an_agent_past_the_watch() {
+    let office = open_office().await;
+    office.clis.add("plain-cli", KEEPS_RUNNING);
+    let mut client = office.client().await;
+    let agent = idle_agent(&mut client, &office, "Ana", "plain-cli").await;
+    turn_on(&mut client, IDLE_MINUTES).await;
+    client.wait_for_status(&agent, "asleep").await;
+    let sessions_before = client.sessions(&agent).await.len();
+
+    let answer = client.ask("agent.wake", json!({"agent_id": agent})).await;
+
+    assert_eq!(
+        error_text(&answer),
+        ("invalid", "agent.wake is made by wake.start only")
+    );
+    assert_eq!(client.status_of(&agent).await, "asleep");
+    assert_eq!(client.sessions(&agent).await.len(), sessions_before);
+    office.serving.stop().await;
+}
+
+#[tokio::test]
 async fn a_wake_continues_the_last_session_and_records_one_wake_by_the_person() {
     let office = open_office().await;
     office.clis.add(

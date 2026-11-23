@@ -41,6 +41,8 @@ const SHORT_ID_CHARS: usize = 8;
 const REPOSITORY_HASH_CHARS: usize = 8;
 /// `<repository>-<hash>/<short agent id>` below the worktrees folder.
 const OWNED_DEPTH: usize = 2;
+/// Starts each log line of a place whose links were not made.
+const LINK_FAILURE_PREFIX: &str = "dependency links: ";
 const NEEDS_REPOSITORY: &str = "own worktree needs a git repository";
 const DATA_FOLDER_INSIDE: &str = "the office data folder is inside this repository";
 /// The undo of a create removes even the locked worktree of an interrupted
@@ -213,10 +215,7 @@ impl GitWorktrees {
             return;
         };
         for reason in reasons {
-            failures.report(&PortError::Storage {
-                message: reason.clone(),
-                is_disk_failure: false,
-            });
+            failures.note(&format!("{LINK_FAILURE_PREFIX}{reason}"));
         }
     }
 

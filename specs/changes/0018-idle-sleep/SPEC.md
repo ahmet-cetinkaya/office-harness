@@ -296,7 +296,8 @@ A parent that sends a directive to an asleep child, or a child that sends a repo
 
 ## Deviations
 
-- A sleep whose CLI ended on its own just before the stop still records the sleep entry. The status then follows the exit of the CLI, not `asleep` (`a_child_that_ended_on_its_own_leaves_the_status_to_its_exit_event`). This matches A5 and A6: the stop cannot be taken back.
+- A sleep whose CLI ended on its own just before the stop records one failed `sleep` entry with the reason "the CLI had already ended" (FR-009), answers `conflict` with that text, and changes no status: the exit event of the CLI sets it as for any exit (`a_child_that_ended_on_its_own_records_a_failed_sleep_and_leaves_the_status_to_its_exit_event`). The agent is not asleep then, so the first build's successful `sleep` entry was wrong. The office does not bar the agent (the stop did not fail), and it has left `waiting for input` anyway.
+- A user client cannot send `agent.wake`; it gets `invalid` "agent.wake is made by wake.start only", as for `agent.sleep`, because a bare wake skips the 0013 watch (`a_client_cannot_wake_an_agent_past_the_watch`). `wake.start` and the bulk resume run it inside the server. The desktop sends only `wake.start`.
 - A refused directive to an asleep agent shows in the action record with the same `invalid: ` prefix that the not-running refusal has. The wire message is the contract text "the agent is not running, it is asleep: <name>".
 - The desktop checks the idle time (0, or 5 to 1440) before it sends `settings.set`, and the server checks it again. The server stays the one that decides.
 - `agent.wake` is a starting request (`STARTING_REQUESTS` in `agent_requests.rs`), so the sign-in check of 0019 (`check_sign_in_ahead`) also runs before a wake, and a stopping server refuses a wake as it refuses any start.

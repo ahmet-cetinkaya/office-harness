@@ -93,23 +93,33 @@ impl AgentStatusBridge {
         let Some((mut event, mut detail)) = status_event(item.event) else {
             return;
         };
+        let mut not_signed_in = None;
         if let TerminalEvent::Exited { exit_code } = item.event {
             self.calls.revoke_agent(item.agent_id);
             match self.sign_in_ends.take(item.agent_id, item.run) {
                 Some(reason) => {
-                    self.end_not_signed_in(item.agent_id, &reason);
+                    self.end_session(item.agent_id, &ExitResult::NotSignedIn(reason.clone()));
                     event = StatusEvent::ExitedWithFailure;
-                    detail = Some(reason);
+                    detail = Some(reason.clone());
+                    not_signed_in = Some(reason);
                 }
                 None => self.end_session(item.agent_id, &ExitResult::Code(exit_code)),
             }
         }
         match self.change_status.handle(item.agent_id, event) {
-            Ok(Some(agent)) => self.hub.publish(&agent_status_event(
-                agent.id,
-                agent.status,
-                detail.as_deref(),
-            )),
+            Ok(Some(agent)) => {
+                // Only after the status followed: a person's stop that came
+                // between the mark and the exit leaves the agent `stopped`,
+                // and the office adds no stop entry of its own.
+                if let Some(reason) = not_signed_in {
+                    self.record_not_signed_in_stop(agent.id, &reason);
+                }
+                self.hub.publish(&agent_status_event(
+                    agent.id,
+                    agent.status,
+                    detail.as_deref(),
+                ));
+            }
             Ok(None) => {}
             Err(error) => self.alerts.report_disk_failure(&error.to_string()),
         }
@@ -125,10 +135,9 @@ impl AgentStatusBridge {
         }
     }
 
-    /// Ends the session of a CLI that the sign-in watch stopped, and
-    /// records the stop with the office as actor and the reason (0019/FR-005).
-    fn end_not_signed_in(&self, agent_id: kernel::AgentId, reason: &str) {
-        self.end_session(agent_id, &ExitResult::NotSignedIn(reason.to_owned()));
+    /// Records the stop of a CLI that the sign-in watch stopped, with the
+    /// office as actor and the reason (0019/FR-005).
+    fn record_not_signed_in_stop(&self, agent_id: kernel::AgentId, reason: &str) {
         let _office = ActorScope::enter(Actor::Office);
         if let Err(error) = self
             .journal

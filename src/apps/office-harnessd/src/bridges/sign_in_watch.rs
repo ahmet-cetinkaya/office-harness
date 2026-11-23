@@ -63,7 +63,7 @@ impl SignInEnds {
         self.runs.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn mark(&self, agent_id: AgentId, run: RunId, reason: String) {
+    pub(super) fn mark(&self, agent_id: AgentId, run: RunId, reason: String) {
         self.locked().insert(agent_id, (run, reason));
     }
 
