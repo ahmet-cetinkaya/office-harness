@@ -36,14 +36,16 @@ fn turning_the_setting_on_or_changing_it_restarts_the_count() {
 }
 
 #[test]
-fn a_failed_sleep_bars_the_agent_until_it_was_active_again() {
+fn a_failed_sleep_bars_the_agent_until_a_prompted_wait_after_the_failure() {
     let agent = AgentId::from_u128(4);
     let mut state = RoundState::new(Instant::now());
-    assert!(!state.bars(agent, Some(Duration::from_secs(600))));
+    assert!(!state.bars(agent, Some(Instant::now())));
 
-    state.failed.insert(agent, Instant::now());
+    let failed_at = Instant::now();
+    state.failed.insert(agent, failed_at);
     std::thread::sleep(Duration::from_millis(20));
-    assert!(state.bars(agent, Some(Duration::from_secs(600))));
-    assert!(!state.bars(agent, Some(Duration::ZERO)));
+    assert!(state.bars(agent, None));
+    assert!(state.bars(agent, Some(failed_at)));
+    assert!(!state.bars(agent, Some(Instant::now())));
     assert!(!state.failed.contains_key(&agent));
 }

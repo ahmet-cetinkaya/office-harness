@@ -33,6 +33,7 @@ mod terminal_events;
 mod terminal_host;
 mod terminal_launcher;
 mod typed_input;
+mod wait_tracker;
 
 pub use action_recorder::{ActionRecorderBridge, take_recorded_events};
 pub use agent_definition_bridge::AgentDefinitionBridge;
@@ -72,3 +73,4 @@ pub use terminal_launcher::{
     LaunchError, LaunchOutcome, LaunchRequest, PrepareRequest, PreparedProgram, SpawnRequest,
     TerminalLauncher,
 };
+pub use wait_tracker::{Change, StatusChange, WORK_BOUND_EXTRA, WaitTracker};

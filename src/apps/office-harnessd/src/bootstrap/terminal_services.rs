@@ -20,7 +20,7 @@ use terminal_presentation::handlers::TerminalHandlers;
 
 use super::StorageAlerts;
 use crate::bridges::{
-    PersonInput, SignInEnds, SignInWatchTiming, TerminalEvents, TerminalLauncher,
+    PersonInput, SignInEnds, SignInWatchTiming, TerminalEvents, TerminalLauncher, WaitTracker,
 };
 use crate::config::Config;
 
@@ -88,13 +88,14 @@ pub fn build_terminal_services(
         sign_in_watch,
         ..
     } = login;
+    let quiet_period = Duration::from_millis(settings.quiet_period_ms);
     let line_limit = usize::try_from(settings.output_line_limit).unwrap_or(usize::MAX);
     let events = TerminalEvents::new();
     let runtime: Arc<dyn TerminalRuntime> = Arc::new(PortableTerminalRuntime::new(
         RuntimeSettings {
             output_folder: config.output_folder_path(),
             limits: OutputLimits::with_lines(line_limit)?,
-            quiet_period: Duration::from_millis(settings.quiet_period_ms),
+            quiet_period,
         },
         Arc::new(events.clone()) as Arc<dyn TerminalEventSink>,
     ));
@@ -116,7 +117,7 @@ pub fn build_terminal_services(
         file_view: Arc::new(LocalFileView::new(git)),
         runtime,
         events,
-        person_input: PersonInput::default(),
+        person_input: PersonInput::default().with_wait_tracker(WaitTracker::new(quiet_period)),
         sign_in_ends: SignInEnds::default(),
         sign_in_timing: sign_in_watch,
     })

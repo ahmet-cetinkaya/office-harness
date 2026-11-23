@@ -62,17 +62,18 @@ impl RoundState {
         })
     }
 
-    /// True while a failed sleep still bars the agent: it has not been
-    /// active since the failure (FR-009).
-    fn bars(&mut self, agent_id: AgentId, quiet_for: Option<Duration>) -> bool {
+    /// True while a failed sleep still bars the agent: it has had no
+    /// prompted wait since the failure (FR-009). Once it has, the normal
+    /// check counts the idle time from that wait.
+    fn bars(&mut self, agent_id: AgentId, last_prompted_wait: Option<Instant>) -> bool {
         let Some(failed_at) = self.failed.get(&agent_id) else {
             return false;
         };
-        let was_active_since = quiet_for.is_some_and(|quiet| quiet < failed_at.elapsed());
-        if was_active_since {
+        let has_waited_since = last_prompted_wait.is_some_and(|waited_at| waited_at > *failed_at);
+        if has_waited_since {
             self.failed.remove(&agent_id);
         }
-        !was_active_since
+        !has_waited_since
     }
 }
 
@@ -166,7 +167,7 @@ impl IdleSleeper {
             .iter()
             .filter(|agent| agent.status == AgentStatus::WaitingForInput);
         for agent in idle {
-            if state.bars(agent.id, self.gate.quiet_for(agent.id))
+            if state.bars(agent.id, self.gate.last_prompted_wait(agent.id))
                 || self.gate.blocking_reason(agent.id).is_some()
             {
                 continue;
