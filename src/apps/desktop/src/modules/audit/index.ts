@@ -4,6 +4,8 @@ export { default as ActionRecord } from "./components/action-record.svelte";
 export {
   actionText,
   actorText,
+  detailText,
+  visibleDetail,
   resultText,
   type ActionEntry,
 } from "./models/action-entry";

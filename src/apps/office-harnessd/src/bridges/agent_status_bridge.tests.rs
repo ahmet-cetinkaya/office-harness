@@ -134,6 +134,10 @@ mod runs {
             Ok(())
         }
 
+        fn running(&self) -> Result<Vec<Session>, PortError> {
+            Ok(Vec::new())
+        }
+
         fn end_running(
             &self,
             _agent_id: AgentId,

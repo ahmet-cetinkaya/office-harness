@@ -15,6 +15,7 @@ import {
 import { createHoldController } from "../../hold";
 import { createNeedsYouController } from "../../needs-you";
 import { createResumeController } from "../../resume";
+import { createSweepController } from "../../sweep";
 import { createSleepController } from "../../sleep";
 import { createTemplateController } from "../../template";
 import { createWorktreeDependenciesController } from "../../worktree-dependencies";
@@ -24,7 +25,7 @@ export type OpenView = "panel" | "scene";
 /**
  * The panel's stores over one client: the office, the project choice, the
  * notification list with its OS notifications, the holds (0007), Needs you
- * (0008), the resume of interrupted agents (0013), the templates (0009), and the last view (0003).
+ * (0008), the resume of interrupted agents (0013), the orphan sweep (0017), the templates (0009), and the last view (0003).
  */
 export function createPanelStore(client: CoreClient) {
   const office = createOfficeStore(client, () => void notifications.load());
@@ -46,6 +47,7 @@ export function createPanelStore(client: CoreClient) {
       null,
   );
   const resume = createResumeController(client);
+  const sweep = createSweepController(client);
   const sleep = createSleepController(client);
   const worktreeDependencies = createWorktreeDependenciesController(client);
   // The restore is the one reader of `last_view` and the only place the
@@ -174,6 +176,7 @@ export function createPanelStore(client: CoreClient) {
     needsYou,
     hold,
     resume,
+    sweep,
     sleep,
     worktreeDependencies,
     templates,

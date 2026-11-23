@@ -113,18 +113,16 @@ impl ActionRepository {
         Self { connection }
     }
 
-    fn connection(&self) -> std::sync::MutexGuard<'_, Connection> {
-        // A panic in another call leaves SQLite consistent, so a poisoned
-        // lock is safe to reuse.
-        self.connection
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-    }
-}
-
-impl ActionLog for ActionRepository {
-    fn append(&self, record: &ActionRecord) -> Result<ActionEntry, AuditError> {
-        let connection = self.connection();
+    /// Appends the entry on the caller's connection or transaction, so a
+    /// caller can write it in one transaction with a change of another
+    /// module's table that shares the database (0017/FR-009).
+    ///
+    /// # Errors
+    /// `Storage` when the insert fails.
+    pub fn append_in(
+        connection: &Connection,
+        record: &ActionRecord,
+    ) -> Result<ActionEntry, AuditError> {
         connection
             .execute(
                 "INSERT INTO audit_actions (actor, target_agent_id, action, result, at, detail) \
@@ -143,6 +141,20 @@ impl ActionLog for ActionRepository {
             id: connection.last_insert_rowid(),
             record: record.clone(),
         })
+    }
+
+    fn connection(&self) -> std::sync::MutexGuard<'_, Connection> {
+        // A panic in another call leaves SQLite consistent, so a poisoned
+        // lock is safe to reuse.
+        self.connection
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl ActionLog for ActionRepository {
+    fn append(&self, record: &ActionRecord) -> Result<ActionEntry, AuditError> {
+        Self::append_in(&self.connection(), record)
     }
 
     fn list_for_agent(&self, agent_id: AgentId) -> Result<Vec<ActionEntry>, AuditError> {
