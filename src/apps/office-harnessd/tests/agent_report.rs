@@ -21,7 +21,9 @@ use hierarchy_application::common::interfaces::HierarchyStore;
 use hierarchy_domain::Role;
 use hierarchy_infrastructure::persistence::repositories::hierarchy_repository::HierarchyRepository;
 use hierarchy_infrastructure::services::agent_places::AgentPlaces;
+use office_harnessd::server::ServerOptions;
 use serde_json::{Value, json};
+use support::fake_cli::FakeClis;
 use support::office_client::{Client, Office, wait_for};
 
 /// The real server binary that the fake CLIs run as the helper.
@@ -726,5 +728,54 @@ async fn ten_child_reports_leave_room_for_the_ceos_directive_and_refuse_an_eleve
         REPORT_SHARE + 1,
         "{directive}"
     );
+    office.serving.stop().await;
+}
+
+/// Three idle times of the fast office: long enough for any sleep the rule
+/// would allow.
+const AWAKE_WATCH: Duration = Duration::from_millis(1_500);
+
+#[tokio::test]
+async fn a_waiting_report_keeps_its_parent_awake() {
+    let office = Office::open_with_options(
+        FakeClis::new(),
+        ServerOptions {
+            idle_sleep_tick: Duration::from_millis(50),
+            idle_sleep_minute: Duration::from_millis(100),
+            ..ServerOptions::default()
+        },
+    )
+    .await;
+    let mut client = office.client().await;
+    let records = office.records_path();
+    let ceo = running_agent(
+        &office,
+        &mut client,
+        "ceo",
+        Some((Role::Ceo, None)),
+        "echo 'Do you want to proceed? (y/n)'",
+    )
+    .await;
+    let lead = running_agent(
+        &office,
+        &mut client,
+        "lead",
+        Some((Role::Lead, Some(&ceo))),
+        "",
+    )
+    .await;
+    client.wait_for_status(&ceo, "waiting_for_input").await;
+    let sender = sender_of(records, "lead").await;
+    let answer = report(&sender, "done", "all green").await;
+    assert_eq!(answer["result"]["delivery"], "waiting", "{answer}");
+    // A running child would keep its parent awake on its own.
+    let stopped = client.ask("agent.stop", json!({"agent_id": lead})).await;
+    assert_eq!(stopped["ok"], true, "{stopped}");
+    client.dismiss_needs_you(&ceo).await;
+
+    client.set_setting("idle_sleep_minutes", "5").await;
+    tokio::time::sleep(AWAKE_WATCH).await;
+
+    assert_eq!(client.status_of(&ceo).await, "waiting_for_input");
     office.serving.stop().await;
 }

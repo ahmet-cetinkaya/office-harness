@@ -321,6 +321,10 @@ impl FailureReporter for FakeFailures {
     fn report(&self, _error: &PortError) {
         never_called()
     }
+
+    fn note(&self, _message: &str) {
+        never_called()
+    }
 }
 
 /// The subtree answers the host bridge would give, so these tests exercise

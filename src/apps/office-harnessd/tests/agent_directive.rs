@@ -724,6 +724,31 @@ async fn a_waiting_directive_keeps_its_target_awake() {
 }
 
 #[tokio::test]
+async fn office_text_that_waits_at_the_input_line_keeps_its_target_awake() {
+    let office = office_with_fast_idle_sleep().await;
+    // The terminal does not echo, so the pasted directive is not shown and
+    // the office leaves it unsent for the person (0012 A5).
+    let (_lead, member, token, server_file) = office_with_member_cli(
+        &office,
+        Some(Role::Lead),
+        "echo ready; stty -echo; sleep 30",
+    )
+    .await;
+    let mut client = office.client().await;
+    client.wait_for_status(&member, "waiting_for_input").await;
+    let request = json!({"target_agent_id": member, "text": DIRECTIVE});
+    let answer = answer_of(&send_directive(&token, &server_file, &request).await);
+    assert_eq!(answer["result"]["delivery"], "unsubmitted", "{answer}");
+    client.dismiss_needs_you(&member).await;
+
+    client.set_setting("idle_sleep_minutes", "5").await;
+    tokio::time::sleep(AWAKE_WATCH).await;
+
+    assert_eq!(client.status_of(&member).await, "waiting_for_input");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
 async fn a_running_child_keeps_its_parent_awake() {
     let office = office_with_fast_idle_sleep().await;
     office.clis.add("idle-cli", "echo ready; sleep 30");
@@ -748,5 +773,36 @@ async fn a_running_child_keeps_its_parent_awake() {
 
     assert_eq!(client.status_of(&member).await, "working");
     assert_eq!(client.status_of(&lead).await, "waiting_for_input");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_directive_with_the_sign_in_words_in_the_first_seconds_ends_no_session() {
+    let office = Office::open().await;
+    // The CLI echoes what it is typed, so the sign-in words of the directive
+    // show on its screen (0019 SC-010).
+    office
+        .clis
+        .add("gemini", "echo ready; stty raw echo; cat > /dev/null");
+    office.clis.add("lead-cli", &env_cli(office.records_path()));
+    let mut client = office.client().await;
+    let lead = client.create_agent(&office, "Lead", "lead-cli", None).await;
+    let member = client.create_agent(&office, "Member", "gemini", None).await;
+    place(&office, &lead, Role::Ceo, None);
+    place(&office, &member, Role::Lead, Some(&lead));
+    client.start(&member).await;
+    client.wait_for_status(&member, "waiting_for_input").await;
+    client.start(&lead).await;
+    let (token, server_file) = live_credential(office.records_path()).await;
+    let request = json!({
+        "target_agent_id": member,
+        "text": "How would you like to authenticate for this project?",
+    });
+
+    let answer = answer_of(&send_directive(&token, &server_file, &request).await);
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    assert_eq!(answer["result"]["delivery"], "submitted", "{answer}");
+    assert_eq!(client.status_of(&member).await, "waiting_for_input");
     office.serving.stop().await;
 }

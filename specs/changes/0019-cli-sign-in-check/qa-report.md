@@ -46,11 +46,11 @@
 | SC-003 | PARTIAL (automated) | `a_sign_in_screen_in_the_first_seconds_ends_the_cli_as_not_signed_in`: `failed`, session `not-signed-in: <reason>`, one `stop` entry with actor `office`, one `failed` notification. The test waits up to 6 s, not 3 s; 1 start, not 5. |
 | SC-004 | PASS (automated) | `sign_in_words_after_the_watch_period_end_nothing` (words after the period) and `a_key_typed_into_an_agent_stops_only_its_own_watch` (a person's key stops that agent's watch, and only that one: L1). |
 | SC-005 | PARTIAL (automated) | `a_start_of_a_cli_that_is_not_signed_in_fails_with_one_visible_reason`: a key-shaped line is in no answer, session, action entry, or the server log; the quoted line shows ESC and U+202E as visible symbols. `a_signed_in_cli_starts_and_its_status_output_shows_nowhere`. `a_quoted_line_is_visible_and_capped` (200 characters). The output was a few lines, not 10 KiB; `at_most_the_cap_is_kept` covers 1 MiB at the runner. |
-| SC-006 | PARTIAL (automated) | The runner (`status_command.rs`) only spawns the program and reads its pipes; it opens no file. No test compares a home folder before and after a check. |
+| SC-006 | PARTIAL (automated) | `a_check_leaves_the_home_folder_unchanged` (`tests/sign_in_check.rs`): the file list, sizes, and change times of the fake home folder are equal before and after a check. 1 check, and the home folder only: the office's data folder changes by design when a start fails (database, log), so it is not compared. |
 | SC-007 | BLOCKED | Research R1 ran the real status commands by hand: `claude auth status` exit 0 signed in, exit 1 with `Not logged in` in an empty home; `codex login status` exit 1 with `Not logged in`. A start of an agent with the real CLIs through the office was not run. |
 | SC-008 | PARTIAL (automated) | `a_hanging_status_command_blocks_no_stop_and_the_start_goes_on`: a stop of another running agent ends within 1 s while the check hangs. 1 stop, not 5. |
 | SC-009 | PARTIAL (automated) | `own_arguments_flags_or_a_key_variable_skip_the_check` (application: own arguments, flags, key variable in the additions) and `own_arguments_or_a_key_variable_skip_the_check` (server): 0 status runs, the agents start. A key variable in the login environment (`StatusCommandBridge`) has no test. |
-| SC-010 | PARTIAL (automated) | `a_startup_prompt_with_the_words_turns_the_watch_off`. The directive case (`DirectiveWriterBridge::deliver` stamps `PersonInput::directive_typed` before its paste) has no integration test. |
+| SC-010 | PARTIAL (automated) | `a_startup_prompt_with_the_words_turns_the_watch_off`; the directive case: `a_directive_with_the_sign_in_words_in_the_first_seconds_ends_no_session` (`tests/agent_directive.rs`: the sign-in words are echoed on the screen of a `gemini` agent, and it stays `waiting_for_input` for 3 s). 2 sessions, not 6. |
 
 ## Requirements
 
@@ -60,7 +60,7 @@
 | FR-002 | SC-001 rows; `a_new_task_on_a_running_agent_is_refused_and_the_running_session_goes_on`, `a_continue_on_a_running_agent_is_refused_and_the_running_session_goes_on`. |
 | FR-003 | SC-002 rows. |
 | FR-004 | `a_check_without_an_answer_lets_the_start_go_on_with_a_note`, `an_agent_that_changed_after_the_check_ahead_starts_with_a_note`, the answer table in `sign_in_check.tests.rs`. |
-| FR-005 | SC-003 and SC-004 rows. |
+| FR-005 | SC-003 and SC-004 rows; `a_persons_stop_between_the_mark_and_the_exit_keeps_stopped_and_adds_no_entry` and `a_sign_in_stop_that_ends_a_working_run_records_one_office_stop` (`agent_status_bridge.tests.rs`). |
 | FR-006 | `the_command_gets_its_arguments_the_folder_and_exactly_the_environment`, `the_input_is_empty`, `at_most_the_cap_is_kept`; the server test checks that no `OFFICE_HARNESS_` name reaches the status command. |
 | FR-007 | `the_reason_names_the_cli_how_it_was_found_and_what_to_do`, `a_quoted_line_is_visible_and_capped`. |
 | FR-008 | SC-005 row; `the_no_answer_note_says_why_without_output`. |

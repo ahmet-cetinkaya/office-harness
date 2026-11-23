@@ -52,7 +52,8 @@ fn recording(fixture: &Fixture) -> (GitWorktrees, Arc<RecordedFailures>) {
     (worktrees, failures)
 }
 
-/// The reported reasons, without the storage prefix of the log line.
+/// The reported reasons, without the prefix that every link failure line
+/// must start with.
 #[cfg(unix)]
 fn recorded(failures: &RecordedFailures) -> Vec<String> {
     let mut reasons: Vec<String> = failures
@@ -60,7 +61,11 @@ fn recorded(failures: &RecordedFailures) -> Vec<String> {
         .lock()
         .expect("lock")
         .iter()
-        .map(|line| line.trim_start_matches("storage failure: ").to_owned())
+        .map(|line| {
+            line.strip_prefix("dependency links: ")
+                .unwrap_or_else(|| panic!("a link failure line without its prefix: {line}"))
+                .to_owned()
+        })
         .collect();
     reasons.sort();
     reasons

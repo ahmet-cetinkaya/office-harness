@@ -63,15 +63,17 @@ mod runs {
 
     use super::*;
 
-    /// The status bridge records only stops at a sign-in screen; these tests
-    /// have none.
-    struct NoRecords;
+    /// The status bridge records only stops at a sign-in screen; this keeps
+    /// them for the tests that have one.
+    #[derive(Default)]
+    struct StopRecords(Mutex<Vec<agent_application::common::models::AgentActionEntry>>);
 
-    impl agent_application::common::interfaces::ActionRecorder for NoRecords {
+    impl agent_application::common::interfaces::ActionRecorder for StopRecords {
         fn record(
             &self,
-            _entry: &agent_application::common::models::AgentActionEntry,
+            entry: &agent_application::common::models::AgentActionEntry,
         ) -> Result<(), PortError> {
+            self.0.lock().expect("lock").push(entry.clone());
             Ok(())
         }
     }
@@ -206,6 +208,19 @@ mod runs {
         agent: &Agent,
         current: RunId,
     ) -> (AgentStatusBridge, Arc<OneAgent>, Arc<EndsOnly>) {
+        let (bridge, store, ends, _records) = bridge_recording(agent, current);
+        (bridge, store, ends)
+    }
+
+    fn bridge_recording(
+        agent: &Agent,
+        current: RunId,
+    ) -> (
+        AgentStatusBridge,
+        Arc<OneAgent>,
+        Arc<EndsOnly>,
+        Arc<StopRecords>,
+    ) {
         let store = Arc::new(OneAgent(Mutex::new(agent.clone())));
         let log_folder = tempfile::tempdir().expect("folder");
         let config = crate::config::Config {
@@ -213,6 +228,7 @@ mod runs {
         };
         let log = crate::bootstrap::open_log(&config).expect("log");
         let ends = Arc::new(EndsOnly::default());
+        let records = Arc::new(StopRecords::default());
         let bridge = AgentStatusBridge {
             change_status: ChangeAgentStatusHandler::new(store.clone()),
             end_session: EndSessionHandler::new(
@@ -226,9 +242,9 @@ mod runs {
             log,
             calls: Arc::new(access_infrastructure::services::MemoryAgentCallStore::new()),
             sign_in_ends: SignInEnds::default(),
-            journal: ActionJournal::new(Arc::new(NoRecords), Arc::new(crate::bridges::SystemClock)),
+            journal: ActionJournal::new(records.clone(), Arc::new(crate::bridges::SystemClock)),
         };
-        (bridge, store, ends)
+        (bridge, store, ends, records)
     }
 
     fn running_agent() -> Agent {
@@ -288,5 +304,46 @@ mod runs {
         });
 
         assert_eq!(*ends.0.lock().expect("lock"), [ExitResult::Code(7)]);
+    }
+
+    #[test]
+    fn a_sign_in_stop_that_ends_a_working_run_records_one_office_stop() {
+        let agent = running_agent();
+        let (bridge, store, _ends, records) = bridge_recording(&agent, RunId(2));
+        bridge
+            .sign_in_ends
+            .mark(agent.id, RunId(2), "not signed in".to_owned());
+
+        bridge.apply(AgentTerminalEvent {
+            agent_id: agent.id,
+            run: RunId(2),
+            event: TerminalEvent::Exited { exit_code: 1 },
+        });
+
+        assert_eq!(store.0.lock().expect("lock").status, AgentStatus::Failed);
+        let entries = records.0.lock().expect("lock");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].action, AgentAction::Stop);
+        assert_eq!(entries[0].actor, Actor::Office);
+        assert_eq!(entries[0].failure.as_deref(), Some("not signed in"));
+    }
+
+    #[test]
+    fn a_persons_stop_between_the_mark_and_the_exit_keeps_stopped_and_adds_no_entry() {
+        let mut agent = running_agent();
+        agent.status = AgentStatus::Stopped;
+        let (bridge, store, _ends, records) = bridge_recording(&agent, RunId(2));
+        bridge
+            .sign_in_ends
+            .mark(agent.id, RunId(2), "not signed in".to_owned());
+
+        bridge.apply(AgentTerminalEvent {
+            agent_id: agent.id,
+            run: RunId(2),
+            event: TerminalEvent::Exited { exit_code: 1 },
+        });
+
+        assert_eq!(store.0.lock().expect("lock").status, AgentStatus::Stopped);
+        assert!(records.0.lock().expect("lock").is_empty());
     }
 }

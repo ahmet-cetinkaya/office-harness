@@ -10,6 +10,8 @@ use agent_domain::value_objects::ExitResult;
 use crate::common::errors::{ApplicationError, TerminalHostError};
 use crate::common::interfaces::{AgentStore, Clock, SessionStore, SettingsStore, TerminalHost};
 
+const CLI_ALREADY_ENDED: &str = "the CLI had already ended";
+
 /// Whether the terminal still had a child to end.
 #[derive(Debug, PartialEq, Eq)]
 enum ChildEnd {
@@ -76,11 +78,12 @@ impl SessionEnder {
     /// becomes `asleep` and the session closes as it does for a stop.
     ///
     /// # Errors
-    /// As `stop`.
+    /// As `stop`; `Conflict` when the child ended on its own just before, so
+    /// the agent is not asleep and its exit event sets the status.
     pub fn sleep(&self, agent: &mut Agent) -> Result<(), ApplicationError> {
         match self.stop_child(agent)? {
             ChildEnd::Stopped => self.record_end(agent, StatusEvent::PutToSleep),
-            ChildEnd::AlreadyGone => Ok(()),
+            ChildEnd::AlreadyGone => Err(ApplicationError::Conflict(CLI_ALREADY_ENDED.to_owned())),
         }
     }
 

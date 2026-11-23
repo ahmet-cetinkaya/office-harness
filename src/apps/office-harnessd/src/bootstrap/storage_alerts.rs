@@ -80,4 +80,8 @@ impl FailureReporter for StorageAlerts {
                 .error(&format!("a background write failed: {other}")),
         }
     }
+
+    fn note(&self, message: &str) {
+        self.log.error(message);
+    }
 }

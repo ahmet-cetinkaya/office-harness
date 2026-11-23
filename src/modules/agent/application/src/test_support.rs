@@ -345,6 +345,8 @@ struct IgnoredFailures;
 
 impl FailureReporter for IgnoredFailures {
     fn report(&self, _error: &PortError) {}
+
+    fn note(&self, _message: &str) {}
 }
 
 /// Adapters that build recognizable command lines. A program named `generic`
