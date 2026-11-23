@@ -55,7 +55,7 @@ impl SessionEnder {
     /// it was.
     pub fn stop(&self, agent: &mut Agent) -> Result<(), ApplicationError> {
         match self.stop_child(agent)? {
-            ChildEnd::Stopped => self.record_stop(agent),
+            ChildEnd::Stopped => self.record_end(agent, StatusEvent::StoppedByUser),
             ChildEnd::AlreadyGone => Ok(()),
         }
     }
@@ -69,7 +69,19 @@ impl SessionEnder {
     /// As `stop`.
     pub fn stop_for_restart(&self, agent: &mut Agent) -> Result<(), ApplicationError> {
         self.stop_child(agent)?;
-        self.record_stop(agent)
+        self.record_end(agent, StatusEvent::StoppedByUser)
+    }
+
+    /// As `stop`, for the office putting an idle agent to sleep: the status
+    /// becomes `asleep` and the session closes as it does for a stop.
+    ///
+    /// # Errors
+    /// As `stop`.
+    pub fn sleep(&self, agent: &mut Agent) -> Result<(), ApplicationError> {
+        match self.stop_child(agent)? {
+            ChildEnd::Stopped => self.record_end(agent, StatusEvent::PutToSleep),
+            ChildEnd::AlreadyGone => Ok(()),
+        }
     }
 
     fn stop_child(&self, agent: &Agent) -> Result<ChildEnd, ApplicationError> {
@@ -81,8 +93,8 @@ impl SessionEnder {
         }
     }
 
-    fn record_stop(&self, agent: &mut Agent) -> Result<(), ApplicationError> {
-        agent.apply(StatusEvent::StoppedByUser)?;
+    fn record_end(&self, agent: &mut Agent, event: StatusEvent) -> Result<(), ApplicationError> {
+        agent.apply(event)?;
         self.agents.update_status(agent.id, agent.status)?;
         self.sessions
             .end_running(agent.id, &ExitResult::Signal, self.clock.now())?;

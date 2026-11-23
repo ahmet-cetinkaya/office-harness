@@ -10,6 +10,7 @@ fn defaults_follow_the_data_model() {
     assert_eq!(settings.stop_grace_ms, 10_000);
     assert_eq!(settings.focus_shortcut, "Ctrl+Shift+F12");
     assert_eq!(settings.last_view, None);
+    assert_eq!(settings.idle_sleep_minutes, 0);
 }
 
 #[test]
@@ -376,4 +377,36 @@ fn the_focus_shortcut_cannot_take_the_office_hold() {
             reserved_for: "the office hold",
         })
     );
+}
+
+#[test]
+fn idle_sleep_takes_zero_or_five_to_fourteen_forty_minutes() {
+    for value in ["0", "5", "30", "1440"] {
+        let mut settings = Settings::default();
+        settings
+            .set_from_text(SettingKey::IdleSleepMinutes, value)
+            .expect("valid");
+        assert_eq!(settings.value_of(SettingKey::IdleSleepMinutes), value);
+    }
+}
+
+#[test]
+fn idle_sleep_outside_that_range_is_refused_and_keeps_the_stored_value() {
+    for value in ["4", "1", "1441", "2.5", "-5", "abc", ""] {
+        let mut settings = Settings::default();
+        settings
+            .set_from_text(SettingKey::IdleSleepMinutes, "30")
+            .expect("valid");
+
+        let error = settings
+            .set_from_text(SettingKey::IdleSleepMinutes, value)
+            .expect_err(value);
+
+        assert_eq!(
+            error.to_string(),
+            "idle_sleep_minutes is 0 (off) or a whole number of minutes from 5 to 1440",
+            "{value}"
+        );
+        assert_eq!(settings.idle_sleep_minutes, 30, "{value}");
+    }
 }

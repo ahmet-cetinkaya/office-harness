@@ -11,6 +11,7 @@ use agent_application::commands::resume_agent::ResumeAgentHandler;
 use agent_application::commands::set_office_additions::SetOfficeAdditionsHandler;
 use agent_application::commands::set_setting::SetSettingHandler;
 use agent_application::commands::set_task_text::SetTaskTextHandler;
+use agent_application::commands::sleep_agent::SleepAgentHandler;
 use agent_application::commands::start_agent::StartAgentHandler;
 use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
@@ -18,7 +19,7 @@ use agent_application::common::action_journal::ActionJournal;
 use agent_application::common::errors::{PortError, TerminalHostError};
 use agent_application::common::interfaces::{
     ActionRecorder, AdditionsStore, AgentStore, CliAdapter, CliAdapters, Clock, DiffRequest,
-    FailureReporter, FileView, FileViewError, ProjectStore, SessionStore, SettingsStore,
+    FailureReporter, FileView, FileViewError, ProjectStore, SessionStore, SettingsStore, SleepGate,
     TerminalHost,
 };
 use agent_application::common::models::{
@@ -285,6 +286,20 @@ impl ActionRecorder for RecordingRecorder {
     }
 }
 
+/// A gate that blocks nothing: these tests reach the sleep step only up to
+/// the status check.
+struct OpenSleepGate;
+
+impl SleepGate for OpenSleepGate {
+    fn blocking_reason(&self, _agent_id: AgentId) -> Option<String> {
+        None
+    }
+
+    fn begin(&self, _agent_id: AgentId) {}
+
+    fn end(&self, _agent_id: AgentId) {}
+}
+
 #[derive(Default)]
 struct FakeFailures;
 
@@ -374,6 +389,19 @@ fn stores() -> FakeStores {
     }
 }
 
+fn sleep_handler(
+    stores: &FakeStores,
+    ender: SessionEnder,
+    journal: ActionJournal,
+) -> SleepAgentHandler {
+    SleepAgentHandler::new(
+        Arc::clone(&stores.agents_trait),
+        ender,
+        journal,
+        Arc::new(OpenSleepGate),
+    )
+}
+
 fn use_cases(stores: &FakeStores) -> AgentUseCases {
     let journal = ActionJournal::new(Arc::new(RecordingRecorder), Arc::clone(&stores.clock));
     let ender = SessionEnder::new(
@@ -430,7 +458,7 @@ fn use_cases(stores: &FakeStores) -> AgentUseCases {
             Arc::clone(&stores.agents_trait),
             Arc::clone(&stores.sessions),
             Arc::clone(&stores.adapters),
-            ender,
+            ender.clone(),
             launcher.clone(),
             journal.clone(),
         ),
@@ -441,6 +469,7 @@ fn use_cases(stores: &FakeStores) -> AgentUseCases {
             launcher,
             journal.clone(),
         ),
+        sleep_agent: sleep_handler(stores, ender, journal.clone()),
         set_office_additions: SetOfficeAdditionsHandler::new(
             Arc::clone(&stores.agents_trait),
             Arc::clone(&stores.additions),
@@ -772,6 +801,78 @@ fn a_resume_of_an_unknown_agent_is_not_found() {
     ));
 
     assert_eq!(failure_of(&handled).0, "not_found");
+}
+
+#[test]
+fn a_wake_request_with_another_field_is_refused_by_name() {
+    let (_agents, handlers) = single_agent_office();
+
+    let handled = handlers.handle(&request(
+        "agent.wake",
+        &json!({ "agent_id": AgentId::generate().as_uuid_text(), "after_session": "x" }),
+    ));
+
+    assert_eq!(
+        failure_of(&handled),
+        (
+            "invalid",
+            "after_session is not a field of agent.wake".to_owned()
+        )
+    );
+}
+
+#[test]
+fn a_wake_of_an_agent_that_is_not_asleep_is_a_conflict_without_events() {
+    let agent_id = AgentId::generate();
+    let (agents, handlers) = single_agent_office();
+    agents.insert_new(agent_id, AgentStatus::Interrupted);
+
+    let handled = handlers.handle(&request(
+        "agent.wake",
+        &json!({ "agent_id": agent_id.as_uuid_text() }),
+    ));
+
+    assert_eq!(
+        failure_of(&handled),
+        ("conflict", "the agent is no longer asleep".to_owned())
+    );
+    assert_eq!(handled.events.len(), 0);
+}
+
+#[test]
+fn a_sleep_request_needs_the_idle_minutes_and_refuses_other_fields() {
+    let (_agents, handlers) = single_agent_office();
+    let agent_id = AgentId::generate().as_uuid_text();
+
+    let missing = handlers.handle(&request("agent.sleep", &json!({ "agent_id": agent_id })));
+    let other = handlers.handle(&request(
+        "agent.sleep",
+        &json!({ "agent_id": agent_id, "idle_minutes": 30, "force": true }),
+    ));
+
+    assert_eq!(
+        failure_of(&missing),
+        ("invalid", "idle_minutes is required".to_owned())
+    );
+    assert_eq!(
+        failure_of(&other),
+        ("invalid", "force is not a field of agent.sleep".to_owned())
+    );
+}
+
+#[test]
+fn a_sleep_of_an_agent_that_is_not_waiting_is_a_conflict_without_events() {
+    let agent_id = AgentId::generate();
+    let (agents, handlers) = single_agent_office();
+    agents.insert_new(agent_id, AgentStatus::Working);
+
+    let handled = handlers.handle(&request(
+        "agent.sleep",
+        &json!({ "agent_id": agent_id.as_uuid_text(), "idle_minutes": 30 }),
+    ));
+
+    assert_eq!(failure_of(&handled).0, "conflict");
+    assert_eq!(handled.events.len(), 0);
 }
 
 /// An absolute folder on every platform; nothing is created there.

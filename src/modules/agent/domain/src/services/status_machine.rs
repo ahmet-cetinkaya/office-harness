@@ -9,14 +9,18 @@ use crate::errors::AgentError;
 /// # Errors
 /// `AgentError::InvalidTransition` when `event` is not allowed in `status`.
 pub fn next_status(status: AgentStatus, event: StatusEvent) -> Result<AgentStatus, AgentError> {
-    use AgentStatus::{Exited, Failed, Interrupted, Starting, Stopped, WaitingForInput, Working};
+    use AgentStatus::{
+        Asleep, Exited, Failed, Interrupted, Starting, Stopped, WaitingForInput, Working,
+    };
 
     let next = match (status, event) {
-        (Exited | Failed | Stopped | Interrupted, StatusEvent::Start) => Some(Starting),
+        (Exited | Failed | Stopped | Interrupted | Asleep, StatusEvent::Start) => Some(Starting),
         (Starting, StatusEvent::FirstOutput) | (WaitingForInput, StatusEvent::Output) => {
             Some(Working)
         }
         (Working, StatusEvent::QuietPeriodElapsed) => Some(WaitingForInput),
+        (WaitingForInput, StatusEvent::PutToSleep) => Some(Asleep),
+        (Asleep, StatusEvent::StoppedByUser) => Some(Stopped),
         (running, StatusEvent::ExitedWithCodeZero) if running.is_running() => Some(Exited),
         (running, StatusEvent::ExitedWithFailure) if running.is_running() => Some(Failed),
         (running, StatusEvent::StoppedByUser) if running.is_running() => Some(Stopped),

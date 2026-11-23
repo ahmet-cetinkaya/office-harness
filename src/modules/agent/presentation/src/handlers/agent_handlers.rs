@@ -16,6 +16,7 @@ use agent_application::commands::resume_agent::{ResumeAgentHandler, ResumeOutcom
 use agent_application::commands::set_office_additions::SetOfficeAdditionsHandler;
 use agent_application::commands::set_setting::SetSettingHandler;
 use agent_application::commands::set_task_text::SetTaskTextHandler;
+use agent_application::commands::sleep_agent::SleepAgentHandler;
 use agent_application::commands::start_agent::{StartAgentHandler, StartOutcome};
 use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
@@ -40,7 +41,8 @@ use crate::contracts::{
     AdditionsRequest, AgentIdRequest, CreateAgentRequest, CreateProjectRequest, DeleteAgentRequest,
     FilesCommitRequest, FilesDiffRequest, FilesHistoryRequest, FilesListRequest, FilesReadRequest,
     ProjectIdRequest, ResumeAgentRequest, RolePlacement, SessionIdRequest, SettingKeyRequest,
-    SettingRequest, TaskTextRequest, WorktreeInfoRequest, WorktreeStatusRequest,
+    SettingRequest, SleepAgentRequest, TaskTextRequest, WakeAgentRequest, WorktreeInfoRequest,
+    WorktreeStatusRequest,
 };
 use crate::mappings::{
     additions_changed_event, additions_json, agent_changed_event, agent_deleted_event, agent_json,
@@ -66,6 +68,7 @@ pub struct AgentUseCases {
     pub start_new_task: StartNewTaskHandler,
     pub continue_session: ContinueSessionHandler,
     pub resume_agent: ResumeAgentHandler,
+    pub sleep_agent: SleepAgentHandler,
     pub set_office_additions: SetOfficeAdditionsHandler,
     pub set_task_text: SetTaskTextHandler,
     pub get_office_additions: GetOfficeAdditionsHandler,
@@ -209,6 +212,8 @@ impl AgentHandlers {
             "agent.stop" => self.stop_agent(request),
             "agent.new_task" => self.start_new_task(request),
             "agent.resume" => self.resume_agent(request),
+            "agent.sleep" => self.sleep_agent(request),
+            "agent.wake" => self.wake_agent(request),
             "agent.additions.get" => self.get_additions(request),
             "agent.additions.set" => self.set_additions(request),
             "agent.task.set" => self.set_task_text(request),
@@ -428,6 +433,23 @@ impl AgentHandlers {
             None => resumer.resume(agent_id)?,
         };
         Ok(resumed_session(outcome))
+    }
+
+    fn wake_agent(&self, request: &Request) -> Result<Success, HandlerError> {
+        let body = WakeAgentRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        let agent_id: AgentId = parse_id("agent_id", &body.agent_id)?;
+        let outcome = self.use_cases.resume_agent.wake(agent_id)?;
+        Ok(resumed_session(outcome))
+    }
+
+    fn sleep_agent(&self, request: &Request) -> Result<Success, HandlerError> {
+        let body = SleepAgentRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        let agent_id: AgentId = parse_id("agent_id", &body.agent_id)?;
+        let agent = self
+            .use_cases
+            .sleep_agent
+            .handle(agent_id, body.idle_minutes)?;
+        Ok(Success::done().with_event(agent_status_event(agent_id, agent.status, None)))
     }
 
     fn set_task_text(&self, request: &Request) -> Result<Success, HandlerError> {

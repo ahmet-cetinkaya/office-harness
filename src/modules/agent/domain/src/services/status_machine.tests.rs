@@ -2,10 +2,12 @@
 
 use super::*;
 
-use AgentStatus::{Exited, Failed, Interrupted, Starting, Stopped, WaitingForInput, Working};
+use AgentStatus::{
+    Asleep, Exited, Failed, Interrupted, Starting, Stopped, WaitingForInput, Working,
+};
 use StatusEvent::{
-    ExitedWithCodeZero, ExitedWithFailure, FirstOutput, Output, QuietPeriodElapsed, ServerStopped,
-    Start, StoppedByUser,
+    ExitedWithCodeZero, ExitedWithFailure, FirstOutput, Output, PutToSleep, QuietPeriodElapsed,
+    ServerStopped, Start, StoppedByUser,
 };
 
 /// Every transition of the data model's state machine, written out once.
@@ -14,6 +16,8 @@ fn allowed_transitions() -> Vec<(AgentStatus, StatusEvent, AgentStatus)> {
         (Starting, FirstOutput, Working),
         (Working, QuietPeriodElapsed, WaitingForInput),
         (WaitingForInput, Output, Working),
+        (WaitingForInput, PutToSleep, Asleep),
+        (Asleep, StoppedByUser, Stopped),
     ];
     for running in AgentStatus::RUNNING {
         transitions.push((running, ExitedWithCodeZero, Exited));
@@ -21,7 +25,7 @@ fn allowed_transitions() -> Vec<(AgentStatus, StatusEvent, AgentStatus)> {
         transitions.push((running, StoppedByUser, Stopped));
         transitions.push((running, ServerStopped, Interrupted));
     }
-    for finished in [Exited, Failed, Stopped, Interrupted] {
+    for finished in [Exited, Failed, Stopped, Interrupted, Asleep] {
         transitions.push((finished, Start, Starting));
     }
     transitions
@@ -30,7 +34,7 @@ fn allowed_transitions() -> Vec<(AgentStatus, StatusEvent, AgentStatus)> {
 #[test]
 fn allows_exactly_the_transitions_of_the_data_model() {
     let allowed = allowed_transitions();
-    assert_eq!(allowed.len(), 19);
+    assert_eq!(allowed.len(), 22);
 
     for status in AgentStatus::ALL {
         for event in StatusEvent::ALL {
@@ -62,4 +66,21 @@ fn error_message_names_the_status_and_the_event() {
         error.to_string(),
         "an agent that is stopped cannot take the event output"
     );
+}
+
+#[test]
+fn only_a_waiting_agent_goes_to_sleep() {
+    for status in AgentStatus::ALL {
+        let moved = next_status(status, PutToSleep).is_ok();
+        assert_eq!(moved, status == WaitingForInput, "{status}");
+    }
+}
+
+#[test]
+fn an_asleep_agent_is_not_running_and_takes_only_a_start_or_a_stop() {
+    assert!(!Asleep.is_running());
+    for event in StatusEvent::ALL {
+        let moved = next_status(Asleep, event).is_ok();
+        assert_eq!(moved, matches!(event, Start | StoppedByUser), "{event}");
+    }
 }
