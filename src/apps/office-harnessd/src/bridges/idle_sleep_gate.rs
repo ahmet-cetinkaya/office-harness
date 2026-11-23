@@ -158,8 +158,8 @@ impl GateInputs {
         let since_waiting = self
             .runtime
             .quiet_for(agent_id)
-            .map(|quiet| quiet.saturating_sub(self.quiet_period))
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .saturating_sub(self.quiet_period);
         let since_input = self
             .person_input
             .since_last_input(agent_id)
