@@ -218,6 +218,9 @@ impl TerminalHost for TerminalHostBridge {
                 self.person_input.clone(),
             );
         }
+        self.person_input
+            .wait_tracker()
+            .session_started(request.agent_id, self.runtime.current_run(request.agent_id));
         Ok(())
     }
 

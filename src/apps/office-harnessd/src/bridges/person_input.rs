@@ -8,6 +8,8 @@ use kernel::AgentId;
 use terminal_application::common::models::RunId;
 use terminal_domain::services::InputDraft;
 
+use super::wait_tracker::WaitTracker;
+
 /// How long after a person's last input the office keeps directives out of
 /// that terminal (0012/FR-002).
 pub const PERSON_TYPING_PAUSE: Duration = Duration::from_secs(30);
@@ -28,13 +30,29 @@ struct TerminalInput {
 /// What people type into each terminal, as far as directives need it: when
 /// they last typed, whether text they typed waits unsent (0012 A5), and
 /// whether text the office typed without Enter still waits for them (0012
-/// A11). Clones share one record.
+/// A11). Each input of a person or of the office is also a wait end for the
+/// wait tracker (0022 D2). Clones share one record.
 #[derive(Clone, Default)]
 pub struct PersonInput {
     terminals: Arc<Mutex<HashMap<AgentId, TerminalInput>>>,
+    waits: WaitTracker,
 }
 
 impl PersonInput {
+    /// Records into `waits`, so that the tracker that the status code asks
+    /// is the one that these inputs end waits in.
+    #[must_use]
+    pub fn with_wait_tracker(mut self, waits: WaitTracker) -> Self {
+        self.waits = waits;
+        self
+    }
+
+    /// The tracker that this record tells of wait ends.
+    #[must_use]
+    pub fn wait_tracker(&self) -> &WaitTracker {
+        &self.waits
+    }
+
     fn locked(&self) -> MutexGuard<'_, HashMap<AgentId, TerminalInput>> {
         self.terminals
             .lock()
@@ -49,6 +67,8 @@ impl PersonInput {
     }
 
     fn stamp_at(&self, agent_id: AgentId, bytes: &[u8], at: Instant) {
+        // Before the status event that the input causes (0022 D2).
+        self.waits.wait_end(agent_id);
         let mut terminals = self.locked();
         let terminal = terminals.entry(agent_id).or_default();
         terminal.last_input = Some(at);
@@ -68,6 +88,7 @@ impl PersonInput {
 
     /// The office is about to type a directive into the agent's terminal.
     pub fn directive_typed(&self, agent_id: AgentId) {
+        self.waits.wait_end(agent_id);
         self.locked().entry(agent_id).or_default().last_directive = Some(Instant::now());
     }
 
@@ -89,6 +110,7 @@ impl PersonInput {
     /// The office typed text without Enter into `run`, which waits for the
     /// person until their next input or the run's end.
     pub fn office_text_left(&self, agent_id: AgentId, run: RunId) {
+        self.waits.wait_end(agent_id);
         self.locked()
             .entry(agent_id)
             .or_default()

@@ -178,14 +178,20 @@ impl TerminalGateway {
 
     async fn input(&self, request: &Request) -> Result<Response, HandlerError> {
         let body: InputRequest = parse_body(request)?;
-        // Before the bytes go in, so a directive gate never reads a terminal
-        // as untouched while a person's keys are on their way. The handler
-        // refuses an id or data that does not parse.
-        if let (Ok(agent_id), Ok(bytes)) = (body.agent_id.parse::<AgentId>(), body.bytes()) {
-            self.person_input.stamp(agent_id, &bytes);
-        }
         let handlers = Arc::clone(&self.handlers);
-        run_blocking(move || handlers.input(&body)).await?;
+        let person_input = self.person_input.clone();
+        run_blocking(move || {
+            // Before the bytes go in, so a directive gate never reads a
+            // terminal as untouched while a person's keys are on their way.
+            // On the blocking pool, because the wait end may read and write
+            // the store (0022). The handler refuses an id or data that does
+            // not parse.
+            if let (Ok(agent_id), Ok(bytes)) = (body.agent_id.parse::<AgentId>(), body.bytes()) {
+                person_input.stamp(agent_id, &bytes);
+            }
+            handlers.input(&body)
+        })
+        .await?;
         Ok(Response::success(request.id, Value::Null))
     }
 
