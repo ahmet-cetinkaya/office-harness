@@ -213,6 +213,17 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - **T5, marks.** `ended` shows "Ended N processes left from the last run" (singular for 1) and does not gate Confirm. `may_run` shows the 0013 mark with the reason after a colon and gates Confirm. An older server that sends only `after_unclean_stop: true` reads as `may_run`.
 - **T5, detail text.** The action record escapes every control and format character (`\p{Cc}`, `\p{Cf}`, which include the bidirectional controls) in any detail as `\u{..}` and renders text only. The new action texts start with a capital, as the existing ones do.
 
+- **T7, review fixes.**
+  - B1: the helper walk takes a child only when it started at or after its parent (`sysinfo` start time, whole seconds, equal accepted), so a stale parent link on Windows (the parent exited, the id was reused) never lists an unrelated process or its subtree.
+  - S1: `ProcessInspector::open` returns `Result<_, ReadError>`; only "no such process" is `NotRunning`, every other failure is `NotReadable` (sweep: `left: not readable`, `may_run`; recorder: the row is kept).
+  - S2: the README now states the A10 limit (macOS, Linux before 5.3); SPEC A10 and `research.md` add the macOS whole-second start time effect on `update_command`.
+  - S3: `SweepSummary.stored` became `cli_rows`; `no stored process` holds when no CLI row exists, helper rows alone do not count.
+  - S4: at most 64 settle tasks run at once (`Semaphore`), so the sweep cannot take the whole blocking pool; 64 covers SC-003.
+  - N-a: a drop guard opens the gate and publishes `done` even when the sweep task panics; the notifier calls run in `spawn_blocking`.
+  - N-b: the resume dialog reads the plan again on `client.resync` while it shows "sweeping".
+  - N-c: the server escapes the same set as the desktop (Cc, Cf, U+2028, U+2029) as `\u{..}`; the desktop adds U+2028 and U+2029.
+  - N-e: `open` refuses pid 0 and 1 with `NotReadable`, so `kill(0)` can never reach the server's process group.
+
 ## Review log
 
 r1 (Efe, fa44fb0): M1 to M3, L1, L2 resolved as below. r2 (Efe, 350ff07): PASS for coding; N1 (macOS FR-011 residual under A10) is checked in the code review.

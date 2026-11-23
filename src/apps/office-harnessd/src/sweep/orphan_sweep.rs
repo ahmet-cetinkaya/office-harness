@@ -80,11 +80,25 @@ impl OrphanSweep {
                 leftovers.len()
             ));
             events.publish(&sweep_event(SweepState::Running));
+            let _finish = FinishOnDrop { gate, events };
             sweep.run(leftovers, grace).await;
-            gate.finish();
-            events.publish(&sweep_event(SweepState::Done));
             sweep.log.info("sweep done");
         });
+    }
+}
+
+/// Opens the gate and publishes `done` when the sweep task ends, also when it
+/// panics, so a failure outside one identity never holds the user's requests
+/// (and the desktop dialog) forever.
+struct FinishOnDrop {
+    gate: SweepGate,
+    events: EventHub,
+}
+
+impl Drop for FinishOnDrop {
+    fn drop(&mut self) {
+        self.gate.finish();
+        self.events.publish(&sweep_event(SweepState::Done));
     }
 }
 
@@ -110,3 +124,7 @@ fn owned_leftovers(
     }
     Ok(leftovers)
 }
+
+#[cfg(test)]
+#[path = "orphan_sweep.tests.rs"]
+mod tests;

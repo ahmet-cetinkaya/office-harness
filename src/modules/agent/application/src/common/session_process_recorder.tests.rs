@@ -126,6 +126,22 @@ fn a_helper_that_ended_is_dropped() {
 }
 
 #[test]
+fn a_helper_that_cannot_be_read_stays_stored() {
+    let fixture = fixture();
+    start_helper(&fixture, HELPER_PID, "node server.js");
+    fixture.office.probe.set_descendants(&[HELPER_PID]);
+    fixture.recorder.scan();
+
+    fixture
+        .office
+        .probe
+        .set_read(HELPER_PID, Err(ProbeError::NotReadable));
+    fixture.recorder.scan();
+
+    assert_eq!(fixture.office.processes.rows().len(), 1);
+}
+
+#[test]
 fn a_helper_whose_id_went_to_another_process_is_replaced() {
     let fixture = fixture();
     start_helper(&fixture, HELPER_PID, "node server.js");

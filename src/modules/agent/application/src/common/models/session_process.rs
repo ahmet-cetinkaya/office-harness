@@ -56,8 +56,10 @@ pub struct SweepSummary {
     pub boot_time_changed: u32,
     /// Rows the sweep did not close, for example after a disk failure.
     pub still_open: u32,
-    /// Every stored process of the session.
-    pub stored: u32,
+    /// The stored CLI rows of the session (none or one). A session whose CLI
+    /// row was never stored has no identity that proves its CLI ended, even
+    /// when helpers were stored.
+    pub cli_rows: u32,
     /// The helper limit stopped the office from storing every helper.
     pub helpers_capped: bool,
 }

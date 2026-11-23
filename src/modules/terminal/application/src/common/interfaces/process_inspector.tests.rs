@@ -27,8 +27,8 @@ impl ProcessHandle for GoneHandle {
 struct EmptyInspector;
 
 impl ProcessInspector for EmptyInspector {
-    fn open(&self, _pid: u32) -> Option<Box<dyn ProcessHandle>> {
-        Some(Box::new(GoneHandle))
+    fn open(&self, _pid: u32) -> Result<Box<dyn ProcessHandle>, ReadError> {
+        Ok(Box::new(GoneHandle))
     }
 
     fn boot(&self) -> Option<String> {

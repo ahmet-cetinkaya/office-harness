@@ -47,7 +47,8 @@ impl Sleeper {
         let deadline = Instant::now() + READABLE_WAIT;
         while inspector
             .open(self.pid())
-            .is_none_or(|handle| handle.identity().is_err())
+            .and_then(|handle| handle.identity())
+            .is_err()
         {
             assert!(Instant::now() < deadline, "the child never became readable");
             thread::sleep(POLL_INTERVAL);

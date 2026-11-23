@@ -7,7 +7,7 @@ use super::*;
 /// A swept session: one process, all results stored.
 fn swept() -> SweepSummary {
     SweepSummary {
-        stored: 1,
+        cli_rows: 1,
         ..SweepSummary::default()
     }
 }
@@ -21,7 +21,7 @@ fn a_session_whose_processes_were_all_gone_gives_nothing() {
 fn ended_processes_are_counted_when_nothing_may_run() {
     let summary = SweepSummary {
         ended: 3,
-        stored: 4,
+        cli_rows: 1,
         ..swept()
     };
 
@@ -87,7 +87,7 @@ fn may_run_wins_over_ended_and_the_reasons_keep_a_fixed_order() {
         not_readable: 1,
         boot_time_changed: 1,
         still_open: 1,
-        stored: 6,
+        cli_rows: 1,
         helpers_capped: true,
     };
     let without_could_not_end = SweepSummary {
@@ -127,6 +127,20 @@ fn may_run_wins_over_ended_and_the_reasons_keep_a_fixed_order() {
             UncleanStop::MayRun("helper limit"),
             UncleanStop::MayRun("not swept"),
         ]
+    );
+}
+
+#[test]
+fn helpers_without_a_stored_cli_row_still_warn() {
+    let summary = SweepSummary {
+        ended: 2,
+        cli_rows: 0,
+        ..SweepSummary::default()
+    };
+
+    assert_eq!(
+        UncleanStop::of(&summary),
+        Some(UncleanStop::MayRun("no stored process"))
     );
 }
 

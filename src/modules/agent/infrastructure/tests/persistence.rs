@@ -931,10 +931,29 @@ fn the_sweep_summary_counts_each_outcome_and_the_rows_left_open() {
             not_readable: 1,
             boot_time_changed: 1,
             still_open: 1,
-            stored: 7,
+            cli_rows: 0,
             helpers_capped: true,
         }
     );
+}
+
+#[test]
+fn the_sweep_summary_counts_the_cli_row_and_not_the_helpers() {
+    let folder = TempDir::new().expect("folder");
+    let (office, _agent, session) = office_with_running_session(&folder);
+    office
+        .processes
+        .insert_open(session.id, ProcessKind::Helper, &process_of(8, 100, "x"))
+        .expect("helper");
+    let helpers_only = office.processes.sweep_summary(session.id).expect("summary");
+
+    office
+        .processes
+        .insert_open(session.id, ProcessKind::Cli, &process_of(7, 100, "y"))
+        .expect("cli");
+    let with_cli = office.processes.sweep_summary(session.id).expect("summary");
+
+    assert_eq!((helpers_only.cli_rows, with_cli.cli_rows), (0, 1));
 }
 
 #[test]
@@ -960,7 +979,7 @@ fn a_session_end_leaves_no_sweep_outcome() {
     let summary = office.processes.sweep_summary(session.id).expect("summary");
 
     assert_eq!(
-        (summary.stored, summary.ended, summary.still_open),
+        (summary.cli_rows, summary.ended, summary.still_open),
         (1, 0, 0)
     );
 }

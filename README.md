@@ -212,7 +212,7 @@ The shapes of the requests are in [the resume protocol](specs/changes/archive/00
 While a session runs, the server stores the identity of its CLI process and of the helper processes that descend from it. After an unclean stop, the server ends those processes before any agent can start again. The panel shows "Ending processes left from the last run" until this is done, and your start requests wait.
 
 - The server ends a process only when its start time, its command line, and the machine run all match what it stored. It asks the process to stop, and ends it by force after the stop grace period. On Windows it ends it by force at once.
-- A process that the server cannot prove is its own is left alone. This includes a process with a reused process id.
+- A process that the server cannot prove is its own is left alone. On Windows and on Linux 5.3 and later, the server ends a process through a handle that it checked, so a process that gets the same process id later is never ended. macOS and a Linux kernel before 5.3 have no such handle: there the server checks the process and then ends it by its process id, so a process that exits and whose id is reused in that short time can be ended by mistake.
 - Each result is in the action record as `end_leftover`. When a process cannot be ended, you get a `leftover_kept` notification for the agent.
 - After the sweep, the resume warning names only the agents for which the server cannot rule out a running process.
 

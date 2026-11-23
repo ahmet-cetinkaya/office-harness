@@ -101,21 +101,21 @@ impl ProcessHandle for ScriptedHandle {
     }
 }
 
-struct OneHandle(Mutex<Option<Box<dyn ProcessHandle>>>);
+struct OneHandle(Mutex<Result<Box<dyn ProcessHandle>, ReadError>>);
 
 impl OneHandle {
     fn of(handle: ScriptedHandle) -> Self {
-        Self(Mutex::new(Some(Box::new(handle))))
+        Self(Mutex::new(Ok(Box::new(handle))))
     }
 
-    fn none() -> Self {
-        Self(Mutex::new(None))
+    fn cannot_open(reason: ReadError) -> Self {
+        Self(Mutex::new(Err(reason)))
     }
 }
 
 impl ProcessInspector for OneHandle {
-    fn open(&self, _pid: u32) -> Option<Box<dyn ProcessHandle>> {
-        locked(&self.0).take()
+    fn open(&self, _pid: u32) -> Result<Box<dyn ProcessHandle>, ReadError> {
+        std::mem::replace(&mut *locked(&self.0), Err(ReadError::NotRunning))
     }
 
     fn boot(&self) -> Option<String> {
@@ -132,10 +132,25 @@ fn sweep_with(handle: ScriptedHandle) -> LeftoverResult {
 }
 
 #[test]
-fn a_process_that_cannot_be_opened_is_not_running() {
-    let result = sweep_identity(&OneHandle::none(), &stored(), GRACE);
+fn a_process_that_does_not_exist_is_not_running() {
+    let result = sweep_identity(
+        &OneHandle::cannot_open(ReadError::NotRunning),
+        &stored(),
+        GRACE,
+    );
 
     assert_eq!(result, LeftoverResult::Left(LeftReason::NotRunning));
+}
+
+#[test]
+fn a_process_that_the_os_refuses_to_open_is_not_readable() {
+    let result = sweep_identity(
+        &OneHandle::cannot_open(ReadError::NotReadable),
+        &stored(),
+        GRACE,
+    );
+
+    assert_eq!(result, LeftoverResult::Left(LeftReason::NotReadable));
 }
 
 #[test]

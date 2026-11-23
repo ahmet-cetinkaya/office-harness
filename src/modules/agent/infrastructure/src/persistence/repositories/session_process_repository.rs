@@ -170,7 +170,8 @@ impl SessionProcessRepository {
                 )
             };
             let query = format!(
-                "SELECT {}, {}, {}, {}, COALESCE(SUM(state = 'open'), 0), COUNT(*), \
+                "SELECT {}, {}, {}, {}, COALESCE(SUM(state = 'open'), 0), \
+                 COALESCE(SUM(kind = '{KIND_CLI}'), 0), \
                  COALESCE((SELECT helpers_capped FROM agent_sessions WHERE id = ?1), 0) \
                  FROM agent_session_processes WHERE session_id = ?1",
                 counts(SweepOutcome::Ended),
@@ -186,7 +187,7 @@ impl SessionProcessRepository {
                         not_readable: row.get(2)?,
                         boot_time_changed: row.get(3)?,
                         still_open: row.get(4)?,
-                        stored: row.get(5)?,
+                        cli_rows: row.get(5)?,
                         helpers_capped: row.get::<_, i64>(6)? != 0,
                     })
                 })?,

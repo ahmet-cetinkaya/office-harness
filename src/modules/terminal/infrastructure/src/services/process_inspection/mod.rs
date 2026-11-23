@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
-use terminal_application::common::interfaces::{ProcessHandle, ProcessInspector};
+use terminal_application::common::interfaces::{ProcessHandle, ProcessInspector, ReadError};
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod pid_handle;
@@ -29,6 +29,9 @@ mod windows_handle;
 /// Most processes one walk reports, so a runaway fork tree or a huge process
 /// table cannot make a read slow or the list unbounded.
 const MAX_DESCENDANTS: usize = 4096;
+
+/// Process ids up to this one are never opened.
+const MAX_UNOPENABLE_PID: u32 = 1;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 const PID_FALLBACK_NOTICE: &str = "office-harness: no process handle on this system; a leftover process is read again and then ended by its id";
@@ -64,18 +67,21 @@ impl SystemProcessInspector {
     }
 
     #[cfg(target_os = "linux")]
-    fn open_handle(&self, pid: u32) -> Option<Box<dyn ProcessHandle>> {
+    fn open_handle(&self, pid: u32) -> Result<Box<dyn ProcessHandle>, ReadError> {
         if self.pidfd_enabled.load(Ordering::Relaxed) {
             match pidfd::open(pid) {
                 Ok(descriptor) => {
-                    return Some(Box::new(pidfd_handle::PidfdHandle::new(descriptor, pid)));
+                    return Ok(Box::new(pidfd_handle::PidfdHandle::new(descriptor, pid)));
                 }
                 Err(error) if error.raw_os_error() == Some(libc::ENOSYS) => {
                     if self.pidfd_enabled.swap(false, Ordering::Relaxed) {
                         eprintln!("{PID_FALLBACK_NOTICE}");
                     }
                 }
-                Err(_) => return None,
+                Err(error) if error.raw_os_error() == Some(libc::ESRCH) => {
+                    return Err(ReadError::NotRunning);
+                }
+                Err(_) => return Err(ReadError::NotReadable),
             }
         }
         pid_handle::PidHandle::open(pid)
@@ -83,13 +89,13 @@ impl SystemProcessInspector {
 
     #[cfg(target_os = "macos")]
     #[allow(clippy::unused_self, reason = "one shape of open_handle on every OS")]
-    fn open_handle(&self, pid: u32) -> Option<Box<dyn ProcessHandle>> {
+    fn open_handle(&self, pid: u32) -> Result<Box<dyn ProcessHandle>, ReadError> {
         pid_handle::PidHandle::open(pid)
     }
 
     #[cfg(windows)]
     #[allow(clippy::unused_self, reason = "one shape of open_handle on every OS")]
-    fn open_handle(&self, pid: u32) -> Option<Box<dyn ProcessHandle>> {
+    fn open_handle(&self, pid: u32) -> Result<Box<dyn ProcessHandle>, ReadError> {
         windows_handle::WindowsHandle::open(pid)
     }
 }
@@ -101,7 +107,12 @@ impl Default for SystemProcessInspector {
 }
 
 impl ProcessInspector for SystemProcessInspector {
-    fn open(&self, pid: u32) -> Option<Box<dyn ProcessHandle>> {
+    fn open(&self, pid: u32) -> Result<Box<dyn ProcessHandle>, ReadError> {
+        // Id 0 would make `kill` signal the caller's process group, and id 1
+        // is the init process; neither can be a leftover of the office.
+        if pid <= MAX_UNOPENABLE_PID {
+            return Err(ReadError::NotReadable);
+        }
         self.open_handle(pid)
     }
 
@@ -119,7 +130,9 @@ impl ProcessInspector for SystemProcessInspector {
             ProcessRefreshKind::nothing(),
         );
         let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+        let mut started_at: HashMap<u32, u64> = HashMap::new();
         for (pid, process) in system.processes() {
+            started_at.insert(pid.as_u32(), process.start_time());
             if let Some(parent) = process.parent() {
                 children
                     .entry(parent.as_u32())
@@ -127,7 +140,7 @@ impl ProcessInspector for SystemProcessInspector {
                     .push(pid.as_u32());
             }
         }
-        walk_children(root, &children)
+        walk_children(root, &children, &started_at)
     }
 }
 
@@ -145,7 +158,19 @@ fn machine_run() -> Option<String> {
 
 /// Walks the tree below `root` breadth first, up to `MAX_DESCENDANTS`. A pid
 /// is taken once, so a loop in the table cannot hold the walk.
-fn walk_children(root: u32, children: &HashMap<u32, Vec<u32>>) -> Vec<u32> {
+///
+/// A child is taken only when it started at or after its parent. Windows does
+/// not update the parent field when the parent exits, and it hands out the id
+/// again quickly, so a stale link can name an unrelated process that is older
+/// than the process that now holds the id. Such a child and everything below
+/// it is skipped. `started_at` is `sysinfo`'s start time (whole seconds), the
+/// same unit for both sides of the comparison; equal values are accepted.
+fn walk_children(
+    root: u32,
+    children: &HashMap<u32, Vec<u32>>,
+    started_at: &HashMap<u32, u64>,
+) -> Vec<u32> {
+    let start_of = |pid: u32| started_at.get(&pid).copied().unwrap_or_default();
     let mut found = Vec::new();
     let mut seen = HashSet::from([root]);
     let mut queue = VecDeque::from([root]);
@@ -154,7 +179,7 @@ fn walk_children(root: u32, children: &HashMap<u32, Vec<u32>>) -> Vec<u32> {
             if found.len() == MAX_DESCENDANTS {
                 return found;
             }
-            if seen.insert(child) {
+            if start_of(child) >= start_of(parent) && seen.insert(child) {
                 found.push(child);
                 queue.push_back(child);
             }

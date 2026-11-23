@@ -29,9 +29,14 @@ pub enum EndOutcome {
 /// Reads processes and opens handles to them. Every end goes through a
 /// `ProcessHandle`; the port has no call that ends a process by its id.
 pub trait ProcessInspector: Send + Sync {
-    /// Opens a handle to the process with this id, or `None` when no such
-    /// process exists or the OS refuses the handle.
-    fn open(&self, pid: u32) -> Option<Box<dyn ProcessHandle>>;
+    /// Opens a handle to the process with this id.
+    ///
+    /// # Errors
+    /// `ReadError::NotRunning` only when the OS says that no such process
+    /// exists. Every other failure (access denied, an unreadable process, an
+    /// id that cannot name a leftover) is `ReadError::NotReadable`, so a
+    /// process that may still run is never taken for one that is gone.
+    fn open(&self, pid: u32) -> Result<Box<dyn ProcessHandle>, ReadError>;
 
     /// The machine run now, in the form of `ProcessIdentity::boot`.
     fn boot(&self) -> Option<String>;

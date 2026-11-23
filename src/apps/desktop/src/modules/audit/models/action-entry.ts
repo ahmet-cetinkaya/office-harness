@@ -38,8 +38,12 @@ const ACTION_TEXT: Record<string, string> = {
  */
 const DETAIL_ACTIONS: readonly string[] = ["end_leftover", "helper_limit"];
 
-/** Control and format characters, which include the bidirectional controls. */
-const UNSAFE_CHARACTERS = /[\p{Cc}\p{Cf}]/gu;
+/**
+ * Control and format characters (which include the zero-width and the
+ * bidirectional controls) and the line and paragraph separators. The server
+ * escapes the same set.
+ */
+const UNSAFE_CHARACTERS = /[\p{Cc}\p{Cf}\u2028\u2029]/gu;
 
 const OFFICE_ACTOR = "office";
 

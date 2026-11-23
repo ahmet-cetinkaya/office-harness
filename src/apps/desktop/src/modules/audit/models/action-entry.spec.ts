@@ -71,6 +71,9 @@ describe("sweep entries", () => {
     expect(visibleDetail("run\u001b[2Jx")).toBe("run\\u{1b}[2Jx");
     expect(visibleDetail("a\u202Eb\u2066c")).toBe("a\\u{202e}b\\u{2066}c");
     expect(visibleDetail("tab\there")).toBe("tab\\u{9}here");
+    expect(visibleDetail("a\u200Db\uFEFFc\u00ADd\u2028e\u2029f")).toBe(
+      "a\\u{200d}b\\u{feff}c\\u{ad}d\\u{2028}e\\u{2029}f",
+    );
   });
 
   test("text the server already escaped stays as it is", () => {

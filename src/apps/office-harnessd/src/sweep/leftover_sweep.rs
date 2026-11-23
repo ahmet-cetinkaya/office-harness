@@ -9,6 +9,7 @@ use audit_domain::{ActionEntry, ActionKind, ActionRecord};
 use audit_presentation::action_recorded_event;
 use kernel::{Actor, AgentId};
 use terminal_application::common::interfaces::ProcessInspector;
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use super::identity_sweep::sweep_identity;
@@ -16,6 +17,12 @@ use super::leftover_result::LeftoverResult;
 use super::visible_form::{escape_unsafe, visible_command};
 use crate::bootstrap::{ServerLog, StorageAlerts};
 use crate::server::EventHub;
+
+/// Settle tasks that run at the same time. Each one holds a thread of the
+/// blocking pool, which every request shares, so a crowd of stubborn
+/// identities must not take the whole pool. 64 covers the 30 agents with two
+/// processes each of SC-003, so the 30 s bound still holds.
+const MAX_CONCURRENT_SETTLES: usize = 64;
 
 /// A stored process identity of a `lost` session, with the agent it belongs to.
 #[derive(Clone, Debug)]
@@ -64,10 +71,23 @@ impl LeftoverSweep {
     /// Sweeps every identity, then sends one `leftover_kept` notification to
     /// each agent that has a `could not end` result (FR-006).
     pub async fn run(&self, leftovers: Vec<Leftover>, grace: Duration) {
+        self.run_limited(leftovers, grace, MAX_CONCURRENT_SETTLES)
+            .await;
+    }
+
+    async fn run_limited(&self, leftovers: Vec<Leftover>, grace: Duration, limit: usize) {
+        let permits = Arc::new(Semaphore::new(limit));
         let mut tasks = JoinSet::new();
         for leftover in leftovers {
+            // The semaphore is never closed, so a permit always comes.
+            let Ok(permit) = Arc::clone(&permits).acquire_owned().await else {
+                break;
+            };
             let sweep = self.clone();
-            tasks.spawn_blocking(move || sweep.settle(&leftover, grace));
+            tasks.spawn_blocking(move || {
+                let _permit = permit;
+                sweep.settle(&leftover, grace)
+            });
         }
         let mut kept: Vec<KeptAgent> = Vec::new();
         while let Some(joined) = tasks.join_next().await {
@@ -77,7 +97,14 @@ impl LeftoverSweep {
                 Err(error) => self.log.error(&format!("a sweep task failed: {error}")),
             }
         }
-        self.notify_once_per_agent(&kept);
+        // The notifier writes to the database, so it runs on the blocking
+        // pool; a panic in it is logged and does not end the sweep task.
+        let sweep = self.clone();
+        let notified = tokio::task::spawn_blocking(move || sweep.notify_once_per_agent(&kept));
+        if let Err(error) = notified.await {
+            self.log
+                .error(&format!("the leftover notifications failed: {error}"));
+        }
     }
 
     /// Sweeps one identity and records its result.

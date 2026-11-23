@@ -29,18 +29,19 @@ impl ProcessProbe for ProcessProbeBridge {
     }
 
     fn read(&self, pid: u32) -> Result<SessionProcess, ProbeError> {
-        let handle = self.inspector.open(pid).ok_or(ProbeError::NotRunning)?;
-        handle
-            .identity()
-            .map(session_process)
-            .map_err(|error| match error {
-                ReadError::NotRunning => ProbeError::NotRunning,
-                ReadError::NotReadable => ProbeError::NotReadable,
-            })
+        let handle = self.inspector.open(pid).map_err(probe_error)?;
+        handle.identity().map(session_process).map_err(probe_error)
     }
 
     fn descendants(&self, root: u32) -> Vec<u32> {
         self.inspector.descendants(root)
+    }
+}
+
+fn probe_error(error: ReadError) -> ProbeError {
+    match error {
+        ReadError::NotRunning => ProbeError::NotRunning,
+        ReadError::NotReadable => ProbeError::NotReadable,
     }
 }
 
