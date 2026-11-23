@@ -89,7 +89,7 @@ The user sees how many agents wait for him in the window title, and can remove a
 
 - **FR-001** (US1): WHEN an attention event occurs that 0003/FR-006 does not show as read on arrival, THE SYSTEM SHALL add an item for that agent to Needs you, or, if the agent already has an item, SHALL keep that one item and its wait time and record the new event as its latest event. A bell that 0003/FR-006 (a) coalesces still counts as an attention event for Needs you.
 - **FR-002** (US1): THE SYSTEM SHALL show each item with the agent's name, project, latest event as the office saw it (quiet for the quiet period, bell, exit with its exit code, or put on hold by the office with the limit it hit), and wait time, as text.
-  - Amended by 0015 (`specs/changes/0015-upward-reports/SPEC.md`): a report is an event too, shown with its kind; an item that holds a report shows the report's kind and whole text.
+  - Amended by 0015 (`specs/changes/archive/0015-upward-reports/SPEC.md`): a report is an event too, shown with its kind; an item that holds a report shows the report's kind and whole text.
 - **FR-003** (US1): THE SYSTEM SHALL order the items in groups by their latest event, `failed` first, then `waiting for input`, bell and automatic hold, then `exited`, and inside each group by wait time, longest first, and items with the same wait time by agent name.
   - Amended by 0015: a report sorts with `waiting for input`, bell, and the automatic hold (the 0013 resume hold included).
 - **FR-004** (US1, US3): WHEN the user opens an agent's terminal by any route, or dismisses the agent's item, THE SYSTEM SHALL remove that agent's item from Needs you.

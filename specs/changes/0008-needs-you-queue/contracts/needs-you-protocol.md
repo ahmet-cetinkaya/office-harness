@@ -66,7 +66,7 @@ The server never learns which agent is on screen. A client that marks the origin
 - An item's `kind` may be `report`, with the report's kind as `detail`; `report` sorts with `waiting_for_input`, `bell`, `auto_hold`, and `resume_hold`.
 - Each item carries `report`: `null`, or `{kind, text, at}` with the latest report for the person, its text in visible form. A later event keeps it; a resume or a hold release does not remove an item that holds one.
 
-See `specs/changes/0015-upward-reports/contracts/report-protocol.md`.
+See `specs/changes/archive/0015-upward-reports/contracts/report-protocol.md`.
 
 ## Unchanged messages
 
