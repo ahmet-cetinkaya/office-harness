@@ -31,8 +31,7 @@
           </time>
           {actionText(entry.action)} by {actorText(entry.actor)}. {resultText(
             entry.result,
-          )}{#if detailText(entry) !== null}
-            {detailText(entry)}{/if}
+          )}{#if detailText(entry) !== null}. {detailText(entry)}{/if}
         </li>
       {/each}
     </ol>
