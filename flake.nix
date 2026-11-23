@@ -47,8 +47,6 @@
             ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux ([ pkgs.pkg-config ] ++ tauriLibraries);
 
           shellHook = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
-            # The tray library is loaded with dlopen at run time, so linking alone does not find it.
-            export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath tauriLibraries}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
             # GTK file dialogs abort without the GSettings schemas.
             export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
           '';
