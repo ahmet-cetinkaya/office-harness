@@ -168,6 +168,16 @@ The office never commits, merges, pushes, or rebases. Worktrees share the reposi
 
 The shapes of the requests are in [the worktree protocol](specs/changes/0010-agent-worktree/contracts/worktree-protocol.md).
 
+**Installed Node.js packages.** A new worktree has no `node_modules`, because git does not check out the files that it ignores. So that the agent can build and test without an install, the office shares the packages that you installed in your checkout:
+- At create, each `node_modules` folder of your checkout, at the top and beside each tracked `package.json`, gets a real `node_modules` folder at the same place in the worktree. That folder holds one link per package entry: every name that does not start with a dot, plus `.bin`, `.pnpm`, `.modules.yaml`, `.package-lock.json`, `.yarn-state.yml`, and `.bun`. Tool caches such as `.vite` and `.cache` are not linked, so each worktree keeps its own.
+- A place gets links only when git ignores its `node_modules` folder in your checkout and in the new worktree, and the worktree has nothing there yet. The links never count as changes: `git status` and the delete question do not show them, and the office writes no ignore entry.
+- A link that would lead outside your checkout, or to nothing, is not made. A link that cannot be made is skipped. In both cases the agent is still created, and the server log names the place.
+- Before the office removes a worktree, it removes its links without following them, so your checkout's packages never change. A kept worktree keeps its links.
+- The packages are shared, not copied. An install, update, or removal of packages in the worktree changes your checkout's packages too. Packages that you install later in your checkout can be missing in older worktrees, and workspace packages resolve to your checkout's copy.
+- Only Node.js packages are shared. Other languages keep their dependencies in a per-user cache or in a folder that does not work from another place, so the office leaves them alone.
+- On Windows the office makes no links, because a link to a folder needs Developer Mode or administrator rights there.
+- To turn this off, open "Worktree dependencies" in the panel and switch it off. A change applies to the next creates; existing worktrees keep their links. The create form says whether the packages are shared.
+
 ## Browse an agent's files
 
 To review what an agent did, choose "Browse files" in its details. A read-only view of the folder the agent starts in (its working folder, its own worktree, or its project's folder) opens with three tabs:

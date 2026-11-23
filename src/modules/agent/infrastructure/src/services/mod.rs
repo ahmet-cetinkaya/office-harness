@@ -2,6 +2,7 @@
 
 mod bounded_child;
 mod cli_adapters;
+mod dependency_links;
 #[cfg(test)]
 mod file_view_fixture;
 mod folder_reader;

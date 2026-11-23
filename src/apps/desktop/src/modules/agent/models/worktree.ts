@@ -17,7 +17,15 @@ export interface RepositoryInfo {
   branches: string[];
   branch_name: string;
   subfolder: string;
+  /** A create now shares the installed packages (0021 FR-008). */
+  shares_dependencies: boolean;
 }
+
+/** The create form note on installed packages (0021 FR-008). */
+export const SHARED_PACKAGES_NOTE =
+  "Installed Node.js packages are shared from this checkout. An install, update, or removal of packages in the worktree changes them for the checkout too.";
+export const UNSHARED_PACKAGES_NOTE =
+  "Installed packages are not shared, so the agent installs them.";
 
 export type WorktreeInfo = { in_repository: false } | RepositoryInfo;
 
