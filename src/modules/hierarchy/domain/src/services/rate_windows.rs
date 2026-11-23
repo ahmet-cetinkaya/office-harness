@@ -72,6 +72,10 @@ pub struct RateWindows {
     creates: SlidingWindows<AgentId>,
     lifecycles: SlidingWindows<AgentId>,
     reports: SlidingWindows<AgentId>,
+    /// The scheduled directives that went to one target (0025/FR-007). Only
+    /// `try_take_scheduled` writes or reads it, so a schedule never uses up
+    /// a slot of an agent's window (0025/PB-4).
+    scheduled_directives: SlidingWindows<AgentId>,
 }
 
 impl RateWindows {
@@ -128,6 +132,29 @@ impl RateWindows {
                 self.reports.record(caller, now_millis);
             }
         }
+        Ok(())
+    }
+
+    /// Takes one slot in the schedule window of `target`, which holds the
+    /// same limit as the agents' per-target window but counts apart from it.
+    ///
+    /// # Errors
+    /// The per-target `LimitRefusal` when the window is full; nothing is
+    /// recorded then.
+    pub fn try_take_scheduled(
+        &mut self,
+        target: AgentId,
+        limits: &RateLimits,
+        now: Timestamp,
+    ) -> Result<(), LimitRefusal> {
+        let now_millis = now.as_unix_millis();
+        if self
+            .scheduled_directives
+            .is_full(target, limits.directive_target, now_millis)
+        {
+            return Err(refusal(LimitKind::DirectiveTarget, limits));
+        }
+        self.scheduled_directives.record(target, now_millis);
         Ok(())
     }
 }

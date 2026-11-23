@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use kernel::{Actor, AgentId, Timestamp};
+use kernel::{Actor, AgentId, ScheduleId, Timestamp};
 
 /// How many directives may wait for one target (0012/FR-004).
 pub const QUEUE_LIMIT: usize = 20;
@@ -21,6 +21,14 @@ pub const WAIT_LIMIT: Duration = Duration::from_mins(10);
 /// reads it again (0012/FR-001, plan D8).
 pub const SETTLE_AFTER_TYPING: Duration = Duration::from_secs(2);
 
+/// Who put an entry in a queue. A schedule is no agent: its entry never
+/// names the target or an agent as the sender (0025/A11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sender {
+    Agent(AgentId),
+    Schedule(ScheduleId),
+}
+
 /// Why an entry waits, which decides how it is recorded and when the tree
 /// still allows it (0015/FR-004, 0020/FR-001, FR-007).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +43,9 @@ pub enum Origin {
     /// The line a parent reads when its temp ended; `text` is the record
     /// text.
     EndNotice { text: String },
+    /// A directive of a schedule; `run_id` is the run of the schedule module
+    /// that the settle of the entry is reported for (0025/FR-009).
+    Scheduled { run_id: i64 },
 }
 
 impl Origin {
@@ -44,7 +55,7 @@ impl Origin {
     pub fn report_text(&self) -> Option<&str> {
         match self {
             Self::Report { text } | Self::EndNotice { text } => Some(text),
-            Self::Directive | Self::Objective { .. } => None,
+            Self::Directive | Self::Objective { .. } | Self::Scheduled { .. } => None,
         }
     }
 }
@@ -56,7 +67,7 @@ impl Origin {
 /// outlives the sender's removal (0020/FR-007).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WaitingDirective {
-    pub sender: AgentId,
+    pub sender: Sender,
     pub target: AgentId,
     pub text: String,
     pub accepted_at: Timestamp,
@@ -65,7 +76,7 @@ pub struct WaitingDirective {
 }
 
 impl WaitingDirective {
-    fn is_report_of(&self, sender: AgentId) -> bool {
+    fn is_report_of(&self, sender: Sender) -> bool {
         self.origin.report_text().is_some() && self.sender == sender
     }
 }
@@ -121,7 +132,7 @@ impl TargetQueue {
     /// The sender's waiting report that a newer one may replace: never the
     /// head whose delivery is claimed, which a delivery may be typing
     /// (0015 review r2 N1).
-    fn replaceable_report_of(&self, sender: AgentId) -> Option<usize> {
+    fn replaceable_report_of(&self, sender: Sender) -> Option<usize> {
         let first_free = usize::from(self.delivering);
         self.waiting
             .iter()
@@ -131,7 +142,7 @@ impl TargetQueue {
             .map(|(index, _)| index)
     }
 
-    fn report_room(&self, sender: AgentId) -> ReportRoom {
+    fn report_room(&self, sender: Sender) -> ReportRoom {
         if self.replaceable_report_of(sender).is_some() {
             return ReportRoom::Replace;
         }
@@ -224,7 +235,9 @@ impl DirectiveQueue {
         self.locked()
             .by_target
             .get(&target)
-            .map_or(ReportRoom::Add, |queue| queue.report_room(sender))
+            .map_or(ReportRoom::Add, |queue| {
+                queue.report_room(Sender::Agent(sender))
+            })
     }
 
     /// Puts a report in its parent's queue under one lock: it replaces the

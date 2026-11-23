@@ -15,7 +15,7 @@ fn target() -> AgentId {
 
 fn waiting(text: &str, accepted_at: Timestamp) -> WaitingDirective {
     WaitingDirective {
-        sender: AgentId::from_u128(1),
+        sender: Sender::Agent(AgentId::from_u128(1)),
         target: target(),
         text: text.to_owned(),
         accepted_at,
@@ -26,7 +26,7 @@ fn waiting(text: &str, accepted_at: Timestamp) -> WaitingDirective {
 
 fn report_from(sender: u128, text: &str, accepted_at: Timestamp) -> WaitingDirective {
     WaitingDirective {
-        sender: AgentId::from_u128(sender),
+        sender: Sender::Agent(AgentId::from_u128(sender)),
         target: target(),
         text: text.to_owned(),
         accepted_at,

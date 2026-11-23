@@ -7,17 +7,18 @@ use hierarchy_domain::{
     AgentAction, HierarchyError, ReportReceiver, TreeRow, check_descendant, report_receiver,
     validate_directive_text,
 };
-use kernel::{Actor, AgentId};
+use kernel::{Actor, AgentId, ScheduleId};
 
 use super::directive_queue::{
-    DirectiveQueue, Origin, QUEUE_LIMIT, REPORT_SHARE, ReportPush, ReportRoom, WaitingDirective,
+    DirectiveQueue, Origin, QUEUE_LIMIT, REPORT_SHARE, ReportPush, ReportRoom, Sender,
+    WaitingDirective,
 };
 use crate::commands::hold::HoldService;
 use crate::common::errors::HierarchyApplicationError;
 use crate::common::interfaces::HierarchyStore;
 use crate::common::ports::{
     Delivery, DirectiveClock, DirectiveJournal, DirectiveReceipt, DirectiveTarget, DirectiveWriter,
-    Readiness, ReportJournal,
+    Readiness, ReportJournal, ScheduledOutcome, ScheduledOutcomes,
 };
 
 /// Why a target that does not run refuses a directive or a report: asleep
@@ -61,6 +62,16 @@ pub struct ParentReport {
     pub record_text: String,
 }
 
+/// One directive of a schedule run, ready for its target's queue
+/// (0025/FR-009). `run_id` is the run of the schedule module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduledDirective {
+    pub schedule: ScheduleId,
+    pub target: AgentId,
+    pub text: String,
+    pub run_id: i64,
+}
+
 /// What became of an accepted directive (0012/FR-004).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DirectiveOutcome {
@@ -97,6 +108,7 @@ pub struct SendDirectiveHandler {
     queue: DirectiveQueue,
     hold_guard: Option<Arc<HoldService>>,
     report_journal: Option<Arc<dyn ReportJournal>>,
+    scheduled_outcomes: Option<Arc<dyn ScheduledOutcomes>>,
 }
 
 /// The ports a `SendDirectiveHandler` talks to.
@@ -130,6 +142,7 @@ impl SendDirectiveHandler {
             queue: DirectiveQueue::default(),
             hold_guard: None,
             report_journal: None,
+            scheduled_outcomes: None,
         }
     }
 
@@ -139,6 +152,14 @@ impl SendDirectiveHandler {
     #[must_use]
     pub fn with_report_journal(mut self, report_journal: Arc<dyn ReportJournal>) -> Self {
         self.report_journal = Some(report_journal);
+        self
+    }
+
+    /// Reports what became of a scheduled directive that waited
+    /// (0025/FR-009); without it the outcomes are only recorded.
+    #[must_use]
+    pub fn with_scheduled_outcomes(mut self, outcomes: Arc<dyn ScheduledOutcomes>) -> Self {
+        self.scheduled_outcomes = Some(outcomes);
         self
     }
 
@@ -304,7 +325,7 @@ impl SendDirectiveHandler {
         report: &ParentReport,
     ) -> Result<DirectiveOutcome, HierarchyApplicationError> {
         let waiting = WaitingDirective {
-            sender: report.sender,
+            sender: Sender::Agent(report.sender),
             target: report.parent,
             text: report.line.clone(),
             accepted_at: self.clock.steady_now(),
@@ -351,7 +372,7 @@ impl SendDirectiveHandler {
             return Err(self.journaled(temp, temp, text, error.into()));
         }
         let Some(position) = self.queue.push(WaitingDirective {
-            sender: temp,
+            sender: Sender::Agent(temp),
             target: temp,
             text: text.to_owned(),
             accepted_at: self.clock.steady_now(),
@@ -375,7 +396,7 @@ impl SendDirectiveHandler {
     /// not when the queue has no room or the server is stopping.
     pub fn push_end_notice(&self, temp: AgentId, parent: AgentId, line: &str) -> bool {
         let notice = WaitingDirective {
-            sender: temp,
+            sender: Sender::Agent(temp),
             target: parent,
             text: line.to_owned(),
             accepted_at: self.clock.steady_now(),
@@ -388,6 +409,104 @@ impl SendDirectiveHandler {
             self.push_report_entry(notice),
             ReportPush::Added { .. } | ReportPush::Replaced { .. }
         )
+    }
+
+    /// Puts the directive of a schedule run in its target's queue, or types
+    /// it at once when nothing waits there and the target is ready
+    /// (0025/FR-009). The caller decides `skipped` for a target that is not
+    /// running before the call, and journals every refusal and the run
+    /// result; this records only what the target's terminal did to an
+    /// accepted directive (`unsubmitted`, a later withdrawal), once, with the
+    /// schedule as actor. A directive that waits is settled through the
+    /// `ScheduledOutcomes` port; the answer of one typed at once is the
+    /// return value.
+    ///
+    /// # Errors
+    /// `Storage` when the tree or the target cannot be read; `Invalid`
+    /// naming the rule when the text breaks the directive rules or the target
+    /// is not running; `Refused` with the reason when the target's queue is
+    /// full, a hold or the schedule window stops it, or a server stop has
+    /// begun; `Conflict` carrying the writer's message when the text cannot
+    /// be written.
+    pub fn queue_scheduled(
+        &self,
+        directive: &ScheduledDirective,
+    ) -> Result<DirectiveOutcome, HierarchyApplicationError> {
+        let target = directive.target;
+        validate_directive_text(&directive.text)?;
+        if !self
+            .targets
+            .is_running(target)
+            .map_err(HierarchyApplicationError::Storage)?
+        {
+            let refusal = not_running_error(&*self.targets, target, self.name_of(target));
+            return Err(HierarchyApplicationError::Invalid(refusal));
+        }
+        // Before the guard, so a full queue takes no slot of the schedule
+        // window (as 0012 A6 does for agents).
+        if self.queue.waiting_count(target) >= QUEUE_LIMIT {
+            return Err(HierarchyApplicationError::Refused(format!(
+                "the queue of {} is full: {QUEUE_LIMIT} directives wait",
+                self.name_of(target)
+            )));
+        }
+        self.guard_scheduled_directive(target)?;
+        self.accept_scheduled(directive)
+    }
+
+    fn guard_scheduled_directive(&self, target: AgentId) -> Result<(), HierarchyApplicationError> {
+        let Some(hold_guard) = &self.hold_guard else {
+            return Ok(());
+        };
+        let snapshot = self.store.snapshot()?;
+        hold_guard
+            .guard_scheduled(AgentAction::Directive { target }, target, &snapshot.rows)
+            .map_err(|refusal| HierarchyApplicationError::Refused(refusal.reason))
+    }
+
+    fn accept_scheduled(
+        &self,
+        directive: &ScheduledDirective,
+    ) -> Result<DirectiveOutcome, HierarchyApplicationError> {
+        let target = directive.target;
+        if self.queue.claim_empty(target, self.clock.steady_now()) {
+            if self.targets.readiness(target) == Ok(Readiness::Ready) {
+                return self.type_scheduled_now(directive);
+            }
+            self.queue.release(target);
+        }
+        let Some(position) = self.queue.push(WaitingDirective {
+            sender: Sender::Schedule(directive.schedule),
+            target,
+            text: directive.text.clone(),
+            accepted_at: self.clock.steady_now(),
+            origin: Origin::Scheduled {
+                run_id: directive.run_id,
+            },
+            from_temp: false,
+        }) else {
+            return Err(HierarchyApplicationError::Refused(STOPPING.to_owned()));
+        };
+        Ok(DirectiveOutcome::Waiting { position })
+    }
+
+    fn type_scheduled_now(
+        &self,
+        directive: &ScheduledDirective,
+    ) -> Result<DirectiveOutcome, HierarchyApplicationError> {
+        match self.type_claimed(directive.target, &directive.text, None) {
+            Ok(Delivery::Submitted) => Ok(DirectiveOutcome::Submitted),
+            Ok(Delivery::Unsubmitted) => {
+                self.journal.record_scheduled(
+                    directive.schedule,
+                    directive.target,
+                    &directive.text,
+                    UNSUBMITTED,
+                );
+                Ok(DirectiveOutcome::Unsubmitted)
+            }
+            Err(message) => Err(HierarchyApplicationError::Conflict(message)),
+        }
     }
 
     /// Types waiting directives whose target is ready, one per target, and
@@ -429,7 +548,7 @@ impl SendDirectiveHandler {
             self.queue.release(target);
         }
         let Some(position) = self.queue.push(WaitingDirective {
-            sender,
+            sender: Sender::Agent(sender),
             target,
             text: text.to_owned(),
             accepted_at: self.clock.steady_now(),
@@ -545,8 +664,11 @@ impl SendDirectiveHandler {
                     return;
                 }
                 match self.type_claimed(target, &head.text, head.origin.report_text()) {
-                    Ok(Delivery::Submitted) => {}
-                    Ok(Delivery::Unsubmitted) => self.record_failure(head, UNSUBMITTED),
+                    Ok(Delivery::Submitted) => self.settle(head, ScheduledOutcome::Submitted),
+                    Ok(Delivery::Unsubmitted) => {
+                        self.record_failure(head, UNSUBMITTED);
+                        self.settle(head, ScheduledOutcome::Unsubmitted(UNSUBMITTED.to_owned()));
+                    }
                     Err(message) => {
                         self.withdrawn(head, &format!("the text could not be typed: {message}"));
                     }
@@ -573,24 +695,32 @@ impl SendDirectiveHandler {
         let hold_reason = self
             .hold_guard
             .as_ref()
-            .and_then(|guard| guard.refusal(head.sender, head.target, &snapshot.rows));
+            .and_then(|guard| match head.sender {
+                Sender::Agent(sender) => guard.refusal(sender, head.target, &snapshot.rows),
+                Sender::Schedule(_) => guard.scheduled_refusal(head.target, &snapshot.rows),
+            });
         hold_reason.map_or(Recheck::Allowed, Recheck::Refused)
     }
 
     /// Why the tree no longer allows an entry, or `None`. An objective has
     /// no sender rule; a report or end notice of a removed temp stays, so
-    /// its parent still reads it (0020/FR-007).
+    /// its parent still reads it (0020/FR-007). A schedule has no place in
+    /// the tree, and the person chose its target, so its entry stays when
+    /// the tree changes (0025/A11).
     fn tree_refusal(&self, head: &WaitingDirective, rows: &[TreeRow]) -> Option<String> {
+        let Sender::Agent(sender) = head.sender else {
+            return None;
+        };
         match head.origin {
-            Origin::Objective { .. } => None,
-            Origin::Directive => check_descendant(rows, head.sender, head.target)
+            Origin::Objective { .. } | Origin::Scheduled { .. } => None,
+            Origin::Directive => check_descendant(rows, sender, head.target)
                 .err()
                 .map(|error| error.to_string()),
             Origin::Report { .. } | Origin::EndNotice { .. } => {
-                let is_child = report_receiver(rows, head.sender, false)
-                    == ReportReceiver::Parent(head.target);
+                let is_child =
+                    report_receiver(rows, sender, false) == ReportReceiver::Parent(head.target);
                 let is_removed_temp =
-                    head.from_temp && !rows.iter().any(|row| row.agent_id == head.sender);
+                    head.from_temp && !rows.iter().any(|row| row.agent_id == sender);
                 (!is_child && !is_removed_temp).then(|| {
                     format!(
                         "the sender is no longer a child of {}",
@@ -605,25 +735,38 @@ impl SendDirectiveHandler {
     /// the target's records (0012/FR-005).
     fn withdrawn(&self, directive: &WaitingDirective, reason: &str) {
         self.record_failure(directive, &format!("withdrawn before typing: {reason}"));
+        self.settle(directive, ScheduledOutcome::Withdrawn(reason.to_owned()));
+    }
+
+    /// Tells the schedule module how a scheduled entry ended; any other
+    /// entry has no run to tell.
+    fn settle(&self, directive: &WaitingDirective, outcome: ScheduledOutcome) {
+        if let (Origin::Scheduled { run_id }, Some(outcomes)) =
+            (&directive.origin, &self.scheduled_outcomes)
+        {
+            outcomes.settled(*run_id, outcome);
+        }
     }
 
     /// Records what went wrong with a waiting entry: a directive in the
     /// directive journal, a report in the report journal with its record
     /// text (0015/FR-009).
     fn record_failure(&self, directive: &WaitingDirective, failure: &str) {
+        let sender = match directive.sender {
+            Sender::Agent(sender) => sender,
+            Sender::Schedule(schedule) => {
+                self.journal
+                    .record_scheduled(schedule, directive.target, &directive.text, failure);
+                return;
+            }
+        };
         match (directive.origin.report_text(), &self.report_journal) {
-            (Some(record_text), Some(report_journal)) => report_journal.refused(
-                directive.sender,
-                Some(directive.target),
-                record_text,
-                failure,
-            ),
-            _ => self.journal.record(
-                directive.sender,
-                directive.target,
-                &directive.text,
-                Some(failure),
-            ),
+            (Some(record_text), Some(report_journal)) => {
+                report_journal.refused(sender, Some(directive.target), record_text, failure);
+            }
+            _ => self
+                .journal
+                .record(sender, directive.target, &directive.text, Some(failure)),
         }
     }
 

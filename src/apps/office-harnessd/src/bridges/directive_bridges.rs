@@ -17,7 +17,7 @@ use hierarchy_application::common::ports::{
     ReportJournal,
 };
 use hierarchy_domain::DIRECTIVE_MAX_CHARS;
-use kernel::{Actor, AgentId};
+use kernel::{Actor, AgentId, ScheduleId};
 use sha2::{Digest, Sha256};
 use terminal_application::common::interfaces::TerminalRuntime;
 use terminal_domain::services::{shows_open_question, shows_typed_text};
@@ -360,6 +360,17 @@ impl DirectiveJournal for DirectiveJournalBridge {
 
     fn record_objective(&self, creator: Actor, temp: AgentId) {
         self.record_as(creator, temp, AgentAction::Directive, None, None);
+    }
+
+    fn record_scheduled(&self, schedule: ScheduleId, target: AgentId, text: &str, failure: &str) {
+        let journaled = refused_attempt(failure, Some(text));
+        self.record_as(
+            Actor::Schedule(schedule),
+            target,
+            AgentAction::Directive,
+            Some(&journaled),
+            None,
+        );
     }
 }
 
