@@ -1,11 +1,11 @@
 ---
-status: approved
+status: shipped
 capability: office
-plan: specs/changes/0019-cli-sign-in-check/PLAN.md
+plan: specs/changes/archive/0019-cli-sign-in-check/PLAN.md
 supersedes:
 ---
 
-<!-- Approved for coding on 2026-11-23 through the review gate (r2 at b609f43), under the owner's spec delegation. -->
+<!-- Approved for coding on 2026-11-23 through the review gate (r2 at b609f43), under the owner's spec delegation; shipped in PR #129. -->
 
 # 0019: Check that the CLI is signed in before a start
 
