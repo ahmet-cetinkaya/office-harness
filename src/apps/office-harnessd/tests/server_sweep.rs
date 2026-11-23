@@ -119,10 +119,10 @@ fn read_start_time(pid: u32) -> Option<String> {
     Some(start_time.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
-/// The start time as the office stores it. On macOS the test keeps the local
-/// text of `ps`, which is no number; the sweep reads a process without a
-/// command line as not readable before it compares start times, so any number
-/// serves the one test that stores such a row.
+/// The start time as the office stores it. On Linux the test reads the same
+/// number from `/proc`. On macOS the test keeps the local text of `ps`, which
+/// is no number, so the one test that stores such a row stores 0; the sweep
+/// then reads a start time that differs from the stored one.
 #[cfg(target_os = "linux")]
 fn stored_start_time(mark: &Mark) -> i64 {
     mark.start_time.parse().expect("start time")
@@ -862,8 +862,8 @@ const fn unreadable_warns() -> bool {
     true
 }
 
-/// macOS still gives the program of such a process as its command line, so
-/// the sweep reads it as another process than the stored one and leaves it
+/// On macOS the stored start time is 0 (see `stored_start_time`), so the
+/// sweep reads the process as another one than the stored one and leaves it
 /// running; the finding counts only the agent's own two ended processes.
 #[cfg(target_os = "macos")]
 fn unreadable_finding() -> Value {
