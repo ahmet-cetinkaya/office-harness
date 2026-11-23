@@ -3,9 +3,9 @@
 ## Summary
 
 - **Date:** 2026-11-23.
-- **Build under test:** branch `spec/0017-orphan-sweep` at HEAD 2e7c14d (T5), with `main` 15b18e9 merged at 99d18f2. The Rust gates ran after T4 (34a2e4d) and on the merge; the desktop gates ran after T5 (2e7c14d).
-- **Overall status:** incomplete. The automated evidence stands for FR-002, FR-004, FR-005, FR-007 to FR-011, the MODIFIED 0013/FR-008, PB-1, PB-3 to PB-6, SC-003, SC-004, SC-006, and SC-007. These rows are PARTIAL: FR-001, FR-003, FR-006, SC-001, SC-002, SC-005, SC-008, SC-009. The real-process tests run on Linux only, a real "could not end" runs only with fakes, and the hands-on rows are not done. PB-2 is a GAP (no test).
-- **Status of this file:** the gate numbers come from local runs on 2026-11-23 by the lead. The CI result is in the PR, not here. The hands-on rows are filled in later.
+- **Build under test:** branch `spec/0017-orphan-sweep` with `main` 7d1e85d (0018) merged at 3efabdc, plus the action record separator fix. The final local gates below ran on that tree; earlier rows name their commit.
+- **Overall status:** complete except the PARTIAL rows and the gaps below. The automated evidence stands for FR-002, FR-004, FR-005, FR-007 to FR-011, the MODIFIED 0013/FR-008, PB-1, PB-3 to PB-6, SC-003, SC-004, SC-006, and SC-007. These rows are PARTIAL: FR-001, FR-003, FR-006, SC-001, SC-002, SC-005, SC-008, SC-009. The real-process tests run on Linux only, and a real "could not end" runs only with fakes. PB-2 is a GAP (no test; the evidence is a review of the diff). Hands-on: the Linux run in the real app is PASS (agent-run); the OS notification for a leftover that could not be ended, and the macOS and Windows runs, are NOT RUN.
+- **Status of this file:** the gate numbers come from local runs on 2026-11-23 by the lead. The CI result is in the PR, not here. The Linux hands-on row is an agent run on 2026-11-23.
 
 ### Verdict words
 
@@ -45,6 +45,7 @@
 | `svelte-check`, `eslint`, `prettier --check` | desktop after T5 (2e7c14d): 523 files, 0 errors, 0 warnings; lint and format clean | PASS |
 | `bun test` | desktop after T5: 418 passed, 0 failed | PASS |
 | Playwright | desktop after T5, full suite on the mock core, Chromium: 270 passed, 0 failed; `e2e/sweep.spec.ts` 7 of them | PASS |
+| Final gates on the merged tree (`main` 7d1e85d at 3efabdc plus the separator fix) | `cargo fmt --all --check`, boundaries, `cargo clippy --workspace --exclude office-harness-desktop --all-targets -D warnings`, `cargo test --workspace --exclude office-harness-desktop --no-fail-fast`: 1636 passed, 0 failed in 107 test binaries; desktop `svelte-check` 531 files 0 errors 0 warnings, `eslint` and `prettier --check` clean, `bun test` 440 passed, Playwright full suite 285 passed | PASS |
 | CI | the PR | In the PR |
 
 ## Requirements
@@ -108,6 +109,7 @@ See PLAN.md, section "Execution notes" (T1 to T5), and the last point of "Known 
 
 | Check | Verdict | Note |
 |---|---|---|
-| Hands-on: sweep text, dialog marks, action record in the real app (Linux) | PENDING (agent-run) | qa/evidence/b-0017-sweep (to be filled) |
+| Hands-on: sweep text, dialog marks, action record in the real app (Linux) | PASS (agent-run) | 2026-11-23, tauri debug build of 2e7c14d, stand-in CLIs only, grace 5 s, driver `qa/r17.py`, evidence `qa/evidence/b-0017-sweep` (outside the repo). Four agents (one that ignores the hang-up and the end request with a helper, one that ignores only the hang-up with a helper, one that ends on the hang-up, one whose stored rows were deleted), then a SIGKILL of the server and a start from the app. The panel showed "Ending processes left from the last run" 0.6 s after the start. The dialog opened during the sweep showed the same text and only Close, and showed the list after 5.3 s. Marks: "Ended 2 processes left from the last run" twice, "Was running when the server stopped uncleanly: no stored process" once, none once. Confirm stayed disabled until the acknowledgement was ticked; in a second run without the deleted rows there was no warning and Confirm was enabled. The action record showed "ended by force", "ended", and "left: not running" entries by the office with pid, session, and command. After the sweep no stand-in process of the four agents ran; a decoy with the same command line and another pid, started outside the app, still ran. Found: the record line read "SucceededDetail:" with no separator (also on `main` as "SucceededReason:"); fixed after the run, see Local gates. |
+| Hands-on: one OS notification for a leftover that could not be ended (Linux) | NOT RUN | It needs a process that the office cannot end, such as a process of another user. The coalescing is a desktop unit test. |
 | Hands-on: sweep text, dialog marks, action record in the real app (macOS) | NOT RUN | CI runs the T1 tests there. Nobody ran the app. |
 | Hands-on: sweep text, dialog marks, action record in the real app (Windows) | NOT RUN | CI runs the T1 tests there. Nobody ran the app. |
