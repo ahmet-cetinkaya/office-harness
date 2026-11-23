@@ -12,6 +12,7 @@ mod notification_services;
 mod server_log;
 mod services;
 mod shutdown_signal;
+mod start_maintenance;
 mod startup_error;
 mod storage_alerts;
 mod template_services;
