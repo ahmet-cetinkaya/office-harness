@@ -295,3 +295,8 @@ A parent that sends a directive to an asleep child, or a child that sends a repo
 - Q: Which sleeps and wakes are announced to assistive technology? → A: Those of the agent whose terminal view or details are open (A12). Decided under the owner's spec delegation, 2026-11-23.
 
 ## Deviations
+
+- A sleep whose CLI ended on its own just before the stop still records the sleep entry. The status then follows the exit of the CLI, not `asleep` (`a_child_that_ended_on_its_own_leaves_the_status_to_its_exit_event`). This matches A5 and A6: the stop cannot be taken back.
+- A refused directive to an asleep agent shows in the action record with the same `invalid: ` prefix that the not-running refusal has. The wire message is the contract text "the agent is not running, it is asleep: <name>".
+- The desktop checks the idle time (0, or 5 to 1440) before it sends `settings.set`, and the server checks it again. The server stays the one that decides.
+- `agent.wake` is a starting request (`STARTING_REQUESTS` in `agent_requests.rs`), so the sign-in check of 0019 (`check_sign_in_ahead`) also runs before a wake, and a stopping server refuses a wake as it refuses any start.
