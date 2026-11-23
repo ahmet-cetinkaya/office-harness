@@ -52,7 +52,7 @@ describe("sweep entries", () => {
     "identity 12: ended by force: pid 4242, session s1, node server.js";
 
   test("the sweep actions read as text", () => {
-    expect(actionText("end_leftover")).toBe("Ended a leftover process");
+    expect(actionText("end_leftover")).toBe("Checked a leftover process");
     expect(actionText("helper_limit")).toBe("Stopped storing helpers");
   });
 

@@ -26,7 +26,7 @@ const ACTION_TEXT: Record<string, string> = {
   hold: "Put on hold",
   release: "Released from hold",
   report: "Sent a report",
-  end_leftover: "Ended a leftover process",
+  end_leftover: "Checked a leftover process",
   helper_limit: "Stopped storing helpers",
   sleep: "Put to sleep",
   wake: "Woke",
