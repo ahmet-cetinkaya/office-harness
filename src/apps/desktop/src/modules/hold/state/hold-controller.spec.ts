@@ -167,6 +167,7 @@ describe("hold controller", () => {
       limit_reports_per_agent: "5",
       temp_cap: "8",
       temp_idle_minutes: "30",
+      schedule_cap: "50",
     });
   });
 
@@ -182,6 +183,7 @@ describe("hold controller", () => {
       limit_reports_per_agent: "5",
       temp_cap: "8",
       temp_idle_minutes: "30",
+      schedule_cap: "50",
     });
 
     expect(failure).toBe(
@@ -240,6 +242,7 @@ describe("hold controller", () => {
       limit_reports_per_agent: "5",
       temp_cap: "8",
       temp_idle_minutes: "30",
+      schedule_cap: "50",
     });
 
     expect(failure).toBe(

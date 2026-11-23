@@ -3,7 +3,8 @@
 /** One notification of the list (contract `notification.list`, D4). */
 export interface NotificationRow {
   id: string;
-  agent_id: string;
+  /** Null for a row that no agent owns: the missed schedule runs (0025). */
+  agent_id: string | null;
   /** The agent's name at creation, kept for the rows of a deleted agent. */
   agent_name: string;
   event: string;
@@ -25,6 +26,8 @@ const EVENT_AUTO_HOLD = "auto_hold";
 const EVENT_RESUME_HOLD = "resume_hold";
 const EVENT_REPORT = "report";
 const EVENT_TEMP_ENDED = "temp_ended";
+/** A schedule run's result, or the missed runs of schedules (0025). */
+export const EVENT_SCHEDULE = "schedule";
 /** An agent's leftover process that the sweep could not end (0017, FR-006). */
 export const EVENT_LEFTOVER_KEPT = "leftover_kept";
 /**
@@ -68,10 +71,16 @@ export function eventText(event: string, detail: string | null = null): string {
   if (event === EVENT_REPORT) {
     return detail === null ? "sent a report" : `sent a report: ${detail}`;
   }
+  if (event === EVENT_SCHEDULE) return detail ?? "";
   if (event === EVENT_TEMP_ENDED) {
     return detail === null ? "ended" : `ended: ${detail}`;
   }
   return EVENT_TEXT[event] ?? event.replaceAll("_", " ");
+}
+
+/** Whether opening the row opens the schedules view, not an agent (0025). */
+export function opensSchedules(row: NotificationRow): boolean {
+  return row.event === EVENT_SCHEDULE;
 }
 
 /** What a row of a deleted agent says instead of opening (edge case). */
@@ -80,13 +89,13 @@ export const DELETED_TEXT = "agent deleted";
 /** The row's name as one sentence, in the row's reading order (D11). */
 export function rowText(row: NotificationRow, agentExists: boolean): string {
   const parts = [row.agent_name, eventText(row.event, row.detail)];
-  if (!agentExists) parts.push(DELETED_TEXT);
-  return parts.join(", ");
+  if (row.agent_id !== null && !agentExists) parts.push(DELETED_TEXT);
+  return parts.filter((part) => part !== "").join(", ");
 }
 
 /** What the live region announces for one new notification. */
 export function announcementText(row: NotificationRow): string {
-  return `${row.agent_name} ${eventText(row.event, row.detail)}`;
+  return `${row.agent_name} ${eventText(row.event, row.detail)}`.trim();
 }
 
 /** True while the user has not opened the notification (FR-007). */
