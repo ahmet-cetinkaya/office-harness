@@ -3966,6 +3966,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 name = "secret-application"
 version = "0.1.0"
 dependencies = [
+ "kernel",
  "secret-domain",
  "thiserror 2.0.21",
  "zeroize",
@@ -3986,8 +3987,10 @@ version = "0.1.0"
 dependencies = [
  "chacha20poly1305",
  "getrandom 0.4.3",
+ "kernel",
  "keyring",
  "private-fs",
+ "rusqlite",
  "secret-application",
  "secret-domain",
  "tempfile",
