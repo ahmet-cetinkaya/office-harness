@@ -165,6 +165,8 @@ describe("hold controller", () => {
       limit_creates_per_agent: "7",
       limit_lifecycle_per_agent: "10",
       limit_reports_per_agent: "5",
+      temp_cap: "8",
+      temp_idle_minutes: "30",
     });
   });
 
@@ -178,6 +180,8 @@ describe("hold controller", () => {
       limit_creates_per_agent: "0",
       limit_lifecycle_per_agent: "9",
       limit_reports_per_agent: "5",
+      temp_cap: "8",
+      temp_idle_minutes: "30",
     });
 
     expect(failure).toBe(
@@ -234,6 +238,8 @@ describe("hold controller", () => {
       limit_creates_per_agent: "6",
       limit_lifecycle_per_agent: "9",
       limit_reports_per_agent: "5",
+      temp_cap: "8",
+      temp_idle_minutes: "30",
     });
 
     expect(failure).toBe(

@@ -106,6 +106,7 @@
     void panel.hold.watch();
     void panel.resume.watch();
     void panel.sleep.watch();
+    void panel.temps.watch();
     void panel.needsYou.watch();
     void hierarchy.watch();
     void panel.templates.watch();

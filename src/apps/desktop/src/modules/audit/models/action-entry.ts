@@ -28,6 +28,7 @@ const ACTION_TEXT: Record<string, string> = {
   report: "Sent a report",
   sleep: "Put to sleep",
   wake: "Woke",
+  end: "Ended",
 };
 
 const OFFICE_ACTOR = "office";

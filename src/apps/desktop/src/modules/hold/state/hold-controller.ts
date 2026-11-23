@@ -12,7 +12,7 @@ import {
   readHoldState,
   type HoldState,
 } from "../models/hold";
-import { firstLimitProblem, LIMIT_SETTINGS } from "../models/limits";
+import { ALL_LIMIT_SETTINGS, firstLimitProblem } from "../models/limits";
 import { createHoldService } from "../services/hold-service";
 
 export interface HoldSnapshot {
@@ -154,7 +154,7 @@ export function createHoldController(
     /** Each limit's stored text; the default when the server holds none. */
     readLimits: async (): Promise<Record<string, string>> => {
       const values: Record<string, string> = {};
-      for (const limit of LIMIT_SETTINGS) {
+      for (const limit of ALL_LIMIT_SETTINGS) {
         const stored = await service.readSetting(limit.key);
         values[limit.key] = stored === "" ? String(limit.defaultValue) : stored;
       }
@@ -173,7 +173,7 @@ export function createHoldController(
         return Promise.resolve(`${refused.limit.label}: ${refused.problem}`);
       }
       return submit(async () => {
-        for (const limit of LIMIT_SETTINGS) {
+        for (const limit of ALL_LIMIT_SETTINGS) {
           await service.writeSetting(limit.key, values[limit.key].trim());
         }
       });
