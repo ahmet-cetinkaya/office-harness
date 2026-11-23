@@ -204,6 +204,40 @@ impl Client {
             tokio::time::sleep(POLL).await;
         }
     }
+
+    /// Stores one office setting and asserts that the server took it.
+    pub async fn set_setting(&mut self, key: &str, value: &str) {
+        let answer = self
+            .ask("settings.set", json!({"key": key, "value": value}))
+            .await;
+        assert_eq!(answer["ok"], true, "{answer}");
+    }
+
+    /// Waits for the agent's Needs you item, which every new `waiting for
+    /// input` brings, and dismisses it.
+    pub async fn dismiss_needs_you(&mut self, agent_id: &str) {
+        let deadline = Instant::now() + WAIT_LIMIT;
+        loop {
+            let listed = self.ask("needs_you.list", json!({})).await;
+            let has_item = listed["result"]["items"]
+                .as_array()
+                .expect("items")
+                .iter()
+                .any(|item| item["agent_id"] == agent_id);
+            if has_item {
+                let dismissed = self
+                    .ask("needs_you.dismiss", json!({"agent_id": agent_id}))
+                    .await;
+                assert_eq!(dismissed["ok"], true, "{dismissed}");
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "no Needs you item for {agent_id}"
+            );
+            tokio::time::sleep(POLL).await;
+        }
+    }
 }
 
 /// The additions that the first session of a test starts with.

@@ -9,6 +9,7 @@ mod event_hub;
 mod handshake;
 mod hierarchy_requests;
 mod hold_requests;
+mod idle_sleep_run;
 mod notification_requests;
 mod process_scan;
 mod restart_signal;

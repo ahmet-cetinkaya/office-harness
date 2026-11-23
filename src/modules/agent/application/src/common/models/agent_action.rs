@@ -21,6 +21,10 @@ pub enum AgentAction {
     HelperLimit,
     /// An agent sent a report upward (0015).
     Report,
+    /// The office put an idle agent to sleep (0018).
+    Sleep,
+    /// The user woke an asleep agent (0018).
+    Wake,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

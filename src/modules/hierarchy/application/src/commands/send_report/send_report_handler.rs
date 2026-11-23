@@ -3,14 +3,14 @@
 use std::sync::Arc;
 
 use hierarchy_domain::{
-    AgentAction, HierarchyError, ReportKind, ReportReceiver, TreeRow, report_line, report_receiver,
+    AgentAction, ReportKind, ReportReceiver, TreeRow, report_line, report_receiver,
     report_record_text, validate_report_text, visible_text,
 };
 use kernel::AgentId;
 
 use crate::commands::hold::HoldService;
 use crate::commands::send_directive::{
-    DirectiveOutcome, ParentReport, SendDirectiveHandler, UNSUBMITTED,
+    DirectiveOutcome, ParentReport, SendDirectiveHandler, UNSUBMITTED, not_running_error,
 };
 use crate::common::errors::HierarchyApplicationError;
 use crate::common::interfaces::HierarchyStore;
@@ -192,7 +192,7 @@ impl SendReportHandler {
         Err(self.refused(
             report,
             Some(parent),
-            HierarchyApplicationError::Invalid(HierarchyError::NotRunning { name }),
+            HierarchyApplicationError::Invalid(not_running_error(&*self.targets, parent, name)),
         ))
     }
 

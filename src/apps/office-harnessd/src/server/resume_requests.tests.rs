@@ -22,11 +22,30 @@ fn refusal_of(fields: &Value) -> String {
 }
 
 #[test]
-fn the_gateway_takes_only_the_two_resume_requests() {
+fn the_gateway_takes_only_the_two_resume_requests_and_the_wake() {
     assert!(ResumeGateway::accepts("resume.plan"));
     assert!(ResumeGateway::accepts("resume.start"));
+    assert!(ResumeGateway::accepts("wake.start"));
     assert!(!ResumeGateway::accepts("resume.other"));
     assert!(!ResumeGateway::accepts("agent.resume"));
+    assert!(!ResumeGateway::accepts("agent.wake"));
+}
+
+#[test]
+fn a_wake_takes_only_the_agent_id() {
+    let agent_id = AgentId::generate().to_string();
+    assert!(refuse_unknown_fields(&request("wake.start", &json!({"agent_id": agent_id}))).is_ok());
+    let refused = refuse_unknown_fields(&request(
+        "wake.start",
+        &json!({"agent_id": agent_id, "after_session": "s1"}),
+    ));
+    assert_eq!(
+        refused,
+        Err((
+            ErrorCode::Invalid,
+            "after_session is not a field of wake.start".to_owned()
+        ))
+    );
 }
 
 #[test]

@@ -17,6 +17,7 @@ use super::dispatcher::Dispatcher;
 use super::event_hub::EventHub;
 use super::hierarchy_requests::HierarchyGateway;
 use super::hold_requests::HoldGateway;
+use super::idle_sleep_run::IdleSleeper;
 use super::notification_requests::NotificationGateway;
 use super::process_scan::spawn_process_scan;
 use super::restart_signal::RestartSignal;
@@ -89,6 +90,25 @@ fn resume_gateway(
     )
 }
 
+/// The idle sleep task of 0018: it sleeps through the agent gateway, so
+/// every sleep keeps the status order and the action record.
+fn idle_sleeper(
+    services: &Services,
+    agents: &AgentGateway,
+    log: &ServerLog,
+    options: &ServerOptions,
+) -> IdleSleeper {
+    IdleSleeper::new(
+        Arc::clone(&services.agent.sleep_gate),
+        Arc::clone(&services.agent.settings),
+        Arc::clone(&services.agent_bridge_store),
+        agents.clone(),
+        options.idle_sleep_tick,
+        options.idle_sleep_minute,
+        log.clone(),
+    )
+}
+
 /// The terminal requests of a user client, over the terminal services.
 fn terminal_gateway(services: &Services) -> Arc<TerminalGateway> {
     Arc::new(TerminalGateway::new(
@@ -96,6 +116,14 @@ fn terminal_gateway(services: &Services) -> Arc<TerminalGateway> {
         services.agent.saved_outputs.clone(),
         services.terminal.person_input.clone(),
     ))
+}
+
+/// The user's `notification.*` and `needs_you.*` requests.
+fn notification_gateway(services: &Services) -> NotificationGateway {
+    NotificationGateway::new(
+        Arc::new(services.notification.handlers.clone()),
+        services.needs_you_bridge.clone(),
+    )
 }
 
 /// The user's `template.*` requests, over the template services.
@@ -165,10 +193,6 @@ impl Server {
             events.clone(),
             services.storage_alerts.clone(),
         );
-        let notification = NotificationGateway::new(
-            Arc::new(services.notification.handlers.clone()),
-            services.needs_you_bridge.clone(),
-        );
         let resume = resume_gateway(services, &agents, &events, options.resume_check_period)
             .with_sweep_gate(sweep_gate);
         let (shutdown, stopping) = watch::channel(false);
@@ -178,6 +202,7 @@ impl Server {
             log.clone(),
         );
         services.orphan_sweep.spawn(&events);
+        idle_sleeper(services, &agents, log, &options).spawn(stopping.clone());
         let state = ServerState {
             port,
             options,
@@ -193,7 +218,7 @@ impl Server {
             send_report: Arc::clone(&services.hierarchy.send_report),
             hierarchy_tree: Arc::clone(&services.hierarchy.tree),
             directive_journal: Arc::clone(&services.hierarchy.directive_journal),
-            notification,
+            notification: notification_gateway(services),
             templates: template_gateway(services),
             resume,
             events,

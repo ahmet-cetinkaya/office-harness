@@ -101,3 +101,23 @@ fn a_stop_closes_the_running_session_with_signal() {
         Some(agent_domain::value_objects::ExitResult::Signal)
     );
 }
+
+#[test]
+fn an_asleep_agent_stops_without_a_terminal_call_and_adds_a_stop_entry() {
+    let office = Office::new();
+    let folder = TempDir::new().expect("folder");
+    let agent = office.add_agent("Ana", "claude", folder.path(), AgentStatus::Asleep);
+
+    let stopped = office.stop_agent().handle(agent.id).expect("stop");
+
+    assert_eq!(stopped.status, AgentStatus::Stopped);
+    assert_eq!(
+        office.agents.status_of(agent.id),
+        Some(AgentStatus::Stopped)
+    );
+    assert_eq!(office.terminals.stopped().len(), 0);
+    let entries = office.recorder.entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].action, AgentAction::Stop);
+    assert_eq!(entries[0].failure, None);
+}
