@@ -77,13 +77,16 @@ impl ProcessHandle for FakeHandle {
 }
 
 impl ProcessInspector for FakeInspector {
-    fn open(&self, pid: u32) -> Option<Box<dyn ProcessHandle>> {
-        let behavior = locked(&self.behaviors).get(&pid)?.clone();
+    fn open(&self, pid: u32) -> Result<Box<dyn ProcessHandle>, ReadError> {
+        let behavior = locked(&self.behaviors)
+            .get(&pid)
+            .ok_or(ReadError::NotRunning)?
+            .clone();
         let started_at = match behavior {
             Behavior::Unrelated => STORED_START + 1,
             Behavior::Ends { .. } | Behavior::Refuses(_) => STORED_START,
         };
-        Some(Box::new(FakeHandle {
+        Ok(Box::new(FakeHandle {
             pid,
             started_at,
             behavior,
@@ -241,6 +244,29 @@ async fn each_identity_gets_one_entry_that_starts_with_its_row_id() {
         assert_eq!(record.result, ActionResult::Ok);
     }
     assert!(locked(&fixture.notifier.kept).is_empty());
+}
+
+#[tokio::test]
+async fn a_concurrency_limit_still_settles_every_identity() {
+    let agent = AgentId::generate();
+    let exit_after = Duration::from_millis(50);
+    let pids = 11..17;
+    let fixture = fixture(
+        pids.clone()
+            .map(|pid| (pid, Behavior::Ends { exit_after }))
+            .collect(),
+    );
+    let leftovers = pids
+        .zip(1..)
+        .map(|(pid, id)| leftover(id, pid, agent, "sleep 600"))
+        .collect();
+    let started = Instant::now();
+
+    fixture.sweep.run_limited(leftovers, GRACE, 2).await;
+
+    assert_eq!(details(&fixture.ledger).len(), 6);
+    // Six identities, two at a time: at least three waves of the exit wait.
+    assert!(started.elapsed() >= exit_after * 3);
 }
 
 #[tokio::test]

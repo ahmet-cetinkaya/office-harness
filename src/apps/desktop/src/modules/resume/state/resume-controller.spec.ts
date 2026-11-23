@@ -189,6 +189,38 @@ describe("resume controller during a sweep (0017, FR-007)", () => {
     expect(controller.snapshot.entries).toHaveLength(3);
   });
 
+  test("a resync while the dialog waits for the sweep reads the plan again", async () => {
+    let isSweeping = true;
+    const fake = fakeClient((kind) =>
+      kind === "resume.plan"
+        ? isSweeping
+          ? { sweeping: true, agents: [] }
+          : PLAN
+        : undefined,
+    );
+    const controller = createResumeController(fake.client);
+    await controller.watch();
+    await controller.open();
+    expect(controller.snapshot.phase).toBe("sweeping");
+
+    // The `done` event is lost across the reconnect; only the resync arrives.
+    isSweeping = false;
+    fake.push({ type: "client.resync" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(controller.snapshot.phase).toBe("choosing");
+  });
+
+  test("a resync outside the wait does not read the plan", async () => {
+    const { controller, requests, push } = await opened();
+
+    push({ type: "client.resync" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(requests.filter((r) => r.kind === "resume.plan")).toHaveLength(1);
+    expect(controller.snapshot.phase).toBe("choosing");
+  });
+
   test("a running event does not reload, and a done event outside the wait does nothing", async () => {
     const { controller, requests, push } = await opened();
     const reads = () => requests.filter((r) => r.kind === "resume.plan").length;

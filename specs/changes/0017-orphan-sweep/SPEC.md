@@ -218,7 +218,7 @@ The "Resume interrupted" list marks each agent of a `lost` session with what the
 - **A7:** The sweep writes one action record entry for each stored process identity of a `lost` session, also for "not running", so that the agent's details show what the office checked.
 - **A8:** The notification of FR-006 comes once per server start and names all agents with a leftover that could not be ended. It is a notification of the office, like the automatic hold of 0013/FR-005.
 - **A9:** One background server runs one office on one machine (0001 A8). Agents on other machines (0006, deferred) are not swept.
-- **A10:** macOS has no handle to a process, and Linux before 5.3 has none either. There the office checks the match and then sends the end request to the process id. A process that exits and whose id is reused in that short time can be ended wrongly. The office accepts this risk only on these systems; the research records it.
+- **A10:** macOS has no handle to a process, and Linux before 5.3 has none either. There the office checks the match and then sends the end request to the process id. A process that exits and whose id is reused in that short time can be ended wrongly. The office accepts this risk only on these systems; the research records it. On macOS the start time is in whole seconds, so the recorder also cannot tell a process that replaced itself by `exec` from a new process that took the same id within the same second; `update_command` then takes the new command line for the stored row.
 - **A11:** The helper limit of 200 is fixed. A setting for it is out of scope.
 
 ## Out of scope

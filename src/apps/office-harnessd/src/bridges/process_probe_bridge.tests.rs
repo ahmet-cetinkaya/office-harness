@@ -39,8 +39,11 @@ impl ProcessHandle for FixedHandle {
 struct OneProcess(Result<ProcessIdentity, ReadError>);
 
 impl ProcessInspector for OneProcess {
-    fn open(&self, pid: u32) -> Option<Box<dyn ProcessHandle>> {
-        (pid == KNOWN_PID).then(|| Box::new(FixedHandle(self.0.clone())) as Box<dyn ProcessHandle>)
+    fn open(&self, pid: u32) -> Result<Box<dyn ProcessHandle>, ReadError> {
+        if pid == KNOWN_PID {
+            return Ok(Box::new(FixedHandle(self.0.clone())));
+        }
+        Err(ReadError::NotRunning)
     }
 
     fn boot(&self) -> Option<String> {
@@ -49,6 +52,23 @@ impl ProcessInspector for OneProcess {
 
     fn descendants(&self, root: u32) -> Vec<u32> {
         vec![root + 1]
+    }
+}
+
+/// An inspector that cannot open any process, for the given reason.
+struct CannotOpen(ReadError);
+
+impl ProcessInspector for CannotOpen {
+    fn open(&self, _pid: u32) -> Result<Box<dyn ProcessHandle>, ReadError> {
+        Err(self.0)
+    }
+
+    fn boot(&self) -> Option<String> {
+        None
+    }
+
+    fn descendants(&self, _root: u32) -> Vec<u32> {
+        Vec::new()
     }
 }
 
@@ -131,7 +151,17 @@ fn a_read_carries_every_value_of_the_identity() {
 }
 
 #[test]
-fn a_process_that_cannot_be_opened_reads_as_not_running() {
+fn a_process_that_the_os_refuses_to_open_reads_as_not_readable() {
+    let bridge = ProcessProbeBridge::new(
+        Arc::new(ProcessIdOnly),
+        Arc::new(CannotOpen(ReadError::NotReadable)),
+    );
+
+    assert_eq!(bridge.read(KNOWN_PID), Err(ProbeError::NotReadable));
+}
+
+#[test]
+fn a_process_that_does_not_exist_reads_as_not_running() {
     let result = probe(Ok(identity())).read(KNOWN_PID + 1);
 
     assert_eq!(result, Err(ProbeError::NotRunning));

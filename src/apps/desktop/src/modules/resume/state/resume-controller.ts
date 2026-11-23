@@ -48,6 +48,7 @@ export const INITIAL_RESUME: ResumeSnapshot = {
 
 const EVENT_RESUME_RESULT = "resume.result";
 const EVENT_SWEEP = "office.sweep";
+const EVENT_RESYNC = "client.resync";
 const REQUEST_FAILED = "The request failed.";
 
 /**
@@ -72,6 +73,11 @@ export function createResumeController(client: CoreClient) {
   }
 
   function handleEvent(event: ServerEvent): void {
+    if (event.type === EVENT_RESYNC) {
+      // The `done` event may have gone by while the connection was down.
+      if (snapshot.phase === "sweeping") void open();
+      return;
+    }
     if (event.type === EVENT_SWEEP) {
       // A plan that waits for the sweep loads once the sweep is done.
       const isWaiting =

@@ -19,8 +19,8 @@ use windows_sys::Wdk::System::Threading::{
     NtQueryInformationProcess, ProcessCommandLineInformation,
 };
 use windows_sys::Win32::Foundation::{
-    FILETIME, STATUS_BUFFER_OVERFLOW, STATUS_BUFFER_TOO_SMALL, STATUS_INFO_LENGTH_MISMATCH,
-    UNICODE_STRING, WAIT_OBJECT_0,
+    ERROR_INVALID_PARAMETER, FILETIME, STATUS_BUFFER_OVERFLOW, STATUS_BUFFER_TOO_SMALL,
+    STATUS_INFO_LENGTH_MISMATCH, UNICODE_STRING, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::System::Threading::{
     GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
@@ -53,17 +53,18 @@ pub struct WindowsHandle {
 }
 
 impl WindowsHandle {
-    /// `None` when no such process exists or Windows refuses the access.
-    pub fn open(pid: u32) -> Option<Box<dyn ProcessHandle>> {
+    /// `NotRunning` only when Windows says that no process has this id;
+    /// every other failure (access denied among them) is `NotReadable`.
+    pub fn open(pid: u32) -> Result<Box<dyn ProcessHandle>, ReadError> {
         // SAFETY: the call takes integers and returns a new handle or null.
         let raw = unsafe { OpenProcess(ACCESS, 0, pid) };
         if raw.is_null() {
-            return None;
+            return Err(open_failure(&io::Error::last_os_error()));
         }
         // SAFETY: `raw` is a handle that nothing else owns; `OwnedHandle`
         // closes it once.
         let process = unsafe { OwnedHandle::from_raw_handle(raw) };
-        Some(Box::new(Self { process, pid }))
+        Ok(Box::new(Self { process, pid }))
     }
 
     fn has_exited(&self) -> bool {
@@ -127,6 +128,16 @@ impl WindowsHandle {
             buffer = vec![0_u64; needed_bytes.div_ceil(BYTES_PER_WORD)];
         }
         None
+    }
+}
+
+/// `OpenProcess` answers `ERROR_INVALID_PARAMETER` for an id that no process
+/// has; anything else, access denied included, leaves a process that may run.
+fn open_failure(error: &io::Error) -> ReadError {
+    if error.raw_os_error() == i32::try_from(ERROR_INVALID_PARAMETER).ok() {
+        ReadError::NotRunning
+    } else {
+        ReadError::NotReadable
     }
 }
 

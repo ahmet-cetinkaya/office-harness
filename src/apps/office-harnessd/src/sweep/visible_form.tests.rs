@@ -26,6 +26,16 @@ fn control_escape_and_bidirectional_characters_are_written_as_escapes() {
 }
 
 #[test]
+fn zero_width_format_and_line_separator_characters_are_written_as_escapes() {
+    let line = "a\u{200d}b\u{feff}c\u{200b}d\u{ad}e\u{2028}f\u{2029}g";
+
+    assert_eq!(
+        escape_unsafe(line),
+        "a\\u{200d}b\\u{feff}c\\u{200b}d\\u{ad}e\\u{2028}f\\u{2029}g"
+    );
+}
+
+#[test]
 fn a_line_at_the_limit_gets_an_ellipsis_and_the_hash_start() {
     let line = "x".repeat(COMMAND_DISPLAY_LIMIT);
 

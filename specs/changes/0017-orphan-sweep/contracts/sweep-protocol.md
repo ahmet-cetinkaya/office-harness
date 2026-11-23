@@ -60,9 +60,9 @@ After the sweep, it answers `sweeping: false` and the list:
 
 - `{may_run: reason}`: a CLI or helper process of the session may still run. `reason` is the first of this list that holds:
   1. `could not end`: the sweep tried to end a stored process and failed.
-  2. `not readable`: the sweep could not read a stored process.
+  2. `not readable`: the sweep could not read a stored process, or the OS refused to open it. Only "no such process" counts as `not running`; every other open failure is `not readable`.
   3. `boot time changed`: the process matches in all but the boot time (macOS and Windows).
-  4. `no stored process`: the session has no stored process identity.
+  4. `no stored process`: the session has no stored CLI identity (helper rows alone do not count).
   5. `helper limit`: the session reached the limit of 200 stored helpers.
   6. `not swept`: a stored process has no sweep result.
 - `{ended: n}`: no `may_run` reason holds, and the sweep ended `n` processes (`ended` and `ended by force` both count). `n` is at least 1.
@@ -113,7 +113,7 @@ The entry is written once for each session and server run. The session is then m
 
 The server stores the first 1,000 characters of a command line, and the hash of the whole line. The detail shows the stored text in visible form:
 
-1. Each control character, escape character, and bidirectional control character is written as `\u{<hex>}`, with the code point in lower-case hex. The bidirectional controls are U+061C, U+200E and U+200F, U+202A to U+202E, and U+2066 to U+2069.
+1. Each Unicode control character (category Cc) and format character (category Cf) is written as `\u{<hex>}`, with the code point in lower-case hex, and so are U+2028 and U+2029. The format characters include the zero-width characters (U+200B to U+200D, U+FEFF), the soft hyphen U+00AD, and the bidirectional controls (U+061C, U+200E and U+200F, U+202A to U+202E, U+2066 to U+2069). The server and the desktop escape the same set.
 2. If the stored text has 1,000 characters or more, the line was cut. The server then adds an ellipsis (`…`) and the first 8 hex characters of the SHA-256 hash of the whole line.
 
 ## Changed shape: notifications

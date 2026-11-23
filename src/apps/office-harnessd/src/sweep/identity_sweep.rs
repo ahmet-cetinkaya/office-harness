@@ -23,8 +23,9 @@ pub fn sweep_identity(
     grace: Duration,
 ) -> LeftoverResult {
     let expected = identity_of(stored);
-    let Some(handle) = inspector.open(stored.pid) else {
-        return LeftoverResult::Left(LeftReason::NotRunning);
+    let handle = match inspector.open(stored.pid) {
+        Ok(handle) => handle,
+        Err(error) => return LeftoverResult::Left(left_reason(error)),
     };
     // The second read is the one just before the request: the first only
     // decides whether the process is the session's at all.
@@ -50,11 +51,17 @@ fn identity_of(stored: &SessionProcess) -> ProcessIdentity {
 /// running come from the read, the rest from `ProcessIdentity::mismatch`.
 fn check_match(handle: &dyn ProcessHandle, expected: &ProcessIdentity) -> Result<(), LeftReason> {
     match handle.identity() {
-        Err(ReadError::NotRunning) => Err(LeftReason::NotRunning),
-        Err(ReadError::NotReadable) => Err(LeftReason::NotReadable),
+        Err(error) => Err(left_reason(error)),
         Ok(live) => expected
             .mismatch(&live)
             .map_or(Ok(()), |mismatch| Err(LeftReason::Mismatch(mismatch))),
+    }
+}
+
+fn left_reason(error: ReadError) -> LeftReason {
+    match error {
+        ReadError::NotRunning => LeftReason::NotRunning,
+        ReadError::NotReadable => LeftReason::NotReadable,
     }
 }
 

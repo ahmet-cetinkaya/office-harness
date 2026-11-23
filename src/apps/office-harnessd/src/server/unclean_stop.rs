@@ -34,7 +34,7 @@ impl UncleanStop {
             (summary.could_not_end > 0, COULD_NOT_END),
             (summary.not_readable > 0, NOT_READABLE),
             (summary.boot_time_changed > 0, BOOT_TIME_CHANGED),
-            (summary.stored == 0, NO_STORED_PROCESS),
+            (summary.cli_rows == 0, NO_STORED_PROCESS),
             (summary.helpers_capped, HELPER_LIMIT),
             (summary.still_open > 0, NOT_SWEPT),
         ]

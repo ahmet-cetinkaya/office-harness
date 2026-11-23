@@ -30,11 +30,11 @@ pub struct PidHandle {
 }
 
 impl PidHandle {
-    /// `None` when the process cannot be read now: it is gone, or the OS
-    /// refuses the read.
-    pub fn open(pid: u32) -> Option<Box<dyn ProcessHandle>> {
-        let identity = read_identity(pid).ok()?;
-        Some(Box::new(Self {
+    /// The error of the first read: `NotRunning` when the process is gone,
+    /// `NotReadable` when the OS refuses the read.
+    pub fn open(pid: u32) -> Result<Box<dyn ProcessHandle>, ReadError> {
+        let identity = read_identity(pid)?;
+        Ok(Box::new(Self {
             pid,
             started_at: identity.started_at,
         }))
