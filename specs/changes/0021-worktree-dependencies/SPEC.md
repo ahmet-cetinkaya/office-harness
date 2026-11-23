@@ -1,8 +1,10 @@
 ---
-status: draft
+status: approved
 capability: office
 plan: specs/changes/0021-worktree-dependencies/PLAN.md
 ---
+
+<!-- Approved for coding on 2026-11-23 through the review gate (r2 at 6d31844), under the owner's spec delegation. -->
 
 # 0021: Installed packages in new agent worktrees
 
