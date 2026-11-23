@@ -25,6 +25,16 @@ pub fn config_in(folder: &TempDir) -> Config {
     }
 }
 
+/// The arguments of a CLI start without the office settings file that a
+/// `claude` session gets (0024): the last `--settings <file>` pair.
+pub fn without_hook_settings(arguments: &[String]) -> Vec<String> {
+    let mut kept = arguments.to_vec();
+    if let Some(at) = kept.iter().rposition(|argument| argument == "--settings") {
+        kept.drain(at..(at + 2).min(arguments.len()));
+    }
+    kept
+}
+
 pub fn agent_named(machine_id: MachineId, name: &str) -> Agent {
     Agent::new(
         AgentId::generate(),

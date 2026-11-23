@@ -359,3 +359,74 @@ fn the_terminal_gets_the_sign_in_screen_words_of_the_cli() {
     assert_eq!(started[0].sign_in.screen_words, ["please sign in"]);
     assert_eq!(started[1].sign_in.screen_words.len(), 0);
 }
+
+mod status_hooks {
+    use super::super::*;
+    use crate::common::models::SessionCommand;
+
+    struct Hooked(bool);
+
+    impl CliAdapter for Hooked {
+        fn supports_continue(&self) -> bool {
+            false
+        }
+
+        fn new_session(&self, _plan: &SessionPlan<'_>) -> SessionCommand {
+            SessionCommand {
+                arguments: Vec::new(),
+                cli_session_id: None,
+                typed_input: None,
+            }
+        }
+
+        fn continue_session(
+            &self,
+            _plan: &SessionPlan<'_>,
+            _cli_session_id: &str,
+        ) -> Option<SessionCommand> {
+            None
+        }
+
+        fn status_hooks(&self) -> bool {
+            self.0
+        }
+    }
+
+    fn words(texts: &[&str]) -> Vec<String> {
+        texts.iter().map(|text| (*text).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_cli_without_hooks_is_unsupported() {
+        assert_eq!(
+            status_hooks_request(&Hooked(false), &[], &[]),
+            StatusHooksRequest::Unsupported
+        );
+    }
+
+    #[test]
+    fn a_cli_with_hooks_and_no_settings_option_wants_the_file() {
+        let flags = words(&["--model", "opus"]);
+        assert_eq!(
+            status_hooks_request(&Hooked(true), &words(&["--verbose"]), &flags),
+            StatusHooksRequest::Wanted
+        );
+    }
+
+    #[test]
+    fn a_settings_option_in_the_command_or_the_flags_refuses_the_file() {
+        let own = StatusHooksRequest::Refused(OWN_SETTINGS_OPTION_NOTE.to_owned());
+        for (fixed, flags) in [
+            (words(&["--settings", "x.json"]), words(&[])),
+            (words(&["--settings=x.json"]), words(&[])),
+            (words(&[]), words(&["--settings", "x.json"])),
+            (words(&[]), words(&["--settings={}"])),
+        ] {
+            assert_eq!(status_hooks_request(&Hooked(true), &fixed, &flags), own);
+        }
+        assert_eq!(
+            status_hooks_request(&Hooked(true), &words(&["--settings-extra"]), &[]),
+            StatusHooksRequest::Wanted
+        );
+    }
+}

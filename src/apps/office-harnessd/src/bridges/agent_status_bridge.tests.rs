@@ -243,12 +243,16 @@ mod runs {
             hub: EventHub::new(),
             order: StatusOrder::default(),
             alerts: StorageAlerts::new(log.clone()),
-            log,
+            log: log.clone(),
             calls: Arc::new(access_infrastructure::services::MemoryAgentCallStore::new()),
             sign_in_ends: SignInEnds::default(),
             journal: ActionJournal::new(records.clone(), Arc::new(crate::bridges::SystemClock)),
             waits: crate::bridges::WaitTracker::default(),
             hooks: crate::bridges::HookSessions::default(),
+            hook_files: crate::bridges::StatusHookFiles::for_tests(
+                log_folder.path().join("hooks"),
+                log,
+            ),
         };
         (bridge, store, ends, records)
     }

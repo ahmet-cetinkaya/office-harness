@@ -20,6 +20,9 @@ const DEFAULT_IDLE_SLEEP_MINUTES: u32 = 0;
 /// A new own worktree shares the installed packages unless the person turns
 /// it off (0021 D10).
 const DEFAULT_WORKTREE_DEPENDENCY_LINKS: bool = true;
+/// A `claude` session reports its status through hooks unless the person
+/// turns it off (0024/FR-024).
+const DEFAULT_HOOK_STATUS: bool = true;
 
 /// The stored texts of an on or off setting (0021 D10).
 const SWITCH_ON: &str = "on";
@@ -132,6 +135,7 @@ pub struct Settings {
     pub temp_cap: u32,
     pub temp_idle_minutes: u32,
     pub worktree_dependency_links: bool,
+    pub hook_status: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,10 +154,11 @@ pub enum SettingKey {
     TempCap,
     TempIdleMinutes,
     WorktreeDependencyLinks,
+    HookStatus,
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::QuietPeriodMs,
         Self::OutputLineLimit,
         Self::FocusShortcut,
@@ -168,6 +173,7 @@ impl SettingKey {
         Self::TempCap,
         Self::TempIdleMinutes,
         Self::WorktreeDependencyLinks,
+        Self::HookStatus,
     ];
 
     #[must_use]
@@ -187,6 +193,7 @@ impl SettingKey {
             Self::TempCap => "temp_cap",
             Self::TempIdleMinutes => "temp_idle_minutes",
             Self::WorktreeDependencyLinks => "worktree_dependency_links",
+            Self::HookStatus => "hook_status",
         }
     }
 
@@ -217,6 +224,7 @@ impl Default for Settings {
             temp_cap: DEFAULT_TEMP_CAP,
             temp_idle_minutes: DEFAULT_TEMP_IDLE_MINUTES,
             worktree_dependency_links: DEFAULT_WORKTREE_DEPENDENCY_LINKS,
+            hook_status: DEFAULT_HOOK_STATUS,
         }
     }
 }
@@ -243,6 +251,7 @@ impl Settings {
             SettingKey::WorktreeDependencyLinks => {
                 switch_text(self.worktree_dependency_links).to_owned()
             }
+            SettingKey::HookStatus => switch_text(self.hook_status).to_owned(),
         }
     }
 
@@ -288,6 +297,7 @@ impl Settings {
                 self.temp_idle_minutes =
                     parse_whole_number(key, text, TEMP_IDLE_MINUTES_MIN, TEMP_IDLE_MINUTES_MAX)?;
             }
+            SettingKey::HookStatus => self.hook_status = parse_switch(key, text)?,
             SettingKey::WorktreeDependencyLinks => {
                 self.worktree_dependency_links = parse_switch(key, text)?;
             }

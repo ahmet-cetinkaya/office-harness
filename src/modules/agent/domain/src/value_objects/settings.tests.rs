@@ -507,3 +507,36 @@ fn worktree_dependency_links_refuse_other_text_and_keep_the_stored_value() {
         assert!(!settings.worktree_dependency_links, "{value}");
     }
 }
+
+#[test]
+fn hook_status_is_on_by_default_and_takes_on_or_off() {
+    let mut settings = Settings::default();
+    assert!(settings.hook_status);
+    assert_eq!(settings.value_of(SettingKey::HookStatus), "on");
+    settings
+        .set_from_text(SettingKey::HookStatus, "off")
+        .expect("off");
+    assert!(!settings.hook_status);
+    assert_eq!(settings.value_of(SettingKey::HookStatus), "off");
+    settings
+        .set_from_text(SettingKey::HookStatus, "on")
+        .expect("on");
+    assert!(settings.hook_status);
+}
+
+#[test]
+fn hook_status_refuses_other_text_and_keeps_the_stored_value() {
+    let mut settings = Settings::default();
+    settings
+        .set_from_text(SettingKey::HookStatus, "off")
+        .expect("off");
+    for value in ["", "yes", "ON", "1"] {
+        assert!(
+            settings
+                .set_from_text(SettingKey::HookStatus, value)
+                .is_err(),
+            "{value}"
+        );
+        assert!(!settings.hook_status, "{value}");
+    }
+}

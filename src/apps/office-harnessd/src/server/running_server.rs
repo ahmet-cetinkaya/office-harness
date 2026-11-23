@@ -70,6 +70,7 @@ fn spawn_terminal_bridges(
         journal: services.agent.journal.clone(),
         waits: services.terminal.person_input.wait_tracker().clone(),
         hooks: services.terminal.hook_sessions.clone(),
+        hook_files: services.hook_files.clone(),
     }
     .spawn(services.terminal.events.subscribe());
     AgentLineBridge::new(services.terminal.events.clone(), events.clone())
@@ -252,6 +253,7 @@ impl Server {
             .map_err(ServerError::Bind)?;
         let address = listener.local_addr().map_err(ServerError::Bind)?;
         let port = address.port();
+        services.hook_files.set_port(port);
         let start_nonce = RandomNonceSource
             .next_nonce()
             .map_err(ServerError::StartNonce)?;

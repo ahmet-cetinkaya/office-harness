@@ -605,6 +605,8 @@ impl TerminalHost for FakeTerminals {
             program: request.program.clone(),
             environment: request.environment_additions.clone(),
             is_batch_script: locked(&self.batch_programs).contains(&request.program),
+            hook_arguments: Vec::new(),
+            hook_note: None,
         })
     }
 

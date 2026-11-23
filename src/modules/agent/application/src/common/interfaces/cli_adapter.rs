@@ -37,6 +37,12 @@ pub trait CliAdapter: Send + Sync {
         None
     }
 
+    /// Whether sessions of the CLI get the office settings file with the
+    /// status hooks (0024). The default is no.
+    fn status_hooks(&self) -> bool {
+        false
+    }
+
     /// How the office tells whether the CLI is signed in (0019). The
     /// default knows no status command and no sign-in screen, so a start
     /// works as before (0019 PB-2).

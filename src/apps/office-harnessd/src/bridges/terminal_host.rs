@@ -19,6 +19,7 @@ use terminal_domain::value_objects::{OutputKey, TerminalSize};
 use super::hook_sessions::HookSessions;
 use super::person_input::PersonInput;
 use super::sign_in_watch::SignInWatch;
+use super::status_hook_files::{SETTINGS_OPTION, StatusHookFiles};
 use super::terminal_events::TerminalEvents;
 use super::terminal_launcher::{LaunchError, PrepareRequest, SpawnRequest, TerminalLauncher};
 use super::typed_input::type_after_first_output;
@@ -47,6 +48,9 @@ pub struct TerminalHostBridge {
     /// Told when a session starts, so that it is estimated until its first
     /// report (0024).
     hook_sessions: HookSessions,
+    /// Makes and removes the office settings file of each `claude` session
+    /// (0024).
+    hook_files: StatusHookFiles,
 }
 
 /// What an agent session needs to call the office back: the store that
@@ -54,6 +58,8 @@ pub struct TerminalHostBridge {
 pub struct AgentCalls {
     pub store: Arc<dyn AgentCallStore>,
     pub helper: CallHelper,
+    /// The office settings files and secrets of the status hooks (0024).
+    pub hook_files: StatusHookFiles,
 }
 
 /// How an agent finds the office again from inside its session.
@@ -87,6 +93,7 @@ impl TerminalHostBridge {
             person_input: PersonInput::default(),
             sign_in_watch: None,
             hook_sessions: HookSessions::default(),
+            hook_files: agent_calls.hook_files,
         }
     }
 
@@ -153,10 +160,18 @@ impl TerminalHost for TerminalHostBridge {
             })
             .map_err(|error| failed(&error))?;
         let program = prepared.program.to_string_lossy().into_owned();
+        let hooks = self.hook_files.plan(
+            &request.status_hooks,
+            &request.session_id.to_string(),
+            &program,
+            &prepared.environment,
+        );
         Ok(PreparedLaunch {
             is_batch_script: is_batch_script(&program),
             program,
             environment: prepared.environment,
+            hook_arguments: hooks.arguments,
+            hook_note: Some(hooks.note),
         })
     }
 
@@ -193,19 +208,21 @@ impl TerminalHost for TerminalHostBridge {
             .typed_input
             .as_ref()
             .map(|_| self.events.subscribe());
+        let hooks = self.activate_hooks(request);
         self.launcher
             .spawn_prepared(SpawnRequest {
                 agent_id: request.agent_id,
                 program: request.program.clone(),
-                arguments: request.arguments.clone(),
+                arguments: hooks.arguments,
                 working_folder: request.working_folder.clone(),
-                environment: request.environment.clone(),
+                environment: hooks.environment,
                 size,
                 output_key,
             })
             .inspect_err(|_| {
                 self.calls
                     .revoke_session(request.agent_id, &request.session_id.to_string());
+                self.hook_files.end(request.agent_id);
             })
             .map_err(|error| match error {
                 LaunchError::Runtime(TerminalRuntimeError::AlreadyRunning(_)) => {
@@ -235,7 +252,7 @@ impl TerminalHost for TerminalHostBridge {
             .wait_tracker()
             .session_started(request.agent_id, run);
         self.hook_sessions
-            .session_started(request.agent_id, run, None);
+            .session_started(request.agent_id, run, hooks.note);
         Ok(())
     }
 
@@ -246,6 +263,51 @@ impl TerminalHost for TerminalHostBridge {
                 TerminalRuntimeError::NotRunning(_) => TerminalHostError::NotRunning,
                 other => TerminalHostError::Failed(other.to_string()),
             })
+    }
+}
+
+/// What the spawn of one session gets of the office settings file (0024).
+struct SpawnHooks {
+    arguments: Vec<String>,
+    environment: Vec<(String, String)>,
+    /// The note that the hook state starts with.
+    note: Option<String>,
+}
+
+impl TerminalHostBridge {
+    /// Makes the file and the secret right before the spawn. A session whose
+    /// file cannot be made runs without the option that names it.
+    fn activate_hooks(&self, request: &StartTerminal) -> SpawnHooks {
+        let mut hooks = SpawnHooks {
+            arguments: request.arguments.clone(),
+            environment: request.environment.clone(),
+            note: request.hook_note.clone(),
+        };
+        if !request.has_hook_arguments {
+            return hooks;
+        }
+        match self
+            .hook_files
+            .activate(request.agent_id, &request.session_id.to_string())
+        {
+            Ok(secret) => hooks.environment.push(secret),
+            Err(reason) => {
+                remove_settings_arguments(&mut hooks.arguments);
+                hooks.note = Some(reason);
+            }
+        }
+        hooks
+    }
+}
+
+/// Removes the last `--settings <file>` pair, the one that the office added.
+fn remove_settings_arguments(arguments: &mut Vec<String>) {
+    if let Some(position) = arguments
+        .iter()
+        .rposition(|argument| argument == SETTINGS_OPTION)
+    {
+        let end = (position + 2).min(arguments.len());
+        arguments.drain(position..end);
     }
 }
 

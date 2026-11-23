@@ -28,6 +28,9 @@ const SHELL_TIMEOUT: Duration = Duration::from_secs(5);
 /// stand-in holds only the tool folder.
 #[cfg(unix)]
 const SCRIPT_PATH: &str = "PATH=/usr/bin:/bin";
+/// The version that every fake CLI answers to `--version`, as the office
+/// asks before it gives a `claude` session its status hooks (0024 D5).
+const DEFAULT_CLI_VERSION: &str = "2.1.322";
 /// Every fake CLI answers a sign-in status command (`claude auth status`,
 /// `codex login status`) as signed in, so a test that is not about the
 /// check sees each start as before (0019).
@@ -69,6 +72,8 @@ pub struct FakeClis {
     extra_path_folders: Vec<PathBuf>,
     attribution: AttributionTiming,
     sign_in_watch: SignInWatchTiming,
+    /// What `--version` answers.
+    cli_version: String,
 }
 
 impl FakeClis {
@@ -99,7 +104,15 @@ impl FakeClis {
                 settle: ATTRIBUTION_POLL,
             },
             sign_in_watch: SignInWatchTiming::default(),
+            cli_version: DEFAULT_CLI_VERSION.to_owned(),
         }
+    }
+
+    /// The version that the CLIs added later answer to `--version`.
+    #[must_use]
+    pub fn with_cli_version(mut self, version: &str) -> Self {
+        version.clone_into(&mut self.cli_version);
+        self
     }
 
     /// A shorter sign-in watch, for tests that wait for its end (0019).
@@ -170,9 +183,12 @@ impl FakeClis {
     #[cfg(unix)]
     pub fn add_with_status_answer(&self, name: &str, status: &str, body: &str) {
         let path = self.tool_folder.join(name);
+        let version = &self.cli_version;
         fs::write(
             &path,
-            format!("#!/bin/sh\n{SCRIPT_PATH}\n{status}\n{body}\n"),
+            format!(
+                "#!/bin/sh\n{SCRIPT_PATH}\nif [ \"$1\" = '--version' ]; then echo '{version} (Claude Code)'; exit 0; fi\n{status}\n{body}\n"
+            ),
         )
         .expect("write script");
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("make executable");
@@ -183,7 +199,11 @@ impl FakeClis {
     #[cfg(windows)]
     pub fn add(&self, name: &str, body: &str) {
         let path = self.tool_folder.join(format!("{name}.cmd"));
-        let lines: Vec<&str> = ["@echo off", SIGNED_IN_STATUS]
+        let version = format!(
+            "if \"%~1\"==\"--version\" (\r\necho {} (Claude Code)\r\nexit /b 0\r\n)",
+            self.cli_version
+        );
+        let lines: Vec<&str> = ["@echo off", version.as_str(), SIGNED_IN_STATUS]
             .into_iter()
             .chain(body.lines())
             .collect();

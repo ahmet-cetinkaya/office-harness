@@ -19,6 +19,7 @@ use tokio::sync::broadcast::{self, error::RecvError};
 
 use super::hook_sessions::{HookSessions, TerminalVerdict};
 use super::sign_in_watch::SignInEnds;
+use super::status_hook_files::StatusHookFiles;
 use super::terminal_events::AgentTerminalEvent;
 use super::wait_tracker::WaitTracker;
 use crate::bootstrap::{ServerLog, StorageAlerts};
@@ -59,6 +60,9 @@ pub struct AgentStatusBridge {
     /// The state that the reports of `claude` sessions keep (0024). In an
     /// exact session output and the quiet period do not decide the status.
     pub hooks: HookSessions,
+    /// Deletes the office settings file and revokes the secret of a session
+    /// that ended (0024/FR-010).
+    pub hook_files: StatusHookFiles,
 }
 
 impl AgentStatusBridge {
@@ -108,6 +112,7 @@ impl AgentStatusBridge {
             self.calls.revoke_agent(item.agent_id);
             self.waits.session_ended(item.agent_id);
             self.hooks.session_ended(item.agent_id);
+            self.hook_files.end(item.agent_id);
             match self.sign_in_ends.take(item.agent_id, item.run) {
                 Some(reason) => {
                     self.end_session(item.agent_id, &ExitResult::NotSignedIn(reason.clone()));

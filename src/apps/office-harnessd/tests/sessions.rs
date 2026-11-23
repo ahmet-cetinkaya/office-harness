@@ -93,7 +93,10 @@ async fn continuing_a_claude_session_resumes_the_old_id_without_the_prompt_and_r
     assert_eq!(continued["ok"], true, "{continued}");
     let cli_id = first["cli_session_id"].as_str().expect("cli id");
     let records = wait_for_records(office.records_path(), 2).await;
-    assert_eq!(records[1].arguments, ["--first", "--resume", cli_id]);
+    assert_eq!(
+        support::without_hook_settings(&records[1].arguments),
+        ["--first", "--resume", cli_id]
+    );
     assert_eq!(continued["result"]["continued_from"], first["id"]);
     assert_eq!(continued["result"]["cli_session_id"], cli_id);
     let actions = client

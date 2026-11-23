@@ -50,4 +50,6 @@ pub async fn interrupt_running_agents(services: &Services, log: &ServerLog) {
         Ok(Err(error)) => log.error(&format!("the agents could not be interrupted: {error}")),
         Err(error) => log.error(&format!("the interrupt task failed: {error}")),
     }
+    // Every session ended with its child: no secret or settings file stays.
+    services.hook_files.end_all();
 }

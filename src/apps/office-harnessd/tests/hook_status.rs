@@ -146,12 +146,13 @@ async fn reports_of_a_helper_sub_agent_change_nothing() {
 }
 
 #[tokio::test]
-async fn a_report_for_an_agent_without_a_running_session_changes_nothing() {
+async fn a_report_after_the_session_ended_is_refused_and_changes_nothing() {
     let (office, mut client, agent, poster) = open_agent(WAITING_CLI).await;
     let stopped = client.ask("agent.stop", json!({"agent_id": agent})).await;
     assert_eq!(stopped["ok"], true, "{stopped}");
     client.wait_for_status(&agent, "stopped").await;
-    assert_eq!(poster.report("UserPromptSubmit", "").await, 200);
+    // The session ended, so its secret is revoked (0024/FR-010).
+    assert_eq!(poster.report("UserPromptSubmit", "").await, 404);
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(client.status_of(&agent).await, "stopped");
     office.serving.stop().await;
