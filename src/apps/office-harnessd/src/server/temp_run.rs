@@ -20,7 +20,7 @@ use tokio::task::spawn_blocking;
 use tokio::time::{MissedTickBehavior, interval};
 
 use crate::bootstrap::ServerLog;
-use crate::bridges::{EndOrder, EndReason, IdleSleepGate, TempEnder, TempEndings};
+use crate::bridges::{EndOrder, EndReason, IdleSleepGate, StatusOrder, TempEnder, TempEndings};
 
 /// The moments since which each temp has been quiet, as the last round saw
 /// them. `temp.list` reads the quiet time from here. Clones share one board.
@@ -64,6 +64,7 @@ pub struct TempWatcher {
     sessions: Arc<dyn SessionStore>,
     settings: Arc<dyn SettingsStore>,
     actions: ListActionsHandler,
+    status_order: StatusOrder,
     gate: Arc<IdleSleepGate>,
     endings: TempEndings,
     ender: TempEnder,
@@ -81,6 +82,7 @@ pub struct WatcherParts {
     pub sessions: Arc<dyn SessionStore>,
     pub settings: Arc<dyn SettingsStore>,
     pub actions: ListActionsHandler,
+    pub status_order: StatusOrder,
     pub gate: Arc<IdleSleepGate>,
     pub endings: TempEndings,
     pub ender: TempEnder,
@@ -98,6 +100,7 @@ impl TempWatcher {
             sessions: parts.sessions,
             settings: parts.settings,
             actions: parts.actions,
+            status_order: parts.status_order,
             gate: parts.gate,
             endings: parts.endings,
             ender: parts.ender,
@@ -206,19 +209,8 @@ impl TempWatcher {
         Verdict::Quiet(since)
     }
 
-    /// Who stopped the temp, from the last `stop` entry of its record.
     fn stopped_reason(&self, agent_id: AgentId) -> EndReason {
-        let actor = self
-            .actions
-            .handle(agent_id)
-            .ok()
-            .and_then(|entries| {
-                entries.into_iter().rev().find(|entry| {
-                    entry.record.action == ActionKind::Stop
-                        && entry.record.result == ActionResult::Ok
-                })
-            })
-            .map_or(Actor::Office, |entry| entry.record.actor);
+        let actor = stop_actor(&self.actions, &self.status_order, agent_id);
         EndReason::Stopped {
             by: self.actor_phrase(actor),
         }
@@ -247,6 +239,27 @@ impl TempWatcher {
             .and_then(|session| session.exit_result);
         exit_reason_of(result.as_ref())
     }
+}
+
+/// Who stopped the temp, from the last `stop` entry of its record, or the
+/// office when the record names none. A stop saves the `stopped` status before
+/// it writes its entry, and holds the status order until the entry is written,
+/// so the wait for the order is what makes the entry visible.
+fn stop_actor(
+    actions: &ListActionsHandler,
+    status_order: &StatusOrder,
+    agent_id: AgentId,
+) -> Actor {
+    drop(status_order.lock().unwrap_or_else(PoisonError::into_inner));
+    actions
+        .handle(agent_id)
+        .ok()
+        .and_then(|entries| {
+            entries.into_iter().rev().find(|entry| {
+                entry.record.action == ActionKind::Stop && entry.record.result == ActionResult::Ok
+            })
+        })
+        .map_or(Actor::Office, |entry| entry.record.actor)
 }
 
 /// The end of a temp whose CLI stopped, exited, or failed: it goes on only
