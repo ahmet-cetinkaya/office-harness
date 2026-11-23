@@ -3,7 +3,7 @@
 ## Summary
 
 - **Date:** 2026-11-23.
-- **Build under test:** branch `feat/0020-temporary-agents` with `main` merged at fa83dff (0021) in c05eb62 and at dce476b (0017) in b756a8d: T1 15e5bd2, T2 a49099e, T4 992c49c, T3 31b6449, T5 5960859, the test timing fix f55d083, the review r3 N2 fix d6c9275, and the commits of this file. Toolchain 1.100.0, on Linux.
+- **Build under test:** branch `feat/0020-temporary-agents` with `main` merged at fa83dff (0021) in c05eb62 and at dce476b (0017) in b756a8d: T1 15e5bd2, T2 a49099e, T4 992c49c, T3 31b6449, T5 5960859, the test timing fix f55d083, the review r3 N2 fix d6c9275, the review r5 sweep-gate fix adf4c72, and the commits of this file. Toolchain 1.100.0, on Linux.
 - **Overall status:** every requirement and success criterion has automated evidence. FR-004 and SC-005 are PARTIAL (automated): their tests run the idle limit on a 300 ms minute and a 50 ms watcher tick, not the real minutes that SC-005 names. SC-009 ends a temp from the keyboard on the mock core only. The hands-on run with a real agent CLI was not made (BLOCKED). macOS and Windows rely on CI.
 - **Status of this file:** the gate numbers come from local runs on 2026-11-23 on the merge commit b756a8d. The CI result of the PR is not in this file.
 
@@ -93,3 +93,4 @@
 - **Creating guard:** a new temp reads `stopped` until its start takes the status order, so the watcher skips a round while a temp create runs.
 - **One settings store for a create:** the merge with 0021 keeps one required settings store in the create handler; 0021's optional one and its builder are gone, and the dependency-link switch reads the same store.
 - **Migration number after the 0017 merge:** `main` shipped `0008_session_processes.sql` first, so the temp migration is `0009_agent_temp.sql` and runs after it. The action kinds of 0017 (`helper_limit`, `end_leftover`) and of 0020 (`end`, `dismiss`) are 20 distinct names in all; the notification events of 0017 (`leftover_kept`) and 0020 (`temp_ended`) are 9 distinct names in all.
+- **Temp create and the 0017 sweep gate (review r5, adf4c72):** a person's temp create starts its CLI inside the create, so it now waits for the sweep gate like `agent.start`. Wire `server_sweep.rs` `a_temp_create_sent_during_the_sweep_starts_no_cli_until_the_sweep_is_over` proves that no CLI starts while the sweep runs; without the fix it fails. An agent cannot create a temp during the sweep, because no agent CLI runs before a gated start.
