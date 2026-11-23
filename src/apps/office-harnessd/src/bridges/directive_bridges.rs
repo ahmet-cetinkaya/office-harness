@@ -122,6 +122,16 @@ impl DirectiveTarget for DirectiveTargetBridge {
             .map(|agent| agent.name.to_string())
     }
 
+    /// Asked when a report is pushed, while its sender still exists; the
+    /// queue keeps the answer on the entry (0020 D6).
+    fn is_temp(&self, agent_id: AgentId) -> bool {
+        self.agents
+            .find(agent_id)
+            .ok()
+            .flatten()
+            .is_some_and(|agent| agent.temp.is_some())
+    }
+
     fn readiness(&self, agent_id: AgentId) -> Result<Readiness, String> {
         let status = self
             .agents

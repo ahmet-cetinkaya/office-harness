@@ -12,7 +12,24 @@ fn seed(name: &str) -> RoleSeed {
         project_id: None,
         additions: None,
         worktree: None,
+        temp: None,
     }
+}
+
+#[test]
+fn a_temp_seed_carries_its_objective_to_the_hierarchy_seed() {
+    let mut temp_seed = seed("Ana");
+    temp_seed.temp = Some(NewTemp {
+        objective: "fix it".to_owned(),
+        creator: kernel::Actor::User,
+    });
+
+    let carried = seed_of(&temp_seed).expect("seed");
+
+    assert_eq!(
+        carried.temp.map(|temp| temp.objective),
+        Some("fix it".to_owned())
+    );
 }
 
 #[test]

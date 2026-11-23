@@ -1454,7 +1454,7 @@ mod hold_guard {
         guarded.harness.handler.deliver_waiting();
 
         assert_eq!(guarded.harness.writer.lines().len(), 1);
-        assert!(guarded.harness.failures().is_empty());
+        assert_eq!(guarded.harness.failures(), Vec::<String>::new());
     }
 
     #[test]

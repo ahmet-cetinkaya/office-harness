@@ -5,6 +5,7 @@ use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, PoisonError};
 
+use agent_application::common::actor_scope::ActorScope;
 use agent_application::common::interfaces::Clock;
 use agent_application::common::session_launcher::SessionLauncher;
 use agent_application::common::sign_in_scope::SignInScope;
@@ -25,13 +26,14 @@ use terminal_application::common::interfaces::TerminalRuntime;
 use tokio::task::spawn_blocking;
 use wire::{ErrorCode, Request, Response};
 
+use super::agent_call::recorded_and_published;
 use super::event_hub::EventHub;
 use super::hold_requests::HoldGateway;
 use super::subtree_status::{SubtreeState, subtree_entries, time_before};
 use crate::bootstrap::StorageAlerts;
 use crate::bridges::{
-    NeedsYouBridge, StatusOrder, StoppingFlag, SystemClock, TaskOrder, TerminalEvents,
-    take_recorded_events,
+    END_CHECK_REQUEST, ENDING_MESSAGE, NeedsYouBridge, StatusOrder, StoppingFlag, SystemClock,
+    TaskOrder, TempHooks, TempSnapshot, TerminalEvents, take_recorded_events, temp_changed_event,
 };
 
 /// The requests that change an agent's status or its terminal. They run one
@@ -46,7 +48,8 @@ const STOP_REQUEST: &str = "agent.stop";
 /// they store; they hold the task order from the store to the publish.
 const TASK_REQUESTS: [&str; 2] = ["agent.task.set", "agent.new_task"];
 
-const ORDERED_REQUESTS: [&str; 8] = [
+const ORDERED_REQUESTS: [&str; 9] = [
+    END_CHECK_REQUEST,
     "agent.start",
     "agent.stop",
     DELETE_REQUEST,
@@ -68,6 +71,14 @@ const STARTING_REQUESTS: [&str; 5] = [
 
 /// The start request that names a session instead of an agent.
 const CONTINUE_REQUEST: &str = "session.continue";
+
+/// Requests the server sends itself never reach a client, so their id is
+/// never matched with an answer.
+const OWN_REQUEST_ID: u32 = 0;
+
+const START_REQUEST: &str = "agent.start";
+
+const NO_TEMPS: &str = "temps are not available";
 
 const STOPPING_MESSAGE: &str = "the server is stopping and starts no agent";
 
@@ -94,6 +105,8 @@ pub struct AgentGateway {
     needs_you: NeedsYouBridge,
     /// Runs the sign-in check of a start before the status order (0019).
     sign_in: Option<SessionLauncher>,
+    /// What the gateway does around a request because of temps (0020).
+    temps: Option<Arc<TempHooks>>,
 }
 
 impl AgentGateway {
@@ -130,7 +143,17 @@ impl AgentGateway {
             holds,
             needs_you,
             sign_in: None,
+            temps: None,
         }
+    }
+
+    /// Attaches the temp hooks: the refusal of a start while a temp ends, the
+    /// end check, the start and objective of a new temp, and the finished
+    /// entry of a temp the person deletes (0020).
+    #[must_use]
+    pub fn with_temps(mut self, temps: TempHooks) -> Self {
+        self.temps = Some(Arc::new(temps));
+        self
     }
 
     /// Runs each start's sign-in check before the start takes its turn in
@@ -177,6 +200,13 @@ impl AgentGateway {
             self.raise(disk_failure.as_deref());
             return response;
         }
+        // Held to the end of the request, which includes the start of a new
+        // temp, so the watcher never judges the temp before its start.
+        let _creating = self
+            .temps
+            .as_ref()
+            .filter(|_| is_temp_create(request))
+            .map(|temps| temps.endings.begin_create());
         // Held to the end of the request, which is where the start reads it.
         let _sign_in = self.check_sign_in_ahead(request);
         let _turn = ORDERED_REQUESTS.contains(&request.kind.as_str()).then(|| {
@@ -184,6 +214,9 @@ impl AgentGateway {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
         });
+        if let Some(response) = self.temp_answer(request) {
+            return response;
+        }
         if refused_while_stopping(&request.kind, self.stopping.load(Ordering::SeqCst)) {
             return Response::failure(request.id, ErrorCode::Refused, STOPPING_MESSAGE);
         }
@@ -197,6 +230,7 @@ impl AgentGateway {
         // Drop what an earlier request on this thread left behind.
         drop(take_recorded_events());
         let had_place = self.has_place(request);
+        let deleting = self.temps_before_delete(request);
         let Handled {
             mut response,
             events,
@@ -226,7 +260,92 @@ impl AgentGateway {
         {
             self.events.publish(event);
         }
+        self.after_temp_request(request, &response, &deleting);
         response
+    }
+
+    /// The answer of a request that the temp rules decide before it runs: the
+    /// end check, or the start of a temp that ends (0020 D7).
+    fn temp_answer(&self, request: &Request) -> Option<Response> {
+        if request.kind == END_CHECK_REQUEST {
+            return Some(self.temps.as_ref().map_or_else(
+                || Response::failure(request.id, ErrorCode::NotFound, NO_TEMPS),
+                |temps| temps.endings.end_check(request),
+            ));
+        }
+        let ending = self
+            .temps
+            .as_ref()
+            .is_some_and(|temps| temps.endings.refuses(request));
+        ending.then(|| Response::failure(request.id, ErrorCode::Conflict, ENDING_MESSAGE))
+    }
+
+    /// The temps that a delete by the person removes, read before it runs.
+    fn temps_before_delete(&self, request: &Request) -> Vec<TempSnapshot> {
+        let Some(temps) = self
+            .temps
+            .as_ref()
+            .filter(|_| request.kind == DELETE_REQUEST)
+        else {
+            return Vec::new();
+        };
+        match self.hierarchy.store_snapshot() {
+            Ok(rows) => temps.before_delete(&rows, request),
+            Err(error) => {
+                self.raise(Some(&error.to_string()));
+                Vec::new()
+            }
+        }
+    }
+
+    /// The work after a request that concerns temps: the finished entries of
+    /// deleted temps, and the start and objective of a new temp.
+    fn after_temp_request(
+        &self,
+        request: &Request,
+        response: &Response,
+        deleting: &[TempSnapshot],
+    ) {
+        let Some(temps) = &self.temps else {
+            return;
+        };
+        if request.kind == DELETE_REQUEST {
+            temps.after_delete(deleting, request, response);
+        } else if request.kind == CREATE_REQUEST {
+            self.start_new_temp(temps, response);
+        }
+    }
+
+    /// D5: starts the temp as its creator, then queues its objective at the
+    /// head of its queue. A start that fails leaves the temp failed, which
+    /// the watcher ends.
+    fn start_new_temp(&self, temps: &TempHooks, response: &Response) {
+        let Response::Success { result, .. } = response else {
+            return;
+        };
+        let objective = result.pointer("/temp/objective").and_then(Value::as_str);
+        let Some((agent_id, objective)) = result
+            .get("id")
+            .and_then(Value::as_str)
+            .and_then(AgentId::from_uuid_text)
+            .zip(objective)
+        else {
+            return;
+        };
+        let mut fields = serde_json::Map::new();
+        fields.insert("agent_id".to_owned(), Value::String(agent_id.to_string()));
+        drop(self.run(&Request {
+            id: OWN_REQUEST_ID,
+            kind: START_REQUEST.to_owned(),
+            fields,
+        }));
+        // A refusal is journaled by the handler itself.
+        let _ = recorded_and_published(&self.events, || {
+            temps
+                .directives
+                .queue_objective(agent_id, objective, ActorScope::current())
+        });
+        self.events.publish(&temp_changed_event());
     }
 
     /// The sign-in check of the agent that a start request names, or of the
@@ -417,7 +536,7 @@ fn fill_last_lines(result: &mut Value, last_line: &dyn Fn(AgentId) -> Option<Str
 /// an agent outside the hierarchy gets null for both. An object without an
 /// agent `id` is not an agent (the worktree answers of 0010) and stays as
 /// it is.
-fn fill_places(result: &mut Value, places: &HashMap<AgentId, RowPlace>) {
+pub(super) fn fill_places(result: &mut Value, places: &HashMap<AgentId, RowPlace>) {
     for agent in agent_objects(result) {
         let Some(agent_id) = agent
             .get("id")
@@ -448,6 +567,11 @@ fn agent_objects(result: &mut Value) -> Vec<&mut Value> {
         agent @ Value::Object(_) => vec![agent],
         _ => Vec::new(),
     }
+}
+
+/// True for an `agent.create` that makes a temp.
+fn is_temp_create(request: &Request) -> bool {
+    request.kind == CREATE_REQUEST && request.fields.get("temp") == Some(&Value::Bool(true))
 }
 
 /// True for a start request once the server is stopping. Checked after the
