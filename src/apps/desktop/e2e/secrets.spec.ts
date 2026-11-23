@@ -248,4 +248,62 @@ test.describe("the Secrets dialog", () => {
       page.getByRole("button", { name: "Secrets", exact: true }),
     ).toBeFocused();
   });
+
+  test("save, grant, replace, revoke, and delete work with the keyboard alone (SC-009)", async ({
+    page,
+  }) => {
+    const started = Date.now();
+    await installMockCore(page, {
+      initialState: { status: "connected" },
+      office: { agents: [agent(), agent({ id: "agent-bo", name: "Bo" })] },
+    });
+    await page.goto("/");
+    const dialog = await openByKeyboard(page, "Secrets");
+
+    await dialog.getByLabel("Name", { exact: true }).focus();
+    await page.keyboard.type("API_KEY");
+    await page.keyboard.press("Tab");
+    await page.keyboard.type(MARKER);
+    await page.keyboard.press("Enter");
+    await expect(dialog.getByText("version 1")).toBeVisible();
+    await expect(dialog.getByLabel("Value", { exact: true })).toHaveValue("");
+
+    await pressByKeyboard(page, dialog, "Grant API_KEY");
+    await expect(dialog.getByText("not read yet")).toBeVisible();
+    await pressByKeyboard(page, dialog, "Replace value of API_KEY");
+    await page.keyboard.type(NEW_MARKER);
+    await page.keyboard.press("Enter");
+    await expect(dialog.getByText("version 2")).toBeVisible();
+    await pressByKeyboard(page, dialog, "Revoke Ada from API_KEY");
+    await expect(dialog.getByText("No agent holds a grant.")).toBeVisible();
+    await pressByKeyboard(page, dialog, "Delete API_KEY…");
+    // Focus moved to the question's button: Enter confirms.
+    await expect(
+      dialog.getByRole("button", { name: "Delete API_KEY", exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    await expect(dialog.getByText("No secret is saved.")).toBeVisible();
+    expect(Date.now() - started).toBeLessThan(120_000);
+    expect(await page.content()).not.toContain(MARKER);
+  });
 });
+
+/** Presses Enter on a button that took focus without a click. */
+async function pressByKeyboard(
+  page: Page,
+  scope: ReturnType<Page["getByRole"]>,
+  name: string,
+  exact = false,
+): Promise<void> {
+  await scope.getByRole("button", { name, exact }).focus();
+  await page.keyboard.press("Enter");
+}
+
+async function openByKeyboard(page: Page, name: string) {
+  await page.getByRole("button", { name, exact: true }).focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}

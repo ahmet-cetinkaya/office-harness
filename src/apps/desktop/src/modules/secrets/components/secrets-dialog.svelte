@@ -42,6 +42,11 @@
   /** The agent picked for a grant, by secret name. */
   let picked = $state<Record<string, string>>({});
   let isBusy = $state(false);
+  // Focus follows the person into a form or a question that replaces the
+  // button they pressed, so the keyboard never lands on the page behind.
+  let replaceForm = $state<HTMLFormElement | null>(null);
+  let confirmDeleteButton = $state<HTMLButtonElement | null>(null);
+  let confirmResetButton = $state<HTMLButtonElement | null>(null);
 
   const view = $derived(snapshot.view);
   const isLocked = $derived(view.store.kind === "locked");
@@ -52,6 +57,16 @@
     const unsubscribe = controller.subscribe((next) => (snapshot = next));
     void controller.load();
     return unsubscribe;
+  });
+
+  $effect(() => {
+    replaceForm?.querySelector<HTMLElement>("input")?.focus();
+  });
+  $effect(() => {
+    confirmDeleteButton?.focus();
+  });
+  $effect(() => {
+    confirmResetButton?.focus();
   });
 
   // A typed value never outlives the dialog (FR-018).
@@ -152,6 +167,7 @@
           <Button
             variant="danger"
             disabled={isBusy}
+            bind:element={confirmResetButton}
             onclick={() => void reset()}
           >
             Reset the store
@@ -239,6 +255,7 @@
           {/if}
           {#if replacing === secret.name}
             <form
+              bind:this={replaceForm}
               class="flex flex-col gap-2"
               onsubmit={(event) => void replace(event, secret.name)}
             >
@@ -266,6 +283,7 @@
               <Button
                 variant="danger"
                 disabled={isBusy}
+                bind:element={confirmDeleteButton}
                 onclick={() => void remove(secret.name)}
               >
                 Delete {secret.name}
