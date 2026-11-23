@@ -25,6 +25,14 @@ pub enum AgentError {
     NotPositive { field: &'static str },
     #[error("{field}: a limit is a whole number of at least 1 and at most 1000")]
     InvalidLimit { field: &'static str },
+    #[error("{field} is a whole number from {min} to {max}")]
+    InvalidWholeNumber {
+        field: &'static str,
+        min: u32,
+        max: u32,
+    },
+    #[error("the temp cap is {cap}; end a temp or raise the cap")]
+    TempCapReached { cap: u32 },
     #[error("{field} is 0 (off) or a whole number of minutes from 5 to 1440")]
     InvalidIdleSleep { field: &'static str },
     #[error(

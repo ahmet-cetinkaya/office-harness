@@ -32,7 +32,7 @@ fn hold_and_release_have_their_wire_names() {
     assert_eq!(ActionKind::Release.as_str(), "release");
     assert_eq!("hold".parse::<ActionKind>(), Ok(ActionKind::Hold));
     assert_eq!("release".parse::<ActionKind>(), Ok(ActionKind::Release));
-    assert_eq!(ActionKind::ALL.len(), 16);
+    assert_eq!(ActionKind::ALL.len(), 17);
 }
 
 #[test]
@@ -53,4 +53,10 @@ fn the_sleep_and_wake_kinds_have_their_wire_names() {
     assert_eq!("sleep".parse::<ActionKind>(), Ok(ActionKind::Sleep));
     assert_eq!(ActionKind::Wake.as_str(), "wake");
     assert_eq!("wake".parse::<ActionKind>(), Ok(ActionKind::Wake));
+}
+
+#[test]
+fn the_end_kind_has_its_wire_name() {
+    assert_eq!(ActionKind::End.as_str(), "end");
+    assert_eq!("end".parse::<ActionKind>(), Ok(ActionKind::End));
 }

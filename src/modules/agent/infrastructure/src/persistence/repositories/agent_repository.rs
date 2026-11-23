@@ -4,7 +4,10 @@ use std::path::PathBuf;
 
 use agent_domain::entities::Agent;
 use agent_domain::enums::AgentStatus;
-use agent_domain::value_objects::{AgentCommand, AgentWorktree, DisplayName, TaskSource, TaskText};
+use agent_domain::value_objects::{
+    AgentCommand, AgentWorktree, DisplayName, Objective, TaskSource, TaskText, TempMark,
+    creator_text, parse_creator,
+};
 use kernel::{AgentId, Timestamp};
 use rusqlite::{OptionalExtension, Row, params};
 
@@ -13,7 +16,7 @@ use crate::persistence::{PersistenceError, SharedConnection};
 const SELECT_AGENT: &str = "SELECT id, name, command, working_folder, project_id, machine_id, \
                             status, created_at, task_text, task_set_at, task_source, \
                             worktree_repository, worktree_base, worktree_branch, \
-                            worktree_folder FROM agent_agents";
+                            worktree_folder, temp_objective, temp_creator FROM agent_agents";
 
 pub struct AgentRepository {
     connection: SharedConnection,
@@ -30,6 +33,7 @@ struct AgentRow {
     created_at: i64,
     task: StoredTask,
     worktree: StoredWorktree,
+    temp: StoredTemp,
 }
 
 /// The three task columns as stored; they are all set or all NULL.
@@ -45,6 +49,26 @@ struct StoredWorktree {
     base: Option<String>,
     branch: Option<String>,
     folder: Option<String>,
+}
+
+/// The two temp columns as stored; they are both set or both NULL.
+struct StoredTemp {
+    objective: Option<String>,
+    creator: Option<String>,
+}
+
+impl StoredTemp {
+    /// A row with only one column set, or one the domain rejects, reads as no
+    /// temp, as a partly written task does: the agent still lists and starts.
+    fn into_temp(self) -> Option<TempMark> {
+        let (Some(objective), Some(creator)) = (self.objective, self.creator) else {
+            return None;
+        };
+        Some(TempMark {
+            objective: Objective::new(&objective).ok()?,
+            creator: parse_creator(&creator)?,
+        })
+    }
 }
 
 impl StoredWorktree {
@@ -102,6 +126,10 @@ impl AgentRow {
                 branch: row.get(13)?,
                 folder: row.get(14)?,
             },
+            temp: StoredTemp {
+                objective: row.get(15)?,
+                creator: row.get(16)?,
+            },
         })
     }
 
@@ -118,6 +146,7 @@ impl AgentRow {
         agent.status = self.status.parse()?;
         agent.task = self.task.into_task();
         agent.worktree = self.worktree.into_worktree();
+        agent.temp = self.temp.into_temp();
         Ok(agent)
     }
 }
@@ -137,8 +166,9 @@ impl AgentRepository {
                 .execute(
                     "INSERT INTO agent_agents (id, name, name_key, command, working_folder, \
                      project_id, machine_id, status, created_at, worktree_repository, \
-                     worktree_base, worktree_branch, worktree_folder) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                     worktree_base, worktree_branch, worktree_folder, temp_objective, \
+                     temp_creator) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                     params![
                         agent.id.to_string(),
                         agent.name.as_str(),
@@ -156,6 +186,8 @@ impl AgentRepository {
                         worktree.map(|worktree| worktree.base.as_str()),
                         worktree.map(|worktree| worktree.branch.as_str()),
                         worktree.map(|worktree| worktree.folder.to_string_lossy()),
+                        agent.temp.as_ref().map(|temp| temp.objective.as_str()),
+                        agent.temp.as_ref().map(|temp| creator_text(temp.creator)),
                     ],
                 )
                 .map_err(|error| {

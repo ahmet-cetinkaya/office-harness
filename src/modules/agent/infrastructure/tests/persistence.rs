@@ -4,17 +4,20 @@
 
 use std::path::{Path, PathBuf};
 
-use agent_domain::entities::{AdditionsRecord, Agent, Machine, Project, Session};
+use agent_domain::entities::{
+    AdditionsRecord, Agent, FinishedReport, FinishedTemp, Machine, Project, Session,
+};
 use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{
-    AgentCommand, DisplayName, EnvEntry, ExitResult, OfficeAdditions, ProjectId, SessionId,
-    SettingKey, Settings, TaskSource, TaskText,
+    AgentCommand, DisplayName, EnvEntry, ExitResult, FinishedTempId, Objective, OfficeAdditions,
+    ProjectId, SessionId, SettingKey, Settings, TaskSource, TaskText, TempMark,
 };
 use agent_infrastructure::persistence::{
-    AdditionsRepository, AgentRepository, MachineRepository, PersistenceError, ProjectRepository,
-    SCRIPTS, SessionRepository, SettingsRepository, SharedConnection,
+    AdditionsRepository, AgentRepository, FinishedTempRepository, MachineRepository,
+    PersistenceError, ProjectRepository, SCRIPTS, SessionRepository, SettingsRepository,
+    SharedConnection,
 };
-use kernel::{AgentId, Timestamp};
+use kernel::{Actor, AgentId, Timestamp};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -25,6 +28,7 @@ struct Office {
     settings: SettingsRepository,
     sessions: SessionRepository,
     additions: AdditionsRepository,
+    finished_temps: FinishedTempRepository,
 }
 
 /// Opens the database file like a server start does, with every script applied
@@ -56,7 +60,8 @@ fn open_office(database: &Path) -> Office {
         projects: ProjectRepository::new(connection.clone()),
         settings: SettingsRepository::new(connection.clone()),
         sessions: SessionRepository::new(connection.clone()),
-        additions: AdditionsRepository::new(connection),
+        additions: AdditionsRepository::new(connection.clone()),
+        finished_temps: FinishedTempRepository::new(connection),
     }
 }
 
@@ -589,4 +594,120 @@ fn a_worktree_survives_a_reopen() {
     let second = open_office(&database);
 
     assert_eq!(second.agents.list().expect("agents"), [agent, plain]);
+}
+
+fn temp_mark(creator: Actor) -> TempMark {
+    TempMark {
+        objective: Objective::new("fix the failing build").expect("objective"),
+        creator,
+    }
+}
+
+#[test]
+fn a_temp_mark_survives_a_reopen_for_each_kind_of_creator() {
+    let folder = tempfile::tempdir().expect("folder");
+    let database = database_in(&folder);
+    let first = open_office(&database);
+    let mut by_user = agent_named(&first, "Ana", None);
+    by_user.temp = Some(temp_mark(Actor::User));
+    let mut by_agent = agent_named(&first, "Ben", None);
+    by_agent.temp = Some(temp_mark(Actor::Agent(AgentId::generate())));
+    let plain = agent_named(&first, "Cem", None);
+    for agent in [&by_user, &by_agent, &plain] {
+        first.agents.insert(agent).expect("agent");
+    }
+    drop(first);
+
+    let second = open_office(&database);
+
+    assert_eq!(
+        second.agents.list().expect("agents"),
+        [by_user, by_agent, plain]
+    );
+}
+
+#[test]
+fn a_row_with_only_one_temp_column_reads_as_no_temp() {
+    let folder = tempfile::tempdir().expect("folder");
+    let database = database_in(&folder);
+    let first = open_office(&database);
+    let agent = agent_named(&first, "Ana", None);
+    first.agents.insert(&agent).expect("agent");
+    drop(first);
+    Connection::open(&database)
+        .expect("open")
+        .execute("UPDATE agent_agents SET temp_objective = 'half'", [])
+        .expect("update");
+
+    let second = open_office(&database);
+
+    assert_eq!(second.agents.list().expect("agents"), [agent]);
+}
+
+fn finished_temp(name: &str, ended_at: i64) -> FinishedTemp {
+    FinishedTemp {
+        id: FinishedTempId::generate(),
+        agent_id: AgentId::generate(),
+        name: name.to_owned(),
+        objective: "fix the failing build".to_owned(),
+        creator: Actor::User,
+        parent_name: None,
+        started_at: Timestamp::from_unix_millis(1),
+        ended_at: Timestamp::from_unix_millis(ended_at),
+        reason: "the temp was quiet for 30 minutes".to_owned(),
+        report: None,
+        kept_folder: None,
+        kept_branch: None,
+        removal_failure: None,
+    }
+}
+
+#[test]
+fn finished_temps_list_newest_first_and_survive_a_reopen() {
+    let folder = tempfile::tempdir().expect("folder");
+    let database = database_in(&folder);
+    let first = open_office(&database);
+    let oldest = finished_temp("Old", 10);
+    let mut newest = finished_temp("New", 30);
+    newest.creator = Actor::Agent(AgentId::generate());
+    newest.parent_name = Some("Lead".to_owned());
+    newest.report = Some(FinishedReport {
+        kind: "done".to_owned(),
+        text: "all green".to_owned(),
+    });
+    newest.kept_folder = Some(PathBuf::from("/data/worktrees/repo/0a1b"));
+    newest.kept_branch = Some("office-harness/new".to_owned());
+    newest.removal_failure = Some("git refused".to_owned());
+    let middle = finished_temp("Mid", 20);
+    for entry in [&oldest, &newest, &middle] {
+        first.finished_temps.insert(entry).expect("insert");
+    }
+    drop(first);
+
+    let second = open_office(&database);
+
+    assert_eq!(
+        second.finished_temps.list().expect("list"),
+        [newest, middle, oldest]
+    );
+}
+
+#[test]
+fn a_dismiss_removes_one_entry_and_nothing_else() {
+    let folder = tempfile::tempdir().expect("folder");
+    let office = open_office(&database_in(&folder));
+    let kept = finished_temp("Kept", 10);
+    let dismissed = finished_temp("Gone", 20);
+    office.finished_temps.insert(&kept).expect("insert");
+    office.finished_temps.insert(&dismissed).expect("insert");
+
+    assert!(
+        office
+            .finished_temps
+            .dismiss(dismissed.id)
+            .expect("dismiss")
+    );
+    assert!(!office.finished_temps.dismiss(dismissed.id).expect("again"));
+
+    assert_eq!(office.finished_temps.list().expect("list"), [kept]);
 }

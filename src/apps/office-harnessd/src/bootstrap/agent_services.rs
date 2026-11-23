@@ -234,6 +234,7 @@ fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
             Arc::clone(&wiring.projects),
             Arc::clone(&wiring.additions),
             Arc::clone(&wiring.clock),
+            Arc::clone(&wiring.settings),
             journal.clone(),
             machine_id,
         )

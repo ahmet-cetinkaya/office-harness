@@ -5,7 +5,7 @@ use std::sync::{Arc, OnceLock};
 
 use agent_application::commands::continue_session::ContinueSessionHandler;
 use agent_application::commands::create_agent::{
-    CreateAgentHandler, CreateAgentRequest as CreateAgent,
+    CreateAgentHandler, CreateAgentRequest as CreateAgent, NewTemp,
 };
 use agent_application::commands::create_project::{
     CreateProjectHandler, CreateProjectRequest as CreateProject,
@@ -30,7 +30,7 @@ use agent_application::queries::list_sessions::ListSessionsHandler;
 use agent_application::queries::worktrees::{WorktreeInfoHandler, WorktreeStatusHandler};
 use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{ProjectId, SessionId, SettingKey};
-use kernel::AgentId;
+use kernel::{Actor, AgentId};
 use serde_json::Value;
 use wire::{Event, Request, Response};
 
@@ -273,6 +273,10 @@ impl AgentHandlers {
             project_id,
             additions: body.additions,
             worktree: body.worktree,
+            temp: body.temp_objective.map(|objective| NewTemp {
+                objective,
+                creator: Actor::User,
+            }),
         })?;
         Ok(Success::result(agent_json(&agent)).with_event(agent_changed_event(&agent)))
     }
@@ -286,6 +290,11 @@ impl AgentHandlers {
         body: &CreateAgentRequest,
         role: &RolePlacement,
     ) -> Result<Success, HandlerError> {
+        if body.temp_objective.is_some() {
+            return Err(HandlerError::invalid(
+                "a temp cannot be made with a role in this version",
+            ));
+        }
         let Some(roles) = self.roles.get() else {
             return Err(HandlerError::with_code(
                 wire::ErrorCode::Refused,
