@@ -291,11 +291,18 @@ impl NotificationBridge {
 
     /// Records that a run of a schedule did not deliver, or that the office
     /// switched the schedule off (0025/FR-011): the schedule's name and the
-    /// target's id, and the text of the result as the detail. It adds no
-    /// Needs you item, because a schedule is no agent (0025 A6).
-    pub fn record_schedule_result(&self, schedule_name: &str, target: AgentId, detail: String) {
+    /// target's id, and the text of the result as the detail. `target` is
+    /// `None` when the target is deleted, so the row names no agent that is
+    /// gone. It adds no Needs you item, because a schedule is no agent (0025
+    /// A6).
+    pub fn record_schedule_result(
+        &self,
+        schedule_name: &str,
+        target: Option<AgentId>,
+        detail: String,
+    ) {
         let created = self.create.handle(CreateNotification {
-            agent_id: Some(target),
+            agent_id: target,
             agent_name: schedule_name.to_owned(),
             event: NotificationEvent::Schedule,
             at: self.clock.now(),
@@ -304,7 +311,10 @@ impl NotificationBridge {
         match created {
             Ok(Some(notification)) => self.hub.publish(&created_event(&notification)),
             Ok(None) => {}
-            Err(error) => self.report(&error, target, NotificationEvent::Schedule),
+            Err(error) => match target {
+                Some(agent_id) => self.report(&error, agent_id, NotificationEvent::Schedule),
+                None => self.report_schedule_row(&error),
+            },
         }
     }
 
@@ -321,8 +331,8 @@ impl NotificationBridge {
             open.schedules += schedules;
             open.notification.agent_name = missed_text(open.schedules);
             match self.create.amend(&open.notification) {
-                Ok(()) => self.hub.publish(&created_event(&open.notification)),
-                Err(error) => self.report_missed(&error),
+                Ok(amended) => self.hub.publish(&created_event(&amended)),
+                Err(error) => self.report_schedule_row(&error),
             }
             return;
         }
@@ -343,12 +353,12 @@ impl NotificationBridge {
                 });
             }
             Ok(None) => {}
-            Err(error) => self.report_missed(&error),
+            Err(error) => self.report_schedule_row(&error),
         }
     }
 
-    fn report_missed(&self, error: &NotificationApplicationError) {
-        let message = format!("the missed schedule runs notification could not be stored: {error}");
+    fn report_schedule_row(&self, error: &NotificationApplicationError) {
+        let message = format!("a schedule notification could not be stored: {error}");
         if error.is_disk_failure() {
             self.alerts.report_disk_failure(&message);
         } else {

@@ -104,6 +104,10 @@ impl ScheduleStore for MemoryStore {
         let Some(run) = rows.runs.iter_mut().find(|run| run.id == id) else {
             return Ok(false);
         };
+        let current = run.outcome.as_ref().map(|current| current.result);
+        if !outcome.result.can_follow(current) {
+            return Ok(false);
+        }
         run.outcome = Some(outcome.clone());
         Ok(true)
     }
@@ -124,7 +128,12 @@ impl ScheduleStore for MemoryStore {
     fn fail_open_runs(&self, reason: &str) -> Result<usize, ScheduleApplicationError> {
         let mut rows = self.rows();
         let mut count = 0;
-        for run in rows.runs.iter_mut().filter(|run| run.outcome.is_none()) {
+        let is_unsettled = |run: &ScheduleRun| {
+            run.outcome
+                .as_ref()
+                .is_none_or(|outcome| outcome.result == RunResult::Waiting)
+        };
+        for run in rows.runs.iter_mut().filter(|run| is_unsettled(run)) {
             run.outcome = Some(RunOutcome {
                 result: RunResult::Failed,
                 reason: Some(reason.to_owned()),

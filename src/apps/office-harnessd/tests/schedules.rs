@@ -651,8 +651,9 @@ async fn the_fourth_schedule_for_one_target_in_a_minute_is_refused_with_the_limi
     world.stop().await;
 }
 
-#[tokio::test]
-async fn an_asleep_target_is_woken_by_the_schedule_and_then_gets_the_directive() {
+/// A world with the agent "Ana" asleep: when it wakes, it keeps what is typed
+/// to it, and it does not fall asleep again.
+async fn world_with_asleep_ana() -> (World, String) {
     let time = FakeTime::leak(start_of_day());
     let mut world = World::open_with(
         FakeClis::new(),
@@ -688,6 +689,12 @@ async fn an_asleep_target_is_woken_by_the_schedule_and_then_gets_the_directive()
     world.client.wait_for_status(&agent, "asleep").await;
     // The woken agent must not fall asleep again.
     world.client.set_setting("idle_sleep_minutes", "1440").await;
+    (world, agent)
+}
+
+#[tokio::test]
+async fn an_asleep_target_is_woken_by_the_schedule_and_then_gets_the_directive() {
+    let (mut world, agent) = world_with_asleep_ana().await;
     let id = world.saved("wake", &agent, "wake up", every_hours(1)).await;
 
     world.time.advance(HOUR + SECOND);
@@ -1162,6 +1169,154 @@ async fn an_open_run_at_a_server_start_is_failed_with_the_reason_that_the_server
     assert_eq!(runs.len(), 1, "{runs:?}");
     assert_eq!(runs[0]["result"], "failed");
     assert_eq!(runs[0]["reason"], "the server stopped");
+    world.stop().await;
+}
+
+#[tokio::test]
+async fn a_run_that_waited_at_a_stop_is_failed_at_the_start_and_the_next_due_time_runs() {
+    let time = FakeTime::leak(start_of_day());
+    let mut world = World::open_with(FakeClis::new(), options(time), time).await;
+    let agent = world.ready_agent("Ana").await;
+    let id = world.saved("hourly", &agent, "again", every_hours(1)).await;
+    let database = world.office.serving.office.config.database_path();
+    let stopped = Box::pin(restart_without_start(world)).await;
+    // The queue of the stopped server is gone; its run still says waiting.
+    let connection = rusqlite::Connection::open(&database).expect("database");
+    connection
+        .execute(
+            "INSERT INTO schedule_runs (schedule_id, due, started, via, result, queue_entry) \
+             VALUES (?1, 0, 0, 'due', 'waiting', '1')",
+            [&id],
+        )
+        .expect("a waiting run");
+    drop(connection);
+
+    let mut world = Box::pin(stopped.start_again(time)).await;
+    world.client.start(&agent).await;
+    world
+        .client
+        .wait_for_status(&agent, "waiting_for_input")
+        .await;
+    let failed = world.wait_for_result(&id, "failed").await;
+    assert_eq!(failed["reason"], "the server stopped");
+
+    time.advance(HOUR + 10 * SECOND);
+    world.wait_for_result(&id, "submitted").await;
+    world.wait_for_typed("Ana", "again\r").await;
+    world.stop().await;
+}
+
+#[tokio::test]
+async fn a_due_time_a_minute_before_the_server_start_is_missed_and_not_run() {
+    let time = FakeTime::leak(start_of_day());
+    let mut world = World::open_with(FakeClis::new(), options(time), time).await;
+    let agent = world.ready_agent("Ana").await;
+    let id = world.saved("hourly", &agent, "late", every_hours(1)).await;
+    let stopped = Box::pin(restart_without_start(world)).await;
+    // The server starts a minute after the due time: inside the grace, but
+    // before the start.
+    time.set(start_of_day() + HOUR + MINUTE);
+
+    let mut world = Box::pin(stopped.start_again(time)).await;
+    world.client.start(&agent).await;
+    world
+        .client
+        .wait_for_status(&agent, "waiting_for_input")
+        .await;
+    let missed = world.wait_for_result(&id, "missed").await;
+
+    assert!(
+        missed["reason"]
+            .as_str()
+            .expect("reason")
+            .starts_with("1 run missed")
+    );
+    tokio::time::sleep(SEVERAL_ROUNDS).await;
+    assert_eq!(world.typed("Ana"), "", "no late run");
+    world.stop().await;
+}
+
+#[tokio::test]
+async fn a_failed_save_of_one_schedule_in_a_round_loses_no_due_time_of_the_others() {
+    let mut world = World::open().await;
+    let agent = world.ready_agent("Ana").await;
+    let first = world.saved("a-first", &agent, "one", every_hours(1)).await;
+    let second = world.saved("b-second", &agent, "two", every_hours(1)).await;
+    let database = world.office.serving.office.config.database_path();
+    let connection = rusqlite::Connection::open(&database).expect("database");
+    connection
+        .execute_batch(&format!(
+            "CREATE TRIGGER block_update BEFORE UPDATE ON schedule_schedules \
+             WHEN NEW.id = '{second}' BEGIN SELECT RAISE(ABORT, 'blocked'); END;"
+        ))
+        .expect("a trigger");
+
+    world.time.advance(HOUR + 10 * SECOND);
+    // The schedule before the failing one runs, and the failing one has not
+    // lost its due time.
+    world.wait_for_result(&first, "submitted").await;
+    world.wait_for_typed("Ana", "one\r").await;
+    assert_eq!(world.history(&second).await.len(), 0);
+
+    connection
+        .execute_batch("DROP TRIGGER block_update;")
+        .expect("drop");
+    world.wait_for_result(&second, "submitted").await;
+    world.wait_for_typed("Ana", "two\r").await;
+    world.stop().await;
+}
+
+#[tokio::test]
+async fn an_unreadable_tree_fails_the_run_of_an_asleep_target_and_wakes_nothing() {
+    let (mut world, agent) = world_with_asleep_ana().await;
+    let id = world
+        .saved("wake", &agent, "wake up", every_hours(24))
+        .await;
+    let database = world.office.serving.office.config.database_path();
+    let connection = rusqlite::Connection::open(&database).expect("database");
+    connection
+        .execute_batch("ALTER TABLE hierarchy_teams RENAME TO hierarchy_teams_away;")
+        .expect("hide the tree");
+
+    world
+        .client
+        .ask("schedule.run_now", json!({"schedule_id": id}))
+        .await;
+    let failed = world.wait_for_result(&id, "failed").await;
+    connection
+        .execute_batch("ALTER TABLE hierarchy_teams_away RENAME TO hierarchy_teams;")
+        .expect("show the tree");
+
+    assert!(
+        failed["reason"]
+            .as_str()
+            .expect("reason")
+            .contains("hold check"),
+        "{failed}"
+    );
+    let wakes: Vec<Value> = world
+        .entries_of_schedule(&agent, &id)
+        .await
+        .into_iter()
+        .filter(|entry| entry["action"] == "wake")
+        .collect();
+    assert_eq!(wakes, Vec::<Value>::new());
+    assert_eq!(world.typed("Ana"), "");
+    world.stop().await;
+}
+
+#[tokio::test]
+async fn two_schedules_due_together_for_one_asleep_target_both_deliver() {
+    let (mut world, agent) = world_with_asleep_ana().await;
+    let first = world.saved("a-first", &agent, "one", every_hours(1)).await;
+    let second = world.saved("b-second", &agent, "two", every_hours(1)).await;
+
+    world.time.advance(HOUR + SECOND);
+    world.wait_for_result(&first, "submitted").await;
+    world.wait_for_result(&second, "submitted").await;
+
+    world.wait_for_typed("Ana", "one\r").await;
+    world.wait_for_typed("Ana", "two\r").await;
     world.stop().await;
 }
 

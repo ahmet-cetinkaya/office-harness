@@ -5,15 +5,13 @@
 //! starts one run per due time. It waits for the sweep of 0017 before its
 //! first round.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use kernel::ScheduleId;
+use kernel::Timestamp;
 use schedule_application::common::errors::ScheduleApplicationError;
 use schedule_application::common::interfaces::{ScheduleCapSource, ScheduleStore};
 use schedule_application::services::{Plan, RoundPlanner};
-use schedule_domain::Schedule;
 use tokio::sync::watch;
 use tokio::task::spawn_blocking;
 use tokio::time::{MissedTickBehavior, interval};
@@ -45,12 +43,15 @@ pub struct ScheduleRunner {
     gate: SweepGate,
     tick: Duration,
     log: ServerLog,
+    /// The moment the scheduler was built: a due time before it is missed.
+    started: Timestamp,
 }
 
 impl ScheduleRunner {
     #[must_use]
     pub fn new(parts: RunnerParts) -> Self {
         Self {
+            started: parts.time.now(),
             bridge: parts.bridge,
             store: parts.store,
             cap: parts.cap,
@@ -91,38 +92,44 @@ impl ScheduleRunner {
         });
     }
 
-    /// One round: the plan, the saves, the missed entries, then the runs.
+    /// One round: for each schedule that is on, the plan, the save, and the
+    /// missed entries; then the runs. A schedule whose save fails is left as
+    /// it was, so its due times are planned again at the next tick, and the
+    /// other schedules go on.
     fn round(&self) {
         let now = self.time.now();
         let zone = self.time.zone();
-        let (schedules, plan) = {
+        let mut missed_schedules = 0_u32;
+        let mut starts = Vec::new();
+        {
             let _locked = self.bridge.lock_schedules();
             let schedules = match self.store.list() {
                 Ok(schedules) => schedules,
-                Err(error) => return self.report(&error),
+                Err(error) => return self.bridge.report_storage(&error),
             };
-            let plan = RoundPlanner::plan(now, &zone, &schedules);
-            // The handled due times are stored before any run starts, so a
-            // crash never repeats a run (D17).
-            if let Err(error) = self.save_changed(&plan) {
-                return self.report(&error);
-            }
-            let by_id: HashMap<ScheduleId, &Schedule> = schedules
-                .iter()
-                .map(|schedule| (schedule.id, schedule))
-                .collect();
-            for batch in &plan.missed {
-                if let Some(schedule) = by_id.get(&batch.schedule_id) {
+            for schedule in &schedules {
+                let plan =
+                    RoundPlanner::plan(now, self.started, &zone, std::slice::from_ref(schedule));
+                // The handled due times are stored before any run starts, so a
+                // crash never repeats a run (D17).
+                if let Err(error) = self.save_changed(&plan) {
+                    self.bridge.report_storage(&error);
+                    continue;
+                }
+                for batch in &plan.missed {
                     self.bridge.record_missed(schedule, batch, now, &zone);
                 }
+                missed_schedules += u32::try_from(plan.missed.len()).unwrap_or(u32::MAX);
+                starts.extend(plan.runs.into_iter().map(|run| (schedule.clone(), run)));
             }
-            (schedules, plan)
-        };
-        if !plan.missed.is_empty() {
-            let count = u32::try_from(plan.missed.len()).unwrap_or(u32::MAX);
-            self.notifications.record_missed_schedules(count, now);
         }
-        self.start_runs(&schedules, &plan);
+        if missed_schedules > 0 {
+            self.notifications
+                .record_missed_schedules(missed_schedules, now);
+        }
+        for (schedule, run) in starts {
+            self.bridge.start_due(schedule, run);
+        }
     }
 
     fn save_changed(&self, plan: &Plan) -> Result<(), ScheduleApplicationError> {
@@ -131,21 +138,5 @@ impl ScheduleRunner {
             self.bridge.publish_changed(changed.id);
         }
         Ok(())
-    }
-
-    fn start_runs(&self, schedules: &[Schedule], plan: &Plan) {
-        for run in &plan.runs {
-            if let Some(schedule) = schedules
-                .iter()
-                .find(|schedule| schedule.id == run.schedule_id)
-            {
-                self.bridge.start_due(schedule.clone(), *run);
-            }
-        }
-    }
-
-    fn report(&self, error: &ScheduleApplicationError) {
-        self.log
-            .error(&format!("a schedule round cannot use the store: {error}"));
     }
 }

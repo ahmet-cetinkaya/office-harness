@@ -122,3 +122,37 @@ fn open_runs_fail_at_a_start_with_the_server_stopped_reason() {
         Some(outcome(RunResult::Submitted))
     );
 }
+
+#[test]
+fn a_run_that_waited_at_a_stop_is_failed_at_the_start_and_blocks_nothing() {
+    let (book, store) = book();
+    let id = book
+        .open(&new_run(Some(outcome(RunResult::Waiting))))
+        .expect("open");
+    assert_eq!(book.skip_reason(schedule_id()), Ok(Some(WAITING_REASON)));
+    assert_eq!(book.fail_open_runs(), Ok(1));
+    let failed = store
+        .get_run(id)
+        .expect("get")
+        .expect("row")
+        .outcome
+        .expect("outcome");
+    assert_eq!(failed.result, RunResult::Failed);
+    assert_eq!(book.skip_reason(schedule_id()), Ok(None));
+}
+
+#[test]
+fn a_late_waiting_result_never_overwrites_a_submitted_one() {
+    let (book, store) = book();
+    let id = book.open(&new_run(None)).expect("open");
+    book.settle(id, &outcome(RunResult::Submitted))
+        .expect("submitted");
+    assert!(matches!(
+        book.settle(id, &outcome(RunResult::Waiting)),
+        Err(ScheduleApplicationError::RunSettled(_))
+    ));
+    assert_eq!(
+        store.get_run(id).expect("get").expect("row").outcome,
+        Some(outcome(RunResult::Submitted))
+    );
+}

@@ -650,7 +650,11 @@ fn a_schedule_result_row_names_the_schedule_and_the_target_and_adds_no_needs_you
     let (bridge, store, _agents, hub) = bridge_for(&agent, None);
     let mut frames = hub.subscribe();
 
-    bridge.record_schedule_result("nightly", agent.id, "Ana: skipped: stopped".to_owned());
+    bridge.record_schedule_result(
+        "nightly",
+        Some(agent.id),
+        "Ana: skipped: stopped".to_owned(),
+    );
 
     let rows = store.all();
     assert_eq!(rows.len(), 1);

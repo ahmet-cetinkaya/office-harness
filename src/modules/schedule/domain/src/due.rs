@@ -255,12 +255,20 @@ pub struct Split {
     pub missed: Option<Missed>,
 }
 
-/// A due time `d` runs when `now - d <= grace_millis`; every older one joins
-/// one missed batch. `grace_millis` must be under the 1 hour spacing of due
+/// A due time `d` runs when it is not before `started` (the moment the office
+/// began to run) and `now - d <= grace_millis`; every other one joins one
+/// missed batch. `grace_millis` must be under the 1 hour spacing of due
 /// times, so the tail holds every run.
 #[must_use]
-pub fn classify(window: &DueWindow, now: Timestamp, grace_millis: i64) -> Split {
-    let is_run = |due: &Timestamp| now.as_unix_millis() - due.as_unix_millis() <= grace_millis;
+pub fn classify(
+    window: &DueWindow,
+    now: Timestamp,
+    started: Timestamp,
+    grace_millis: i64,
+) -> Split {
+    let is_run = |due: &Timestamp| {
+        *due >= started && now.as_unix_millis() - due.as_unix_millis() <= grace_millis
+    };
     let runs: Vec<Timestamp> = window.tail.iter().copied().filter(is_run).collect();
     let missed_count = window.count.saturating_sub(runs.len() as u64);
     let last_missed = window.tail.iter().rev().find(|due| !is_run(due)).copied();

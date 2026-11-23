@@ -52,37 +52,32 @@ impl RunBook {
         self.store.record_run(run)
     }
 
-    /// Writes the result of a run. An open run takes any result; a run that
-    /// waits takes `submitted`, `unsubmitted`, or `withdrawn`; a settled run
-    /// takes nothing more.
+    /// Writes the result of a run in one step, by the rule of
+    /// `RunResult::can_follow`.
     ///
     /// # Errors
     /// `NotFound` for an unknown run, `RunSettled` for a result that the run
     /// cannot take, `Storage`.
     pub fn settle(&self, id: RunId, outcome: &RunOutcome) -> Result<(), ScheduleApplicationError> {
-        let run = self.store.get_run(id)?.ok_or_else(|| {
-            ScheduleApplicationError::NotFound(format!("run {} does not exist", id.0))
-        })?;
-        let allowed = match run.outcome.as_ref().map(|current| current.result) {
-            None => true,
-            Some(RunResult::Waiting) => matches!(
-                outcome.result,
-                RunResult::Submitted | RunResult::Unsubmitted | RunResult::Withdrawn
-            ),
-            Some(_) => false,
-        };
-        if !allowed {
-            return Err(ScheduleApplicationError::RunSettled(format!(
+        if self.store.settle_run(id, outcome)? {
+            return Ok(());
+        }
+        // The store wrote nothing: the row is gone or cannot take the result.
+        match self.store.get_run(id)? {
+            None => Err(ScheduleApplicationError::NotFound(format!(
+                "run {} does not exist",
+                id.0
+            ))),
+            Some(_) => Err(ScheduleApplicationError::RunSettled(format!(
                 "run {} cannot change to {}",
                 id.0,
                 outcome.result.as_str()
-            )));
+            ))),
         }
-        self.store.settle_run(id, outcome)?;
-        Ok(())
     }
 
-    /// Fails every open run at a server start (nothing is started again).
+    /// Fails every open run and every run that waits at a server start: the
+    /// queue that held them is gone, and nothing is started again.
     ///
     /// # Errors
     /// `Storage`.

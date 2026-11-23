@@ -88,15 +88,19 @@ fn read_days(body: &Map<String, Value>) -> Result<Vec<jiff::civil::Weekday>, Rea
             "{REPEAT_KEY}.days must be a list of weekday codes"
         )));
     };
-    days.iter()
-        .map(|day| {
-            day.as_str().and_then(parse_weekday).ok_or_else(|| {
-                ReadError::Request(format!(
-                    "{REPEAT_KEY}.days must hold only mon, tue, wed, thu, fri, sat, or sun"
-                ))
-            })
-        })
-        .collect()
+    let mut read = Vec::new();
+    for day in days {
+        let weekday = day.as_str().and_then(parse_weekday).ok_or_else(|| {
+            ReadError::Request(format!(
+                "{REPEAT_KEY}.days must hold only mon, tue, wed, thu, fri, sat, or sun"
+            ))
+        })?;
+        // A day named twice is one day.
+        if !read.contains(&weekday) {
+            read.push(weekday);
+        }
+    }
+    Ok(read)
 }
 
 /// A number that is not a whole one, or that does not fit, is out of the

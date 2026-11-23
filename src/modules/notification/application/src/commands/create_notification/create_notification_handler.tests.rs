@@ -149,3 +149,28 @@ fn a_notification_without_an_agent_is_stored_and_never_coalesced() {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].agent_id, None);
 }
+
+#[test]
+fn an_amended_row_that_the_person_read_stays_read() {
+    let store = Arc::new(MemoryNotifications::default());
+    let create = create_handler(&store);
+    let read = read_handler(&store);
+    let mut stored = create
+        .handle(CreateNotification {
+            agent_id: None,
+            agent_name: "1 schedule missed runs".to_owned(),
+            event: NotificationEvent::Schedule,
+            at: NOW,
+            detail: None,
+        })
+        .expect("create")
+        .expect("stored");
+    read.handle(stored.id).expect("read");
+
+    stored.agent_name = "2 schedules missed runs".to_owned();
+    let amended = create.amend(&stored).expect("amend");
+
+    assert_eq!(amended.agent_name, "2 schedules missed runs");
+    assert!(!amended.is_unread());
+    assert!(!store.all()[0].is_unread());
+}

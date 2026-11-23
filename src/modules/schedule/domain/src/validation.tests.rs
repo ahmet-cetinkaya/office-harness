@@ -142,3 +142,11 @@ fn a_once_time_equal_to_now_is_not_future() {
         [error("repeat", Rule::NotInFuture)]
     );
 }
+
+#[test]
+fn a_name_is_trimmed_and_kept_in_normalization_form_c() {
+    assert_eq!(normalize_name("  Nightly "), "Nightly");
+    // "e" with a combining acute accent becomes the one letter "\u{e9}".
+    assert_eq!(normalize_name("Cafe\u{301}"), "Caf\u{e9}");
+    assert_eq!(normalize_name("   "), "");
+}

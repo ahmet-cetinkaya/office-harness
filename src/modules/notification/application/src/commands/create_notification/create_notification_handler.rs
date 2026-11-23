@@ -68,12 +68,21 @@ impl CreateNotificationHandler {
 
     /// Rewrites the text and times of a stored row, for a notification that
     /// counts what it reports, such as the missed runs of one minute
-    /// (0025/FR-006).
+    /// (0025/FR-006). The row keeps the read time it has in the store, so a
+    /// row that the person read stays read. Returns the row as stored.
     ///
     /// # Errors
     /// `Storage`.
-    pub fn amend(&self, notification: &Notification) -> Result<(), NotificationApplicationError> {
-        self.store.update(notification)
+    pub fn amend(
+        &self,
+        notification: &Notification,
+    ) -> Result<Notification, NotificationApplicationError> {
+        let mut amended = notification.clone();
+        if let Some(stored) = self.store.find(notification.id)? {
+            amended.read_at = stored.read_at;
+        }
+        self.store.update(&amended)?;
+        Ok(amended)
     }
 
     fn has_unread(
