@@ -1,7 +1,7 @@
 ---
-status: approved
+status: shipped
 capability: office
-plan: specs/changes/0026-agent-secrets/PLAN.md
+plan: specs/changes/archive/0026-agent-secrets/PLAN.md
 supersedes: 0002/FR-008 (as modified by 0014 and 0015), 0007/FR-007, 0007/FR-009
 ---
 
