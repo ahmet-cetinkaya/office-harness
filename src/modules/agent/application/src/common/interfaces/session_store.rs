@@ -26,6 +26,12 @@ pub trait SessionStore: Send + Sync {
     /// `Storage`.
     fn latest_for_agent(&self, agent_id: AgentId) -> Result<Option<Session>, PortError>;
 
+    /// The sessions that have not ended.
+    ///
+    /// # Errors
+    /// `Storage`.
+    fn running(&self) -> Result<Vec<Session>, PortError>;
+
     /// # Errors
     /// `NotFound` when the session does not exist.
     fn set_cli_session_id(&self, id: SessionId, cli_session_id: &str) -> Result<(), PortError>;

@@ -5,6 +5,7 @@ use agent_domain::value_objects::{ExitResult, SessionId};
 use kernel::{AgentId, Timestamp};
 use rusqlite::{OptionalExtension, Row, params};
 
+use super::session_process_repository::end_open_rows;
 use crate::persistence::additions_document::AdditionsDocument;
 use crate::persistence::{PersistenceError, SharedConnection};
 
@@ -155,6 +156,22 @@ impl SessionRepository {
         })
     }
 
+    /// The sessions that have not ended.
+    ///
+    /// # Errors
+    /// A storage failure or a stored row that the domain rejects.
+    pub fn running(&self) -> Result<Vec<Session>, PersistenceError> {
+        self.connection.with(|connection| {
+            let mut statement = connection.prepare(&format!(
+                "{SELECT_SESSION} WHERE ended_at IS NULL ORDER BY started_at, rowid"
+            ))?;
+            let rows = statement
+                .query_map([], SessionRow::read)?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            rows.into_iter().map(SessionRow::into_session).collect()
+        })
+    }
+
     /// Ends the agent's running session, if it has one.
     ///
     /// # Errors
@@ -166,7 +183,13 @@ impl SessionRepository {
         at: Timestamp,
     ) -> Result<bool, PersistenceError> {
         self.connection.with(|connection| {
-            let changed = connection.execute(
+            // One transaction, so a stored identity never stays open under a
+            // session that ended (0017/FR-008).
+            let transaction = connection.transaction()?;
+            for session_id in running_session_ids(&transaction, agent_id)? {
+                end_open_rows(&transaction, &session_id)?;
+            }
+            let changed = transaction.execute(
                 "UPDATE agent_sessions SET ended_at = ?2, exit_result = ?3 \
                  WHERE agent_id = ?1 AND ended_at IS NULL",
                 params![
@@ -175,6 +198,7 @@ impl SessionRepository {
                     result.to_string()
                 ],
             )?;
+            transaction.commit()?;
             Ok(changed > 0)
         })
     }
@@ -195,4 +219,14 @@ impl SessionRepository {
             )?)
         })
     }
+}
+
+fn running_session_ids(
+    connection: &rusqlite::Connection,
+    agent_id: AgentId,
+) -> rusqlite::Result<Vec<String>> {
+    connection
+        .prepare("SELECT id FROM agent_sessions WHERE agent_id = ?1 AND ended_at IS NULL")?
+        .query_map([agent_id.to_string()], |row| row.get(0))?
+        .collect()
 }
