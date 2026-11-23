@@ -1,5 +1,5 @@
 ---
-status: approved
+status: completed
 spec: specs/changes/0020-temporary-agents/SPEC.md
 commits: per-task
 ---
@@ -150,3 +150,9 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - **The poll and an ordered request race.** The ender runs stop and delete through `AgentGateway::run`, which takes the status order, and the `ending` set prevents a second end; a person's request that arrives first wins and the ender sees the changed state.
 - **Delete answers vary per OS.** Worktree removal on Windows can fail on a locked file; the keep path then records the failure in the entry instead of losing the worktree (FR-006).
 - **Queue entry refactor.** `report: Option<String>` to `Origin` touches the 0012 and 0015 paths; T2 keeps the existing queue tests green before adding new ones.
+
+## Result
+
+- **Delivered:** T1 15e5bd2, T2 a49099e, T4 992c49c, T3 31b6449, T5 5960859 and the qa commit; `main` merged at fa83dff in c05eb62.
+- **Evidence:** `qa-report.md` gives every FR, PB, and SC a PASS with the test that proves it; the hands-on run with a real `claude` temp stays BLOCKED.
+- **Deviations:** the dismiss record, the `Refused` kind of the hierarchy creator error, the creating guard of the watcher, and one settings store in the create handler after the 0021 merge (`qa-report.md`, Deviations from the plan).
