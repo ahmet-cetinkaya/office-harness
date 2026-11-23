@@ -43,7 +43,7 @@ fn migrated_connection(connection: Connection) -> Connection {
 fn row(agent_id: AgentId, name: &str, event: NotificationEvent, created_at: i64) -> Notification {
     Notification::new(
         NotificationId::generate(),
-        agent_id,
+        Some(agent_id),
         name.to_owned(),
         event,
         Timestamp::from_unix_millis(created_at),
@@ -438,4 +438,75 @@ fn the_waits_only_flag_round_trips_and_a_row_from_before_0022_reads_false() {
     assert!(!old.waits_only);
     assert_eq!(repository.find(plain.agent_id).expect("find"), Some(plain));
     assert_eq!(repository.find(mixed.agent_id).expect("find"), Some(mixed));
+}
+
+#[test]
+fn a_row_without_an_agent_round_trips_lists_and_reads() {
+    let repository = memory_office();
+    let mut orphan = row(
+        AgentId::generate(),
+        "Nightly report",
+        NotificationEvent::Schedule,
+        10,
+    )
+    .with_detail("missed 2 runs".to_owned());
+    orphan.agent_id = None;
+    let with_agent = row(AgentId::generate(), "Ana", NotificationEvent::Bell, 20);
+    repository.insert(&orphan).expect("insert");
+    repository.insert(&with_agent).expect("insert");
+
+    assert_eq!(
+        repository.find(orphan.id).expect("find"),
+        Some(orphan.clone())
+    );
+    assert_eq!(repository.list_unread().expect("unread").len(), 2);
+    let mut read_row = orphan.clone();
+    read_row.mark_read(NOW);
+    repository.update(&read_row).expect("update");
+    assert_eq!(repository.list_unread().expect("unread"), vec![with_agent]);
+    assert_eq!(repository.find(orphan.id).expect("find"), Some(read_row));
+}
+
+#[test]
+fn the_agent_optional_migration_keeps_every_event_kind_with_its_id_and_read_state() {
+    let handle = Arc::new(Mutex::new(Connection::open_in_memory().expect("open")));
+    let (before, last) = SCRIPTS.split_at(SCRIPTS.len() - 1);
+    for script in before {
+        handle
+            .lock()
+            .expect("lock")
+            .execute_batch(script)
+            .expect("migrate to the old schema");
+    }
+    let repository = NotificationRepository::new(Arc::clone(&handle));
+    let mut expected = Vec::new();
+    for (created_at, event) in (100..).zip(
+        NotificationEvent::ALL
+            .into_iter()
+            .filter(|event| *event != NotificationEvent::Schedule),
+    ) {
+        let mut stored = row(AgentId::generate(), "Ana", event, created_at);
+        if created_at % 2 == 0 {
+            stored.mark_read(NOW);
+        }
+        repository.insert(&stored).expect("insert");
+        expected.push(stored);
+    }
+    let before_listing = repository.list().expect("list before");
+
+    handle
+        .lock()
+        .expect("lock")
+        .execute_batch(last[0])
+        .expect("migrate");
+
+    assert_eq!(repository.list().expect("list after"), before_listing);
+    for stored in &expected {
+        assert_eq!(
+            repository.find(stored.id).expect("find"),
+            Some(stored.clone())
+        );
+    }
+    let unread = expected.iter().filter(|stored| stored.is_unread()).count();
+    assert_eq!(repository.list_unread().expect("unread").len(), unread);
 }

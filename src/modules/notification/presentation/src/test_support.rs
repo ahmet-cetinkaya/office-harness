@@ -119,7 +119,7 @@ impl NotificationStore for MemoryNotifications {
             .lock()
             .expect("lock")
             .iter()
-            .filter(|row| row.agent_id == agent_id && row.is_unread())
+            .filter(|row| row.agent_id == Some(agent_id) && row.is_unread())
             .cloned()
             .collect())
     }

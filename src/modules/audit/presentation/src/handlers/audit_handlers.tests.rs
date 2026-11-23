@@ -65,6 +65,7 @@ fn the_entries_of_an_agent_come_back_as_an_array() {
         result: ActionResult::Ok,
         at: Timestamp::from_unix_millis(5),
         detail: None,
+        actor_label: None,
     })
     .expect("append");
     let handlers = AuditHandlers::new(ListActionsHandler::new(log));

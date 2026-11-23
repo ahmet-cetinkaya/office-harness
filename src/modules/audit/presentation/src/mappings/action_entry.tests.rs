@@ -15,6 +15,7 @@ fn entry() -> ActionEntry {
             result: ActionResult::Failed("no such folder".to_owned()),
             at: Timestamp::from_unix_millis(1_700_000_000_000),
             detail: None,
+            actor_label: None,
         },
     }
 }
@@ -82,4 +83,14 @@ fn a_detail_is_written_as_text() {
         action_entry_json(&entry)["detail"],
         "new session: no earlier session"
     );
+}
+
+#[test]
+fn an_actor_label_is_emitted_only_when_the_entry_has_one() {
+    let mut entry = entry();
+    assert!(action_entry_json(&entry).get("actor_label").is_none());
+
+    entry.record.actor_label = Some("Nightly report".to_owned());
+
+    assert_eq!(action_entry_json(&entry)["actor_label"], "Nightly report");
 }

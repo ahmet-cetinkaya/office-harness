@@ -47,7 +47,7 @@ fn push(
 ) -> NotificationId {
     let notification = Notification::new(
         NotificationId::generate(),
-        agent_id,
+        Some(agent_id),
         name.to_owned(),
         event,
         Timestamp::from_unix_millis(created_at),

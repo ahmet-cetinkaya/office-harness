@@ -9,4 +9,5 @@ pub const SCRIPTS: &[&str] = &[
     include_str!("0001_actions.sql"),
     include_str!("0002_nullable_target.sql"),
     include_str!("0003_detail.sql"),
+    include_str!("0004_actor_label.sql"),
 ];
