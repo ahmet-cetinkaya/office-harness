@@ -4,7 +4,7 @@
 
 - **Date:** 2026-11-23.
 - **Build under test:** branch `feat/0018-idle-sleep` at HEAD, with `origin/main` 15b18e9 merged; the local nix clippy and rustc 1.99; CI uses toolchain 1.100.0. The Rust and desktop gates ran on the merged tree.
-- **Overall status:** the automated evidence stands for the sleep, the wake, the fallback and the hold, the refusals, and the setting rules. Most criteria with counts (SC-001 to SC-006, SC-008, SC-009) are proven in behavior with fewer runs than the stated counts, so they are PARTIAL. The hands-on check with a real `claude` CLI (put an agent to sleep, then wake it with Enter) was not run. It is BLOCKED.
+- **Overall status:** the automated evidence stands for the sleep, the wake, the fallback and the hold, the refusals, and the setting rules. Most criteria with counts (SC-001 to SC-006, SC-008, SC-009) are proven in behavior with fewer runs than the stated counts, so they are PARTIAL. The hands-on check with a real `claude` CLI passed in the real app on Linux (see Hands-on run): the agent was put to sleep after its Needs you item was dismissed, and Enter in its terminal view woke it into the same session.
 - **Status of this file:** the gate numbers come from local runs on 2026-11-23. The CI result is in the PR, not here.
 
 ### Verdict words
@@ -13,6 +13,7 @@
 |---|---|
 | PASS (automated) | An automated test proves the criterion. The evidence column names the test. |
 | PARTIAL (automated) | Automated tests prove part of the criterion. The evidence column names what is proven and the gap. |
+| PASS (hands-on) | An agent ran the check on the real surface. The evidence column says what ran. |
 | BLOCKED | A person must run the check. Nobody has run it. It is not a PASS. |
 | GAP | No test proves the criterion. The evidence column says why. |
 
@@ -36,8 +37,21 @@
 | `bun test src` | desktop: 415 passed, 0 failed | PASS |
 | Playwright | desktop, full suite on the mock core, Chromium: 278 passed, 0 failed | PASS |
 | `svelte-check`, `eslint`, `prettier --check` | desktop: 523 files, 0 errors, 0 warnings; lint and format clean | PASS |
-| Hands-on: a real `claude` agent put to sleep and woken with Enter | not run | BLOCKED |
+| Hands-on: a real `claude` agent put to sleep and woken with Enter | see Hands-on run | PASS (hands-on) |
 | CI | the PR | In the PR |
+
+### Hands-on run (2026-11-23)
+
+Agent-run in the real app: a debug build of PR #133 at 5a20eed on Linux, a clean environment with its own office data folder, the desktop driven through WebDriver, and a real signed-in `claude` (no arguments, in a folder it already trusts). The run typed one short prompt ("Reply with the single word ok.") and Enter, then Ctrl+U, which clears the empty input line.
+
+| Step | Observed |
+|---|---|
+| Idle sleep set to 5 minutes; the agent at `waiting_for_input` with its Needs you item | No sleep in 9 minutes (2 runs). The change from `working` to `waiting for input` adds a Needs you item (0008), and the item keeps the agent awake (FR-002 b, A1). The second run cleared the input line first, so unsent person text was not the cause. |
+| The person presses Dismiss on the item in Needs you | The item leaves. `claude` redraws a hint line now and then, which changes the agent to `working` and back, and each change adds a new item: the run dismissed 2 items in the first 21 seconds. |
+| Wait | `asleep` about 5 minutes after the agent last changed to `waiting for input` (3 runs; 5 min 9 s in the last one). One `sleep` entry: actor `office`, detail "idle for 5 minutes". No notification and no Needs you item for the sleep. |
+| Select the agent, focus its terminal view, press Enter | The wake result shows "Waking", "Checking" after 0.44 s, and "Continued" after 20.6 s. One `wake` entry with actor `user`. The new session is continued from the slept one, and the terminal shows the earlier prompt and its answer. The agent shows `waiting for input`. |
+
+Note for the owner: with a real `claude`, an idle agent sleeps only after the person has seen or dismissed its Needs you item, as A1 says. A `claude` that redraws its screen now and then adds a new item each time it returns to `waiting for input`, so without the person it may never sleep. This is the specified behavior, not a defect of this build.
 
 ## Success criteria
 
@@ -47,7 +61,7 @@
 | SC-002 | PARTIAL (automated) | `an_idle_agent_nobody_needs_is_put_to_sleep_with_one_record_and_no_notification`: the agent shows `asleep` after the idle time. 1 agent, not 10; the bound of 6 minutes 10 seconds is not measured in real time. |
 | SC-003 | PARTIAL (automated) | Each condition alone keeps the agent awake: `an_item_in_needs_you_keeps_the_agent_awake` (b), `a_hold_keeps_the_agent_awake` (c), `a_waiting_directive_keeps_its_target_awake` (`tests/agent_directive.rs`, d), `unsent_person_text_keeps_the_agent_awake` (e), `a_running_child_keeps_its_parent_awake` (`tests/agent_directive.rs`, f). The last check for (a) and for a reason of the gate: `an_agent_that_does_not_wait_for_input_conflicts_without_a_record_or_a_stop` and `a_reason_of_the_gate_conflicts_without_a_record_or_a_stop` (`sleep_agent_handler.tests.rs`). Gaps: 1 run each, not 3 times the idle time with repeats; a waiting report (d) is proven by `a_waiting_report_keeps_its_parent_awake` (`tests/agent_report.rs`) and pending office text (e) by `office_text_that_waits_at_the_input_line_keeps_its_target_awake` (`tests/agent_directive.rs`); the 10 tries of (a) were not run. |
 | SC-004 | PARTIAL (automated) | `turning_idle_sleep_on_restarts_the_count_for_long_idle_agents` (the agent does not sleep in half the idle time after the setting was turned on, then sleeps); `turning_the_setting_on_or_changing_it_restarts_the_count` (`idle_sleep_run.tests.rs`, also for a change of the value). 1 agent, not 10; the window is half of 5 test minutes, not 30 minutes. |
-| SC-005 | PARTIAL (automated) | `a_wake_continues_the_last_session_and_records_one_wake_by_the_person`: `wake.start` continues the same session, with the results `checking` then `continued`. Desktop: `Enter in the focused terminal view wakes the agent`, `Wake in the details wakes the agent` (mock core). 1 wake, not 20; the 10 seconds are not timed. The wake with a real CLI is BLOCKED (see the hands-on row of the gates). |
+| SC-005 | PARTIAL (automated) | `a_wake_continues_the_last_session_and_records_one_wake_by_the_person`: `wake.start` continues the same session, with the results `checking` then `continued`. Desktop: `Enter in the focused terminal view wakes the agent`, `Wake in the details wakes the agent` (mock core). 1 wake, not 20. Hands-on with a real `claude` (see Hands-on run): Enter started the continued session 0.38 s after the press (`continued_from` names the slept session), "Checking" showed after 0.44 s and "Continued" after 20.6 s, at the end of the check period. 1 real wake, not 20. |
 | SC-006 | PARTIAL (automated) | `an_idle_agent_nobody_needs_is_put_to_sleep_with_one_record_and_no_notification` (one `sleep` entry with actor `office`, no `stop` entry, the notification list and the Needs you list unchanged) and `a_wake_continues_the_last_session_and_records_one_wake_by_the_person` (one `wake` entry with actor `user`). 1 cycle, not 20. |
 | SC-007 | PASS (automated) | `a_wake_that_fails_twice_starts_the_agent_twice_and_holds_it_with_one_notification`: the results `checking`, `checking`, `held`; the reason starts with "the wake failed"; exactly 1 `resume_hold` notification names the agent. The fake CLI ends at once on every start. |
 | SC-008 | PARTIAL (automated) | Clean restart: `an_asleep_agent_stays_asleep_after_a_server_restart_and_is_not_resumable` (`asleep` after the restart, `resume.plan` lists no agent, no new session). Crash: `only_running_agents_become_interrupted_and_none_starts` (`tests/persistence.rs` of the agent infrastructure) runs the sweep of the next start over every status, and an `asleep` agent keeps `asleep`. Gaps: 1 restart, not 10; no test kills the server binary with SIGKILL while an agent is asleep (the sweep runs on the stored statuses). |
