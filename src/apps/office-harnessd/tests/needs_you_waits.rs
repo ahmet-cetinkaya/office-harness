@@ -40,6 +40,13 @@ const LONG_WORK_CLI: &str = "echo ready; read line; i=0; while [ $i -lt 25 ]; do
 const SELF_WORKING_CLI: &str = "echo ready; sleep 1; i=0; while [ $i -lt 30 ]; do echo busy; \
                                 sleep 0.1; i=$((i+1)); done; sleep 30";
 const BELL_AFTER_WAIT_CLI: &str = "echo ready; sleep 1; printf '\\a'; sleep 30";
+/// Waits, redraws once, then answers a line: a line typed during the
+/// redraw's `working` reaches an agent that shows `working`.
+const REDRAW_THEN_ANSWER_CLI: &str =
+    "echo ready; sleep 1; echo redraw; read line; echo got; sleep 30";
+/// Well under the one-second work bound, so only the input can have
+/// removed the item in this time.
+const INPUT_CLEAR_LIMIT: Duration = Duration::from_millis(300);
 
 async fn open_office(script: &str) -> (Office, Client, String) {
     let office = Office::open_with_options_and_quiet_period(
@@ -196,5 +203,28 @@ async fn a_bell_after_the_wait_still_makes_a_bell_item_that_a_later_redraw_leave
     assert_eq!(first_event_at(&listed[0]), first_event_at(&waiting[0]));
     assert_eq!(notifications_of(&mut client, "bell").await, 1);
     assert_eq!(notifications_of(&mut client, "waiting_for_input").await, 1);
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn input_while_a_redraw_shows_working_removes_the_item_and_the_return_gives_a_new_one() {
+    let (office, mut client, agent) = open_office(REDRAW_THEN_ANSWER_CLI).await;
+    let before = wait_for_items(&mut client, 1).await;
+    client.wait_for_status(&agent, "working").await;
+    assert_eq!(items(&mut client).await.len(), 1, "a redraw keeps the item");
+
+    type_line(&mut client, &agent).await;
+    let typed_at = Instant::now();
+    while !items(&mut client).await.is_empty() {
+        assert!(
+            typed_at.elapsed() < INPUT_CLEAR_LIMIT,
+            "the input did not remove the item"
+        );
+        tokio::time::sleep(POLL).await;
+    }
+
+    let after = wait_for_items(&mut client, 1).await;
+    assert!(first_event_at(&after[0]) > first_event_at(&before[0]));
+    assert_eq!(notifications_of(&mut client, "waiting_for_input").await, 2);
     office.serving.stop().await;
 }

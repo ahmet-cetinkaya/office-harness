@@ -28,8 +28,8 @@
 | `cargo fmt --all --check` | workspace | PASS |
 | `bash scripts/check-boundaries.sh` | workspace | PASS (`boundaries ok`) |
 | `cargo clippy --workspace --exclude office-harness-desktop --all-targets -- -D warnings` | workspace | PASS, no warnings |
-| `cargo test --workspace --exclude office-harness-desktop --no-fail-fast -- --test-threads=4` | workspace | PASS: 1794 passed, 0 failed, 109 result lines |
-| New integration tests, 3 runs | `tests/needs_you_waits.rs` (6 tests), `tests/idle_sleep.rs` (20 tests) | PASS: 3 of 3 runs green each |
+| `cargo test --workspace --exclude office-harness-desktop --no-fail-fast -- --test-threads=4` | workspace | PASS: 1796 passed, 0 failed, 109 result lines |
+| New integration tests, 3 runs | `tests/needs_you_waits.rs` (7 tests), `tests/idle_sleep.rs` (20 tests) | PASS: 3 of 3 runs green each |
 | Desktop gates | `src/apps/desktop` | NOT RUN: no desktop file changed |
 
 ## Criteria
@@ -41,10 +41,10 @@
 | 0003/FR-006 (c) | PASS (automated) | `a_redrawing_cli_gives_one_notification_and_one_item_with_one_wait_time`; `an_unprompted_wait_adds_no_notification_and_leaves_the_item_alone` |
 | 0003/SC-004 | PASS (automated) | the existing quiet-period notification tests stay green; `input_into_an_agent_with_an_item_removes_it_and_the_return_gives_a_new_one` |
 | 0008/FR-001 | PASS (automated) | `a_redrawing_cli_gives_one_notification_and_one_item_with_one_wait_time` (1 item, `first_event_at` unchanged); `a_dismissed_item_stays_gone_while_the_cli_redraws` |
-| 0008/FR-005 | PASS (automated) | `input_into_an_agent_with_an_item_removes_it_and_the_return_gives_a_new_one`; `the_item_leaves_at_the_bound_while_the_agent_still_works`; `an_unprompted_working_leaves_the_item_alone`; `a_working_that_follows_starting_is_not_judged_and_clears_the_item`; `a_wake_removes_the_item_of_a_sleeping_agent_at_starting` |
+| 0008/FR-005 | PASS (automated) | `input_into_an_agent_with_an_item_removes_it_and_the_return_gives_a_new_one`; `input_while_a_redraw_shows_working_removes_the_item_and_the_return_gives_a_new_one` (the item leaves within 300 ms of the input, under the 1 s bound); `the_item_leaves_at_the_bound_while_the_agent_still_works`; `an_unprompted_working_leaves_the_item_alone`; `a_working_that_follows_starting_is_not_judged_and_clears_the_item`; `a_wake_removes_the_item_of_a_sleeping_agent_at_starting` |
 | 0018/FR-002 | PASS (automated) | the SC-001, SC-002 and SC-006 rows; `a_redrawing_cli_sleeps_one_idle_time_after_its_prompted_wait` (idle since, A7) |
 | 0018/FR-009 | PASS (automated) | `a_failed_sleep_bars_the_agent_until_a_prompted_wait_after_the_failure` (unit). A failing stop cannot be made with the fake CLIs, so no integration test |
-| 0018 Terms Idle, Idle since | PASS (automated) | the wait tracker unit tests (`the_first_wait_of_a_run_is_prompted`, `a_redraw_is_unprompted_both_ways`, `a_person_input_makes_the_next_change_prompted`, `office_text_makes_the_next_change_prompted`, `a_session_start_resets_the_state_and_counts_as_a_wait_end`, `a_session_end_resets_the_state_and_counts_as_a_wait_end`, `the_last_prompted_wait_moves_only_on_prompted_waits`); `a_redrawing_cli_sleeps_one_idle_time_after_its_prompted_wait` |
+| 0018 Terms Idle, Idle since | PASS (automated) | the wait tracker unit tests (`the_first_wait_of_a_run_is_prompted`, `a_redraw_is_unprompted_both_ways`, `a_person_input_makes_the_next_change_prompted`, `office_text_makes_the_next_change_prompted`, `a_session_start_resets_the_state_and_counts_as_a_wait_end`, `a_session_end_resets_the_state_and_counts_as_a_wait_end`, `the_last_prompted_wait_moves_only_on_prompted_waits`, `each_wait_end_tells_the_listener_of_every_clone`); `a_redrawing_cli_sleeps_one_idle_time_after_its_prompted_wait` |
 | SC-001 | PARTIAL (automated) | 1 agent with a shortened idle minute sleeps and keeps its item. The count of 10 agents is not run |
 | SC-002 | PASS (automated) | unit: `an_item_that_recorded_more_than_waits_keeps_the_agent_awake` (bell, report, auto hold, resume hold), `a_waiting_item_keeps_the_agent_awake_while_the_screen_shows_an_open_question` (the three 0012 shapes); integration: `an_item_that_recorded_a_bell_keeps_the_agent_awake`, `a_waiting_item_keeps_the_agent_awake_while_the_screen_shows_a_question` |
 | SC-003 | PARTIAL (automated) | `a_redrawing_cli_gives_one_notification_and_one_item_with_one_wait_time` with a shortened interval and duration. The 20 minutes are not run |
@@ -54,7 +54,7 @@
 | SC-007 | PARTIAL (automated) | `work_past_the_bound_after_a_dismiss_gives_one_item_and_one_notification_at_the_return`: 1 round, with a dismiss in place of an open and a 1 s bound in place of 2 minutes of work. The no-sleep-before-5-minutes part follows from idle since (`a_redrawing_cli_sleeps_one_idle_time_after_its_prompted_wait`) |
 | PB-1 | PASS (automated) | the SC-002 tests, plus the existing hold, queue, text and child tests in `tests/idle_sleep.rs` |
 | PB-2 | PASS (automated) | the existing open and dismiss tests stay green; `a_dismissed_item_stays_gone_while_the_cli_redraws` |
-| PB-3 | PASS (automated) | `input_into_an_agent_with_an_item_removes_it_and_the_return_gives_a_new_one` |
+| PB-3 | PASS (automated) | `input_into_an_agent_with_an_item_removes_it_and_the_return_gives_a_new_one`; `input_while_a_redraw_shows_working_removes_the_item_and_the_return_gives_a_new_one` |
 | PB-4 | PASS (automated) | `a_bell_after_the_wait_still_makes_a_bell_item_that_a_later_redraw_leaves_alone`; the existing exit and report tests stay green |
 | PB-5 | PASS (automated) | no change to the status detection; the existing status tests stay green |
 | PB-6 | PASS (automated) | the existing `with_idle_sleep_off_no_idle_agent_is_put_to_sleep` and the no-notification tests stay green |

@@ -81,6 +81,7 @@ impl NotificationBridge {
         alerts: StorageAlerts,
         log: ServerLog,
     ) -> Self {
+        clear_on_input_while_working(&waits, Arc::clone(&agents), needs_you.clone());
         Self {
             create,
             agents,
@@ -207,19 +208,14 @@ impl NotificationBridge {
     }
 
     fn end_stretch_at_bound(&self, agent_id: AgentId, since: std::time::Instant) {
-        if self.waits.working_since(agent_id) != Some(since) || !self.shows_working(agent_id) {
+        if self.waits.working_since(agent_id) != Some(since)
+            || !shows_working(self.agents.as_ref(), agent_id)
+        {
             return;
         }
-        // The return reads as prompted even when this timer ran late.
+        // The return reads as prompted even when this timer ran late, and
+        // the wait end clears the item (see `clear_on_input_while_working`).
         self.waits.wait_end(agent_id);
-        self.needs_you.clear(agent_id, NeedsYouClearReason::Resumed);
-    }
-
-    fn shows_working(&self, agent_id: AgentId) -> bool {
-        matches!(
-            self.agents.find(agent_id),
-            Ok(Some(agent)) if agent.status == AgentStatus::Working
-        )
     }
 
     /// What the queue shows beside the event (0008 D3): the terminal's quiet
@@ -518,6 +514,28 @@ const fn attention_kind_of(event: NotificationEvent) -> Option<AttentionKind> {
 
 fn created_event(notification: &Notification) -> Event {
     notification_presentation::notification_created_event(notification)
+}
+
+/// A person's input or office text that reaches an agent while it shows
+/// `working` removes its item, as a resume does (0008/FR-005 as modified by
+/// 0022): the person has dealt with the agent, whatever the screen redraws.
+fn clear_on_input_while_working(
+    waits: &WaitTracker,
+    agents: Arc<dyn AgentStore>,
+    needs_you: NeedsYouBridge,
+) {
+    waits.on_wait_end(move |agent_id| {
+        if shows_working(agents.as_ref(), agent_id) {
+            needs_you.clear(agent_id, NeedsYouClearReason::Resumed);
+        }
+    });
+}
+
+fn shows_working(agents: &dyn AgentStore, agent_id: AgentId) -> bool {
+    matches!(
+        agents.find(agent_id),
+        Ok(Some(agent)) if agent.status == AgentStatus::Working
+    )
 }
 
 #[cfg(test)]

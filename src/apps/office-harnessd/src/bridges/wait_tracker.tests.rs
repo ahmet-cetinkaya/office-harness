@@ -173,3 +173,22 @@ fn a_change_to_working_stores_the_start_of_the_stretch() {
     tracker.classify_at(agent(), StatusChange::ToWorking, at(start, 20));
     assert_eq!(tracker.working_since(agent()), Some(at(start, 20)));
 }
+
+#[test]
+fn each_wait_end_tells_the_listener_of_every_clone() {
+    let tracker = WaitTracker::new(QUIET);
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let record = Arc::clone(&told);
+    tracker.on_wait_end(move |agent_id| {
+        record
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(agent_id);
+    });
+
+    tracker.clone().wait_end(agent());
+    tracker.wait_end(agent());
+
+    let told = told.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(*told, vec![agent(), agent()]);
+}
