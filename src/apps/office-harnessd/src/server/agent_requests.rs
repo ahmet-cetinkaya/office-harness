@@ -6,6 +6,9 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, PoisonError};
 
 use agent_application::common::interfaces::Clock;
+use agent_application::common::session_launcher::SessionLauncher;
+use agent_application::common::sign_in_scope::SignInScope;
+use agent_domain::value_objects::SessionId;
 use agent_presentation::{AgentHandlers, Handled, REQUEST_PREFIXES};
 use audit_presentation::{ACTIONS_REQUEST, AuditHandlers};
 use hierarchy_application::TreeQuery;
@@ -57,9 +60,12 @@ const ORDERED_REQUESTS: [&str; 6] = [
 const STARTING_REQUESTS: [&str; 4] = [
     "agent.start",
     "agent.new_task",
-    "session.continue",
+    CONTINUE_REQUEST,
     "agent.resume",
 ];
+
+/// The start request that names a session instead of an agent.
+const CONTINUE_REQUEST: &str = "session.continue";
 
 pub(super) const STOPPING_MESSAGE: &str = "the server is stopping and starts no agent";
 
@@ -86,6 +92,8 @@ pub struct AgentGateway {
     needs_you: NeedsYouBridge,
     /// The sweep of 0017 that the starting requests wait for.
     sweep_gate: SweepGate,
+    /// Runs the sign-in check of a start before the status order (0019).
+    sign_in: Option<SessionLauncher>,
 }
 
 impl AgentGateway {
@@ -122,6 +130,7 @@ impl AgentGateway {
             holds,
             needs_you,
             sweep_gate: SweepGate::default(),
+            sign_in: None,
         }
     }
 
@@ -130,6 +139,15 @@ impl AgentGateway {
     #[must_use]
     pub fn with_sweep_gate(mut self, sweep_gate: SweepGate) -> Self {
         self.sweep_gate = sweep_gate;
+        self
+    }
+
+    /// Runs each start's sign-in check before the start takes its turn in
+    /// the status order, so no other request waits for a status command
+    /// (0019/FR-009, D13).
+    #[must_use]
+    pub fn with_sign_in_checks(mut self, launcher: SessionLauncher) -> Self {
+        self.sign_in = Some(launcher);
         self
     }
 
@@ -174,6 +192,8 @@ impl AgentGateway {
             self.raise(disk_failure.as_deref());
             return response;
         }
+        // Held to the end of the request, which is where the start reads it.
+        let _sign_in = self.check_sign_in_ahead(request);
         let _turn = ORDERED_REQUESTS.contains(&request.kind.as_str()).then(|| {
             self.status_order
                 .lock()
@@ -222,6 +242,25 @@ impl AgentGateway {
             self.events.publish(event);
         }
         response
+    }
+
+    /// The sign-in check of the agent that a start request names, or of the
+    /// session's agent for a continue. A request it cannot read gets no
+    /// check here; the start then checks in place.
+    fn check_sign_in_ahead(&self, request: &Request) -> Option<SignInScope> {
+        let launcher = self.sign_in.as_ref()?;
+        // A stopping server refuses the start anyway.
+        let is_stopping = self.stopping.load(Ordering::SeqCst);
+        if is_stopping || !STARTING_REQUESTS.contains(&request.kind.as_str()) {
+            return None;
+        }
+        let text = |name: &str| request.fields.get(name).and_then(Value::as_str);
+        if request.kind == CONTINUE_REQUEST {
+            let session_id = SessionId::from_str(text("session_id")?).ok()?;
+            return launcher.check_sign_in_ahead_of_session(session_id);
+        }
+        let agent_id = AgentId::from_str(text("agent_id")?).ok()?;
+        launcher.check_sign_in_ahead(agent_id)
     }
 
     /// True when the agent that a delete names holds a place in the tree

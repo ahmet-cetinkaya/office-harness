@@ -151,12 +151,8 @@ impl ResumeAgentHandler {
     ) -> Result<StartOutcome, ApplicationError> {
         let mut agent = require_agent(&*self.agents, agent_id)?;
         let outcome = self.launcher.launch(&mut agent, kind);
-        let failure = match &outcome {
-            Ok(outcome) => outcome.failure.clone(),
-            Err(error) => Some(error.to_string()),
-        };
         self.journal
-            .record_detailed(agent_id, action, failure.as_deref(), detail)?;
+            .record_start(agent_id, action, &outcome, detail)?;
         outcome
     }
 }

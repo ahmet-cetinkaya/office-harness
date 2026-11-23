@@ -2,7 +2,7 @@
 
 office-harness is a self-hosted control room for AI agent CLIs. A background server, `office-harnessd`, runs your agents in pseudo-terminals and keeps them running while the desktop app is closed. The desktop app shows every agent with its status and attaches to the live terminal of any agent. The server runs only on your machine, accepts only local clients that have the office token, and sends no office data to any outside service. It never writes the configuration files of the CLIs that it runs.
 
-For the product goals, see [docs/PRD.md](docs/PRD.md). For the design, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). For the behavior that this release gives, see [specs/changes/0001-office-server-and-terminal/SPEC.md](specs/changes/0001-office-server-and-terminal/SPEC.md) and, for the agent hierarchy, [specs/changes/archive/0002-agent-hierarchy/SPEC.md](specs/changes/archive/0002-agent-hierarchy/SPEC.md).
+For the product goals, see [docs/PRD.md](docs/PRD.md). For the design, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). For the behavior that this release gives, see [specs/changes/archive/0001-office-server-and-terminal/SPEC.md](specs/changes/archive/0001-office-server-and-terminal/SPEC.md) and, for the agent hierarchy, [specs/changes/archive/0002-agent-hierarchy/SPEC.md](specs/changes/archive/0002-agent-hierarchy/SPEC.md).
 
 ## Install
 
@@ -36,19 +36,21 @@ The exact wording of these OS notices depends on the OS version. The macOS and W
 6. To move focus from the terminal back to the rest of the app, press `Ctrl+Shift+F12`.
 7. Close the app when you want. The agents keep running and the server keeps recording their output.
 
-The app has no screen to change the focus shortcut. The server stores it as the setting `focus_shortcut`. The default value is `Ctrl+Shift+F12`. A value is modifiers joined with `+`, then one key, for example `Ctrl+Alt+F11`. A client can change it with the `settings.set` request (see [the client protocol](specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md)). The app loads the setting once, when it starts, so a change applies at the next app start.
+The app has no screen to change the focus shortcut. The server stores it as the setting `focus_shortcut`. The default value is `Ctrl+Shift+F12`. A value is modifiers joined with `+`, then one key, for example `Ctrl+Alt+F11`. A client can change it with the `settings.set` request (see [the client protocol](specs/changes/archive/0001-office-server-and-terminal/contracts/client-protocol.md)). The app loads the setting once, when it starts, so a change applies at the next app start.
 
 The agent and switcher shortcuts are fixed: `Ctrl+Shift+F1` to `Ctrl+Shift+F9` open the first nine agents of the list, `Ctrl+Shift+F10` opens the agent switcher, and `Ctrl+Shift+F11` jumps to the agent at the top of Needs you (see below). On most macOS keyboards the F-keys send media commands by default, so the shortcuts work there only while you hold `Fn` (or after you turn on "Use F1, F2, etc. keys as standard function keys"). If you cannot change that setting, a macOS build of a later release can move the shortcuts to the fallback family `Cmd+Alt+1` to `Cmd+Alt+9` (agents) and `Cmd+Alt+0` (switcher), which no webview or macOS default takes; that fallback is not shipped yet, and the jump key has no entry in it yet, so on macOS it also works only while you hold `Fn`. On KDE Plasma the default family is not verified until a hands-on QA pass; if a distribution binds it globally, the same `Cmd`/`Ctrl+Alt` fallback applies. The full fallback table is in [the panel-practicality spec](specs/changes/archive/0003-panel-practicality/SPEC.md).
 
 ## Needs you
 
-The panel has a "Needs you" section with the agents that wait for you. An agent gets one item when it asks for input (it was quiet for the quiet period), rings the terminal bell, fails, exits, or is put on hold by the office after it hit a limit. Each item shows the agent's name, its project, what the office saw, and how long the agent has waited, as text. A deleted agent, an agent that starts working again, and an agent that you stop have no item.
+The panel has a "Needs you" section with the agents that wait for you. An agent gets one item when it asks for input (it was quiet for the quiet period), rings the terminal bell, fails, exits, is put on hold by the office after it hit a limit, or sends you a report. Each item shows the agent's name, its project, what the office saw, and how long the agent has waited, as text. A deleted agent, an agent that starts working again, and an agent that you stop have no item.
 
 The items are in groups: failed agents first, then agents that wait for input, ring the bell, or were held by the office, then exited agents. Inside a group the longest wait comes first. The number of items shows next to "Needs you" and in the window title, in the panel and in the office scene. The server keeps the items, so events that happened while the app was closed show when it opens.
 
 Press `Ctrl+Shift+F11` to open the terminal of the agent at the top of the list, with keyboard focus, from the panel, from a focused terminal, or from the office scene (there it opens the top agent's desk). The item leaves the list. Press the key again for the next agent. When the list is empty the view stays and the app says "No agent needs you". An exited agent that you will not restart can leave the list with its "Dismiss" button, which changes nothing else. Opening an agent's terminal by any route also removes its item.
 
 If the stored `focus_shortcut` is `Ctrl+Shift+F11`, the focus shortcut keeps the key and the jump has no key. The Needs you section then says: "The jump shortcut is off because the focus shortcut uses Ctrl+Shift+F11. Change the focus_shortcut setting (see the README) and reopen the app to turn the jump on." Change the setting, as described above, and restart the app.
+
+A report from an agent shows its kind and text on the item; a long text shows its first three lines and a "Show the whole report" button. The item stays when the agent works again, and leaves when you open its terminal or dismiss it. Answer the agent in its terminal.
 
 A client reaches the list with the `needs_you.list` and `needs_you.dismiss` requests and the `needs_you.changed` event. The shapes are in [the needs-you protocol](specs/changes/0008-needs-you-queue/contracts/needs-you-protocol.md).
 
@@ -116,8 +118,9 @@ An agent can create agents, start and stop them, start new tasks, and send direc
 | Directives sent to one target agent | 3 |
 | Agents created by one agent | 5 |
 | Starts, stops, and new tasks by one agent | 10 |
+| Reports sent by one agent | 5 |
 
-A limit is a whole number from 1 to 1000. Choose "Limits" in the panel header to see each limit with its default and to change it. A client can also change a limit with `settings.set` and the keys `limit_directives_per_agent`, `limit_directives_per_target`, `limit_creates_per_agent`, and `limit_lifecycle_per_agent`. A new value applies to the next agent-made action. The office does not queue or retry a refused action. Rate counts start again at 0 after a server restart.
+A limit is a whole number from 1 to 1000. Choose "Limits" in the panel header to see each limit with its default and to change it. A client can also change a limit with `settings.set` and the keys `limit_directives_per_agent`, `limit_directives_per_target`, `limit_creates_per_agent`, `limit_lifecycle_per_agent`, and `limit_reports_per_agent`. A new value applies to the next agent-made action. The office does not queue or retry a refused action. Rate counts start again at 0 after a server restart.
 
 **Automatic hold.** When an agent is refused by a limit 3 times within 60 seconds, the office puts that agent on hold and sends you one notification. The notification names the agent and the limit. Refusals that come from a hold do not count. You release an automatic hold the same way as any other hold.
 
@@ -165,6 +168,23 @@ The office never commits, merges, pushes, or rebases. Worktrees share the reposi
 
 The shapes of the requests are in [the worktree protocol](specs/changes/0010-agent-worktree/contracts/worktree-protocol.md).
 
+## Browse an agent's files
+
+To review what an agent did, choose "Browse files" in its details. A read-only view of the folder the agent starts in (its working folder, its own worktree, or its project's folder) opens with three tabs:
+
+- **Files:** the folder as a tree, folders first. Open a file to read it with line numbers.
+- **Changes:** the files that differ from the last commit, staged and unstaged together, with what kind of change each is. Open one to see its diff. Ignored files are not listed.
+- **History:** the commits that changed this folder, 50 at a time ("Show more" adds the next 50). Open a commit to see its message and its files, and a file to see its diff against the commit's first parent.
+
+**What it shows and what it does not.**
+- Only the agent's folder: a path that leads outside it, also through a link, is refused. The repository's `.git` folder is never listed or opened.
+- Files and diffs up to 512 KiB; a larger one shows its size only. Binary files are not shown. A folder lists at most 1,000 entries and the Changes tab at most 1,000 files; the rest is counted.
+- Files with names that often hold secrets, such as `.env`, `*.pem`, `*.key`, `id_rsa`, or names containing `secret` or `credential`, show their content or diff only after you choose "Reveal". The reveal lasts until you open another file, switch tabs, or refresh.
+- Everything shows as plain text: no markup is rendered, no image loads, and control characters show as visible symbols.
+- The view writes nothing. It changes no file, takes no git lock, and runs no git hook, filter, external diff, text conversion, or signature program that a repository configures. It shows the state at the time of the last load; choose "Refresh" to load again.
+
+Agents cannot use this view. The shapes of the requests are in [the file view protocol](specs/changes/archive/0016-agent-file-browser/contracts/file-view-protocol.md).
+
 ## Resume interrupted agents
 
 When the background server stops while agents run (a crash, a logout, a restart of the machine), those agents show `interrupted` at the next start, and none starts by itself. The panel header then offers **Resume interrupted (N)**.
@@ -175,7 +195,7 @@ When the background server stops while agents run (a crash, a logout, a restart 
 - The office watches each start for 20 seconds. When a continued session ends by itself in that time, the office starts the agent once in a new session. That start is in the agent's action record with the office as actor and the reason, because the CLI's earlier context was not carried over. When that new session also ends within 20 seconds, the office does not start the agent again: it puts the agent on hold with the reason and notifies you once.
 - Any end of the CLI within the 20 seconds counts, whatever its exit code. A command that ends quickly by design is started twice and then held; uncheck such agents.
 
-The shapes of the requests are in [the resume protocol](specs/changes/0013-bulk-resume/contracts/resume-protocol.md).
+The shapes of the requests are in [the resume protocol](specs/changes/archive/0013-bulk-resume/contracts/resume-protocol.md).
 
 ## Start at login
 
@@ -262,6 +282,17 @@ office-harness starts each CLI with your home folder, your login environment, an
 
 The startup prompt is pasted into the terminal after the first output of the CLI. office-harness never presses Enter for you. If the CLI shows a question first, for example a trust question, you answer it and press Enter to submit the prompt. A change to the additions of a running agent applies at the next session start.
 
+### Sign-in check
+
+Before a session of `claude` or `codex` starts, the office asks the CLI whether it is signed in, with its own read-only command (`claude auth status --text`, `codex login status`). The command gets the agent's folder, login environment, and additions, never the office's agent credential, and runs for at most 5 seconds. Other requests do not wait for it.
+
+- When the CLI says it is not signed in, the agent shows `failed`, and the reason says so and tells you to sign in to the CLI in your own terminal. On a running agent, a new task or a continue is refused with that reason, and the running session goes on.
+- When the command times out, cannot run, or gives an answer the office does not know, the start goes on as before, with a note in the action record.
+- No check runs when the agent's command has its own arguments, the additions hold flags, or a sign-in key variable is set (for example `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`), because the status command cannot see what those change.
+- For the first 20 seconds of a `claude`, `codex`, or `gemini` session, the office reads the bottom of the screen for the CLI's sign-in screen. When it shows and nobody typed into the terminal, the office ends the CLI, the session ends as not signed in, and you get one notification. A startup prompt that holds the sign-in words turns this watch off.
+
+The office shows at most one line of what the CLI printed, at most 200 characters, with control characters made visible. It never shows or keeps the output of a signed-in answer.
+
 ## Calling the office from an agent
 
 While an agent's session runs, office-harness gives that session three environment variables. They are additions to the session environment only; office-harness writes nothing to the configuration of the CLI.
@@ -300,9 +331,17 @@ An agent reads the state of the agents below it with `agent.subtree`, which take
 office-harnessd agent-call agent.subtree
 ```
 
-The answer lists each descendant after its parent, with its name, role, status, the time its terminal last showed output, whether it waits in Needs you, whether a hold covers it, and its task line. It never carries terminal output, and it lists no agent outside the caller's own subtree. A hold does not refuse the read, the read counts toward no rate limit, and an answered read is not in the action record. The shapes are in `specs/changes/0014-subtree-status/contracts/subtree-protocol.md`.
+The answer lists each descendant after its parent, with its name, role, status, the time its terminal last showed output, whether it waits in Needs you, whether a hold covers it, and its task line. It never carries terminal output, and it lists no agent outside the caller's own subtree. A hold does not refuse the read, the read counts toward no rate limit, and an answered read is not in the action record. The shapes are in `specs/changes/archive/0014-subtree-status/contracts/subtree-protocol.md`.
 
-An agent also creates, starts, and stops agents below it, starts new tasks on them, and sends them directives; the protocol contract lists the request shapes. Every other request type is refused, and the refusal names the rule: an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants.
+An agent reports to its parent with `report.send`, with a kind (`done`, `question`, `blocked`, or `info`) and a text of up to 1,000 characters:
+
+```sh
+office-harnessd agent-call report.send '{"kind":"done","text":"tests pass"}'
+```
+
+The office types the report into the parent's terminal as one line, `[report from <name> (<agent id>): <kind>] <text>`, with the same checks as a directive: it waits while the parent works, shows a question, or a person types there. The parent answers with `directive.send` to the id in the line. A report from the CEO, from an agent without a parent, or with `"for_person":true` goes to you instead: it joins Needs you and notifies you once. Control characters, line breaks, and bidirectional characters in the text show as visible symbols. One sender has at most one report waiting in its parent's queue (a newer one replaces it), and reports take at most 10 of the queue's 20 places. Holds and the reports limit apply. The shapes are in `specs/changes/archive/0015-upward-reports/contracts/report-protocol.md`.
+
+An agent also creates, starts, and stops agents below it, starts new tasks on them, and sends them directives; the protocol contract lists the request shapes. Every other request type is refused, and the refusal names the rule: an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants, and send reports to its parent or the person.
 
 A hold or a limit can refuse these requests as well. The answer is `refused`, and its message is one of these, checked after the rules above in this order:
 
@@ -310,7 +349,7 @@ A hold or a limit can refuse these requests as well. The answer is `refused`, an
 | ------- | ------- |
 | `the office is on hold` | You hold the office. |
 | `the agent <id> is on hold` | The asking agent, the target, or one of their ancestors is on hold. |
-| `the limit "<name>" allows <n> per 60 seconds` | The agent is over a limit. `<name>` is `directives sent by one agent`, `directives sent to one target agent`, `agents created by one agent`, or `starts, stops, and new tasks by one agent`. |
+| `the limit "<name>" allows <n> per 60 seconds` | The agent is over a limit. `<name>` is `directives sent by one agent`, `directives sent to one target agent`, `agents created by one agent`, `starts, stops, and new tasks by one agent`, or `reports sent by one agent`. |
 
 The agent decides whether to try again. See [Holding the office and limiting agents](#holding-the-office-and-limiting-agents).
 
@@ -320,7 +359,7 @@ An agent acts only within its own descendants: the agents under it in the tree. 
 
 - A server that the OS starts at login has no `DISPLAY` or `WAYLAND_DISPLAY` variable, so the agents that it runs get none. A CLI can then lose clipboard and browser-open features.
 - The installers are not signed (see [Install](#install)).
-- The hands-on checks on macOS and Windows are still open. CI runs the automated tests on all three OSes, but nobody has used the installers by hand on macOS or Windows yet. The QA status is in [the QA report](specs/changes/0001-office-server-and-terminal/qa-report.md).
+- The hands-on checks on macOS and Windows are still open. CI runs the automated tests on all three OSes, but nobody has used the installers by hand on macOS or Windows yet. The QA status is in [the QA report](specs/changes/archive/0001-office-server-and-terminal/qa-report.md).
 - Windows stops an agent with `taskkill /T /F`. It can miss a child process whose parent already ended.
 - The quiet period and the output limit apply after a server restart.
 - After an unclean stop of the server, a CLI that ignores the terminal hang-up can keep running. The `opencode` background service does. The office marks the affected agents and warns before a resume, but it does not end those processes.

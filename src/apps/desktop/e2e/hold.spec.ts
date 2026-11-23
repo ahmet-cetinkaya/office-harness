@@ -301,6 +301,27 @@ test.describe("agent hold", () => {
     ).toBeVisible();
     await expectNoSeriousViolations(page);
   });
+
+  test("a hold after a failed resume stays unread while its terminal is open (0013 PB-6)", async ({
+    page,
+  }) => {
+    await openPanel(page);
+    await page.getByRole("button", { name: "Ada, working" }).click();
+
+    await page.evaluate(() =>
+      window.__mockCore.attention("agent-ada", "resume_hold", "ended at once"),
+    );
+
+    const expected =
+      "Ada was put on hold after its resume failed: ended at once";
+
+    // The agent's terminal is open, yet the notification stays unread.
+    await page.getByRole("button", { name: "Notifications, 1 unread" }).click();
+    const dialog = page.getByRole("dialog", { name: "Notifications" });
+    await expect(
+      dialog.getByRole("button", { name: `Ada, ${expected.slice(4)}` }),
+    ).toBeVisible();
+  });
 });
 
 test.describe("live region", () => {
@@ -336,7 +357,7 @@ test.describe("limits", () => {
     return dialog;
   }
 
-  test("the dialog shows the four limits with their defaults and saves new values", async ({
+  test("the dialog shows the five limits with their defaults and saves new values", async ({
     page,
   }) => {
     await openPanel(page);
@@ -354,6 +375,9 @@ test.describe("limits", () => {
     await expect(
       dialog.getByLabel("Starts, stops, and new tasks by one agent"),
     ).toHaveValue("10");
+    await expect(dialog.getByLabel("Reports sent by one agent")).toHaveValue(
+      "5",
+    );
     // Focus lands on the first field.
     await expect(
       dialog.getByLabel("Directives sent by one agent"),

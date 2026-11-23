@@ -12,7 +12,9 @@ use notification_application::commands::create_notification::{
 };
 use notification_application::commands::needs_you::NeedsYouClearReason;
 use notification_application::common::errors::NotificationApplicationError;
-use notification_domain::{AttentionEvent, AttentionKind, Notification, NotificationEvent};
+use notification_domain::{
+    AttentionEvent, AttentionKind, ItemReport, Notification, NotificationEvent, NotificationId,
+};
 use terminal_application::common::interfaces::TerminalRuntime;
 use terminal_domain::events::TerminalEvent;
 use tokio::sync::broadcast::error::RecvError;
@@ -133,9 +135,8 @@ impl NotificationBridge {
         let Some(status) = StatusFrame::parse(frame) else {
             return;
         };
-        if CLEARING_STATUSES.contains(&status.name.as_str()) {
-            self.needs_you
-                .clear(status.agent_id, NeedsYouClearReason::StatusChanged);
+        if let Some(reason) = status.clear_reason() {
+            self.needs_you.clear(status.agent_id, reason);
         }
         if let Some(event) = status.notification_event() {
             let attention_detail = self.attention_detail(event, status.detail);
@@ -204,19 +205,62 @@ impl NotificationBridge {
         );
     }
 
-    /// The notification first, then the queue: the queue item names the
-    /// notification that created it, and the clients hear
-    /// `notification.created` after the item is stored and before
-    /// `needs_you.changed`. The queue is fed even when no notification was
-    /// created, so a coalesced bell still updates its item. An agent that is
-    /// already deleted keeps its notification but gets no item: the delete
-    /// cleanup has run, so nothing would ever clear it.
+    /// Records a report for the person (0015/FR-007): a `report`
+    /// notification naming the kind, coalesced while one is unread, and the
+    /// report on the agent's item. `text` is already in visible form.
+    pub fn record_report(&self, agent_id: AgentId, kind: &str, text: String) {
+        self.notify_then_queue(
+            agent_id,
+            NotificationEvent::Report,
+            Some(kind.to_owned()),
+            |at, origin, announce_created| {
+                let report = ItemReport {
+                    kind: kind.to_owned(),
+                    text,
+                    at,
+                };
+                self.needs_you
+                    .record_report(agent_id, report, origin, announce_created);
+            },
+        );
+    }
+
     fn record(
         &self,
         agent_id: AgentId,
         event: NotificationEvent,
         notification_detail: Option<String>,
         attention_detail: Option<String>,
+    ) {
+        self.notify_then_queue(
+            agent_id,
+            event,
+            notification_detail,
+            |at, origin, announce_created| {
+                let attention = AttentionEvent {
+                    kind: attention_kind_of(event),
+                    detail: attention_detail,
+                    at,
+                };
+                self.needs_you
+                    .record(agent_id, attention, origin, announce_created);
+            },
+        );
+    }
+
+    /// The notification first, then the queue: the queue item names the
+    /// notification that created it, and the clients hear
+    /// `notification.created` after the item is stored and before
+    /// `needs_you.changed`. The queue is fed even when no notification was
+    /// created, so a coalesced bell or report still updates its item. An
+    /// agent that is already deleted keeps its notification but gets no
+    /// item: the delete cleanup has run, so nothing would ever clear it.
+    fn notify_then_queue(
+        &self,
+        agent_id: AgentId,
+        event: NotificationEvent,
+        notification_detail: Option<String>,
+        queue: impl FnOnce(Timestamp, Option<NotificationId>, &dyn Fn()),
     ) {
         let at = self.clock.now();
         let agent = self.agents.find(agent_id);
@@ -230,14 +274,8 @@ impl NotificationBridge {
             announce_created();
             return;
         }
-        let attention = AttentionEvent {
-            kind: attention_kind_of(event),
-            detail: attention_detail,
-            at,
-        };
         let origin = created.as_ref().map(|notification| notification.id);
-        self.needs_you
-            .record(agent_id, attention, origin, announce_created);
+        queue(at, origin, &announce_created);
     }
 
     /// Creates the notification, copying the agent's name now; the row is
@@ -316,11 +354,6 @@ impl NotificationBridge {
 
 const DELETED_AGENT_NAME: &str = "deleted agent";
 
-/// The statuses that show the agent moved on, so its queue item goes
-/// (0008 D2). `interrupted` is absent: a server restart marks agents
-/// interrupted, and the item must survive it.
-const CLEARING_STATUSES: [&str; 3] = ["starting", "working", "stopped"];
-
 /// What one published `agent.status` frame says.
 struct StatusFrame {
     agent_id: AgentId,
@@ -329,6 +362,18 @@ struct StatusFrame {
 }
 
 impl StatusFrame {
+    /// Why the status clears the agent's queue item, if it does (0008 D2):
+    /// the agent moved on, or was stopped. `interrupted` clears nothing: a
+    /// server restart marks agents interrupted, and the item must survive it.
+    /// A resume leaves an item that holds a report (0015/FR-008).
+    fn clear_reason(&self) -> Option<NeedsYouClearReason> {
+        match self.name.as_str() {
+            "starting" | "working" => Some(NeedsYouClearReason::Resumed),
+            "stopped" => Some(NeedsYouClearReason::Stopped),
+            _ => None,
+        }
+    }
+
     /// `None` for anything that is not an `agent.status` frame of an agent.
     fn parse(frame: &str) -> Option<Self> {
         let body: serde_json::Value = serde_json::from_str(frame).ok()?;
@@ -365,6 +410,7 @@ const fn attention_kind_of(event: NotificationEvent) -> AttentionKind {
         NotificationEvent::AutoHold => AttentionKind::AutoHold,
         NotificationEvent::ResumeHold => AttentionKind::ResumeHold,
         NotificationEvent::LeftoverKept => AttentionKind::LeftoverKept,
+        NotificationEvent::Report => AttentionKind::Report,
     }
 }
 

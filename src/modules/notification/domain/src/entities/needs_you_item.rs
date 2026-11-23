@@ -19,6 +19,18 @@ pub struct NeedsYouItem {
     /// The notification that created the item, if one was created. A read of
     /// it clears the item.
     pub origin: Option<NotificationId>,
+    /// The agent's latest report for the person, kept through later events
+    /// until the item leaves (0015/FR-008).
+    pub report: Option<ItemReport>,
+}
+
+/// A report for the person as its item shows it: the kind's wire name and
+/// the text in visible form, as the office accepted them (0015/FR-003).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemReport {
+    pub kind: String,
+    pub text: String,
+    pub at: Timestamp,
 }
 
 impl NeedsYouItem {
@@ -29,7 +41,8 @@ impl NeedsYouItem {
             | AttentionKind::Bell
             | AttentionKind::AutoHold
             | AttentionKind::ResumeHold
-            | AttentionKind::LeftoverKept => WAITING_GROUP,
+            | AttentionKind::LeftoverKept
+            | AttentionKind::Report => WAITING_GROUP,
             AttentionKind::Exited => EXITED_GROUP,
         }
     }
@@ -54,7 +67,8 @@ pub fn order(
 }
 
 /// The item after an event: a new one when the agent has none, else the old
-/// one with the new latest event. The old wait time and origin stay.
+/// one with the new latest event. The old wait time, origin, and report
+/// stay.
 #[must_use]
 pub fn record_event(
     existing: Option<NeedsYouItem>,
@@ -72,6 +86,28 @@ pub fn record_event(
             first_event_at: event.at,
             latest: event,
             origin,
+            report: None,
         },
+    }
+}
+
+/// The item after a report for the person: the report is its latest event
+/// and replaces any earlier report; the wait time and origin stay as
+/// `record_event` keeps them (0015/FR-008).
+#[must_use]
+pub fn record_report(
+    existing: Option<NeedsYouItem>,
+    agent_id: AgentId,
+    report: ItemReport,
+    origin: Option<NotificationId>,
+) -> NeedsYouItem {
+    let event = AttentionEvent {
+        kind: AttentionKind::Report,
+        detail: Some(report.kind.clone()),
+        at: report.at,
+    };
+    NeedsYouItem {
+        report: Some(report),
+        ..record_event(existing, agent_id, event, origin)
     }
 }

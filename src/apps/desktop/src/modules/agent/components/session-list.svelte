@@ -3,6 +3,7 @@
   import Button from "$shared/ui/button.svelte";
   import { formatTimestamp } from "$shared/utils";
   import type { Session } from "../models/agent";
+  import { sessionResultText } from "../models/session-end";
 
   interface Props {
     sessions: Session[];
@@ -12,15 +13,11 @@
 
   let { sessions, isBusy, oncontinue }: Props = $props();
 
-  const LOST_TEXT = "lost: the server stopped uncleanly";
   const NO_REASON = "The CLI cannot continue this session.";
 
   function endText(session: Session): string {
     if (session.ended_at === null) return "Running";
-    const result =
-      session.exit_result === "lost"
-        ? LOST_TEXT
-        : (session.exit_result ?? "unknown");
+    const result = sessionResultText(session.exit_result);
     return `Ended ${formatTimestamp(session.ended_at)}, result ${result}`;
   }
 </script>

@@ -17,6 +17,7 @@ use terminal_domain::services::{
 use terminal_domain::value_objects::{OutputKey, TerminalSize};
 
 use super::person_input::PersonInput;
+use super::sign_in_watch::SignInWatch;
 use super::terminal_events::TerminalEvents;
 use super::terminal_launcher::{LaunchError, PrepareRequest, SpawnRequest, TerminalLauncher};
 use super::typed_input::type_after_first_output;
@@ -40,6 +41,8 @@ pub struct TerminalHostBridge {
     call_helper: CallHelper,
     /// Told when a startup prompt waits for the person (0012 A11).
     person_input: PersonInput,
+    /// Watches each new session for the CLI's sign-in screen (0019).
+    sign_in_watch: Option<SignInWatch>,
 }
 
 /// What an agent session needs to call the office back: the store that
@@ -78,7 +81,16 @@ impl TerminalHostBridge {
             calls: agent_calls.store,
             call_helper: agent_calls.helper,
             person_input: PersonInput::default(),
+            sign_in_watch: None,
         }
+    }
+
+    /// Watches the first seconds of each new session for the CLI's sign-in
+    /// screen (0019/FR-005).
+    #[must_use]
+    pub fn with_sign_in_watch(mut self, watch: SignInWatch) -> Self {
+        self.sign_in_watch = Some(watch);
+        self
     }
 
     /// Shares the record that a pasted startup prompt waits for the person,
@@ -189,6 +201,13 @@ impl TerminalHost for TerminalHostBridge {
                 }
                 other => failed(&other),
             })?;
+        if let Some(watch) = &self.sign_in_watch {
+            watch.start(
+                request.agent_id,
+                request.sign_in,
+                request.typed_input.as_deref(),
+            );
+        }
         if let (Some(text), Some(events)) = (request.typed_input.clone(), first_output) {
             type_after_first_output(
                 Arc::clone(&self.runtime),

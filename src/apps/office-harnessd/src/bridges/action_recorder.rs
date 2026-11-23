@@ -80,5 +80,6 @@ fn action_kind(action: AgentAction) -> ActionKind {
         AgentAction::Refused => ActionKind::Refused,
         AgentAction::TaskText => ActionKind::TaskText,
         AgentAction::HelperLimit => ActionKind::HelperLimit,
+        AgentAction::Report => ActionKind::Report,
     }
 }

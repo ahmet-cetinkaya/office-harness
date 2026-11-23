@@ -31,6 +31,7 @@ impl RateLimitSource for SettingsRateLimits {
                 directive_target: settings.limit_directives_per_target,
                 create: settings.limit_creates_per_agent,
                 lifecycle: settings.limit_lifecycle_per_agent,
+                report: settings.limit_reports_per_agent,
             },
             Err(error) => {
                 self.log.error(&format!(

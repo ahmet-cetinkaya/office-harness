@@ -55,6 +55,8 @@ fn spawn_terminal_bridges(services: &Services, events: &EventHub, log: &ServerLo
         alerts: services.storage_alerts.clone(),
         log: log.clone(),
         calls: services.access.agent_calls.clone(),
+        sign_in_ends: services.terminal.sign_in_ends.clone(),
+        journal: services.agent.journal.clone(),
     }
     .spawn(services.terminal.events.subscribe());
     AgentLineBridge::new(services.terminal.events.clone(), events.clone())
@@ -84,6 +86,15 @@ fn resume_gateway(
         },
         Arc::clone(&services.hierarchy.tree),
     )
+}
+
+/// The terminal requests of a user client, over the terminal services.
+fn terminal_gateway(services: &Services) -> Arc<TerminalGateway> {
+    Arc::new(TerminalGateway::new(
+        services.terminal.handlers.clone(),
+        services.agent.saved_outputs.clone(),
+        services.terminal.person_input.clone(),
+    ))
 }
 
 /// The user's `template.*` requests, over the template services.
@@ -145,7 +156,8 @@ impl Server {
             holds.clone(),
             services.needs_you_bridge.clone(),
         )
-        .with_sweep_gate(sweep_gate.clone());
+        .with_sweep_gate(sweep_gate.clone())
+        .with_sign_in_checks(services.agent.sign_in_checks.clone());
         let hierarchy = HierarchyGateway::new(
             Arc::clone(&services.hierarchy.handlers),
             services.agent.agent_reader.clone(),
@@ -171,16 +183,13 @@ impl Server {
             authentication: services.access.authentication.clone(),
             agent_authentication: services.access.agent_authentication.clone(),
             dispatcher: Arc::new(Dispatcher::new(services.access.handlers.clone())),
-            terminals: Arc::new(TerminalGateway::new(
-                services.terminal.handlers.clone(),
-                services.agent.saved_outputs.clone(),
-                services.terminal.person_input.clone(),
-            )),
+            terminals: terminal_gateway(services),
             agents,
             hierarchy,
             holds,
             hold_service: Arc::clone(&services.hierarchy.holds),
             send_directive: Arc::clone(&services.hierarchy.send_directive),
+            send_report: Arc::clone(&services.hierarchy.send_report),
             hierarchy_tree: Arc::clone(&services.hierarchy.tree),
             directive_journal: Arc::clone(&services.hierarchy.directive_journal),
             notification,

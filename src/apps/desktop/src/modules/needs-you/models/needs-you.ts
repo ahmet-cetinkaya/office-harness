@@ -7,7 +7,8 @@ export type NeedsYouKind =
   | "bell"
   | "auto_hold"
   | "resume_hold"
-  | "exited";
+  | "exited"
+  | "report";
 
 /** One item of the list, as the server sends it (contract `needs_you.list`). */
 export interface NeedsYouItem {
@@ -20,6 +21,16 @@ export interface NeedsYouItem {
   latest_at: number;
   /** The notification that made the item; null for a coalesced bell. */
   origin_notification_id: string | null;
+  /** The last report the agent sent; stays while a later event changes the kind. */
+  report: ItemReport | null;
+}
+
+/** A report on an item (contract `report-protocol`); the text is already visible text. */
+export interface ItemReport {
+  kind: string;
+  text: string;
+  /** Unix ms. */
+  at: number;
 }
 
 /** One row of the section: the item with the words the desktop writes. */
@@ -28,6 +39,10 @@ export interface NeedsYouRow {
   agentName: string;
   projectName: string | null;
   event: string;
+  /** "<report kind>: <report text>" when the item holds a report. */
+  reportText: string | null;
+  /** True when the report is long enough to offer the whole-report button. */
+  isReportLong: boolean;
   wait: string;
   /** The row's accessible name: name, project, event, and wait time. */
   label: string;
@@ -40,7 +55,10 @@ const KINDS: readonly string[] = [
   "auto_hold",
   "resume_hold",
   "exited",
+  "report",
 ];
+/** A report longer than this many characters gets the whole-report button. */
+export const REPORT_CLAMP_CHARACTERS = 160;
 const MS_PER_SECOND = 1_000;
 const SECONDS_PER_MINUTE = 60;
 const MINUTES_PER_HOUR = 60;
@@ -63,6 +81,19 @@ function textOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
+function readReport(value: unknown): ItemReport | null {
+  if (typeof value !== "object" || value === null) return null;
+  const fields = value as Record<string, unknown>;
+  if (
+    typeof fields.kind !== "string" ||
+    typeof fields.text !== "string" ||
+    typeof fields.at !== "number"
+  ) {
+    return null;
+  }
+  return { kind: fields.kind, text: fields.text, at: fields.at };
+}
+
 /**
  * The items of a `needs_you.list` answer or a `needs_you.changed` event, in
  * the server's order; bad input is no items.
@@ -78,6 +109,7 @@ export function readItems(value: unknown): NeedsYouItem[] {
     first_event_at: item.first_event_at,
     latest_at: typeof item.latest_at === "number" ? item.latest_at : 0,
     origin_notification_id: textOrNull(item.origin_notification_id),
+    report: readReport((item as { report?: unknown }).report),
   }));
 }
 
@@ -113,6 +145,10 @@ export function eventText(item: NeedsYouItem): string {
       return "bell";
     case "exited":
       return "exited";
+    case "report":
+      return item.detail === null
+        ? "sent a report"
+        : `sent a report: ${item.detail}`;
   }
 }
 
@@ -134,6 +170,7 @@ export function rowOf(
 ): NeedsYouRow {
   const event = eventText(item);
   const wait = waitText(item.first_event_at, now);
+  const { report } = item;
   const label = [
     agentName,
     ...(projectName === null ? [] : [`project ${projectName}`]),
@@ -145,6 +182,9 @@ export function rowOf(
     agentName,
     projectName,
     event,
+    reportText: report === null ? null : `${report.kind}: ${report.text}`,
+    isReportLong:
+      report !== null && report.text.length > REPORT_CLAMP_CHARACTERS,
     wait,
     label,
   };

@@ -219,6 +219,43 @@ test("continue is offered only for a session that can continue", async ({
   ).toBeVisible();
 });
 
+test("a session that ended for a missing sign-in says so in words", async ({
+  page,
+}) => {
+  const reason =
+    "gemini is not signed in: its first screen asks to sign in. Sign in to gemini in your own terminal, then start the agent again. It showed: How would you like to authenticate?";
+  await openOffice(page, {
+    agents: [agent({ status: "failed", command: "gemini" })],
+    sessions: {
+      "agent-ada": [
+        session({
+          id: "session-new",
+          started_at: 1_700_001_000_000,
+          exit_result: `not-signed-in: ${reason}`,
+          can_continue: false,
+          reason: "the session never started",
+        }),
+        session({
+          id: "session-old",
+          exit_result: "spawn-error: claude is not signed in",
+          can_continue: false,
+          reason: "the session never started",
+        }),
+      ],
+    },
+  });
+
+  await page.getByRole("button", { name: "Ada, failed" }).click();
+
+  const sessions = page.getByRole("region", { name: "Sessions" });
+  await expect(sessions).toContainText(`result not signed in. ${reason}`);
+  await expect(sessions).toContainText(
+    "result never started: claude is not signed in",
+  );
+  await expect(sessions).not.toContainText("not-signed-in:");
+  await expectNoSeriousViolations(page);
+});
+
 test("a new task on a running agent asks first, and Escape cancels", async ({
   page,
 }) => {

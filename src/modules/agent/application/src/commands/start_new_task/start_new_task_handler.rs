@@ -46,12 +46,8 @@ impl StartNewTaskHandler {
     pub fn handle(&self, agent_id: AgentId) -> Result<StartOutcome, ApplicationError> {
         let agent = require_agent(&*self.agents, agent_id)?;
         let outcome = self.begin(agent);
-        let failure = match &outcome {
-            Ok(outcome) => outcome.failure.clone(),
-            Err(error) => Some(error.to_string()),
-        };
         self.journal
-            .record(agent_id, AgentAction::NewTask, failure.as_deref())?;
+            .record_start(agent_id, AgentAction::NewTask, &outcome, None)?;
         outcome
     }
 
@@ -60,7 +56,9 @@ impl StartNewTaskHandler {
         mut agent: agent_domain::entities::Agent,
     ) -> Result<StartOutcome, ApplicationError> {
         // Prepared before the running session ends, so a refusal loses nothing.
-        let prepared = self.launcher.prepare(&agent, &LaunchKind::NewTask)?;
+        let prepared = self
+            .launcher
+            .prepare_replacing(&agent, &LaunchKind::NewTask)?;
         if agent.status.is_running() {
             self.ender.stop_for_restart(&mut agent)?;
         }

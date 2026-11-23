@@ -7,7 +7,7 @@ export interface NotificationRow {
   /** The agent's name at creation, kept for the rows of a deleted agent. */
   agent_name: string;
   event: string;
-  /** The limit's name for an `auto_hold`, the reason for a `resume_hold`; null otherwise. */
+  /** The limit's name for an `auto_hold`, the reason for a `resume_hold`, the report kind for a `report`; null otherwise. */
   detail?: string | null;
   created_at: number;
   /** Null while unread (FR-007). */
@@ -21,8 +21,25 @@ const EVENT_TEXT: Record<string, string> = {
   bell: "rang the bell",
 };
 
-export const EVENT_AUTO_HOLD = "auto_hold";
+const EVENT_AUTO_HOLD = "auto_hold";
 const EVENT_RESUME_HOLD = "resume_hold";
+const EVENT_REPORT = "report";
+/**
+ * Events the agent's terminal does not show, so they stay unread and ping
+ * the OS even while that terminal is open and focused: the holds (0007,
+ * 0013/PB-6) and a report for the person (0015, MODIFIED 0003/FR-006).
+ */
+const EVENTS_NEVER_READ_ON_ARRIVAL: readonly string[] = [
+  EVENT_AUTO_HOLD,
+  EVENT_RESUME_HOLD,
+  EVENT_REPORT,
+];
+
+/** Whether the focused-terminal exception must not mark this event read. */
+export function isNeverReadOnArrival(event: string): boolean {
+  return EVENTS_NEVER_READ_ON_ARRIVAL.includes(event);
+}
+
 /** How many refusals by one limit put an agent on hold (0007 D7). */
 const AUTO_HOLD_REFUSALS = 3;
 
@@ -38,6 +55,9 @@ export function eventText(event: string, detail: string | null = null): string {
   if (event === EVENT_RESUME_HOLD) {
     const base = "was put on hold after its resume failed";
     return detail === null ? base : `${base}: ${detail}`;
+  }
+  if (event === EVENT_REPORT) {
+    return detail === null ? "sent a report" : `sent a report: ${detail}`;
   }
   return EVENT_TEXT[event] ?? event.replaceAll("_", " ");
 }

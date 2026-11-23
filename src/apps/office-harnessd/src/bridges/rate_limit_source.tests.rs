@@ -75,6 +75,9 @@ fn a_changed_setting_applies_to_the_next_call() {
     changed
         .set_from_text(SettingKey::LimitLifecyclePerAgent, "9")
         .expect("valid");
+    changed
+        .set_from_text(SettingKey::LimitReportsPerAgent, "3")
+        .expect("valid");
     store.save(&changed).expect("saved");
 
     assert_eq!(
@@ -84,6 +87,7 @@ fn a_changed_setting_applies_to_the_next_call() {
             directive_target: 2,
             create: 4,
             lifecycle: 9,
+            report: 3,
         }
     );
 }
