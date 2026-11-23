@@ -181,6 +181,15 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - CI green on Linux, macOS, and Windows.
 - Hands-on: a real CLI agent and its helper (the `opencode` service) ended by the sweep after a SIGKILL of the server, in the real app. Otherwise the qa row stays BLOCKED, never PASS.
 
+## Execution notes
+
+- **T1, Linux reads `/proc` directly.** `sysinfo` 0.40.1 keeps the raw start ticks private and gives whole seconds only, which D2 rules out on Linux. Linux reads `/proc/<pid>/stat` (start ticks, state) and `/proc/<pid>/cmdline`; `sysinfo` still lists descendants on every OS and reads the identity on macOS.
+- **T1, `ProcessHandle::wait_for_exit(timeout)`.** D6 checks every 100 ms for an exit; on Linux it polls the pidfd and on Windows it waits on the handle, so no wait goes by process id. The Windows handle therefore also asks for `SYNCHRONIZE`.
+- **T1, end results.** `request_end` and `force_end` answer `Delivered`, `Gone`, or `Unsupported` (Windows has no request), or the OS error text.
+- **T1, the match is in the identity type.** `ProcessIdentity::mismatch` gives the D2 reasons in the D2 order; the sweep (T3) only applies it. The visible form of the command line stays with T3 and T5 (D6, D9); T1 stores the capped raw display text and the hash.
+- **T1, unsafe code.** `terminal-infrastructure` denies unsafe code; only the pidfd and Windows handle modules allow it, each with its reason.
+- **For T2.** On Linux the command line can be empty for a moment right after a spawn, which reads as "not readable". The recorder retries the first read briefly before it gives up.
+
 ## Review log
 
 r1 (Efe, fa44fb0): M1 to M3, L1, L2 resolved as below. r2 (Efe, 350ff07): PASS for coding; N1 (macOS FR-011 residual under A10) is checked in the code review.
