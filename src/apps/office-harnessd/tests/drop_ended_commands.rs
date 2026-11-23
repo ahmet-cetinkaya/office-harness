@@ -449,7 +449,10 @@ fn insert_identity(connection: &Connection, session: &str, pid: i64, marker: &st
 /// What the 0017 build left: secure delete off, 10 sessions that ended with
 /// a marker in an ended identity, and in one more session 10 helper
 /// identities that were dropped and 10 command lines that were replaced.
-fn leave_the_database_of_the_0017_build(config: &Config, agent: &str) -> Vec<String> {
+/// Writes, drops, replaces and ends identities as the 0017 build did, with
+/// secure delete off, and gives back the open connection, so that the caller
+/// chooses how that build stopped.
+fn write_as_the_0017_build(config: &Config, agent: &str) -> (Connection, Vec<String>) {
     let connection = Connection::open(config.database_path()).expect("database");
     connection
         .execute_batch("PRAGMA secure_delete = OFF; PRAGMA wal_autocheckpoint = 0")
@@ -491,8 +494,7 @@ fn leave_the_database_of_the_0017_build(config: &Config, agent: &str) -> Vec<Str
             [&holder],
         )
         .expect("the session ended");
-    leave_the_files_as_a_stopped_build_does(config, connection);
-    [ended, dropped, replaced].concat()
+    (connection, [ended, dropped, replaced].concat())
 }
 
 /// A server that stops without closing its connection leaves its write log
@@ -522,12 +524,9 @@ fn leave_the_files_as_a_stopped_build_does(config: &Config, connection: Connecti
 #[tokio::test]
 async fn a_database_of_the_0017_build_holds_no_marker_after_its_first_start_of_this_build() {
     let fixture = Fixture::new();
-    let mut first = fixture.spawn();
-    wait_until_started(&fixture.config, 1).await;
-    let mut client = fixture.client().await;
-    let agent = fixture.create(&mut client, "Ana", "claude").await;
-    stop_cleanly(&mut client, &mut first).await;
-    let markers = leave_the_database_of_the_0017_build(&fixture.config, &agent);
+    let agent = fixture.agent_of_a_stopped_server().await;
+    let (connection, markers) = write_as_the_0017_build(&fixture.config, &agent);
+    leave_the_files_as_a_stopped_build_does(&fixture.config, connection);
     let before = fixture.markers_in_files(&markers);
     assert_eq!(
         before.len(),
@@ -535,26 +534,57 @@ async fn a_database_of_the_0017_build_holds_no_marker_after_its_first_start_of_t
         "the 0017 build left every marker in the files"
     );
 
-    let _second = fixture.spawn();
-    wait_until_started(&fixture.config, 2).await;
+    fixture.start_this_build_and_find_no_marker(&markers).await;
+}
 
-    fixture.assert_no_marker_in_files(&markers);
-    let identities: i64 = fixture
-        .database()
-        .query_row("SELECT COUNT(*) FROM agent_session_processes", [], |row| {
-            row.get(0)
-        })
-        .expect("count");
-    assert_eq!(identities, 0);
-    let ended_by_the_sweep: i64 = fixture
-        .database()
-        .query_row(
-            "SELECT COUNT(*) FROM audit_actions WHERE action = ?1",
-            [SWEEP_ENTRY_ACTION],
-            |row| row.get(0),
-        )
-        .expect("count");
-    assert_eq!(ended_by_the_sweep, 0);
+/// A clean stop checkpoints the write log into the database file, so the
+/// freed text sits in the file's free cells and pages instead of the log.
+#[tokio::test]
+async fn a_cleanly_stopped_database_of_the_0017_build_holds_no_marker_after_its_first_start() {
+    let fixture = Fixture::new();
+    let agent = fixture.agent_of_a_stopped_server().await;
+    let (connection, markers) = write_as_the_0017_build(&fixture.config, &agent);
+    drop(connection);
+    let before = fixture.markers_in_files(&markers);
+    assert!(!before.is_empty(), "the clean stop left no marker to clear");
+
+    fixture.start_this_build_and_find_no_marker(&markers).await;
+}
+
+impl Fixture {
+    /// A first start of this build creates the schema and one agent; the
+    /// server then stops cleanly.
+    async fn agent_of_a_stopped_server(&self) -> String {
+        let mut first = self.spawn();
+        wait_until_started(&self.config, 1).await;
+        let mut client = self.client().await;
+        let agent = self.create(&mut client, "Ana", "claude").await;
+        stop_cleanly(&mut client, &mut first).await;
+        agent
+    }
+
+    async fn start_this_build_and_find_no_marker(&self, markers: &[String]) {
+        let _second = self.spawn();
+        wait_until_started(&self.config, 2).await;
+
+        self.assert_no_marker_in_files(markers);
+        let identities: i64 = self
+            .database()
+            .query_row("SELECT COUNT(*) FROM agent_session_processes", [], |row| {
+                row.get(0)
+            })
+            .expect("count");
+        assert_eq!(identities, 0);
+        let ended_by_the_sweep: i64 = self
+            .database()
+            .query_row(
+                "SELECT COUNT(*) FROM audit_actions WHERE action = ?1",
+                [SWEEP_ENTRY_ACTION],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(ended_by_the_sweep, 0);
+    }
 }
 
 /// One process as the test saw it: the start time tells a reused process id

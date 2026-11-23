@@ -17,7 +17,6 @@ use office_harnessd::config::Config;
 use rusqlite::{Connection, params};
 use support::{agent_named, config_in};
 
-const REBUILT_LINE: &str = "office database rebuilt";
 const TRUNCATE_FAILED_LINE: &str = "could not truncate the write log";
 const MARK_TASK: &str = "freed_text_cleared";
 const EMPTY_ADDITIONS: &str = r#"{"flags":[],"env":[]}"#;
@@ -58,6 +57,26 @@ fn remove_mark(config: &Config) {
     open_office(config)
         .execute("DELETE FROM agent_maintenance", [])
         .expect("remove mark");
+}
+
+/// Frees pages in the database file, which only a rebuild gives back: the
+/// success of a rebuild writes no log line (0023 A6), so the free list is
+/// what shows whether one ran.
+fn leave_free_pages(config: &Config) {
+    open_office(config)
+        .execute_batch(&format!(
+            "CREATE TABLE scratch (text BLOB); \
+             WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < {BULK_ROWS}) \
+             INSERT INTO scratch SELECT randomblob({BULK_TEXT_LENGTH}) FROM n; \
+             DROP TABLE scratch;"
+        ))
+        .expect("free pages");
+}
+
+fn free_pages(config: &Config) -> i64 {
+    open_office(config)
+        .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+        .expect("free list")
 }
 
 fn write_log_path(config: &Config) -> std::path::PathBuf {
@@ -188,16 +207,30 @@ fn a_start_truncates_the_write_log() {
 }
 
 #[test]
+fn a_pending_rebuild_empties_the_free_list_and_writes_the_mark() {
+    let office = Office::started_once();
+    remove_mark(&office.config);
+    leave_free_pages(&office.config);
+    assert!(free_pages(&office.config) > 0);
+
+    let _start = start_server_state(&office.config);
+
+    assert_eq!(free_pages(&office.config), 0);
+    assert_eq!(mark_rows(&office.config).len(), 1);
+}
+
+#[test]
 fn the_rebuild_mark_is_written_once_and_the_next_start_skips_the_rebuild() {
     let office = Office::started_once();
     let marks_after_first = mark_rows(&office.config);
     assert_eq!(marks_after_first.len(), 1);
-    assert_eq!(log_lines_with(&office.config, REBUILT_LINE), 1);
+    leave_free_pages(&office.config);
 
     let _second = start_server_state(&office.config);
 
     assert_eq!(mark_rows(&office.config), marks_after_first);
-    assert_eq!(log_lines_with(&office.config, REBUILT_LINE), 1);
+    // A rebuild would have emptied the free list.
+    assert!(free_pages(&office.config) > 0);
 }
 
 #[test]
