@@ -17,6 +17,7 @@ use terminal_application::common::interfaces::TerminalRuntime;
 use terminal_domain::events::TerminalEvent;
 use tokio::sync::broadcast::{self, error::RecvError};
 
+use super::hook_sessions::{HookSessions, TerminalVerdict};
 use super::sign_in_watch::SignInEnds;
 use super::terminal_events::AgentTerminalEvent;
 use super::wait_tracker::WaitTracker;
@@ -55,6 +56,9 @@ pub struct AgentStatusBridge {
     pub journal: ActionJournal,
     /// Told when a session ends, which is a wait end (0022 D2).
     pub waits: WaitTracker,
+    /// The state that the reports of `claude` sessions keep (0024). In an
+    /// exact session output and the quiet period do not decide the status.
+    pub hooks: HookSessions,
 }
 
 impl AgentStatusBridge {
@@ -93,6 +97,9 @@ impl AgentStatusBridge {
             ));
             return;
         }
+        if self.hooks.judge_terminal_event(item.agent_id, item.event) == TerminalVerdict::Drop {
+            return;
+        }
         let Some((mut event, mut detail)) = status_event(item.event) else {
             return;
         };
@@ -100,6 +107,7 @@ impl AgentStatusBridge {
         if let TerminalEvent::Exited { exit_code } = item.event {
             self.calls.revoke_agent(item.agent_id);
             self.waits.session_ended(item.agent_id);
+            self.hooks.session_ended(item.agent_id);
             match self.sign_in_ends.take(item.agent_id, item.run) {
                 Some(reason) => {
                     self.end_session(item.agent_id, &ExitResult::NotSignedIn(reason.clone()));

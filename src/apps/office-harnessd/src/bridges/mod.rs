@@ -9,6 +9,8 @@ mod agent_line_bridge;
 mod agent_status_bridge;
 mod directive_bridges;
 mod hold_bridges;
+mod hook_sessions;
+mod hook_status_bridge;
 mod idle_sleep_gate;
 mod needs_you_bridge;
 mod notification_bridge;
@@ -44,6 +46,11 @@ pub use directive_bridges::{
     TaskOrder,
 };
 pub use hold_bridges::{HoldJournalBridge, HoldNotifierBridge};
+pub use hook_sessions::{
+    DETAIL_PERMISSION_ASKED, DETAIL_TURN_FAILED, DETAIL_TURN_STOPPED, HookSessions, HookState,
+    StatusSource,
+};
+pub use hook_status_bridge::HookStatusBridge;
 pub use idle_sleep_gate::{GateInputs, IdleRule, IdleSleepGate, SleepingAgents};
 pub use needs_you_bridge::{AgentNames, NeedsYouBridge};
 pub use notification_bridge::NotificationBridge;

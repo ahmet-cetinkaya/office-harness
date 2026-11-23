@@ -36,9 +36,7 @@ pub use agent_requests::AgentGateway;
 pub use event_hub::EventHub;
 pub use hierarchy_requests::HierarchyGateway;
 pub use hold_requests::{HoldGateway, hold_changed_event};
-pub use hook_requests::{
-    DiscardHookReports, HookEventKind, HookGateway, HookReport, HookReportSink,
-};
+pub use hook_requests::{HookEventKind, HookGateway, HookReport, HookReportSink};
 pub use notification_requests::NotificationGateway;
 pub use restart_signal::{RESTART_REQUEST, RestartSignal};
 pub use running_server::Server;

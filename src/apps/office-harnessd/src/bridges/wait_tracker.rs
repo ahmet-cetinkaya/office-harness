@@ -38,6 +38,9 @@ struct AgentWaits {
     working_since: Option<Instant>,
     last_prompted_wait: Option<Instant>,
     run: Option<RunId>,
+    /// The session's status follows the reports of its CLI, so every change
+    /// is prompted (0024/FR-011).
+    exact: bool,
 }
 
 impl AgentWaits {
@@ -47,6 +50,7 @@ impl AgentWaits {
             working_since: None,
             last_prompted_wait: None,
             run,
+            exact: false,
         }
     }
 }
@@ -79,6 +83,7 @@ type WaitEndListener = Arc<dyn Fn(AgentId) + Send + Sync>;
 pub struct WaitTracker {
     waits: Arc<Mutex<Waits>>,
     wait_end_listener: Arc<OnceLock<WaitEndListener>>,
+    ask_wait_end_listener: Arc<OnceLock<WaitEndListener>>,
 }
 
 impl Default for WaitTracker {
@@ -98,6 +103,7 @@ impl WaitTracker {
                 work_bound_extra: WORK_BOUND_EXTRA,
             })),
             wait_end_listener: Arc::default(),
+            ask_wait_end_listener: Arc::default(),
         }
     }
 
@@ -122,11 +128,33 @@ impl WaitTracker {
         let _ = self.wait_end_listener.set(Arc::new(listener));
     }
 
+    /// Calls `listener` after each wait end, as well as the listener of
+    /// `on_wait_end`: an input at the terminal ends the permission ask of an
+    /// exact session (0024/FR-013). The first listener stays.
+    pub fn on_ask_wait_end(&self, listener: impl Fn(AgentId) + Send + Sync + 'static) {
+        let _ = self.ask_wait_end_listener.set(Arc::new(listener));
+    }
+
     /// A person's input or the office's text reached the agent's terminal.
     pub fn wait_end(&self, agent_id: AgentId) {
         self.locked().agent(agent_id).ended_since_wait = true;
         if let Some(listener) = self.wait_end_listener.get() {
             listener(agent_id);
+        }
+        if let Some(listener) = self.ask_wait_end_listener.get() {
+            listener(agent_id);
+        }
+    }
+
+    /// The agent's session is exact or not (0024). While it is exact every
+    /// change is prompted. Leaving it ends the wait, so the first change by
+    /// the quiet period is prompted too.
+    pub fn set_exact(&self, agent_id: AgentId, exact: bool) {
+        let mut waits = self.locked();
+        let agent = waits.agent(agent_id);
+        agent.exact = exact;
+        if !exact {
+            agent.ended_since_wait = true;
         }
     }
 
@@ -159,13 +187,13 @@ impl WaitTracker {
         match change {
             StatusChange::ToWorking => {
                 agent.working_since = Some(now);
-                prompted_when(agent.ended_since_wait)
+                prompted_when(agent.ended_since_wait || agent.exact)
             }
             StatusChange::ToWaitingForInput => {
                 let long_work = agent
                     .working_since
                     .is_some_and(|since| now.saturating_duration_since(since) > work_bound);
-                let verdict = prompted_when(agent.ended_since_wait || long_work);
+                let verdict = prompted_when(agent.ended_since_wait || long_work || agent.exact);
                 if verdict == Change::Prompted {
                     agent.last_prompted_wait = Some(now);
                     agent.ended_since_wait = false;

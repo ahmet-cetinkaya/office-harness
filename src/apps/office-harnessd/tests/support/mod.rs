@@ -3,6 +3,7 @@
 #![allow(dead_code, reason = "each test binary uses a part of the helpers")]
 
 pub mod fake_cli;
+pub mod hook_client;
 pub mod office_client;
 pub mod running_office;
 pub mod server_process;

@@ -248,6 +248,7 @@ mod runs {
             sign_in_ends: SignInEnds::default(),
             journal: ActionJournal::new(records.clone(), Arc::new(crate::bridges::SystemClock)),
             waits: crate::bridges::WaitTracker::default(),
+            hooks: crate::bridges::HookSessions::default(),
         };
         (bridge, store, ends, records)
     }

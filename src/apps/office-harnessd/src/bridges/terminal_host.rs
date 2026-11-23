@@ -16,6 +16,7 @@ use terminal_domain::services::{
 };
 use terminal_domain::value_objects::{OutputKey, TerminalSize};
 
+use super::hook_sessions::HookSessions;
 use super::person_input::PersonInput;
 use super::sign_in_watch::SignInWatch;
 use super::terminal_events::TerminalEvents;
@@ -43,6 +44,9 @@ pub struct TerminalHostBridge {
     person_input: PersonInput,
     /// Watches each new session for the CLI's sign-in screen (0019).
     sign_in_watch: Option<SignInWatch>,
+    /// Told when a session starts, so that it is estimated until its first
+    /// report (0024).
+    hook_sessions: HookSessions,
 }
 
 /// What an agent session needs to call the office back: the store that
@@ -82,6 +86,7 @@ impl TerminalHostBridge {
             call_helper: agent_calls.helper,
             person_input: PersonInput::default(),
             sign_in_watch: None,
+            hook_sessions: HookSessions::default(),
         }
     }
 
@@ -90,6 +95,13 @@ impl TerminalHostBridge {
     #[must_use]
     pub fn with_sign_in_watch(mut self, watch: SignInWatch) -> Self {
         self.sign_in_watch = Some(watch);
+        self
+    }
+
+    /// Shares the record of what the reports of each session say (0024).
+    #[must_use]
+    pub fn with_hook_sessions(mut self, hook_sessions: HookSessions) -> Self {
+        self.hook_sessions = hook_sessions;
         self
     }
 
@@ -218,9 +230,12 @@ impl TerminalHost for TerminalHostBridge {
                 self.person_input.clone(),
             );
         }
+        let run = self.runtime.current_run(request.agent_id);
         self.person_input
             .wait_tracker()
-            .session_started(request.agent_id, self.runtime.current_run(request.agent_id));
+            .session_started(request.agent_id, run);
+        self.hook_sessions
+            .session_started(request.agent_id, run, None);
         Ok(())
     }
 

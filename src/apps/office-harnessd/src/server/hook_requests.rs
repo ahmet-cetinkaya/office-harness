@@ -166,13 +166,6 @@ impl HookGateway {
     }
 }
 
-/// A sink that drops every report, until the status bridge takes them.
-pub struct DiscardHookReports;
-
-impl HookReportSink for DiscardHookReports {
-    fn accept(&self, _report: HookReport) {}
-}
-
 #[cfg(test)]
 #[path = "hook_requests.tests.rs"]
 mod tests;

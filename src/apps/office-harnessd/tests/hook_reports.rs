@@ -61,7 +61,7 @@ async fn serve() -> Fixture {
     let log = bootstrap::open_log(&config).expect("log");
     let mut services = bootstrap::start_with(&config, &log, LoginSetup::detect()).expect("start");
     let recorder = Arc::new(Recorder::default());
-    services.hook_reports = recorder.clone();
+    services.hook_reports = Some(recorder.clone());
     let agent_id = AgentId::from_u128(7);
     let secrets: Arc<dyn HookSecretStore> = services.access.hook_secrets.clone();
     let secret = secrets

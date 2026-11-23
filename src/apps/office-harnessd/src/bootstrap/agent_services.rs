@@ -171,6 +171,7 @@ pub fn build_agent_services(
                 agent_calls,
             )
             .with_person_input(terminal.person_input.clone())
+            .with_hook_sessions(terminal.hook_sessions.clone())
             .with_sign_in_watch(SignInWatch {
                 runtime: Arc::clone(&terminal.runtime),
                 person_input: terminal.person_input.clone(),
