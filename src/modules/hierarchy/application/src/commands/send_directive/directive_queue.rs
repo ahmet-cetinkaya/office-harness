@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use kernel::{AgentId, Timestamp};
+use kernel::{Actor, AgentId, Timestamp};
 
 /// How many directives may wait for one target (0012/FR-004).
 pub const QUEUE_LIMIT: usize = 20;
@@ -21,21 +21,52 @@ pub const WAIT_LIMIT: Duration = Duration::from_mins(10);
 /// reads it again (0012/FR-001, plan D8).
 pub const SETTLE_AFTER_TYPING: Duration = Duration::from_secs(2);
 
+/// Why an entry waits, which decides how it is recorded and when the tree
+/// still allows it (0015/FR-004, 0020/FR-001, FR-007).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Origin {
+    /// A directive from a sender to a descendant.
+    Directive,
+    /// A report to a parent; `text` is what its record entries show.
+    Report { text: String },
+    /// The objective of a temporary agent, queued by its creator for the
+    /// temp itself.
+    Objective { by: Actor },
+    /// The line a parent reads when its temp ended; `text` is the record
+    /// text.
+    EndNotice { text: String },
+}
+
+impl Origin {
+    /// The record text of a report or an end notice, which share the
+    /// report share of a queue and the one place per sender.
+    #[must_use]
+    pub fn report_text(&self) -> Option<&str> {
+        match self {
+            Self::Report { text } | Self::EndNotice { text } => Some(text),
+            Self::Directive | Self::Objective { .. } => None,
+        }
+    }
+}
+
 /// A directive the office accepted and has not typed yet. A report to a
 /// parent waits the same way (0015/FR-004): its `text` is the line to type,
-/// and `report` holds the text its record entries show.
+/// and `origin` holds the text its record entries show. `from_temp` says the
+/// sender was a temporary agent when the entry was pushed, so the entry
+/// outlives the sender's removal (0020/FR-007).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WaitingDirective {
     pub sender: AgentId,
     pub target: AgentId,
     pub text: String,
     pub accepted_at: Timestamp,
-    pub report: Option<String>,
+    pub origin: Origin,
+    pub from_temp: bool,
 }
 
 impl WaitingDirective {
     fn is_report_of(&self, sender: AgentId) -> bool {
-        self.report.is_some() && self.sender == sender
+        self.origin.report_text().is_some() && self.sender == sender
     }
 }
 
@@ -110,7 +141,7 @@ impl TargetQueue {
         let reports = self
             .waiting
             .iter()
-            .filter(|waiting| waiting.report.is_some())
+            .filter(|waiting| waiting.origin.report_text().is_some())
             .count();
         if reports >= REPORT_SHARE {
             return ReportRoom::NoRoomForReports;

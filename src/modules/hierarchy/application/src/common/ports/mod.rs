@@ -7,7 +7,7 @@ mod report_ports;
 mod subtree_ports;
 
 pub use agent_creator_ports::{
-    AgentCreator, AgentSeed, CreatorError, CreatorErrorKind, SeedAdditions, SeedWorktree,
+    AgentCreator, AgentSeed, CreatorError, CreatorErrorKind, SeedAdditions, SeedWorktree, TempSeed,
 };
 pub use directive_ports::{
     Delivery, DirectiveClock, DirectiveJournal, DirectiveReceipt, DirectiveTarget, DirectiveWriter,

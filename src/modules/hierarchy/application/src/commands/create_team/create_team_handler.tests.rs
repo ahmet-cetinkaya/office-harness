@@ -138,6 +138,7 @@ fn request() -> CreateTeamWithLeadRequest {
         name: "api".to_owned(),
         project_id: None,
         lead: AgentSeed {
+            temp: None,
             name: "api-lead".to_owned(),
             command: "claude".to_owned(),
             working_folder: None,

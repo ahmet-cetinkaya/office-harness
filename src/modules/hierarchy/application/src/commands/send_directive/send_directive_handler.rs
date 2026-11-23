@@ -7,10 +7,10 @@ use hierarchy_domain::{
     AgentAction, HierarchyError, ReportReceiver, TreeRow, check_descendant, report_receiver,
     validate_directive_text,
 };
-use kernel::AgentId;
+use kernel::{Actor, AgentId};
 
 use super::directive_queue::{
-    DirectiveQueue, QUEUE_LIMIT, REPORT_SHARE, ReportPush, ReportRoom, WaitingDirective,
+    DirectiveQueue, Origin, QUEUE_LIMIT, REPORT_SHARE, ReportPush, ReportRoom, WaitingDirective,
 };
 use crate::commands::hold::HoldService;
 use crate::common::errors::HierarchyApplicationError;
@@ -308,18 +308,86 @@ impl SendDirectiveHandler {
             target: report.parent,
             text: report.line.clone(),
             accepted_at: self.clock.steady_now(),
-            report: Some(report.record_text.clone()),
+            origin: Origin::Report {
+                text: report.record_text.clone(),
+            },
+            from_temp: self.targets.is_temp(report.sender),
         };
-        match self.queue.push_report(waiting) {
-            ReportPush::Replaced { position, replaced } => {
-                self.withdrawn(&replaced, REPLACED);
+        match self.push_report_entry(waiting) {
+            ReportPush::Added { position } | ReportPush::Replaced { position, .. } => {
                 Ok(DirectiveOutcome::Waiting { position })
             }
-            ReportPush::Added { position } => Ok(DirectiveOutcome::Waiting { position }),
             // The queue filled between the room check and the push.
             ReportPush::Refused(room) => Err(self.no_room(report.parent, room)),
             ReportPush::Closed => Err(HierarchyApplicationError::Refused(STOPPING.to_owned())),
         }
+    }
+
+    /// Pushes a report-like entry and journals the one it replaced.
+    fn push_report_entry(&self, entry: WaitingDirective) -> ReportPush {
+        let pushed = self.queue.push_report(entry);
+        if let ReportPush::Replaced { replaced, .. } = &pushed {
+            self.withdrawn(replaced, REPLACED);
+        }
+        pushed
+    }
+
+    /// Queues the objective of a new temporary agent for the temp itself
+    /// (0020/FR-001): the creator is not the temp's parent, so the sender
+    /// and descendant checks, the directive limits, and the hold check do
+    /// not apply. It is recorded once, with the creator as actor, and the
+    /// delivery thread types it when the temp is ready.
+    ///
+    /// # Errors
+    /// `Invalid` when the text breaks the directive rules; `Refused` when a
+    /// server stop has begun.
+    pub fn queue_objective(
+        &self,
+        temp: AgentId,
+        text: &str,
+        creator: Actor,
+    ) -> Result<usize, HierarchyApplicationError> {
+        if let Err(error) = validate_directive_text(text) {
+            return Err(self.journaled(temp, temp, text, error.into()));
+        }
+        let Some(position) = self.queue.push(WaitingDirective {
+            sender: temp,
+            target: temp,
+            text: text.to_owned(),
+            accepted_at: self.clock.steady_now(),
+            origin: Origin::Objective { by: creator },
+            from_temp: true,
+        }) else {
+            return Err(self.journaled(
+                temp,
+                temp,
+                text,
+                HierarchyApplicationError::Refused(STOPPING.to_owned()),
+            ));
+        };
+        self.journal.record_objective(creator, temp);
+        Ok(position)
+    }
+
+    /// Queues the line that tells `parent` its temp ended, under the temp's
+    /// one report place and the report share (0020/FR-007). It never types
+    /// at once and takes no rate-window slot. Says whether it was queued:
+    /// not when the queue has no room or the server is stopping.
+    pub fn push_end_notice(&self, temp: AgentId, parent: AgentId, line: &str) -> bool {
+        let notice = WaitingDirective {
+            sender: temp,
+            target: parent,
+            text: line.to_owned(),
+            accepted_at: self.clock.steady_now(),
+            origin: Origin::EndNotice {
+                text: line.to_owned(),
+            },
+            from_temp: true,
+        };
+        matches!(
+            self.push_report_entry(notice),
+            ReportPush::Added { .. } | ReportPush::Replaced { .. }
+        )
     }
 
     /// Types waiting directives whose target is ready, one per target, and
@@ -365,7 +433,8 @@ impl SendDirectiveHandler {
             target,
             text: text.to_owned(),
             accepted_at: self.clock.steady_now(),
-            report: None,
+            origin: Origin::Directive,
+            from_temp: false,
         }) else {
             return Err(self.journaled(
                 sender,
@@ -408,7 +477,7 @@ impl SendDirectiveHandler {
     /// before the claim ends, so the order of deliveries to one target is
     /// the order of its receipts (0011 D2); only a submitted directive is a
     /// received task (0012 PB-3), never a report (0015 PB-3), which carries
-    /// its record text in `report`.
+    /// its record text in its origin.
     fn type_claimed(
         &self,
         target: AgentId,
@@ -475,7 +544,7 @@ impl SendDirectiveHandler {
                     self.queue.release(target);
                     return;
                 }
-                match self.type_claimed(target, &head.text, head.report.as_deref()) {
+                match self.type_claimed(target, &head.text, head.origin.report_text()) {
                     Ok(Delivery::Submitted) => {}
                     Ok(Delivery::Unsubmitted) => self.record_failure(head, UNSUBMITTED),
                     Err(message) => {
@@ -488,28 +557,48 @@ impl SendDirectiveHandler {
 
     /// Runs the tree rule and the hold check again for a directive that
     /// waited. The hold check counts nothing (0012 A6). A report's tree rule
-    /// is that its sender is still a child of the target (0015/FR-005).
+    /// is that its sender is still a child of the target (0015/FR-005). The
+    /// objective of a temp the person created is the person's own action,
+    /// which no hold stops (0007/PB-1).
     fn recheck(&self, head: &WaitingDirective) -> Recheck {
         let Ok(snapshot) = self.store.snapshot() else {
             return Recheck::Unreadable;
         };
-        if head.report.is_some() {
-            if report_receiver(&snapshot.rows, head.sender, false)
-                != ReportReceiver::Parent(head.target)
-            {
-                return Recheck::Refused(format!(
-                    "the sender is no longer a child of {}",
-                    self.name_of(head.target)
-                ));
-            }
-        } else if let Err(error) = check_descendant(&snapshot.rows, head.sender, head.target) {
-            return Recheck::Refused(error.to_string());
+        if let Some(reason) = self.tree_refusal(head, &snapshot.rows) {
+            return Recheck::Refused(reason);
+        }
+        if matches!(head.origin, Origin::Objective { by: Actor::User }) {
+            return Recheck::Allowed;
         }
         let hold_reason = self
             .hold_guard
             .as_ref()
             .and_then(|guard| guard.refusal(head.sender, head.target, &snapshot.rows));
         hold_reason.map_or(Recheck::Allowed, Recheck::Refused)
+    }
+
+    /// Why the tree no longer allows an entry, or `None`. An objective has
+    /// no sender rule; a report or end notice of a removed temp stays, so
+    /// its parent still reads it (0020/FR-007).
+    fn tree_refusal(&self, head: &WaitingDirective, rows: &[TreeRow]) -> Option<String> {
+        match head.origin {
+            Origin::Objective { .. } => None,
+            Origin::Directive => check_descendant(rows, head.sender, head.target)
+                .err()
+                .map(|error| error.to_string()),
+            Origin::Report { .. } | Origin::EndNotice { .. } => {
+                let is_child = report_receiver(rows, head.sender, false)
+                    == ReportReceiver::Parent(head.target);
+                let is_removed_temp =
+                    head.from_temp && !rows.iter().any(|row| row.agent_id == head.sender);
+                (!is_child && !is_removed_temp).then(|| {
+                    format!(
+                        "the sender is no longer a child of {}",
+                        self.name_of(head.target)
+                    )
+                })
+            }
+        }
     }
 
     /// Records a directive that left the queue untyped, in the sender's and
@@ -522,7 +611,7 @@ impl SendDirectiveHandler {
     /// directive journal, a report in the report journal with its record
     /// text (0015/FR-009).
     fn record_failure(&self, directive: &WaitingDirective, failure: &str) {
-        match (&directive.report, &self.report_journal) {
+        match (directive.origin.report_text(), &self.report_journal) {
             (Some(record_text), Some(report_journal)) => report_journal.refused(
                 directive.sender,
                 Some(directive.target),

@@ -311,9 +311,20 @@ impl DirectiveJournalBridge {
         failure: Option<&str>,
         detail: Option<&str>,
     ) {
+        self.record_as(Actor::Agent(actor), target, action, failure, detail);
+    }
+
+    fn record_as(
+        &self,
+        actor: Actor,
+        target: AgentId,
+        action: AgentAction,
+        failure: Option<&str>,
+        detail: Option<&str>,
+    ) {
         // The use cases share one journal and one request runs on one
         // thread, so the scope guard, not a parameter, names the actor.
-        let _actor = ActorScope::enter(Actor::Agent(actor));
+        let _actor = ActorScope::enter(actor);
         if let Err(error) = self
             .journal
             .record_detailed(target, action, failure, detail)
@@ -335,6 +346,10 @@ impl DirectiveJournal for DirectiveJournalBridge {
             // on the target's record only.
             self.record_entry(sender, sender, AgentAction::Directive, journaled.as_deref());
         }
+    }
+
+    fn record_objective(&self, creator: Actor, temp: AgentId) {
+        self.record_as(creator, temp, AgentAction::Directive, None, None);
     }
 }
 
