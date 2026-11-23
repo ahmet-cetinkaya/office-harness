@@ -57,8 +57,11 @@ async fn recorded(office: &Office, name: &str) -> String {
 fn hook_files(office: &Office) -> Vec<PathBuf> {
     let folder = office.serving.office.config.hooks_folder_path();
     std::fs::read_dir(folder)
-        .map(|entries| entries.flatten().map(|entry| entry.path()).collect())
-        .unwrap_or_default()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .collect()
 }
 
 fn settings_path(arguments: &str) -> Option<PathBuf> {
