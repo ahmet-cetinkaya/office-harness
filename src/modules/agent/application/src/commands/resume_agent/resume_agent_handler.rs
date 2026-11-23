@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use agent_domain::entities::Session;
+use agent_domain::entities::{Agent, Session};
 use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{ExitResult, SessionId};
 use kernel::AgentId;
@@ -27,6 +27,24 @@ pub struct ResumeOutcome {
     pub continued: bool,
     /// Why a new session started instead of a continue.
     pub reason: Option<String>,
+}
+
+/// Which request a continue or new session answers. It only picks the action
+/// of the record: a resume records `continue` or `start`, a wake records `wake`.
+#[derive(Clone, Copy)]
+enum Flow {
+    Resume,
+    Wake,
+}
+
+impl Flow {
+    fn action_of(self, continued: bool) -> AgentAction {
+        match (self, continued) {
+            (Self::Wake, _) => AgentAction::Wake,
+            (Self::Resume, true) => AgentAction::Continue,
+            (Self::Resume, false) => AgentAction::Start,
+        }
+    }
 }
 
 /// Resumes an interrupted agent (`agent.resume`, spec 0013): it continues the
@@ -70,7 +88,31 @@ impl ResumeAgentHandler {
                 "the agent is no longer interrupted".to_owned(),
             ));
         }
-        let last = self.sessions.latest_for_agent(agent_id)?;
+        self.continue_or_start_new(&agent, Flow::Resume)
+    }
+
+    /// Wakes an asleep agent (`agent.wake`, spec 0018): the same continue or
+    /// new session as `resume`, recorded as a wake.
+    ///
+    /// # Errors
+    /// `NotFound` for an unknown agent, `Conflict` when the agent is no longer
+    /// asleep, and the errors of a start.
+    pub fn wake(&self, agent_id: AgentId) -> Result<ResumeOutcome, ApplicationError> {
+        let agent = require_agent(&*self.agents, agent_id)?;
+        if agent.status != AgentStatus::Asleep {
+            return Err(ApplicationError::Conflict(
+                "the agent is no longer asleep".to_owned(),
+            ));
+        }
+        self.continue_or_start_new(&agent, Flow::Wake)
+    }
+
+    fn continue_or_start_new(
+        &self,
+        agent: &Agent,
+        flow: Flow,
+    ) -> Result<ResumeOutcome, ApplicationError> {
+        let last = self.sessions.latest_for_agent(agent.id)?;
         let adapter = adapter_of(&*self.adapters, &agent.command)?;
         let continuation = match &last {
             Some(session) => continuation_of(session, &*adapter).map(|id| (session, id)),
@@ -82,14 +124,14 @@ impl ResumeAgentHandler {
                     from,
                     cli_session_id,
                 };
-                let start = self.launch_and_record(agent_id, &kind, AgentAction::Continue, None)?;
+                let start = self.launch_and_record(agent.id, &kind, flow.action_of(true), None)?;
                 Ok(ResumeOutcome {
                     start,
                     continued: true,
                     reason: None,
                 })
             }
-            Err(reason) => self.start_new_session(agent_id, reason),
+            Err(reason) => self.start_new_session(agent.id, reason, flow),
         }
     }
 
@@ -117,7 +159,7 @@ impl ResumeAgentHandler {
                 "the agent changed after the refused session".to_owned(),
             ));
         };
-        self.start_new_session(agent_id, reason)
+        self.start_new_session(agent_id, reason, Flow::Resume)
     }
 
     /// A new session in place of a continue, with the reason in the record.
@@ -125,12 +167,13 @@ impl ResumeAgentHandler {
         &self,
         agent_id: AgentId,
         reason: String,
+        flow: Flow,
     ) -> Result<ResumeOutcome, ApplicationError> {
         let detail = format!("{NEW_SESSION_PREFIX}{reason}");
         let start = self.launch_and_record(
             agent_id,
             &LaunchKind::NewTask,
-            AgentAction::Start,
+            flow.action_of(false),
             Some(&detail),
         )?;
         Ok(ResumeOutcome {

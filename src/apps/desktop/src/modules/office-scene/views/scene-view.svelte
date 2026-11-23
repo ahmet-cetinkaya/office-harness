@@ -15,6 +15,7 @@
     type NeedsYouController,
   } from "../../needs-you";
   import { pressedAppShortcut } from "../../../core/shortcuts";
+  import type { SleepController } from "../../sleep";
   import { TerminalView } from "../../terminal";
   import { ALL_PROJECTS, ProjectSwitcher } from "../../panel";
   import Button from "$shared/ui/button.svelte";
@@ -41,6 +42,8 @@
     onreopen: (agentId: string) => void;
     /** The Needs you list, whose top agent the jump shortcut opens (0008 D5). */
     needsYou: NeedsYouController;
+    /** Wakes the asleep agent of the open desk (0018). */
+    sleep: SleepController;
   }
 
   let {
@@ -51,6 +54,7 @@
     openAgentId = $bindable(null),
     onreopen,
     needsYou,
+    sleep,
   }: Props = $props();
 
   const office = $derived(store.snapshot);
@@ -439,6 +443,8 @@
               agentId={openAgent.id}
               agentName={openAgent.name}
               isRunning={isActive(openAgent.status)}
+              status={openAgent.status}
+              {sleep}
               onFocusLeave={leaveTerminalToDesk}
             />
           {/key}

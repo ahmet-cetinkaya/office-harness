@@ -863,7 +863,9 @@ fn wire_code(error: &HierarchyApplicationError) -> ErrorCode {
     match error {
         // A hold or a rate limit refused the action (0007).
         HierarchyApplicationError::Invalid(
-            HierarchyError::NotADescendant { .. } | HierarchyError::NotRunning { .. },
+            HierarchyError::NotADescendant { .. }
+            | HierarchyError::NotRunning { .. }
+            | HierarchyError::Asleep { .. },
         )
         | HierarchyApplicationError::Refused(_) => ErrorCode::Refused,
         HierarchyApplicationError::Invalid(_) | HierarchyApplicationError::InvalidInput(_) => {

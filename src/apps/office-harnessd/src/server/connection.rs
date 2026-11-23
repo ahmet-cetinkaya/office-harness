@@ -32,6 +32,11 @@ const CLOSE_INTERNAL_ERROR: u16 = 1011;
 /// The `id` of the answer to a frame that has none.
 const UNKNOWN_REQUEST_ID: u32 = 0;
 
+/// The office puts idle agents to sleep itself (0018/FR-002); a client may
+/// not ask for it.
+const SLEEP_REQUEST: &str = "agent.sleep";
+const OFFICE_ONLY_SLEEP: &str = "agent.sleep is made by the office only";
+
 /// The peer is gone: a send failed or the stream ended.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Disconnected;
@@ -215,6 +220,10 @@ async fn answer_request(
             state.restart.request();
             return Ok(());
         }
+        Some(request) if request.kind == SLEEP_REQUEST => TerminalAnswer {
+            response: Response::failure(request.id, ErrorCode::Invalid, OFFICE_ONLY_SLEEP),
+            snapshot_frame: None,
+        },
         Some(request) if AgentGateway::accepts(&request.kind) => {
             spawn_agent_request(state.agents.clone(), request, responses.clone());
             return Ok(());
