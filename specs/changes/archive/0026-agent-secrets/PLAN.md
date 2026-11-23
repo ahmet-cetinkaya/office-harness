@@ -1,6 +1,6 @@
 ---
-status: approved
-spec: specs/changes/0026-agent-secrets/SPEC.md
+status: completed
+spec: specs/changes/archive/0026-agent-secrets/SPEC.md
 commits: per-task
 ---
 
@@ -108,7 +108,7 @@ After this change, the person saves a secret in a Secrets dialog, grants it to a
 - **Depends on:** T3.
 
 ### T6: Hands-on and byte scans (SC-001 to SC-010)
-- **Files:** integration tests in `src/apps/office-harnessd/tests/agent_secrets.rs`, `specs/changes/0026-agent-secrets/qa-report.md`.
+- **Files:** integration tests in `src/apps/office-harnessd/tests/agent_secrets.rs`, `specs/changes/archive/0026-agent-secrets/qa-report.md`.
 - **Acceptance:**
   - SC-001, SC-002, SC-008: byte scans over the data folder, the action record, notifications, a recording client, and an export, with unique markers; SC-002 includes the helper with the value in its command line, the kill, and the restart.
   - SC-003: 30 stand-in agents, rotate, all read version 2.
