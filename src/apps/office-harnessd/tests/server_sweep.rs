@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 #![allow(clippy::expect_used, reason = "tests fail by panicking")]
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 
 //! The orphan sweep of 0017 (T3) against real server processes that get a
 //! SIGKILL. The stand-in CLIs ignore the hang-up, so they outlive the server
 //! like the CLI of research R1 of 0013. Each helper starts in a session of its
-//! own. The test reads process start times from `/proc`, so it runs on Linux
-//! only.
+//! own. The test reads process start times from `/proc` on Linux and from `ps`
+//! on macOS, so it runs on both; Windows has no such reader here.
 
 mod support;
 
@@ -35,9 +35,14 @@ const POLL: Duration = Duration::from_millis(50);
 /// the running sweep, short enough to keep the suite fast.
 const SHORT_GRACE_MS: &str = "1000";
 const LONG_GRACE_MS: &str = "3000";
-const PROCESS_STATE_FIELD_AFTER_NAME: usize = 0;
-const START_TIME_FIELD_AFTER_NAME: usize = 19;
 const ZOMBIE_STATE: &str = "Z";
+
+/// Starts the helper in a session of its own. macOS has no `setsid` command,
+/// and its Perl runs the same call.
+#[cfg(target_os = "linux")]
+const SESSION_START_COMMAND: &str = "setsid";
+#[cfg(target_os = "macos")]
+const SESSION_START_COMMAND: &str = "perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV'";
 
 /// A CLI that ignores the hang-up and the request to end, and has a helper
 /// in a session of its own that does the same.
@@ -56,15 +61,9 @@ struct Mark {
 
 impl Mark {
     fn read(pid: u32) -> Option<Self> {
-        let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-        let after_name = stat.rsplit_once(')')?.1;
-        let fields: Vec<&str> = after_name.split_whitespace().collect();
-        if fields.get(PROCESS_STATE_FIELD_AFTER_NAME) == Some(&ZOMBIE_STATE) {
-            return None;
-        }
         Some(Self {
             pid,
-            start_time: (*fields.get(START_TIME_FIELD_AFTER_NAME)?).to_owned(),
+            start_time: read_start_time(pid)?,
         })
     }
 
@@ -79,6 +78,59 @@ impl Mark {
                 .status();
         }
     }
+}
+
+/// The start time of a running process as text, or `None` when the process
+/// is gone or a zombie. From `/proc`, in clock ticks.
+#[cfg(target_os = "linux")]
+fn read_start_time(pid: u32) -> Option<String> {
+    const STATE_FIELD_AFTER_NAME: usize = 0;
+    const START_TIME_FIELD_AFTER_NAME: usize = 19;
+
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let after_name = stat.rsplit_once(')')?.1;
+    let fields: Vec<&str> = after_name.split_whitespace().collect();
+    if fields.get(STATE_FIELD_AFTER_NAME) == Some(&ZOMBIE_STATE) {
+        return None;
+    }
+    Some((*fields.get(START_TIME_FIELD_AFTER_NAME)?).to_owned())
+}
+
+/// The same from `ps`, which gives the start time as local text in whole
+/// seconds, like the time the office stores on macOS. One call reads the state
+/// and the start time together, so they belong to one process. `ps` ends with
+/// an error and no output for a process that is gone, and a state that starts
+/// with `Z` (`Z+` for a foreground job) is a zombie.
+#[cfg(target_os = "macos")]
+fn read_start_time(pid: u32) -> Option<String> {
+    let output = Command::new("ps")
+        .env("LC_ALL", "C")
+        .args(["-o", "stat=", "-o", "lstart=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(output.stdout).ok()?;
+    let (state, start_time) = text.trim().split_once(char::is_whitespace)?;
+    if state.starts_with(ZOMBIE_STATE) {
+        return None;
+    }
+    Some(start_time.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+/// The start time as the office stores it. On macOS the test keeps the local
+/// text of `ps`, which is no number; the sweep reads a process without a
+/// command line as not readable before it compares start times, so any number
+/// serves the one test that stores such a row.
+#[cfg(target_os = "linux")]
+fn stored_start_time(mark: &Mark) -> i64 {
+    mark.start_time.parse().expect("start time")
+}
+
+#[cfg(target_os = "macos")]
+fn stored_start_time(_mark: &Mark) -> i64 {
+    0
 }
 
 /// The folders, the stand-in CLIs, and every process the test saw, which end
@@ -131,7 +183,7 @@ impl Scenario {
     fn add_clis(&self) {
         let records = self.records.path().display();
         let helper = format!(
-            "setsid sh -c 'printf \"%s\\n\" \"$$\" >> {records}/helper-pids; exec sleep 600' &"
+            "{SESSION_START_COMMAND} sh -c 'printf \"%s\\n\" \"$$\" >> {records}/helper-pids; exec sleep 600' &"
         );
         let record_cli = format!("printf '%s\\n' \"$$\" >> {records}/cli-pids");
         self.clis.add(
@@ -790,11 +842,7 @@ impl Scenario {
                 "INSERT INTO agent_session_processes \
                  (session_id, pid, started_at, command_hash, command_display, boot, kind, state) \
                  VALUES (?1, ?2, ?3, zeroblob(32), 'unread', 'boot', 'helper', 'open')",
-                rusqlite::params![
-                    session,
-                    mark.pid,
-                    mark.start_time.parse::<i64>().expect("start time")
-                ],
+                rusqlite::params![session, mark.pid, stored_start_time(&mark)],
             )
             .expect("an unreadable identity");
         mark
