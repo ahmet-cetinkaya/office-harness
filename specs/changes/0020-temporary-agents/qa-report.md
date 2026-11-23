@@ -3,9 +3,9 @@
 ## Summary
 
 - **Date:** 2026-11-23.
-- **Build under test:** branch `feat/0020-temporary-agents` with `main` merged at fa83dff (0021 on `main`) in c05eb62: T1 15e5bd2, T2 a49099e, T4 992c49c, T3 31b6449, T5 5960859, the test timing fix f55d083, the review r3 N2 fix d6c9275, and the commits of this file. Toolchain 1.100.0, on Linux.
+- **Build under test:** branch `feat/0020-temporary-agents` with `main` merged at fa83dff (0021) in c05eb62 and at dce476b (0017) in b756a8d: T1 15e5bd2, T2 a49099e, T4 992c49c, T3 31b6449, T5 5960859, the test timing fix f55d083, the review r3 N2 fix d6c9275, and the commits of this file. Toolchain 1.100.0, on Linux.
 - **Overall status:** every requirement and success criterion has automated evidence. FR-004 and SC-005 are PARTIAL (automated): their tests run the idle limit on a 300 ms minute and a 50 ms watcher tick, not the real minutes that SC-005 names. SC-009 ends a temp from the keyboard on the mock core only. The hands-on run with a real agent CLI was not made (BLOCKED). macOS and Windows rely on CI.
-- **Status of this file:** the gate numbers come from local runs on 2026-11-23 on the merge commit. The CI result of the PR is not in this file.
+- **Status of this file:** the gate numbers come from local runs on 2026-11-23 on the merge commit b756a8d. The CI result of the PR is not in this file.
 
 ### Verdict words
 
@@ -30,12 +30,12 @@
 |---|---|---|
 | `cargo fmt --all --check` | workspace | PASS |
 | `cargo clippy --workspace --exclude office-harness-desktop --all-targets -- -D warnings` | every crate but the desktop shell crate, which does not build on this machine (GTK) | PASS (clean) |
-| `cargo test --workspace --exclude office-harness-desktop` | 105 suites, 1,616 tests | PASS (0 failed) |
+| `cargo test --workspace --exclude office-harness-desktop` | 108 suites, 1,746 tests | PASS: 1,745 passed in the full run; its one failure, a 0017 migration test that counted one script after version 7, was fixed in the merge, and its suite then passed 14 of 14 |
 | `tests/temps.rs` | 17 tests, 5 runs in a row, 3 of them beside a full workspace run | PASS (17 passed each time) |
 | `scripts/check-boundaries.sh` | workspace | PASS (boundaries ok) |
-| `bun test src` | desktop, 445 tests | PASS |
+| `bun test src` | desktop, 472 tests | PASS |
 | `svelte-check`, `eslint .`, `prettier --check .` | desktop | PASS (0 errors) |
-| `playwright test` | desktop e2e, 301 tests, 2 workers | PASS (301 passed) |
+| `playwright test` | desktop e2e, 308 tests, 2 workers | PASS (308 passed) |
 
 ## Requirements
 
@@ -92,3 +92,4 @@
 - **Refused from the role path:** an agent's role-path create returns the cap refusal as `refused`, through a new `Refused` kind of the hierarchy creator error, instead of `internal`.
 - **Creating guard:** a new temp reads `stopped` until its start takes the status order, so the watcher skips a round while a temp create runs.
 - **One settings store for a create:** the merge with 0021 keeps one required settings store in the create handler; 0021's optional one and its builder are gone, and the dependency-link switch reads the same store.
+- **Migration number after the 0017 merge:** `main` shipped `0008_session_processes.sql` first, so the temp migration is `0009_agent_temp.sql` and runs after it. The action kinds of 0017 (`helper_limit`, `end_leftover`) and of 0020 (`end`, `dismiss`) are 20 distinct names in all; the notification events of 0017 (`leftover_kept`) and 0020 (`temp_ended`) are 9 distinct names in all.
