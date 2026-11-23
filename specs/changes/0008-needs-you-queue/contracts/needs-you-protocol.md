@@ -74,7 +74,7 @@ See `specs/changes/archive/0015-upward-reports/contracts/report-protocol.md`.
 - An unprompted change to `waiting_for_input` (a screen redraw with no person input, office text, or session start since the last wait) adds no item and changes no item, so no event follows it.
 - An unprompted change to `working` leaves the item until the stretch of `working` passes the work bound (the quiet period plus 10 seconds). Then the item leaves as for a resume.
 
-See `specs/changes/0022-waiting-item-sleep/SPEC.md`.
+See `specs/changes/archive/0022-waiting-item-sleep/SPEC.md`.
 
 ## Unchanged messages
 

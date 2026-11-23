@@ -1,6 +1,6 @@
 ---
-status: approved
-spec: specs/changes/0022-waiting-item-sleep/SPEC.md
+status: completed
+spec: specs/changes/archive/0022-waiting-item-sleep/SPEC.md
 commits: per-task
 ---
 
@@ -173,7 +173,7 @@ Ship every requirement of spec 0022 with automated evidence. Then repeat the 001
 
 ### T4: Docs, QA report, hands-on rerun
 - **Files:**
-  - `specs/changes/0022-waiting-item-sleep/qa-report.md` (new);
+  - `specs/changes/archive/0022-waiting-item-sleep/qa-report.md` (new);
   - a note in the 0008 needs-you contract that an unprompted change adds no item (no wire change);
   - the PLAN Result.
 - **Acceptance:**

@@ -1,6 +1,6 @@
 ---
-status: approved
-spec: specs/changes/0023-drop-ended-commands/SPEC.md
+status: completed
+spec: specs/changes/archive/0023-drop-ended-commands/SPEC.md
 commits: per-task
 ---
 
@@ -94,7 +94,7 @@ After this change, the office deletes the stored process identities of a session
 - **Depends on:** T1.
 
 ### T3: Byte-scan evidence and the QA report
-- **Files:** integration tests in `src/apps/office-harnessd/tests/` (a new `drop_ended_commands.rs`), and `specs/changes/0023-drop-ended-commands/qa-report.md`.
+- **Files:** integration tests in `src/apps/office-harnessd/tests/` (a new `drop_ended_commands.rs`), and `specs/changes/archive/0023-drop-ended-commands/qa-report.md`.
 - **Acceptance:**
   - Each byte scan covers the `office.db`, `-wal` and `-shm` files and finds 0 markers:
     - SC-001 and SC-002: 20 sessions, each with a unique marker;
