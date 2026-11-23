@@ -84,7 +84,7 @@
 
 ## Known follow-up
 
-- **Idle end outside the status order (final review r3, N1):** the watcher claims a temp for an idle end without `temp.end_check`, so a new task that holds the status order at that moment can see its fresh session stopped. The window is milliseconds. Routing idle ends through `temp.end_check` closes it.
+- **Idle end outside the status order (final review r3, N1): fixed.** The watcher now runs an idle end through `temp.end_check` with the status it read, so a new task that holds the status order first changes the status and the idle end stops with `StatusChanged`. Tests: `the_idle_end_names_the_status_the_round_read_so_a_new_task_that_took_the_order_wins` (`temp_run.tests.rs`) and `an_idle_end_that_read_a_waiting_temp_claims_nothing_once_a_new_task_made_it_work` (`temp_endings.tests.rs`).
 
 ## Deviations from the plan
 
