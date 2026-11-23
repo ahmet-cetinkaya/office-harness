@@ -17,7 +17,7 @@
 
 ### Scope of the automated evidence
 
-- `tests/agent_secrets.rs`, `tests/agent_secrets_redaction.rs`, and `tests/agent_secrets_scale.rs` run the server inside the test process with fake CLIs (Unix shell scripts) and run the real `office-harnessd agent-call` helper as the agent. They use the key file custody: `disable_os_keyring()` makes the keyring unavailable so that no test touches the developer's own OS keyring.
+- `tests/agent_secrets.rs`, `tests/agent_secrets_redaction.rs`, and `tests/agent_secrets_scale.rs` run the server inside the test process with fake CLIs (Unix shell scripts) and run the real `office-harnessd agent-call` helper as the agent. They use the key file custody: the OS keyring is off unless the server binary turns it on (`enable_os_keyring()`), so that no test touches the developer's own OS keyring.
 - The real keyring is covered by one smoke test (`a_key_round_trips_through_the_os_keyring_where_one_exists`, `secret-infrastructure`). It stores, reads, and removes a key under a test account name and prints why it skips where the OS offers no keyring. On this machine (Linux, Secret Service reachable) it ran against the real keyring.
 - Every byte scan reads each file under the office data folder (the database, its `-wal` and `-shm` files, `server.log`, `output/`, `secrets.key` where it exists), and, where a criterion names them, the action record, the notifications, the Needs you items, a recording client, and an export. The key file holds only the store key, so it is excluded from the scans for values.
 - The marker of each secret is unique and appears in no other text of a test.
@@ -80,8 +80,8 @@
 
 ## Deviations from the plan
 
-- **Each office has its own keyring account** (`office-harness` / `secret-store-key-<random id>`). The id is a random 16 bytes in `secret-office-id` in the data folder, made at the first start, so it moves with the data folder. A keyring that already holds a key for the account is never written over: the first save puts the key in the key file instead (`a_keyring_that_already_holds_a_key_is_never_written_over`, `an_office_keeps_its_account_and_two_offices_differ`). Tests never touch a real office's entry: `disable_os_keyring()`.
-- **One seam for tests:** `disable_os_keyring()` (bootstrap) and `UnavailableKeyring` (infrastructure). A production start does not call it.
+- **Each office has its own keyring account** (`office-harness` / `secret-store-key-<random id>`). The id is a random 16 bytes in `secret-office-id` in the data folder, made at the first start, so it moves with the data folder. A keyring that already holds a key for the account is never written over: the first save puts the key in the key file instead (`a_keyring_that_already_holds_a_key_is_never_written_over`, `an_office_keeps_its_account_and_two_offices_differ`). Tests never touch a real office's entry: the OS keyring is off unless the server binary turns it on.
+- **One seam for tests:** the OS keyring is off by default (`enable_os_keyring()` in bootstrap, called by the server binary at its start) and `UnavailableKeyring` (infrastructure) stands in for it.
 - **The redaction decorators sit at three points** (`RedactingActionLog`, `RedactingProcessStore`, the agent frame) and in the terminal session, not in each module's own writers; the enumeration test names every TEXT column and which hook covers it.
 - **Frame strings:** the user's `secret.set` value is moved out of the request before the service runs, but the raw frame text and the JSON tree of a request are plain heap strings, not zeroized. The OS is asked for no memory dump (FR-013), and the frame of an agent never holds a value for a read.
 
