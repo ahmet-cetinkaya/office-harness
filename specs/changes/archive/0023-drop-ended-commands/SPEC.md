@@ -1,13 +1,13 @@
 ---
-status: approved
+status: shipped
 capability: office
-plan: specs/changes/0023-drop-ended-commands/PLAN.md
+plan: specs/changes/archive/0023-drop-ended-commands/PLAN.md
 supersedes: 0017/FR-008
 ---
 
 # 0023: Keep no command lines of ended sessions
 
-<!-- Approved for coding on 2026-11-23 through the review gate (r2 at 5901646), under the owner's spec delegation. -->
+<!-- Approved for coding on 2026-11-23 through the review gate (r2 at 5901646), under the owner's spec delegation; shipped in PR #136. -->
 
 ## Intent
 
