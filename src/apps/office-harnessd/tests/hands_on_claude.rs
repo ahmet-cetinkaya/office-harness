@@ -142,7 +142,10 @@ fn print_output(folder: &std::path::Path) {
             .into_iter()
             .rev()
             .collect();
-        eprintln!("--- output {:?}:\n{tail}", entry.file_name());
+        eprintln!(
+            "--- output {}:\n{tail}",
+            entry.file_name().to_string_lossy()
+        );
     }
 }
 
