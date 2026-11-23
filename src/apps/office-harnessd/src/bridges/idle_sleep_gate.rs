@@ -16,7 +16,7 @@ use notification_presentation::NeedsYouUseCases;
 use terminal_application::common::interfaces::TerminalRuntime;
 use terminal_domain::services::shows_open_question;
 
-use super::{NeedsYouBridge, PersonInput};
+use super::{HookSessions, NeedsYouBridge, PersonInput};
 
 const NOT_CONNECTED: &str = "the office is still starting";
 const SLEEP_OFF: &str = "idle sleep is off";
@@ -27,6 +27,7 @@ const HOLD_COVERS_IT: &str = "a hold covers it";
 const QUEUE_NOT_EMPTY: &str = "a directive or a report waits in its queue";
 const TEXT_WAITS: &str = "text waits at its input line";
 const CHILD_RUNS: &str = "one of its children runs";
+const PERMISSION_ASK_OPEN: &str = "it asks for permission";
 
 /// The agents that are going to sleep: from the office's last check until
 /// their CLI has ended (0018 Terms). Directives and reports to them are
@@ -74,6 +75,8 @@ pub struct GateInputs {
     pub directives: Arc<SendDirectiveHandler>,
     pub person_input: PersonInput,
     pub runtime: Arc<dyn TerminalRuntime>,
+    /// What the reports of `claude` sessions say (0024).
+    pub hooks: HookSessions,
 }
 
 /// Decides whether an idle agent may be put to sleep. The idle sleep task
@@ -134,7 +137,9 @@ impl IdleSleepGate {
     #[must_use]
     pub fn keeps_from_idle_end(&self, agent_id: AgentId) -> bool {
         self.inputs.get().is_none_or(|inputs| {
-            inputs.check_attention(agent_id).is_err() || inputs.check_tree(agent_id).is_err()
+            inputs.check_attention(agent_id).is_err()
+                || inputs.check_permission_ask(agent_id).is_err()
+                || inputs.check_tree(agent_id).is_err()
         })
     }
 
@@ -153,6 +158,7 @@ impl IdleSleepGate {
             ));
         }
         inputs.check_attention_for_sleep(agent_id)?;
+        inputs.check_permission_ask(agent_id)?;
         inputs.check_input_line(agent_id)?;
         inputs.check_tree(agent_id)
     }
@@ -212,6 +218,15 @@ impl GateInputs {
     fn check_attention_for_sleep(&self, agent_id: AgentId) -> Result<(), String> {
         let items = self.needs_you.list().map_err(|error| error.to_string())?;
         item_allows_sleep(&items, self.runtime.as_ref(), agent_id)
+    }
+
+    /// FR-002 g: an open permission ask of an exact session, also when the
+    /// agent has no item (0024/FR-017, FR-025).
+    fn check_permission_ask(&self, agent_id: AgentId) -> Result<(), String> {
+        if self.hooks.ask_open(agent_id) {
+            return Err(PERMISSION_ASK_OPEN.to_owned());
+        }
+        Ok(())
     }
 
     /// FR-002 d and e: a waiting directive or report, or text that a stop

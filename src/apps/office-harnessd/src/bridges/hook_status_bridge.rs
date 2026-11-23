@@ -11,6 +11,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use super::agent_status_bridge::StatusOrder;
 use super::hook_sessions::HookSessions;
+use super::notification_bridge::NotificationBridge;
 use super::wait_tracker::WaitTracker;
 use crate::bootstrap::StorageAlerts;
 use crate::server::{EventHub, HookReport, HookReportSink};
@@ -45,6 +46,8 @@ pub struct HookStatusBridge {
     pub order: StatusOrder,
     pub alerts: StorageAlerts,
     pub hooks: HookSessions,
+    /// Records an ask that no status frame carries (0024 D7).
+    pub notifications: NotificationBridge,
 }
 
 impl HookStatusBridge {
@@ -76,7 +79,7 @@ impl HookStatusBridge {
             HookWork::Report(report) => self.apply_report(&report),
             HookWork::InputEndsAsk(agent_id) => {
                 if let Some(event) = self.hooks.input_ends_ask(agent_id) {
-                    self.change(agent_id, event, None);
+                    let _ = self.change(agent_id, event, None);
                 }
             }
         }
@@ -89,17 +92,27 @@ impl HookStatusBridge {
         let Some(outcome) = self.hooks.apply_report(report, run) else {
             return;
         };
-        self.change(report.agent_id, outcome.status_event, outcome.detail);
+        let changed = self.change(report.agent_id, outcome.status_event, outcome.detail);
+        // The status already showed `waiting for input`, so no frame will
+        // tell the notification bridge of the ask.
+        if outcome.ask_opened && !changed {
+            self.notifications.record_permission_ask(report.agent_id);
+        }
     }
 
-    fn change(&self, agent_id: AgentId, event: StatusEvent, detail: Option<&str>) {
+    /// Applies the event and tells the clients. True when the status changed.
+    fn change(&self, agent_id: AgentId, event: StatusEvent, detail: Option<&str>) -> bool {
         match self.change_status.handle(agent_id, event) {
             Ok(Some(agent)) => {
                 self.hub
                     .publish(&agent_status_event(agent.id, agent.status, detail));
+                true
             }
-            Ok(None) => {}
-            Err(error) => self.alerts.report_disk_failure(&error.to_string()),
+            Ok(None) => false,
+            Err(error) => {
+                self.alerts.report_disk_failure(&error.to_string());
+                false
+            }
         }
     }
 }

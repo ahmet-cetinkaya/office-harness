@@ -86,6 +86,7 @@ fn spawn_terminal_bridges(
         order: Arc::clone(&services.agent.status_order),
         alerts: services.storage_alerts.clone(),
         hooks: services.terminal.hook_sessions.clone(),
+        notifications: services.notification_bridge.clone(),
     }
     .spawn(services.terminal.person_input.wait_tracker())
 }

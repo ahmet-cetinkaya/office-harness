@@ -76,7 +76,8 @@ fn directive_targets(
             Arc::clone(&terminal.runtime),
             terminal.person_input.clone(),
         )
-        .with_sleeping(agent.sleep_gate.sleeping()),
+        .with_sleeping(agent.sleep_gate.sleeping())
+        .with_hook_sessions(terminal.hook_sessions.clone()),
     )
 }
 

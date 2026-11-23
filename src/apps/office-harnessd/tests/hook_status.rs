@@ -11,7 +11,8 @@ mod support;
 
 use std::time::{Duration, Instant};
 
-use serde_json::json;
+use office_harnessd::server::ServerOptions;
+use serde_json::{Value, json};
 use support::fake_cli::FakeClis;
 use support::hook_client::HookPoster;
 use support::office_client::{Client, Office};
@@ -155,5 +156,113 @@ async fn a_report_after_the_session_ended_is_refused_and_changes_nothing() {
     assert_eq!(poster.report("UserPromptSubmit", "").await, 404);
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(client.status_of(&agent).await, "stopped");
+    office.serving.stop().await;
+}
+
+async fn items(client: &mut Client) -> Vec<Value> {
+    let answer = client.ask("needs_you.list", json!({})).await;
+    assert_eq!(answer["ok"], true, "{answer}");
+    answer["result"]["items"].as_array().expect("items").clone()
+}
+
+async fn wait_for_item_of_kind(client: &mut Client, kind: &str, detail: Option<&str>) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let listed = items(client).await;
+        if let Some(item) = listed.iter().find(|item| {
+            item["kind"] == kind && detail.is_none_or(|detail| item["detail"] == detail)
+        }) {
+            return item.clone();
+        }
+        assert!(Instant::now() < deadline, "no {kind} item: {listed:?}");
+        tokio::time::sleep(POLL).await;
+    }
+}
+
+#[tokio::test]
+async fn the_end_of_a_turn_brings_one_item_that_says_the_turn_finished() {
+    let (office, mut client, agent, poster) = open_agent(WAITING_CLI).await;
+    client.dismiss_needs_you(&agent).await;
+    poster.report("UserPromptSubmit", "").await;
+    poster.report("Stop", "").await;
+    let item = wait_for_item_of_kind(&mut client, "waiting_for_input", Some("turn_stopped")).await;
+    assert_eq!(item["agent_id"], agent.as_str());
+    poster.report("UserPromptSubmit", "").await;
+    poster.report("StopFailure", "").await;
+    wait_for_item_of_kind(&mut client, "waiting_for_input", Some("turn_failed")).await;
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_permission_ask_brings_one_item_and_one_notification_that_say_so_and_the_answer_clears_it()
+ {
+    let (office, mut client, agent, poster) = open_agent(WAITING_CLI).await;
+    client.dismiss_needs_you(&agent).await;
+    poster.report("UserPromptSubmit", "").await;
+    wait_for_status_within(&mut client, &agent, "working", REPORT_LIMIT).await;
+    poster.report("PermissionRequest", "").await;
+    wait_for_item_of_kind(&mut client, "permission_asked", None).await;
+    assert_eq!(items(&mut client).await.len(), 1);
+    assert_eq!(notifications_of(&mut client, "permission_asked").await, 1);
+    type_line(&mut client, &agent).await;
+    wait_for_status_within(&mut client, &agent, "working", REPORT_LIMIT).await;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !items(&mut client).await.is_empty() {
+        assert!(Instant::now() < deadline, "the item never left");
+        tokio::time::sleep(POLL).await;
+    }
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn an_ask_in_a_session_that_already_waits_still_brings_its_item() {
+    let (office, mut client, agent, poster) = open_agent(WAITING_CLI).await;
+    poster.report("UserPromptSubmit", "").await;
+    poster.report("Stop", "").await;
+    wait_for_status_within(&mut client, &agent, "waiting_for_input", REPORT_LIMIT).await;
+    client.dismiss_needs_you(&agent).await;
+    poster.report("PermissionRequest", "").await;
+    wait_for_item_of_kind(&mut client, "permission_asked", None).await;
+    assert_eq!(notifications_of(&mut client, "permission_asked").await, 1);
+    office.serving.stop().await;
+}
+
+/// One minute of the idle setting; 5 minutes pass in half a second.
+const MINUTE: Duration = Duration::from_millis(100);
+const IDLE_MINUTES: u32 = 5;
+const AWAKE_WATCH: Duration = Duration::from_millis(1_500);
+
+#[tokio::test]
+async fn an_open_ask_keeps_an_idle_agent_awake_even_after_its_item_is_dismissed() {
+    let office = Office::open_with_options_and_quiet_period(
+        FakeClis::new(),
+        ServerOptions {
+            idle_sleep_tick: Duration::from_millis(50),
+            idle_sleep_minute: MINUTE,
+            ..ServerOptions::default()
+        },
+        QUIET_PERIOD_MS,
+    )
+    .await;
+    office.clis.add("test-cli", WAITING_CLI);
+    let mut client = office.client().await;
+    let agent = client.create_agent(&office, "Ana", "test-cli", None).await;
+    client.start(&agent).await;
+    client.wait_for_status(&agent, "waiting_for_input").await;
+    let poster = HookPoster::for_agent(&office, &agent);
+    poster.report("UserPromptSubmit", "").await;
+    poster.report("PermissionRequest", "").await;
+    wait_for_item_of_kind(&mut client, "permission_asked", None).await;
+    client.dismiss_needs_you(&agent).await;
+    client
+        .set_setting("idle_sleep_minutes", &IDLE_MINUTES.to_string())
+        .await;
+
+    tokio::time::sleep(AWAKE_WATCH).await;
+    assert_eq!(client.status_of(&agent).await, "waiting_for_input");
+
+    // The ask ends with the turn: the agent may sleep one idle time later.
+    poster.report("Stop", "").await;
+    client.wait_for_status(&agent, "asleep").await;
     office.serving.stop().await;
 }

@@ -23,6 +23,7 @@ use hierarchy_infrastructure::services::agent_places::AgentPlaces;
 use office_harnessd::server::ServerOptions;
 use serde_json::{Value, json};
 use support::fake_cli::FakeClis;
+use support::hook_client::HookPoster;
 use support::office_client::{Client, Office, error_text, wait_for};
 use support::running_office::serve_again_with;
 use tempfile::TempDir;
@@ -807,6 +808,43 @@ async fn a_temp_with_a_needs_you_item_is_not_ended_and_ends_one_idle_limit_after
     let notified = wait_notifications(&mut fixture.client, "temp_ended", 1).await;
     assert_eq!(notified[0]["agent_name"], "paused");
     assert_eq!(notified[0]["detail"], "no output for 5 minutes");
+    fixture.office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn an_open_permission_ask_keeps_a_temp_from_the_idle_end_after_its_item_is_dismissed() {
+    let mut fixture = Fixture::open().await;
+    fixture
+        .client
+        .set_setting("temp_idle_minutes", &IDLE_MINUTES.to_string())
+        .await;
+    let temp = fixture
+        .person_temp_running("asking", "wait", TAKES_OBJECTIVE_THEN_SILENT)
+        .await;
+    let temp = id_of(&temp);
+    wait_needs_you_item(&mut fixture.client, &temp).await;
+    let poster = HookPoster::for_agent(&fixture.office, &temp);
+    poster.report("UserPromptSubmit", "").await;
+    poster.report("PermissionRequest", "").await;
+    let dismissed = fixture
+        .client
+        .ask("needs_you.dismiss", json!({"agent_id": temp}))
+        .await;
+    assert_eq!(dismissed["ok"], true, "{dismissed}");
+
+    tokio::time::sleep(IDLE_LIMIT * 3).await;
+
+    assert_eq!(fixture.temp_count().await, 1, "the open ask keeps the temp");
+    // The end of the turn is a new wait with a new item (0022 A9): the temp
+    // ends one idle limit after the person dismisses that one.
+    poster.report("Stop", "").await;
+    wait_needs_you_item(&mut fixture.client, &temp).await;
+    let dismissed = fixture
+        .client
+        .ask("needs_you.dismiss", json!({"agent_id": temp}))
+        .await;
+    assert_eq!(dismissed["ok"], true, "{dismissed}");
+    fixture.wait_finished(1, END_LIMIT).await;
     fixture.office.serving.stop().await;
 }
 

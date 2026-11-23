@@ -23,7 +23,7 @@ use terminal_application::common::interfaces::TerminalRuntime;
 use terminal_domain::services::{shows_open_question, shows_typed_text};
 use terminal_domain::value_objects::ScreenView;
 
-use super::{PersonInput, SleepingAgents, SystemClock};
+use super::{HookSessions, PersonInput, SleepingAgents, SystemClock};
 use crate::bootstrap::StorageAlerts;
 use crate::server::EventHub;
 
@@ -55,6 +55,9 @@ pub struct DirectiveTargetBridge {
     runtime: Arc<dyn TerminalRuntime>,
     person_input: PersonInput,
     sleeping: SleepingAgents,
+    /// A permission ask or a compaction keeps the directive in its queue
+    /// (0024/FR-016).
+    hooks: HookSessions,
 }
 
 impl DirectiveTargetBridge {
@@ -69,7 +72,15 @@ impl DirectiveTargetBridge {
             runtime,
             person_input,
             sleeping: SleepingAgents::default(),
+            hooks: HookSessions::default(),
         }
+    }
+
+    /// Shares the state that the reports of `claude` sessions keep (0024).
+    #[must_use]
+    pub fn with_hook_sessions(mut self, hooks: HookSessions) -> Self {
+        self.hooks = hooks;
+        self
     }
 
     /// The agents going to sleep, which count as asleep and not running
@@ -144,7 +155,10 @@ impl DirectiveTarget for DirectiveTargetBridge {
         let held_by_person = self
             .person_input
             .holds_directives(agent_id, self.runtime.current_run(agent_id));
-        if status != AgentStatus::WaitingForInput || held_by_person {
+        if status != AgentStatus::WaitingForInput
+            || held_by_person
+            || self.hooks.blocks_typing(agent_id)
+        {
             return Ok(Readiness::Busy);
         }
         Ok(if self.screen_is_clear(agent_id) {

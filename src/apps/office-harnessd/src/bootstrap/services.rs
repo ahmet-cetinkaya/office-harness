@@ -259,6 +259,7 @@ fn connect_sleep_gate(services: &Services) {
         directives: Arc::clone(&services.hierarchy.send_directive),
         person_input: services.terminal.person_input.clone(),
         runtime: Arc::clone(&services.terminal.runtime),
+        hooks: services.terminal.hook_sessions.clone(),
     });
 }
 
