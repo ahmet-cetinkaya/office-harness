@@ -1,13 +1,13 @@
 ---
-status: approved
+status: shipped
 capability: office
-plan: specs/changes/0022-waiting-item-sleep/PLAN.md
+plan: specs/changes/archive/0022-waiting-item-sleep/PLAN.md
 supersedes: 0003/FR-006 (in part), 0003/SC-004, 0008/FR-001, 0008/FR-005 (as modified by 0015), 0018/FR-002, 0018/FR-009, 0018 Terms (Idle, Idle since)
 ---
 
 # 0022: Idle agents sleep past their waiting item, and one wait gives one item
 
-<!-- Approved for coding on 2026-11-23 through the review gate (r2 at 45f595f), under the owner's spec delegation. -->
+<!-- Approved for coding on 2026-11-23 through the review gate (r2 at 45f595f), under the owner's spec delegation; shipped in PR #135. -->
 
 ## Intent
 
