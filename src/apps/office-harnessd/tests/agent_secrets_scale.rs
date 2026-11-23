@@ -13,7 +13,6 @@ mod support;
 use std::os::unix::fs::PermissionsExt;
 
 use futures_util::future::join_all;
-use office_harnessd::bootstrap::disable_os_keyring;
 use serde_json::{Value, json};
 use support::office_client::Office;
 use support::secret_agents::{
@@ -26,7 +25,6 @@ fn marker(number: usize) -> String {
 
 #[tokio::test]
 async fn twenty_secrets_leave_no_value_in_any_file_of_the_office() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     for number in 0..20 {
@@ -45,7 +43,6 @@ async fn twenty_secrets_leave_no_value_in_any_file_of_the_office() {
 
 #[tokio::test]
 async fn a_new_value_reaches_thirty_running_agents_at_their_next_read_without_a_restart() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     let mut agents: Vec<(String, Caller)> = Vec::new();
@@ -109,7 +106,6 @@ async fn read_everywhere(agents: &[(String, Caller)]) -> Vec<Value> {
 
 #[tokio::test]
 async fn a_hundred_reads_of_what_an_agent_may_not_read_all_get_one_text_and_no_value() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     let (agent_id, caller) = running_agent(&office, &mut client, "worker").await;
@@ -143,7 +139,6 @@ async fn a_hundred_reads_of_what_an_agent_may_not_read_all_get_one_text_and_no_v
 
 #[tokio::test]
 async fn an_export_of_an_office_with_secrets_holds_no_name_value_or_grant() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     let source = client
@@ -180,7 +175,6 @@ async fn an_export_of_an_office_with_secrets_holds_no_name_value_or_grant() {
 
 #[tokio::test]
 async fn without_a_keyring_the_key_goes_to_an_owner_only_file_and_the_list_says_so() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
 
