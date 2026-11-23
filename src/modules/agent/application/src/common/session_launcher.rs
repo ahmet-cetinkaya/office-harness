@@ -2,10 +2,10 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use agent_domain::entities::{Agent, Session};
 use agent_domain::enums::StatusEvent;
-use agent_domain::errors::AgentError;
 use agent_domain::value_objects::{AgentWorktree, ExitResult, OfficeAdditions, SessionId};
 
 use crate::common::command_line::split_command;
@@ -13,14 +13,17 @@ use crate::common::continuation::adapter_of;
 use crate::common::errors::{ApplicationError, PortError, TerminalHostError};
 use crate::common::interfaces::{
     AdditionsStore, AgentStore, CliAdapter, CliAdapters, Clock, FailureReporter, ProjectStore,
-    SessionStore, SessionTracking, TerminalHost,
+    SessionStore, SessionTracking, StatusCommandRunner, TerminalHost,
 };
-use crate::common::lookup::require_project;
+use crate::common::lookup::require_agent;
+use crate::common::lookup::start_folder;
 use crate::common::models::{
     PrepareLaunch, PreparedLaunch, SessionCommand, SessionPlan, StartTerminal, TrackedSession,
     TrackingRequest,
 };
 use crate::common::session_process_recorder::SessionProcessRecorder;
+use crate::common::sign_in_checker::{SignInChecker, environment_pairs};
+use crate::common::sign_in_scope::{SignInDecision, SignInScope};
 use crate::common::worktree_link::is_linked_worktree;
 
 /// What a start was asked to do.
@@ -43,6 +46,9 @@ pub struct StartOutcome {
     pub session: Session,
     /// The text to show when the command could not start.
     pub failure: Option<String>,
+    /// Why the sign-in check gave no answer, for the action record (0019
+    /// FR-004).
+    pub sign_in_note: Option<String>,
 }
 
 /// Starts one session of an agent's CLI: finds the program, builds the
@@ -60,6 +66,7 @@ pub struct SessionLauncher {
     clock: Arc<dyn Clock>,
     failures: Arc<dyn FailureReporter>,
     processes: SessionProcessRecorder,
+    sign_in: SignInChecker,
 }
 
 /// What a launcher needs besides the stores.
@@ -70,6 +77,10 @@ pub struct LauncherServices {
     pub failures: Arc<dyn FailureReporter>,
     /// Stores the identity of the CLI process right after the spawn.
     pub processes: SessionProcessRecorder,
+    /// Runs the CLI's sign-in status command before a start (0019).
+    pub status_commands: Arc<dyn StatusCommandRunner>,
+    /// How long a status command may run (0019 A3).
+    pub sign_in_timeout: Duration,
 }
 
 /// A start that `prepare` accepted: the new session's id, the additions it
@@ -78,12 +89,16 @@ pub struct PreparedStart {
     session_id: SessionId,
     additions: OfficeAdditions,
     readiness: Readiness,
+    sign_in_note: Option<String>,
 }
 
 enum Readiness {
     Ready(Prepared),
     /// The program cannot start: the start stores a session that never ran.
     NotStartable(String),
+    /// The CLI is not signed in (0019/FR-002): as `NotStartable`, and a
+    /// request that would replace a running session is refused instead.
+    NotSignedIn(String),
 }
 
 struct Prepared {
@@ -107,6 +122,11 @@ impl SessionLauncher {
             projects,
             additions,
             sessions,
+            sign_in: SignInChecker::new(
+                Arc::clone(&services.adapters),
+                services.status_commands,
+                services.sign_in_timeout,
+            ),
             terminals: services.terminals,
             adapters: services.adapters,
             clock: services.clock,
@@ -115,9 +135,33 @@ impl SessionLauncher {
         }
     }
 
+    /// Runs the sign-in check of the agent that a start request names,
+    /// before the request takes its turn in the status order, so nothing
+    /// waits for the status command (0019/FR-009, D13). `None` when no check
+    /// runs or the agent cannot be read; the start then checks in place.
+    #[must_use]
+    pub fn check_sign_in_ahead(&self, agent_id: kernel::AgentId) -> Option<SignInScope> {
+        let agent = require_agent(&*self.agents, agent_id).ok()?;
+        let folder = self.existing_working_folder(&agent).ok()?;
+        let additions = self.used_additions(&agent, &LaunchKind::NewTask).ok()?;
+        self.sign_in.check_ahead(&agent, &folder, &additions)
+    }
+
+    /// As [`Self::check_sign_in_ahead`], for the agent of a session that a
+    /// continue names.
+    #[must_use]
+    pub fn check_sign_in_ahead_of_session(&self, session_id: SessionId) -> Option<SignInScope> {
+        let session = self.sessions.find(session_id).ok()??;
+        self.check_sign_in_ahead(session.agent_id)
+    }
+
     /// Checks everything that can refuse the start, and builds the command,
     /// without changing anything. A caller that ends a running session first
     /// calls this before it, so a refusal loses nothing.
+    ///
+    /// The CLI's sign-in check runs here, before the agent-call credential
+    /// is issued: a CLI that is not signed in gives a start that never runs
+    /// (0019/FR-001, FR-002).
     ///
     /// # Errors
     /// `Invalid` naming the missing folder, the unsafe argument, or the bad
@@ -130,16 +174,46 @@ impl SessionLauncher {
         let folder = self.existing_working_folder(agent)?;
         let additions = self.used_additions(agent, kind)?;
         let session_id = SessionId::generate();
-        let readiness = match self.build_launch(agent, &folder, &additions, session_id, kind) {
-            Ok(prepared) => Readiness::Ready(prepared),
-            Err(PrepareError::NotStartable(text)) => Readiness::NotStartable(text),
-            Err(PrepareError::Refused(error)) => return Err(error),
+        let decision = self
+            .sign_in
+            .decision_for_start(agent, &folder, &additions)?;
+        let (readiness, sign_in_note) = match decision {
+            SignInDecision::Refused(reason) => (Readiness::NotSignedIn(reason), None),
+            SignInDecision::GoOn(note) => {
+                match self.build_launch(agent, &folder, &additions, session_id, kind) {
+                    Ok(prepared) => (Readiness::Ready(prepared), note),
+                    Err(PrepareError::NotStartable(text)) => (Readiness::NotStartable(text), note),
+                    Err(PrepareError::Refused(error)) => return Err(error),
+                }
+            }
         };
         Ok(PreparedStart {
             session_id,
             additions,
             readiness,
+            sign_in_note,
         })
+    }
+
+    /// As `prepare`, for a request that replaces the agent's running
+    /// session: a CLI that is not signed in refuses the request, so the
+    /// running session is never ended for a start that cannot run (0019/
+    /// FR-002, D15).
+    ///
+    /// # Errors
+    /// As `prepare`, and `Refused` with the not-signed-in reason.
+    pub fn prepare_replacing(
+        &self,
+        agent: &Agent,
+        kind: &LaunchKind<'_>,
+    ) -> Result<PreparedStart, ApplicationError> {
+        let prepared = self.prepare(agent, kind)?;
+        if let Readiness::NotSignedIn(reason) = &prepared.readiness
+            && agent.status.is_running()
+        {
+            return Err(ApplicationError::Refused(reason.clone()));
+        }
+        Ok(prepared)
     }
 
     /// Prepares and starts in one step, for an agent that does not run.
@@ -173,10 +247,11 @@ impl SessionLauncher {
             session_id,
             additions,
             readiness,
+            sign_in_note,
         } = prepared;
         let launch = match readiness {
             Readiness::Ready(launch) => launch,
-            Readiness::NotStartable(text) => {
+            Readiness::NotStartable(text) | Readiness::NotSignedIn(text) => {
                 let session = begin_session(agent, session_id, None, kind, additions, self.now());
                 return self.fail_never_started(agent, session, text);
             }
@@ -198,7 +273,9 @@ impl SessionLauncher {
             additions,
             self.now(),
         );
-        self.begin_terminal(agent, kind, session, &launch, tracking)
+        let mut outcome = self.begin_terminal(agent, kind, session, &launch, tracking)?;
+        outcome.sign_in_note = sign_in_note;
+        Ok(outcome)
     }
 
     fn build_launch(
@@ -216,15 +293,7 @@ impl SessionLauncher {
             .prepare(&PrepareLaunch {
                 program: program.clone(),
                 working_folder: folder.to_path_buf(),
-                environment_additions: additions
-                    .env()
-                    .iter()
-                    .filter_map(|entry| {
-                        entry
-                            .value()
-                            .map(|value| (entry.name().to_owned(), value.to_owned()))
-                    })
-                    .collect(),
+                environment_additions: environment_pairs(additions),
                 agent_id: agent.id,
                 session_id,
             })
@@ -279,6 +348,7 @@ impl SessionLauncher {
             working_folder: prepared.folder.clone(),
             environment: prepared.launch.environment.clone(),
             typed_input: prepared.command.typed_input.clone(),
+            sign_in: prepared.adapter.sign_in(),
         });
         if let Err(error) = started {
             return self.fail_after_start(agent, session, error.to_string());
@@ -295,6 +365,7 @@ impl SessionLauncher {
             agent: agent.clone(),
             session,
             failure: None,
+            sign_in_note: None,
         })
     }
 
@@ -361,6 +432,7 @@ impl SessionLauncher {
             agent: agent.clone(),
             session,
             failure: Some(text),
+            sign_in_note: None,
         })
     }
 
@@ -389,14 +461,7 @@ impl SessionLauncher {
         if let Some(worktree) = &agent.worktree {
             require_linked_worktree(worktree)?;
         }
-        let (field, folder) = match (&agent.working_folder, agent.project_id) {
-            (Some(folder), _) => ("working folder", folder.clone()),
-            (None, Some(project_id)) => (
-                "project folder",
-                require_project(&*self.projects, project_id)?.folder,
-            ),
-            (None, None) => return Err(AgentError::NoWorkingFolderOrProject.into()),
-        };
+        let (field, folder) = start_folder(&*self.projects, agent)?;
         if folder.is_dir() {
             return Ok(folder);
         }
@@ -458,3 +523,7 @@ fn begin_session(
         started_at,
     )
 }
+
+#[cfg(test)]
+#[path = "session_launcher.tests.rs"]
+mod tests;

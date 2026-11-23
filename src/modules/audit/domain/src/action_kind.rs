@@ -24,10 +24,11 @@ pub enum ActionKind {
     HelperLimit,
     /// The sweep after an unclean stop ended, or left, a stored process (0017).
     EndLeftover,
+    Report,
 }
 
 impl ActionKind {
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 16] = [
         Self::Create,
         Self::Start,
         Self::Stop,
@@ -43,6 +44,7 @@ impl ActionKind {
         Self::TaskText,
         Self::HelperLimit,
         Self::EndLeftover,
+        Self::Report,
     ];
 
     /// The stored and wire name.
@@ -64,6 +66,7 @@ impl ActionKind {
             Self::TaskText => "task_text",
             Self::HelperLimit => "helper_limit",
             Self::EndLeftover => "end_leftover",
+            Self::Report => "report",
         }
     }
 }

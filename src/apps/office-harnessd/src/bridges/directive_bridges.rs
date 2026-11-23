@@ -14,6 +14,7 @@ use agent_domain::value_objects::{TaskSource, TaskText};
 use agent_presentation::agent_task_event;
 use hierarchy_application::common::ports::{
     Delivery, DirectiveJournal, DirectiveReceipt, DirectiveTarget, DirectiveWriter, Readiness,
+    ReportJournal,
 };
 use hierarchy_domain::DIRECTIVE_MAX_CHARS;
 use kernel::{Actor, AgentId};
@@ -160,6 +161,9 @@ impl DirectiveWriter for DirectiveWriterBridge {
     fn deliver(&self, agent_id: AgentId, text: &str) -> Result<Delivery, String> {
         let before = self.runtime.screen(agent_id).unwrap_or_default();
         let run = self.runtime.current_run(agent_id);
+        // Stamped before the paste, so a sign-in watch never reads the
+        // directive as the CLI's own screen (0019 A5).
+        self.person_input.directive_typed(agent_id);
         self.runtime
             .paste(agent_id, text)
             .map_err(|error| error.to_string())?;
@@ -271,10 +275,24 @@ impl DirectiveJournalBridge {
         action: AgentAction,
         failure: Option<&str>,
     ) {
+        self.record_detailed_entry(actor, target, action, failure, None);
+    }
+
+    fn record_detailed_entry(
+        &self,
+        actor: AgentId,
+        target: AgentId,
+        action: AgentAction,
+        failure: Option<&str>,
+        detail: Option<&str>,
+    ) {
         // The use cases share one journal and one request runs on one
         // thread, so the scope guard, not a parameter, names the actor.
         let _actor = ActorScope::enter(Actor::Agent(actor));
-        if let Err(error) = self.journal.record(target, action, failure) {
+        if let Err(error) = self
+            .journal
+            .record_detailed(target, action, failure, detail)
+        {
             self.alerts
                 .report_disk_failure(&format!("the action record failed: {error}"));
         }
@@ -291,6 +309,24 @@ impl DirectiveJournal for DirectiveJournalBridge {
             // show what the office refused. An accepted directive stays
             // on the target's record only.
             self.record_entry(sender, sender, AgentAction::Directive, journaled.as_deref());
+        }
+    }
+}
+
+/// Reports go into the same record as directives (0015/FR-009): an accepted
+/// one under its receiver with its kind and visible text as the detail, a
+/// refused one, with the text as sent, under the sender and the parent.
+impl ReportJournal for DirectiveJournalBridge {
+    fn accepted(&self, sender: AgentId, receiver: AgentId, record_text: &str) {
+        let detail = capped_at_journal_bound(&escape_control_characters(record_text));
+        self.record_detailed_entry(sender, receiver, AgentAction::Report, None, Some(&detail));
+    }
+
+    fn refused(&self, sender: AgentId, parent: Option<AgentId>, text: &str, reason: &str) {
+        let journaled = refused_attempt(reason, Some(text));
+        self.record_entry(sender, sender, AgentAction::Report, Some(&journaled));
+        if let Some(parent) = parent.filter(|parent| *parent != sender) {
+            self.record_entry(sender, parent, AgentAction::Report, Some(&journaled));
         }
     }
 }

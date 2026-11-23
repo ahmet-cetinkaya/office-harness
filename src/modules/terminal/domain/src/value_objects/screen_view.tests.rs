@@ -6,6 +6,7 @@ fn view(rows: &[&str], cursor_row: usize) -> ScreenView {
     ScreenView {
         rows: rows.iter().map(|row| (*row).to_owned()).collect(),
         cursor_row,
+        cursor_column: 0,
     }
 }
 

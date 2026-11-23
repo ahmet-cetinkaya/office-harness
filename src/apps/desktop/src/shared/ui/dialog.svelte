@@ -7,10 +7,24 @@
     onclose: () => void;
     /** Takes focus when the dialog opens. Without it the first control does. */
     initialFocus?: HTMLElement | null;
+    /** "wide" is for a dialog that holds a working view, such as a file tree. */
+    size?: "normal" | "wide";
     children: Snippet;
   }
 
-  let { title, onclose, initialFocus = null, children }: Props = $props();
+  let {
+    title,
+    onclose,
+    initialFocus = null,
+    size = "normal",
+    children,
+  }: Props = $props();
+
+  // A wide dialog takes the full height, so its panes scroll inside it.
+  const SIZE_CLASS = {
+    normal: "w-[min(32rem,calc(100vw-2rem))]",
+    wide: "h-[calc(100dvh-2rem)] w-[min(72rem,calc(100vw-2rem))]",
+  };
 
   const uid = $props.id();
   const titleId = `${uid}-title`;
@@ -44,9 +58,9 @@
   bind:this={dialog}
   aria-labelledby={titleId}
   oncancel={closeOnEscape}
-  class="m-auto max-h-[calc(100dvh-2rem)] w-[min(32rem,calc(100vw-2rem))] overflow-y-auto rounded-md border border-neutral-400 bg-white p-6 text-neutral-900 backdrop:bg-neutral-900/60"
+  class={`m-auto max-h-[calc(100dvh-2rem)] ${SIZE_CLASS[size]} overflow-y-auto rounded-md border border-neutral-400 bg-white p-6 text-neutral-900 backdrop:bg-neutral-900/60`}
 >
-  <div class="flex flex-col gap-4">
+  <div class={`flex flex-col gap-4 ${size === "wide" ? "h-full" : ""}`}>
     <h2 id={titleId} class="text-xl font-semibold">{title}</h2>
     {@render children()}
   </div>

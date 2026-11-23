@@ -5,14 +5,16 @@
 //! process tree, and bounded output.
 
 use std::ffi::OsStr;
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
-use std::thread;
+use std::process::{Command, Stdio};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-use crate::services::login_environment::Environment;
+use crate::services::bounded_child::{
+    bounded_reader, end_tree, exited_output, own_process_group, wait_until,
+};
+use crate::services::login_environment::{Environment, LoginEnvironment};
+use crate::services::program_lookup::find_program;
 
 /// `core.hooksPath` for every run: a device, never a folder that anyone can
 /// fill, so git finds no hook file there.
@@ -34,14 +36,10 @@ pub const DISABLED_HOOK_EVENTS: [&str; 4] = [
 pub const READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// `worktree add` checks out every file and runs checkout filters.
 pub const CHECKOUT_TIMEOUT: Duration = Duration::from_secs(120);
-const STDOUT_LIMIT_BYTES: usize = 1024 * 1024;
+pub const STDOUT_LIMIT_BYTES: usize = 1024 * 1024;
+const GIT_PROGRAM: &str = "git";
 const STDERR_LIMIT_BYTES: usize = 64 * 1024;
 const REASON_MAX_CHARS: usize = 500;
-const READ_CHUNK_BYTES: usize = 8 * 1024;
-const EXIT_POLL: Duration = Duration::from_millis(10);
-/// How long a pipe may stay open after git exited: the reader needs only
-/// to take what git already wrote.
-const PIPE_DRAIN: Duration = Duration::from_millis(500);
 const MINIMUM_VERSION: (u32, u32) = (2, 22);
 const GIT_VARIABLE_PREFIX: &str = "GIT_";
 const ASKPASS_VARIABLES: [&str; 2] = ["SSH_ASKPASS", "SUDO_ASKPASS"];
@@ -139,7 +137,22 @@ impl GitRunner {
         folder: &Path,
         arguments: &[A],
     ) -> Result<String, GitFailure> {
-        self.run(folder, arguments, self.read_timeout, true)
+        self.read_bytes(folder, arguments, STDOUT_LIMIT_BYTES)
+            .map(|output| lossy_text(&output))
+    }
+
+    /// Like `read`, but the raw standard output, at most `stdout_limit`
+    /// bytes: more is `OutputTooLarge`.
+    ///
+    /// # Errors
+    /// See `GitFailure`.
+    pub fn read_bytes<A: AsRef<OsStr>>(
+        &self,
+        folder: &Path,
+        arguments: &[A],
+        stdout_limit: usize,
+    ) -> Result<Vec<u8>, GitFailure> {
+        self.run(folder, arguments, self.read_timeout, true, stdout_limit)
     }
 
     /// Runs a command that changes the repository's git data.
@@ -151,7 +164,14 @@ impl GitRunner {
         folder: &Path,
         arguments: &[A],
     ) -> Result<String, GitFailure> {
-        self.run(folder, arguments, self.read_timeout, false)
+        self.run(
+            folder,
+            arguments,
+            self.read_timeout,
+            false,
+            STDOUT_LIMIT_BYTES,
+        )
+        .map(|output| lossy_text(&output))
     }
 
     /// Runs `worktree add` or `worktree remove`, which may take long on a
@@ -164,7 +184,14 @@ impl GitRunner {
         folder: &Path,
         arguments: &[A],
     ) -> Result<String, GitFailure> {
-        self.run(folder, arguments, self.checkout_timeout, false)
+        self.run(
+            folder,
+            arguments,
+            self.checkout_timeout,
+            false,
+            STDOUT_LIMIT_BYTES,
+        )
+        .map(|output| lossy_text(&output))
     }
 
     fn run<A: AsRef<OsStr>>(
@@ -173,7 +200,8 @@ impl GitRunner {
         arguments: &[A],
         timeout: Duration,
         is_read: bool,
-    ) -> Result<String, GitFailure> {
+        stdout_limit: usize,
+    ) -> Result<Vec<u8>, GitFailure> {
         let mut command = self.command(folder, is_read);
         command.args(arguments);
         let deadline = Instant::now() + timeout;
@@ -183,7 +211,7 @@ impl GitRunner {
         let stdout = child
             .stdout
             .take()
-            .map(|pipe| bounded_reader(pipe, STDOUT_LIMIT_BYTES));
+            .map(|pipe| bounded_reader(pipe, stdout_limit));
         let stderr = child
             .stderr
             .take()
@@ -205,7 +233,7 @@ impl GitRunner {
         if stdout_overflow {
             return Err(GitFailure::OutputTooLarge);
         }
-        Ok(String::from_utf8_lossy(&stdout).into_owned())
+        Ok(stdout)
     }
 
     fn command(&self, folder: &Path, is_read: bool) -> Command {
@@ -232,6 +260,136 @@ impl GitRunner {
         own_process_group(&mut command);
         command
     }
+}
+
+fn lossy_text(output: &[u8]) -> String {
+    String::from_utf8_lossy(output).into_owned()
+}
+
+/// Where the git runner comes from: built once, on first use, because the
+/// login environment takes a login shell to read.
+enum RunnerSource {
+    Login {
+        environment: Arc<LoginEnvironment>,
+        server_environment: Environment,
+    },
+    Fixed(Option<GitRunner>),
+}
+
+/// The git runner of the office, found on first use and shared by every
+/// service that runs git (0016 D9). `None` when git is missing or too old.
+pub struct LazyGitRunner {
+    /// A folder git must not be found in, as `find_program` takes it.
+    lookup_folder: PathBuf,
+    source: RunnerSource,
+    runner: OnceLock<Option<GitRunner>>,
+}
+
+impl LazyGitRunner {
+    /// Finds git on the login environment's `PATH` on first use.
+    #[must_use]
+    pub fn login(
+        lookup_folder: PathBuf,
+        environment: Arc<LoginEnvironment>,
+        server_environment: Environment,
+    ) -> Self {
+        Self::from_source(
+            lookup_folder,
+            RunnerSource::Login {
+                environment,
+                server_environment,
+            },
+        )
+    }
+
+    /// Uses `runner`, or no git at all for `None`; for tests.
+    #[must_use]
+    pub fn fixed(runner: Option<GitRunner>) -> Self {
+        Self::from_source(PathBuf::new(), RunnerSource::Fixed(runner))
+    }
+
+    fn from_source(lookup_folder: PathBuf, source: RunnerSource) -> Self {
+        Self {
+            lookup_folder,
+            source,
+            runner: OnceLock::new(),
+        }
+    }
+
+    /// The runner, or `None` without a usable git.
+    #[must_use]
+    pub fn get(&self) -> Option<&GitRunner> {
+        self.runner
+            .get_or_init(|| {
+                let runner = match &self.source {
+                    RunnerSource::Fixed(runner) => runner.clone(),
+                    RunnerSource::Login {
+                        environment,
+                        server_environment,
+                    } => login_runner(&self.lookup_folder, environment, server_environment),
+                }?;
+                runner.is_supported().then_some(runner)
+            })
+            .as_ref()
+    }
+}
+
+fn login_runner(
+    lookup_folder: &Path,
+    environment: &LoginEnvironment,
+    server_environment: &Environment,
+) -> Option<GitRunner> {
+    let login = environment.resolve(server_environment).variables;
+    let program = find_program(GIT_PROGRAM, &login, lookup_folder)?;
+    Some(GitRunner::new(program, &login))
+}
+
+/// A path that does not depend on the working folder of the process.
+#[must_use]
+pub fn absolute(path: PathBuf) -> PathBuf {
+    // A relative folder would make the hooks path relative to each
+    // worktree and put new worktrees inside the repository.
+    std::path::absolute(&path).unwrap_or(path)
+}
+
+const FILTER_SECTION: &str = "filter.";
+/// Each filter driver's commands emptied and its required flag off: git then
+/// compares the plain file and runs no filter program.
+const FILTER_SWITCHES: [&str; 4] = ["clean=", "smudge=", "process=", "required=false"];
+/// `-c` switches that turn off every filter driver the configuration of
+/// `folder` names, so a read runs no program an agent could write into the
+/// shared configuration (0010 D1 allows filters for `worktree add` only).
+///
+/// # Errors
+/// The reason, when the configuration cannot be read or names a driver
+/// that a switch cannot name.
+pub fn filter_switches(runner: &GitRunner, folder: &Path) -> Result<Vec<String>, String> {
+    let names = runner
+        .read(folder, &["config", "--list", "--name-only", "-z"])
+        .map_err(|failure| failure.reason())?;
+    let mut drivers: Vec<&str> = names.split('\0').filter_map(filter_driver).collect();
+    drivers.sort_unstable();
+    drivers.dedup();
+    if let Some(driver) = drivers.iter().find(|driver| driver.contains(['=', '\n'])) {
+        return Err(format!("the filter driver {driver:?} cannot be turned off"));
+    }
+    Ok(drivers
+        .iter()
+        .flat_map(|driver| {
+            FILTER_SWITCHES.iter().flat_map(move |switch| {
+                [
+                    "-c".to_owned(),
+                    format!("{FILTER_SECTION}{driver}.{switch}"),
+                ]
+            })
+        })
+        .collect())
+}
+
+/// The driver of a `filter.<driver>.<key>` name; the driver may hold dots.
+fn filter_driver(name: &str) -> Option<&str> {
+    let (driver, _) = name.strip_prefix(FILTER_SECTION)?.rsplit_once('.')?;
+    Some(driver)
 }
 
 /// The user's environment without any variable that would change which
@@ -298,121 +456,6 @@ fn without_url_credentials(text: &str) -> String {
     }
     cleaned.push_str(rest);
     cleaned
-}
-
-type ReaderResult = mpsc::Receiver<(Vec<u8>, bool)>;
-
-/// Reads the whole pipe, so the child never blocks on a full pipe, and
-/// keeps at most `limit` bytes; the flag says that more came.
-fn bounded_reader(mut pipe: impl Read + Send + 'static, limit: usize) -> ReaderResult {
-    let (sender, receiver) = mpsc::channel();
-    thread::spawn(move || {
-        let mut kept = Vec::new();
-        let mut overflow = false;
-        let mut chunk = [0_u8; READ_CHUNK_BYTES];
-        while let Ok(count) = pipe.read(&mut chunk) {
-            if count == 0 {
-                break;
-            }
-            let room = limit.saturating_sub(kept.len());
-            kept.extend_from_slice(&chunk[..count.min(room)]);
-            overflow |= count > room;
-        }
-        // The receiver is gone when the run timed out.
-        let _ = sender.send((kept, overflow));
-    });
-    receiver
-}
-
-/// The output of a git that has exited. A helper it started may still hold
-/// a pipe, which would never end the read: after a short drain the whole
-/// group is ended, so the pipes close. Standard output is `None` when it
-/// still did not end; standard error then reads as empty, because only a
-/// failure's reason needs it.
-fn exited_output(
-    child: &mut Child,
-    stdout: Option<&ReaderResult>,
-    stderr: Option<&ReaderResult>,
-) -> (Option<(Vec<u8>, bool)>, Vec<u8>) {
-    let mut stdout_read = drained(stdout);
-    let mut stderr_read = drained(stderr);
-    if stdout_read.is_none() || stderr_read.is_none() {
-        end_tree(child);
-        stdout_read = stdout_read.or_else(|| drained(stdout));
-        stderr_read = stderr_read.or_else(|| drained(stderr));
-    }
-    (
-        stdout_read,
-        stderr_read.map_or_else(Vec::new, |(bytes, _)| bytes),
-    )
-}
-
-/// The reader's bytes, or `None` when the pipe is still open after the
-/// drain. A pipe that was never opened reads as empty.
-fn drained(reader: Option<&ReaderResult>) -> Option<(Vec<u8>, bool)> {
-    let Some(reader) = reader else {
-        return Some((Vec::new(), false));
-    };
-    reader.recv_timeout(PIPE_DRAIN).ok()
-}
-
-fn wait_until(child: &mut Child, deadline: Instant) -> Option<std::process::ExitStatus> {
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return Some(status),
-            Ok(None) if Instant::now() < deadline => thread::sleep(EXIT_POLL),
-            _ => return None,
-        }
-    }
-}
-
-#[cfg(unix)]
-fn own_process_group(command: &mut Command) {
-    use std::os::unix::process::CommandExt;
-    // A group of its own, so a timeout ends git with every filter or
-    // helper it started.
-    command.process_group(0);
-}
-
-#[cfg(windows)]
-fn own_process_group(command: &mut Command) {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(CREATE_NO_WINDOW);
-}
-
-/// Ends git and everything it started. The terminal module has the same
-/// walk; it is repeated here to keep the module boundary.
-#[cfg(unix)]
-fn end_tree(child: &mut Child) {
-    use nix::sys::signal::{Signal, killpg};
-    use nix::unistd::Pid;
-    if let Ok(raw) = i32::try_from(child.id()) {
-        // A group that is already gone is the state the caller wants.
-        let _ = killpg(Pid::from_raw(raw), Signal::SIGKILL);
-    }
-    let _ = child.kill();
-    let _ = child.wait();
-}
-
-#[cfg(windows)]
-fn end_tree(child: &mut Child) {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    // `taskkill /T` walks the tree itself; a tree already gone makes it
-    // fail, which is fine. A helper whose parent already exited is not in
-    // that tree and can outlive the timeout; only Unix ends the whole group.
-    // The full path, so no folder on PATH supplies another program.
-    let program = std::env::var_os("SystemRoot").map_or_else(
-        || PathBuf::from("taskkill.exe"),
-        |root| PathBuf::from(root).join("System32").join("taskkill.exe"),
-    );
-    let _ = Command::new(program)
-        .args(["/PID", &child.id().to_string(), "/T", "/F"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output();
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 #[cfg(test)]

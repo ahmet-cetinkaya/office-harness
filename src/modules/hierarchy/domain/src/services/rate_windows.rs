@@ -16,6 +16,7 @@ pub enum AgentAction {
     Directive { target: AgentId },
     Create,
     Lifecycle,
+    Report,
 }
 
 /// Timestamps of passed actions inside a rolling window, per key. Only
@@ -70,6 +71,7 @@ pub struct RateWindows {
     directives_to_target: SlidingWindows<(AgentId, AgentId)>,
     creates: SlidingWindows<AgentId>,
     lifecycles: SlidingWindows<AgentId>,
+    reports: SlidingWindows<AgentId>,
 }
 
 impl RateWindows {
@@ -118,6 +120,12 @@ impl RateWindows {
                     return Err(refusal(LimitKind::Lifecycle, limits));
                 }
                 self.lifecycles.record(caller, now_millis);
+            }
+            AgentAction::Report => {
+                if self.reports.is_full(caller, limits.report, now_millis) {
+                    return Err(refusal(LimitKind::Report, limits));
+                }
+                self.reports.record(caller, now_millis);
             }
         }
         Ok(())

@@ -4,7 +4,9 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use kernel::AgentId;
-use notification_domain::{AttentionEvent, NeedsYouItem, NotificationId, order, record_event};
+use notification_domain::{
+    AttentionEvent, ItemReport, NeedsYouItem, NotificationId, order, record_event, record_report,
+};
 
 use super::NeedsYouClearReason;
 use crate::common::errors::NotificationApplicationError;
@@ -39,6 +41,23 @@ impl NeedsYouService {
     ) -> Result<NeedsYouItem, NotificationApplicationError> {
         let existing = self.store.find(agent_id)?;
         let item = record_event(existing, agent_id, event, origin);
+        self.store.save(&item)?;
+        Ok(item)
+    }
+
+    /// Records a report for the person: the item's latest event, kept on the
+    /// item through later events (0015/FR-007, FR-008).
+    ///
+    /// # Errors
+    /// `Storage`.
+    pub fn record_report(
+        &self,
+        agent_id: AgentId,
+        report: ItemReport,
+        origin: Option<NotificationId>,
+    ) -> Result<NeedsYouItem, NotificationApplicationError> {
+        let existing = self.store.find(agent_id)?;
+        let item = record_report(existing, agent_id, report, origin);
         self.store.save(&item)?;
         Ok(item)
     }

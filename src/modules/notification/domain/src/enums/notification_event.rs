@@ -21,10 +21,12 @@ pub enum NotificationEvent {
     /// The sweep after an unclean stop could not end a process of the agent
     /// (0017).
     LeftoverKept,
+    /// The agent sent a report for the person (0015/FR-007).
+    Report,
 }
 
 impl NotificationEvent {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Exited,
         Self::Failed,
         Self::WaitingForInput,
@@ -32,6 +34,7 @@ impl NotificationEvent {
         Self::AutoHold,
         Self::ResumeHold,
         Self::LeftoverKept,
+        Self::Report,
     ];
 
     /// The stored and wire name.
@@ -45,6 +48,7 @@ impl NotificationEvent {
             Self::AutoHold => "auto_hold",
             Self::ResumeHold => "resume_hold",
             Self::LeftoverKept => "leftover_kept",
+            Self::Report => "report",
         }
     }
 }
@@ -63,7 +67,7 @@ impl FromStr for NotificationEvent {
             .into_iter()
             .find(|event| event.as_str() == text)
             .ok_or_else(|| NotificationError(format!(
-                "notification event is not one of exited, failed, waiting_for_input, bell, auto_hold, resume_hold, leftover_kept: {text}"
+                "notification event is not one of exited, failed, waiting_for_input, bell, auto_hold, resume_hold, leftover_kept, report: {text}"
             )))
     }
 }

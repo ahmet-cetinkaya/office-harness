@@ -21,10 +21,11 @@ pub enum AttentionKind {
     /// The sweep after an unclean stop could not end a process (0017).
     LeftoverKept,
     Exited,
+    Report,
 }
 
 impl AttentionKind {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Failed,
         Self::WaitingForInput,
         Self::Bell,
@@ -32,6 +33,7 @@ impl AttentionKind {
         Self::ResumeHold,
         Self::LeftoverKept,
         Self::Exited,
+        Self::Report,
     ];
 
     /// The stored and wire name.
@@ -45,6 +47,7 @@ impl AttentionKind {
             Self::ResumeHold => "resume_hold",
             Self::LeftoverKept => "leftover_kept",
             Self::Exited => "exited",
+            Self::Report => "report",
         }
     }
 }
@@ -64,7 +67,7 @@ impl FromStr for AttentionKind {
             .find(|kind| kind.as_str() == text)
             .ok_or_else(|| {
                 NotificationError(format!(
-                    "attention kind is not one of failed, waiting_for_input, bell, auto_hold, resume_hold, leftover_kept, exited: {text}"
+                    "attention kind is not one of failed, waiting_for_input, bell, auto_hold, resume_hold, leftover_kept, exited, report: {text}"
                 ))
             })
     }

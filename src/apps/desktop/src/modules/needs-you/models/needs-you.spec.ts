@@ -18,6 +18,7 @@ function item(overrides: Partial<NeedsYouItem> = {}): NeedsYouItem {
     first_event_at: 1_000,
     latest_at: 1_000,
     origin_notification_id: null,
+    report: null,
     ...overrides,
   };
 }
@@ -97,6 +98,84 @@ describe("wait time", () => {
 
   test("a clock behind the event shows no negative time", () => {
     expect(waitText(first, first - 5_000)).toBe("waiting 0 s");
+  });
+});
+
+describe("reports", () => {
+  const report = { kind: "done", text: "All tests pass", at: 2_000 };
+  const base = { agent_id: "a", kind: "report", first_event_at: 1 };
+
+  test("an item reads its report, and an item without one reads null", () => {
+    const [withReport, without] = readItems({
+      items: [{ ...base, detail: "done", report }, base],
+    });
+
+    expect(withReport.report).toEqual(report);
+    expect(without.report).toBeNull();
+  });
+
+  test("a malformed report reads as null", () => {
+    const malformed = [
+      "text",
+      { kind: "done", text: "x" },
+      { kind: 1, text: "x", at: 2 },
+      { kind: "done", text: 2, at: 2 },
+    ];
+
+    for (const bad of malformed) {
+      expect(
+        readItems({ items: [{ ...base, report: bad }] })[0].report,
+      ).toBeNull();
+    }
+  });
+
+  test("the event says the agent sent a report of its kind", () => {
+    expect(eventText(item({ kind: "report", detail: "blocked" }))).toBe(
+      "sent a report: blocked",
+    );
+    expect(eventText(item({ kind: "report" }))).toBe("sent a report");
+  });
+
+  test("a row shows the report as text and keeps the label to the event", () => {
+    const row = rowOf(
+      item({ kind: "report", detail: "done", report }),
+      "Ada",
+      null,
+      1_000,
+    );
+
+    expect(row.reportText).toBe("done: All tests pass");
+    expect(row.isReportLong).toBe(false);
+    expect(row.label).toBe("Ada, sent a report: done, waiting 0 s");
+  });
+
+  test("a report over 160 characters is long, 160 is not", () => {
+    const rowWith = (length: number) =>
+      rowOf(
+        item({ report: { ...report, text: "x".repeat(length) } }),
+        "Ada",
+        null,
+        1_000,
+      );
+
+    expect(rowWith(160).isReportLong).toBe(false);
+    expect(rowWith(161).isReportLong).toBe(true);
+  });
+
+  test("a row without a report has no report text", () => {
+    expect(rowOf(item(), "Ada", null, 1_000).reportText).toBeNull();
+  });
+
+  test("the report stays on the row when a later event changes the kind", () => {
+    const row = rowOf(
+      item({ kind: "failed", detail: "exit 2", report }),
+      "Ada",
+      null,
+      1_000,
+    );
+
+    expect(row.event).toBe("failed: exit 2");
+    expect(row.reportText).toBe("done: All tests pass");
   });
 });
 

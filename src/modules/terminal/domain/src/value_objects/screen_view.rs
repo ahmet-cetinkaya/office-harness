@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-/// The visible rows of a terminal screen as plain text, and the row where
-/// the cursor stands. The parser has already applied every redraw, so no
-/// color or cursor code reaches these rows.
+/// The visible rows of a terminal screen as plain text, and the row and
+/// column where the cursor stands. The parser has already applied every
+/// redraw, so no color or cursor code reaches these rows.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ScreenView {
     pub rows: Vec<String>,
     pub cursor_row: usize,
+    pub cursor_column: usize,
 }
 
 impl ScreenView {

@@ -77,9 +77,11 @@ A parent agent creates child agents and sends directives to them, as a CEO gives
 - **FR-006** (US1): WHEN the user deletes an agent that has descendants, THE SYSTEM SHALL show how many agents will stop and be deleted, and SHALL delete them only after the user confirms.
 - **FR-007** (US1): WHEN the user stops an agent that has descendants, THE SYSTEM SHALL offer to stop all of its descendants in the same action.
 - **FR-008** (US2): THE SYSTEM SHALL let a running agent, from inside its own session, create, start, and stop agents, start new tasks, and send directives only within its own descendants and only for the roles that FR-001 allows.
+  - Amended by 0015 (`specs/changes/archive/0015-upward-reports/SPEC.md`): a running agent also sends reports, only to its own parent or to the person, with no field that names another agent (0015/FR-002).
 - **FR-009** (US2): IF an agent asks for an action on an agent that is not its descendant, or for a role or action that FR-008 does not allow, THEN THE SYSTEM SHALL refuse the action, tell the agent the reason, and record the refusal.
 - **FR-010** (US2): WHEN a parent agent sends a directive, THE SYSTEM SHALL enter the directive text into the target agent's terminal as one unbroken input followed by Enter.
-  - Amended by 0012 (`specs/changes/0012-safe-directive-delivery/SPEC.md`): the text goes in as one paste only when the target waits for input, no person typed there in the last 30 seconds or left unsent text there, no text the office typed without Enter waits there, and the screen shows no open question; until then the directive waits in the target's queue. Enter follows only when the text, or the CLI's paste placeholder, shows at the input line (0012/FR-001 to FR-003).- **FR-011** (US1, US2): THE SYSTEM SHALL add directives and refused actions to the action record and SHALL record a named agent as the actor of each action that an agent takes.
+  - Amended by 0012 (`specs/changes/archive/0012-safe-directive-delivery/SPEC.md`): the text goes in as one paste only when the target waits for input, no person typed there in the last 30 seconds or left unsent text there, no text the office typed without Enter waits there, and the screen shows no open question; until then the directive waits in the target's queue. Enter follows only when the text, or the CLI's paste placeholder, shows at the input line (0012/FR-001 to FR-003).
+- **FR-011** (US1, US2): THE SYSTEM SHALL add directives and refused actions to the action record and SHALL record a named agent as the actor of each action that an agent takes.
 
 ### PRESERVED
 
@@ -162,6 +164,7 @@ A parent agent creates child agents and sends directives to them, as a CEO gives
 
 - **A1:** The user creates agents of every role from the desktop app (US1). A running parent agent creates agents only within its own descendants (US2).
 - **A2:** A directive is text that a parent agent enters into a descendant's terminal. The MVP has no separate message channel and no reply channel. A parent reads a child's result from the child's terminal output or from the files that the child writes.
+  - Amended by 0015: an agent also reports upward to its parent, or to the person through Needs you; a parent still answers with a directive, and there is no reply request (0015 A9).
 - **A3:** office-harness does not manage sub-agents. A member is an orchestrator that uses its CLI's own sub-agent feature. Those sub-agents run inside the member's session, show only in its terminal output, and are not office agents. This is an owner decision (see Clarifications).
 - **A4:** The CEO can create team leads, and a team lead can create members of its own team. A member creates no office agents. Agents cannot delete agents; only the user deletes.
 - **A5:** The office has at most one CEO. Teams can exist without a CEO; when the user creates a CEO later, the existing team leads move under it.

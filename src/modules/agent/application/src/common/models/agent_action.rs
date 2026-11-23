@@ -19,6 +19,8 @@ pub enum AgentAction {
     TaskText,
     /// The office stopped storing the helper processes of a session (0017).
     HelperLimit,
+    /// An agent sent a report upward (0015).
+    Report,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

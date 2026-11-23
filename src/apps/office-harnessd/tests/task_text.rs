@@ -325,7 +325,7 @@ async fn a_directive_sets_the_task_and_every_client_gets_agent_task_without_line
     let member = setup.member.clone();
     assert_eq!(setup.count_actions(&member, "directive").await, 1);
     assert_eq!(setup.count_actions(&member, "task_text").await, 0);
-    setup.stop().await;
+    Box::pin(setup.stop()).await;
 }
 
 #[tokio::test]
@@ -358,7 +358,7 @@ async fn a_refused_directive_changes_no_task_text() {
     assert_eq!(setup.task_of(&member).await, before_member);
     assert_eq!(setup.task_of(&stranger).await, before_stranger);
     assert_eq!(setup.typed_bytes().len(), 0);
-    setup.stop().await;
+    Box::pin(setup.stop()).await;
 }
 
 #[tokio::test]
@@ -395,7 +395,7 @@ async fn directives_at_once_leave_the_text_that_was_written_last() {
         task = setup.task_of(&member).await;
     }
     assert_eq!(task["text"], last);
-    setup.stop().await;
+    Box::pin(setup.stop()).await;
 }
 
 #[tokio::test]
@@ -419,7 +419,7 @@ async fn a_user_edit_racing_a_directive_leaves_both_in_the_record() {
     assert_eq!(edited["ok"], true, "{edited}");
     assert_eq!(setup.count_actions(&member, "directive").await, 1);
     assert_eq!(setup.count_actions(&member, "task_text").await, 1);
-    setup.stop().await;
+    Box::pin(setup.stop()).await;
 }
 
 /// The task of the last `agent.task` event of `agent_id` that the watcher
@@ -478,7 +478,7 @@ async fn the_last_task_event_matches_the_list_after_a_user_edit_races_a_directiv
             assert_clients_end_on_the_stored_task(&mut setup, member, &label).await;
         }
     }
-    setup.stop().await;
+    Box::pin(setup.stop()).await;
 }
 
 #[tokio::test]
@@ -508,7 +508,7 @@ async fn the_last_task_event_matches_the_list_after_a_new_task_races_a_directive
         assert_eq!(restarted["ok"], true, "{restarted}");
         assert_clients_end_on_the_stored_task(&mut setup, member, member).await;
     }
-    setup.stop().await;
+    Box::pin(setup.stop()).await;
 }
 
 #[tokio::test]
@@ -526,7 +526,7 @@ async fn a_member_that_prints_output_keeps_its_task_text() {
 
     assert_eq!(setup.task_of(&member).await, event["task"]);
     assert!(no_task_event(&mut setup.watcher).await);
-    setup.stop().await;
+    Box::pin(setup.stop()).await;
 }
 
 /// PB-3: the office takes no text from a CLI's title or prompt, and its
@@ -566,7 +566,7 @@ async fn the_task_text_neither_reads_a_cli_title_nor_writes_a_cli_configuration(
     assert_eq!(setup.task_of(&member).await, Value::Null);
     assert!(no_task_event(&mut setup.watcher).await);
     assert_eq!(entries_under(&watched), before);
-    setup.stop().await;
+    Box::pin(setup.stop()).await;
 }
 
 #[tokio::test]
@@ -604,7 +604,7 @@ async fn the_user_sets_edits_and_clears_the_task_text_and_every_client_gets_it()
     assert!(task_entries.iter().all(|entry| entry["actor"] == "user"));
     // A2: setting the text types nothing into the terminal.
     assert_eq!(setup.typed_bytes().len(), 0);
-    setup.stop().await;
+    Box::pin(setup.stop()).await;
 }
 
 #[tokio::test]
@@ -624,7 +624,7 @@ async fn a_task_text_of_the_limit_is_accepted_and_one_past_it_is_refused() {
     assert_eq!(error_text(&over), ("invalid", TASK_LIMIT_MESSAGE));
     assert_eq!(blank_and_long["ok"], true, "{blank_and_long}");
     assert_eq!(setup.task_of(&member).await, Value::Null);
-    setup.stop().await;
+    Box::pin(setup.stop()).await;
 }
 
 #[tokio::test]
@@ -637,7 +637,7 @@ async fn a_control_character_is_stored_as_it_was_entered() {
 
     assert_eq!(set["ok"], true, "{set}");
     assert_eq!(setup.task_of(&member).await["text"], text);
-    setup.stop().await;
+    Box::pin(setup.stop()).await;
 }
 
 #[tokio::test]
@@ -657,7 +657,7 @@ async fn an_agent_connection_may_not_set_a_task_text() {
     assert_eq!(answer["error"]["code"], "refused", "{answer}");
     assert_eq!(setup.task_of(&member).await, Value::Null);
     assert_eq!(setup.count_actions(&member, "task_text").await, 0);
-    setup.stop().await;
+    Box::pin(setup.stop()).await;
 }
 
 #[tokio::test]

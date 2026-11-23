@@ -19,12 +19,14 @@ use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
 use agent_application::common::action_journal::ActionJournal;
 use agent_application::common::interfaces::{
-    AdditionsStore, AgentStore, CliAdapters, Clock, ProjectStore, SessionStore, SettingsStore,
-    TerminalHost, WorktreeManager,
+    AdditionsStore, AgentStore, CliAdapters, Clock, FileView, ProjectStore, SessionStore,
+    SettingsStore, StatusCommandRunner, TerminalHost, WorktreeManager,
 };
 use agent_application::common::session_ender::SessionEnder;
 use agent_application::common::session_launcher::{LauncherServices, SessionLauncher};
 use agent_application::common::session_process_recorder::SessionProcessRecorder;
+use agent_application::common::sign_in_check::SIGN_IN_TIMEOUT;
+use agent_application::queries::file_view::FileViewHandler;
 use agent_application::queries::get_office_additions::GetOfficeAdditionsHandler;
 use agent_application::queries::get_settings::GetSettingsHandler;
 use agent_application::queries::list_agents::ListAgentsHandler;
@@ -47,8 +49,8 @@ use audit_presentation::AuditHandlers;
 
 use super::{ServerLog, StorageAlerts, TerminalServices};
 use crate::bridges::{
-    ActionRecorderBridge, AgentCalls, ProcessProbeBridge, SavedOutputs, StatusOrder, StoppingFlag,
-    SystemClock, TaskOrder, TerminalHostBridge,
+    ActionRecorderBridge, AgentCalls, ProcessProbeBridge, SavedOutputs, SignInWatch,
+    StatusCommandBridge, StatusOrder, StoppingFlag, SystemClock, TaskOrder, TerminalHostBridge,
 };
 
 /// The agent and audit modules, wired: the use cases behind their handlers,
@@ -84,6 +86,8 @@ pub struct AgentServices {
     /// Reads back an agent that another module's request created (the lead
     /// of `team.create`), so its `agent.changed` event can be sent.
     pub agent_reader: ListAgentsHandler,
+    /// Runs a start's sign-in check before the status order (0019 D13).
+    pub sign_in_checks: SessionLauncher,
 }
 
 /// The stores and services that the use cases share.
@@ -96,10 +100,12 @@ struct Wiring {
     adapters: Arc<dyn CliAdapters>,
     clock: Arc<dyn Clock>,
     terminals: Arc<dyn TerminalHost>,
+    status_commands: Arc<dyn StatusCommandRunner>,
     journal: ActionJournal,
     alerts: StorageAlerts,
     worktrees: Arc<dyn WorktreeManager>,
     process_recorder: SessionProcessRecorder,
+    file_view: Arc<dyn FileView>,
 }
 
 /// Joins the agent use cases to the SQLite stores, the terminal, the clock,
@@ -148,13 +154,22 @@ pub fn build_agent_services(
                 log.clone(),
                 agent_calls,
             )
-            .with_person_input(terminal.person_input.clone()),
+            .with_person_input(terminal.person_input.clone())
+            .with_sign_in_watch(SignInWatch {
+                runtime: Arc::clone(&terminal.runtime),
+                person_input: terminal.person_input.clone(),
+                ends: terminal.sign_in_ends.clone(),
+                timing: terminal.sign_in_timing,
+                log: log.clone(),
+            }),
         ),
+        status_commands: Arc::new(StatusCommandBridge::new(terminal.launcher.clone())),
         journal,
         process_recorder,
         alerts: alerts.clone(),
         clock,
         worktrees: Arc::clone(&terminal.worktrees),
+        file_view: Arc::clone(&terminal.file_view),
     };
     AgentServices {
         handlers: Arc::new(AgentHandlers::new(use_cases(&wiring, machine_id))),
@@ -162,6 +177,7 @@ pub fn build_agent_services(
         office_actions: ListOfficeActionsHandler::new(action_log),
         record_action,
         agent_reader: ListAgentsHandler::new(Arc::clone(&wiring.agents)),
+        sign_in_checks: launcher_of(&wiring),
         change_status: ChangeAgentStatusHandler::new(Arc::clone(&wiring.agents)),
         end_session: EndSessionHandler::new(
             Arc::clone(&wiring.sessions),
@@ -195,6 +211,8 @@ fn launcher_of(wiring: &Wiring) -> SessionLauncher {
             clock: Arc::clone(&wiring.clock),
             failures: Arc::new(wiring.alerts.clone()),
             processes: wiring.process_recorder.clone(),
+            status_commands: Arc::clone(&wiring.status_commands),
+            sign_in_timeout: SIGN_IN_TIMEOUT,
         },
     )
 }
@@ -289,6 +307,11 @@ fn use_cases(wiring: &Wiring, machine_id: MachineId) -> AgentUseCases {
         worktree_status: WorktreeStatusHandler::new(
             Arc::clone(&wiring.agents),
             Some(Arc::clone(&wiring.worktrees)),
+        ),
+        file_view: FileViewHandler::new(
+            Arc::clone(&wiring.agents),
+            Arc::clone(&wiring.projects),
+            Arc::clone(&wiring.file_view),
         ),
     }
 }

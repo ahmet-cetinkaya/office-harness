@@ -12,7 +12,7 @@ export const LIMIT_MAX = 1000;
 export const LIMIT_INVALID_MESSAGE =
   "a limit is a whole number of at least 1 and at most 1000";
 
-/** The four limits, in the order the dialog lists them. */
+/** The five limits, in the order the dialog lists them. */
 export const LIMIT_SETTINGS: readonly LimitSetting[] = [
   {
     key: "limit_directives_per_agent",
@@ -33,6 +33,11 @@ export const LIMIT_SETTINGS: readonly LimitSetting[] = [
     key: "limit_lifecycle_per_agent",
     label: "Starts, stops, and new tasks by one agent",
     defaultValue: 10,
+  },
+  {
+    key: "limit_reports_per_agent",
+    label: "Reports sent by one agent",
+    defaultValue: 5,
   },
 ];
 

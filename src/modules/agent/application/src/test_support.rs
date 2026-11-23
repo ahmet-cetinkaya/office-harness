@@ -31,16 +31,18 @@ use crate::common::errors::{PortError, TerminalHostError};
 use crate::common::interfaces::{
     ActionRecorder, AdditionsStore, AgentStore, CliAdapter, CliAdapters, Clock, CreatedWorktree,
     FailureReporter, ProcessProbe, ProjectStore, SessionProcessStore, SessionStore,
-    SessionTracking, SettingsStore, TerminalHost, WorktreeCreate, WorktreeError, WorktreeInfo,
-    WorktreeManager, WorktreeStatus,
+    SessionTracking, SettingsStore, StatusCommandRunner, TerminalHost, WorktreeCreate,
+    WorktreeError, WorktreeInfo, WorktreeManager, WorktreeStatus,
 };
 use crate::common::models::{
     AgentActionEntry, PrepareLaunch, PreparedLaunch, ProbeError, ProcessKind, SessionCommand,
-    SessionPlan, SessionProcess, StartTerminal, StoredProcess, TrackedSession, TrackingRequest,
+    SessionPlan, SessionProcess, SignIn, StartTerminal, StatusCommand, StatusRun, StatusRunResult,
+    StoredProcess, TrackedSession, TrackingRequest,
 };
 use crate::common::session_ender::SessionEnder;
 use crate::common::session_launcher::{LauncherServices, SessionLauncher};
 use crate::common::session_process_recorder::SessionProcessRecorder;
+use crate::common::sign_in_check::SIGN_IN_TIMEOUT;
 use crate::queries::get_office_additions::GetOfficeAdditionsHandler;
 use crate::queries::list_sessions::ListSessionsHandler;
 
@@ -356,13 +358,26 @@ impl FailureReporter for IgnoredFailures {
 }
 
 /// Adapters that build recognizable command lines. A program named `generic`
-/// cannot continue, and a program named `tracked` learns its id after the
-/// start, as `codex` does.
+/// cannot continue, a program named `tracked` learns its id after the
+/// start, as `codex` does, and a program named `signin` has a sign-in
+/// status command and sign-in screen words (0019).
 pub struct FakeAdapters;
+
+/// The sign-in knowledge of the program named `signin`.
+pub const FAKE_SIGN_IN: SignIn = SignIn {
+    cli: "signin",
+    status: Some(StatusCommand {
+        arguments: &["auth", "status"],
+        not_signed_in_words: &["not logged in"],
+        key_variables: &["SIGNIN_API_KEY"],
+    }),
+    screen_words: &["please sign in"],
+};
 
 struct FakeAdapter {
     supports_continue: bool,
     tracked_id: Option<&'static str>,
+    sign_in: SignIn,
 }
 
 struct ImmediateTracking(&'static str);
@@ -418,6 +433,47 @@ impl CliAdapter for FakeAdapter {
         self.tracked_id
             .map(|id| Box::new(ImmediateTracking(id)) as Box<dyn SessionTracking>)
     }
+
+    fn sign_in(&self) -> SignIn {
+        self.sign_in
+    }
+}
+
+/// A status command runner that runs nothing: it keeps each run and gives
+/// the result set last, exit 0 by default.
+pub struct FakeStatusCommands {
+    runs: Mutex<Vec<StatusRun>>,
+    result: Mutex<StatusRunResult>,
+}
+
+impl Default for FakeStatusCommands {
+    fn default() -> Self {
+        Self {
+            runs: Mutex::default(),
+            result: Mutex::new(StatusRunResult::Ended {
+                exit_code: Some(0),
+                output: String::new(),
+            }),
+        }
+    }
+}
+
+impl FakeStatusCommands {
+    #[must_use]
+    pub fn runs(&self) -> Vec<StatusRun> {
+        locked(&self.runs).clone()
+    }
+
+    pub fn answer_with(&self, result: StatusRunResult) {
+        *locked(&self.result) = result;
+    }
+}
+
+impl StatusCommandRunner for FakeStatusCommands {
+    fn run(&self, run: &StatusRun) -> StatusRunResult {
+        locked(&self.runs).push(run.clone());
+        locked(&self.result).clone()
+    }
 }
 
 impl CliAdapters for FakeAdapters {
@@ -425,6 +481,11 @@ impl CliAdapters for FakeAdapters {
         Arc::new(FakeAdapter {
             supports_continue: program != "generic",
             tracked_id: (program == "tracked").then_some("tracked-id"),
+            sign_in: if program == "signin" {
+                FAKE_SIGN_IN
+            } else {
+                SignIn::default()
+            },
         })
     }
 }
@@ -473,6 +534,7 @@ impl ActionRecorder for RecordingRecorder {
 #[derive(Default)]
 pub struct FakeTerminals {
     started: Mutex<Vec<StartTerminal>>,
+    prepared: Mutex<Vec<PrepareLaunch>>,
     stopped: Mutex<Vec<(AgentId, Duration)>>,
     unstartable: Mutex<Vec<String>>,
     batch_programs: Mutex<Vec<String>>,
@@ -484,6 +546,13 @@ impl FakeTerminals {
     #[must_use]
     pub fn started(&self) -> Vec<StartTerminal> {
         locked(&self.started).clone()
+    }
+
+    /// Every prepare request, so a test sees whether a credential was asked
+    /// for.
+    #[must_use]
+    pub fn prepared(&self) -> Vec<PrepareLaunch> {
+        locked(&self.prepared).clone()
     }
 
     #[must_use]
@@ -516,6 +585,7 @@ impl FakeTerminals {
 
 impl TerminalHost for FakeTerminals {
     fn prepare(&self, request: &PrepareLaunch) -> Result<PreparedLaunch, TerminalHostError> {
+        locked(&self.prepared).push(request.clone());
         if locked(&self.unstartable).contains(&request.program) {
             return Err(TerminalHostError::Failed(format!(
                 "the command {} was not found on the login PATH",
@@ -720,6 +790,7 @@ pub struct Office {
     pub terminals: Arc<FakeTerminals>,
     pub processes: Arc<MemoryProcessStore>,
     pub probe: Arc<FakeProbe>,
+    pub status_commands: Arc<FakeStatusCommands>,
     pub machine_id: MachineId,
 }
 
@@ -737,6 +808,7 @@ impl Office {
             terminals: Arc::new(FakeTerminals::default()),
             processes: Arc::new(MemoryProcessStore::default()),
             probe: Arc::new(FakeProbe::default()),
+            status_commands: Arc::new(FakeStatusCommands::default()),
             machine_id: MachineId::generate(),
         }
     }
@@ -797,7 +869,8 @@ impl Office {
         )
     }
 
-    fn launcher(&self) -> SessionLauncher {
+    #[must_use]
+    pub fn launcher(&self) -> SessionLauncher {
         SessionLauncher::new(
             self.agents.clone(),
             self.projects.clone(),
@@ -809,6 +882,8 @@ impl Office {
                 clock: Arc::new(FixedClock),
                 failures: Arc::new(IgnoredFailures),
                 processes: self.process_recorder(),
+                status_commands: self.status_commands.clone(),
+                sign_in_timeout: SIGN_IN_TIMEOUT,
             },
         )
     }

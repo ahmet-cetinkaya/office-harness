@@ -20,6 +20,7 @@ use agent_application::commands::start_agent::{StartAgentHandler, StartOutcome};
 use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
 use agent_application::common::continuation::fresh_session_view;
+use agent_application::queries::file_view::{DiffQuestion, FileViewHandler};
 use agent_application::queries::get_office_additions::GetOfficeAdditionsHandler;
 use agent_application::queries::get_settings::GetSettingsHandler;
 use agent_application::queries::list_agents::ListAgentsHandler;
@@ -37,13 +38,15 @@ use super::role_requests::{RoleRequests, RoleResult};
 use super::subtree_requests::{SubtreeRequests, SubtreeResult};
 use crate::contracts::{
     AdditionsRequest, AgentIdRequest, CreateAgentRequest, CreateProjectRequest, DeleteAgentRequest,
+    FilesCommitRequest, FilesDiffRequest, FilesHistoryRequest, FilesListRequest, FilesReadRequest,
     ProjectIdRequest, ResumeAgentRequest, RolePlacement, SessionIdRequest, SettingKeyRequest,
     SettingRequest, TaskTextRequest, WorktreeInfoRequest, WorktreeStatusRequest,
 };
 use crate::mappings::{
     additions_changed_event, additions_json, agent_changed_event, agent_deleted_event, agent_json,
-    agent_status_event, agent_task_event, project_changed_event, project_json, session_json,
-    setting_json, worktree_info_json, worktree_outcome_json, worktree_status_json,
+    agent_status_event, agent_task_event, changes_json, commit_json, content_json, diff_json,
+    history_json, listing_json, project_changed_event, project_json, session_json, setting_json,
+    worktree_info_json, worktree_outcome_json, worktree_status_json,
 };
 
 const PROJECT_CREATED: &str = "created";
@@ -75,6 +78,7 @@ pub struct AgentUseCases {
     pub get_settings: GetSettingsHandler,
     pub worktree_info: WorktreeInfoHandler,
     pub worktree_status: WorktreeStatusHandler,
+    pub file_view: FileViewHandler,
 }
 
 /// The answer to one request, the events that every client gets because of
@@ -195,6 +199,12 @@ impl AgentHandlers {
             "agent.delete" => self.delete_agent(request),
             "agent.worktree_info" => self.worktree_info(request),
             "agent.worktree_status" => self.worktree_status(request),
+            "agent.files.list" => self.list_files(request),
+            "agent.files.read" => self.read_file(request),
+            "agent.files.changes" => self.file_changes(request),
+            "agent.files.diff" => self.file_diff(request),
+            "agent.files.history" => self.file_history(request),
+            "agent.files.commit" => self.file_commit(request),
             "agent.start" => self.start_agent(request),
             "agent.stop" => self.stop_agent(request),
             "agent.new_task" => self.start_new_task(request),
@@ -337,6 +347,58 @@ impl AgentHandlers {
         let views = self.use_cases.worktree_status.handle(&body.agent_ids)?;
         let entries = views.iter().map(worktree_status_json).collect();
         Ok(Success::result(Value::Array(entries)))
+    }
+
+    /// The `agent.files.*` requests only read: no event, no action record.
+    fn list_files(&self, request: &Request) -> Result<Success, HandlerError> {
+        let body = FilesListRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        let agent_id: AgentId = parse_id("agent_id", &body.agent_id)?;
+        let listing = self.use_cases.file_view.list(agent_id, &body.path)?;
+        Ok(Success::result(listing_json(&listing)))
+    }
+
+    fn read_file(&self, request: &Request) -> Result<Success, HandlerError> {
+        let body = FilesReadRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        let agent_id: AgentId = parse_id("agent_id", &body.agent_id)?;
+        let content = self
+            .use_cases
+            .file_view
+            .read(agent_id, &body.path, body.reveal)?;
+        Ok(Success::result(content_json(&content)))
+    }
+
+    fn file_changes(&self, request: &Request) -> Result<Success, HandlerError> {
+        let changes = self.use_cases.file_view.changes(parse_agent_id(request)?)?;
+        Ok(Success::result(changes_json(&changes)))
+    }
+
+    fn file_diff(&self, request: &Request) -> Result<Success, HandlerError> {
+        let body = FilesDiffRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        let agent_id: AgentId = parse_id("agent_id", &body.agent_id)?;
+        let diff = self.use_cases.file_view.diff(
+            agent_id,
+            &DiffQuestion {
+                path: &body.path,
+                old_path: body.old_path.as_deref(),
+                commit: body.commit.as_deref(),
+                reveal: body.reveal,
+            },
+        )?;
+        Ok(Success::result(diff_json(&diff)))
+    }
+
+    fn file_history(&self, request: &Request) -> Result<Success, HandlerError> {
+        let body = FilesHistoryRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        let agent_id: AgentId = parse_id("agent_id", &body.agent_id)?;
+        let page = self.use_cases.file_view.history(agent_id, body.skip)?;
+        Ok(Success::result(history_json(&page)))
+    }
+
+    fn file_commit(&self, request: &Request) -> Result<Success, HandlerError> {
+        let body = FilesCommitRequest::read(&request.fields).map_err(HandlerError::invalid)?;
+        let agent_id: AgentId = parse_id("agent_id", &body.agent_id)?;
+        let detail = self.use_cases.file_view.commit(agent_id, &body.commit)?;
+        Ok(Success::result(commit_json(&detail)))
     }
 
     fn start_agent(&self, request: &Request) -> Result<Success, HandlerError> {

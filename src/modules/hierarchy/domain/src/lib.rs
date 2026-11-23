@@ -17,8 +17,13 @@ pub use services::call_rules::{
 pub use services::hold::{Hold, HoldRefusal, HoldScope, HoldSetter, hold_refusal};
 pub use services::rate_limits::{LimitKind, LimitRefusal, RATE_WINDOW_SECONDS, RateLimits};
 pub use services::rate_windows::{AgentAction, RateWindows};
+pub use services::report_rules::{
+    REPORT_MAX_CHARS, ReportKind, ReportReceiver, report_line, report_receiver, report_record_text,
+    validate_report_text,
+};
 pub use services::tree_rules::{
     Placement, TreeRow, check_placement, descendants_in_tree_order, descendants_of,
     is_descendant_of, resolved_parent,
 };
+pub use services::visible_text;
 pub use value_objects::{Role, TeamName, parse_role};

@@ -7,7 +7,7 @@ use kernel::AgentId;
 use notification_application::commands::needs_you::{NeedsYouClearReason, NeedsYouService};
 use notification_application::common::errors::NotificationApplicationError;
 use notification_application::common::interfaces::AgentNameLookup;
-use notification_domain::{AttentionEvent, NeedsYouItem, NotificationId};
+use notification_domain::{AttentionEvent, ItemReport, NeedsYouItem, NotificationId};
 use notification_presentation::NeedsYouUseCases;
 
 use crate::bootstrap::{ServerLog, StorageAlerts};
@@ -86,6 +86,24 @@ impl NeedsYouBridge {
     ) {
         let _turn = self.take_turn();
         let outcome = self.service.record(agent_id, event, origin).map(|_| true);
+        announce_origin();
+        self.publish_if_changed("recorded", agent_id, outcome);
+    }
+
+    /// Records a report for the person on the agent's item, with the same
+    /// order of origin, store, and publish as `record` (0015/FR-007).
+    pub fn record_report(
+        &self,
+        agent_id: AgentId,
+        report: ItemReport,
+        origin: Option<NotificationId>,
+        announce_origin: impl FnOnce(),
+    ) {
+        let _turn = self.take_turn();
+        let outcome = self
+            .service
+            .record_report(agent_id, report, origin)
+            .map(|_| true);
         announce_origin();
         self.publish_if_changed("recorded", agent_id, outcome);
     }

@@ -16,6 +16,11 @@ import type {
   NeedsYouKind,
 } from "../../src/modules/needs-you/models/needs-you";
 import type { NotificationRow } from "../../src/modules/notification/models/notification";
+import {
+  buildFileFixture,
+  type FileFixture,
+  type FixtureContent,
+} from "./file-fixture";
 
 /** One seeded agent with the fields the 0003 suites assert on. The mock
  * answers them on every agent it returns; left out, the office holds none. */
@@ -124,6 +129,9 @@ export interface OfficeSeed {
     string,
     { changedFiles?: number; reachable?: boolean; ownCommits?: number }
   >;
+  /** Milliseconds that every `agent.files.*` request waits before it answers,
+   * as a slow office. Answers at once when left out. */
+  fileViewDelayMs?: number;
   /** A refusal to answer with, by request type. The tree reads it too. */
   refusals?: Record<string, { code: string; message: string }>;
 }
@@ -169,7 +177,14 @@ export interface NotificationSeed {
   id: string;
   agent_id: string;
   agent_name: string;
-  event: "exited" | "failed" | "waiting_for_input" | "bell" | "auto_hold";
+  event:
+    | "exited"
+    | "failed"
+    | "waiting_for_input"
+    | "bell"
+    | "auto_hold"
+    | "resume_hold"
+    | "report";
   detail?: string | null;
   created_at: number;
   read_at: number | null;
@@ -207,6 +222,17 @@ declare global {
         detail?: string,
         firstEventAt?: number,
       ): void;
+      /**
+       * An agent sends a report, as the server records it (0015): a
+       * "report" notification (none while the agent has an unread one) and a
+       * Needs you item that holds the report text.
+       */
+      report(
+        agentId: string,
+        reportKind: string,
+        text: string,
+        firstEventAt?: number,
+      ): void;
       /** The office puts an agent on hold by itself, as a limit does (0007). */
       autoHold(agentId: string, limitName: string): void;
       calls: RecordedCall[];
@@ -215,6 +241,9 @@ declare global {
     };
   }
 }
+
+/** The options with the seeded folder of the file view (0016). */
+type SeededMockCore = MockCoreOptions & { files: FileFixture };
 
 /**
  * Stands in for the Tauri IPC the webview talks to, so the real client code
@@ -225,7 +254,8 @@ export async function installMockCore(
   page: Page,
   options: MockCoreOptions,
 ): Promise<void> {
-  await page.addInitScript((mock: MockCoreOptions) => {
+  const seeded: SeededMockCore = { ...options, files: buildFileFixture() };
+  await page.addInitScript((mock: SeededMockCore) => {
     const callbacks = new Map<number, (message: unknown) => void>();
     const nextIndex = new Map<number, number>();
     const stateChannels: number[] = [];
@@ -234,12 +264,13 @@ export async function installMockCore(
     const terminalChannels: number[] = [];
     const calls: RecordedCall[] = [];
     const settings: RecordedSetting[] = [];
-    // The four limits of the contract, with the server's defaults (0007).
+    // The limits of the contract, with the server's defaults (0007).
     const LIMIT_DEFAULTS: Record<string, string> = {
       limit_directives_per_agent: "10",
       limit_directives_per_target: "3",
       limit_creates_per_agent: "5",
       limit_lifecycle_per_agent: "10",
+      limit_reports_per_agent: "5",
     };
     const LIMIT_INVALID =
       "invalid: a limit is a whole number of at least 1 and at most 1000";
@@ -403,9 +434,47 @@ export async function installMockCore(
           first_event_at: firstEventAt,
           latest_at: Date.now(),
           origin_notification_id: row?.id ?? null,
+          report: null,
         });
       } else {
         Object.assign(known, { kind, detail, latest_at: Date.now() });
+      }
+      pushNeedsYouChanged();
+    };
+    const recordReport = (
+      agent: Agent,
+      reportKind: string,
+      text: string,
+      firstEventAt: number,
+    ) => {
+      const hasUnreadReport = office.notifications.some(
+        (row) =>
+          row.agent_id === agent.id &&
+          row.event === "report" &&
+          row.read_at === null,
+      );
+      const row = hasUnreadReport
+        ? null
+        : createNotification(agent, "report", reportKind);
+      const report = { kind: reportKind, text, at: Date.now() };
+      const known = office.needsYou.find((item) => item.agent_id === agent.id);
+      if (known === undefined) {
+        office.needsYou.push({
+          agent_id: agent.id,
+          kind: "report",
+          detail: reportKind,
+          first_event_at: firstEventAt,
+          latest_at: report.at,
+          origin_notification_id: row?.id ?? null,
+          report,
+        });
+      } else {
+        Object.assign(known, {
+          kind: "report",
+          detail: reportKind,
+          latest_at: report.at,
+          report,
+        });
       }
       pushNeedsYouChanged();
     };
@@ -911,6 +980,116 @@ export async function installMockCore(
       return null;
     };
 
+    // The six file view requests (0016). The folder is seeded; the agent
+    // chooses between a repository, a folder outside one, and a clean one.
+    const FILE_PAGE_SIZE = 50;
+    const answerFileContent = (
+      content: FixtureContent | undefined,
+      fields: Record<string, unknown>,
+      extra: Record<string, unknown>,
+    ) => {
+      if (content === undefined) refuse("not_found", "no such file");
+      const shown = content as FixtureContent;
+      const isHidden = shown.secret === true && fields.reveal !== true;
+      return {
+        ...extra,
+        state: isHidden ? "secret" : shown.state,
+        size: shown.size,
+        content_base64: isHidden ? null : shown.content_base64,
+      };
+    };
+    const answerFileView = (
+      kind: string,
+      fields: Record<string, unknown>,
+    ): unknown => {
+      const files = mock.files;
+      const agentId = fields.agent_id as string;
+      const isRepository = agentId !== files.notRepositoryAgentId;
+      const isClean = agentId === files.cleanAgentId;
+      switch (kind) {
+        case "agent.files.list": {
+          const path = fields.path as string;
+          const entries =
+            !isRepository || isClean
+              ? path === ""
+                ? [
+                    {
+                      name: "readme.txt",
+                      kind: "file",
+                      size: 4,
+                      secret: false,
+                      target: null,
+                    },
+                  ]
+                : undefined
+              : files.folders[path];
+          if (entries === undefined) {
+            refuse("refused", "the path is outside the agent's working folder");
+          }
+          return {
+            root: files.root,
+            path,
+            entries,
+            more: 0,
+            read_at: files.readAt,
+          };
+        }
+        case "agent.files.read": {
+          const path = fields.path as string;
+          return answerFileContent(files.reads[path], fields, {
+            path,
+            read_at: files.readAt,
+          });
+        }
+        case "agent.files.changes":
+          return {
+            repository: isRepository,
+            files: isRepository && !isClean ? files.changes : [],
+            more: 0,
+            read_at: files.readAt,
+          };
+        case "agent.files.diff": {
+          const path = fields.path as string;
+          return answerFileContent(files.diffs[path], fields, { path });
+        }
+        case "agent.files.history": {
+          const skip = (fields.skip as number | undefined) ?? 0;
+          const commits = isRepository && !isClean ? files.commits : [];
+          return {
+            repository: isRepository,
+            commits: commits.slice(skip, skip + FILE_PAGE_SIZE),
+            more: skip + FILE_PAGE_SIZE < commits.length,
+          };
+        }
+        default: {
+          const commit = files.commits.find(
+            (candidate) => candidate.id === fields.commit,
+          );
+          if (commit === undefined) {
+            refuse("invalid", "not a commit of the repository");
+          }
+          const found = commit as (typeof files.commits)[number];
+          const isNewest = found.id === files.commits[0].id;
+          return {
+            id: found.id,
+            parents: [],
+            author: found.author,
+            email: "ada@example.test",
+            time: found.time,
+            message: files.commitMessages[found.id] ?? found.subject,
+            files: isNewest
+              ? files.changes.filter((change) =>
+                  ["notes.txt", "src/main.txt"].includes(change.path),
+                )
+              : files.changes.filter(
+                  (change) => change.path === "src/main.txt",
+                ),
+            more: 0,
+          };
+        }
+      }
+    };
+
     // The requests that the real server answers, in the shapes of the
     // contract. Each change also sends the events that the server sends.
     const answer = async (
@@ -998,7 +1177,11 @@ export async function installMockCore(
           pushEvent({ type: "agent.changed", agent: leadAgent });
           pushEvent({ type: "hierarchy.changed", cause: "team.created" });
           record(leadAgent.id, "create");
-          return { id: team.id, name: team.name, lead_agent_id: leadAgent.id };
+          return {
+            id: team.id,
+            name: team.name,
+            lead_agent_id: leadAgent.id,
+          };
         }
         case "team.delete": {
           if (fields.confirm !== true) {
@@ -1499,6 +1682,16 @@ export async function installMockCore(
           );
           return {};
         }
+        case "agent.files.list":
+        case "agent.files.read":
+        case "agent.files.changes":
+        case "agent.files.diff":
+        case "agent.files.history":
+        case "agent.files.commit":
+          await new Promise((resolve) =>
+            setTimeout(resolve, mock.office?.fileViewDelayMs ?? 0),
+          );
+          return answerFileView(kind, fields);
         case "resume.plan":
           return resumePlan();
         case "resume.start": {
@@ -1773,6 +1966,19 @@ export async function installMockCore(
             firstEventAt ?? Date.now(),
           );
         },
+        report: (
+          agentId: string,
+          reportKind: string,
+          text: string,
+          firstEventAt?: number,
+        ) => {
+          recordReport(
+            findAgent(agentId),
+            reportKind,
+            text,
+            firstEventAt ?? Date.now(),
+          );
+        },
         autoHold: (agentId: string, limitName: string) => {
           const agent = findAgent(agentId);
           office.holds.agents.push({
@@ -1789,5 +1995,5 @@ export async function installMockCore(
         settings,
       },
     });
-  }, options);
+  }, seeded);
 }
