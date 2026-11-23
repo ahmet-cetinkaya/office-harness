@@ -112,15 +112,16 @@ impl ScreenEmulator {
         screen.contents_between(row, 0, row, columns)
     }
 
-    /// The visible rows as plain text and the cursor row, without the
+    /// The visible rows as plain text and the cursor position, without the
     /// scrollback.
     #[must_use]
     pub fn screen_view(&self) -> ScreenView {
         let screen = self.parser.screen();
-        let (cursor_row, _) = screen.cursor_position();
+        let (cursor_row, cursor_column) = screen.cursor_position();
         ScreenView {
             rows: screen.rows(0, screen.size().1.get()).collect(),
             cursor_row: usize::from(cursor_row),
+            cursor_column: usize::from(cursor_column),
         }
     }
 

@@ -169,7 +169,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 
 ### T5: Docs and QA (all criteria)
 
-- **Files:** `README.md` (the task line and how to set it), `specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md` (a cross-reference to the `task` field), `specs/changes/0011-task-line/qa-report.md`.
+- **Files:** `README.md` (the task line and how to set it), `specs/changes/archive/0001-office-server-and-terminal/contracts/client-protocol.md` (a cross-reference to the `task` field), `specs/changes/0011-task-line/qa-report.md`.
 - **Work:** document the flow; QA rows for SC-001 to SC-005 and the edge cases. Hands-on rows (screen reader names of the line, 200 percent zoom of the row and details, SC-002's 5-minute real CLI title changes) are recorded as BLOCKED until run.
 - **Depends on:** T4.
 - **Acceptance:** every Traceability row has evidence or a recorded gap; `rg` finds no other project's name.
@@ -188,7 +188,7 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 | 2 | T2 | `M/agent/`, `M/audit/domain/`, `H/bridges/action_recorder.rs`, `H/bridges/{notification_bridge,directive_bridges,agent_status_bridge}.tests.rs` | `feat(agent): keep a task text per agent` |
 | 3 | T3 | `M/hierarchy/application/`, `H/`, `M/agent/presentation/`, `src/apps/office-harnessd/tests/` | `feat(server): set the task text from directives and the user` |
 | 4 | T4 | `D/`, `src/apps/desktop/e2e/` | `feat(desktop): show the task line and edit the task text` |
-| 5 | T5 | `README.md`, `specs/changes/0001-office-server-and-terminal/contracts/client-protocol.md`, `specs/changes/0011-task-line/qa-report.md` | `docs(spec-0011): document the task line and record QA` |
+| 5 | T5 | `README.md`, `specs/changes/archive/0001-office-server-and-terminal/contracts/client-protocol.md`, `specs/changes/0011-task-line/qa-report.md` | `docs(spec-0011): document the task line and record QA` |
 
 ## QA and evidence
 
