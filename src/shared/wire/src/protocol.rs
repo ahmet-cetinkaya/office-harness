@@ -25,6 +25,13 @@ pub const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
 pub const WS_PATH: &str = "/v1/ws";
 pub const HEALTH_PATH: &str = "/v1/health";
 
+/// Where the status hooks of a CLI session post their reports (0024). The
+/// session id follows the prefix.
+pub const HOOK_PATH_PREFIX: &str = "/v1/hook/";
+
+/// The largest status-hook report the server reads (0024/FR-009).
+pub const MAX_HOOK_REPORT_BYTES: usize = 64 * 1024;
+
 /// The file in the data folder that tells clients where the server listens.
 pub const SERVER_FILE_NAME: &str = "server.json";
 

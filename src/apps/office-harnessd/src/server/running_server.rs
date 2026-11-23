@@ -17,6 +17,7 @@ use super::dispatcher::Dispatcher;
 use super::event_hub::EventHub;
 use super::hierarchy_requests::HierarchyGateway;
 use super::hold_requests::HoldGateway;
+use super::hook_requests::HookGateway;
 use super::idle_sleep_run::IdleSleeper;
 use super::notification_requests::NotificationGateway;
 use super::process_scan::spawn_process_scan;
@@ -331,6 +332,10 @@ impl Server {
             send_report: Arc::clone(&services.hierarchy.send_report),
             hierarchy_tree: Arc::clone(&services.hierarchy.tree),
             directive_journal: Arc::clone(&services.hierarchy.directive_journal),
+            hooks: HookGateway::new(
+                services.access.hook_secrets.clone(),
+                Arc::clone(&services.hook_reports),
+            ),
             notification: notification_gateway(services),
             templates: template_gateway(services),
             resume,

@@ -64,6 +64,9 @@ pub struct Services {
     /// The stored process identities, read for the sweep finding of
     /// `resume.plan` (0017/D8).
     pub session_processes: Arc<SessionProcessRepository>,
+    /// Takes the status-hook reports that passed the endpoint's checks
+    /// (0024). A test replaces it before the server binds.
+    pub hook_reports: Arc<dyn crate::server::HookReportSink>,
 }
 
 /// Runs each module's migrations, every module on its own ledger.
@@ -224,6 +227,7 @@ pub fn start_with(
         agent_bridge_store,
         orphan_sweep,
         session_processes,
+        hook_reports: Arc::new(crate::server::DiscardHookReports),
     };
     connect_sleep_gate(&services);
     Ok(services)

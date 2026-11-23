@@ -9,6 +9,7 @@ mod event_hub;
 mod handshake;
 mod hierarchy_requests;
 mod hold_requests;
+mod hook_requests;
 mod idle_sleep_run;
 mod notification_requests;
 mod process_scan;
@@ -35,6 +36,9 @@ pub use agent_requests::AgentGateway;
 pub use event_hub::EventHub;
 pub use hierarchy_requests::HierarchyGateway;
 pub use hold_requests::{HoldGateway, hold_changed_event};
+pub use hook_requests::{
+    DiscardHookReports, HookEventKind, HookGateway, HookReport, HookReportSink,
+};
 pub use notification_requests::NotificationGateway;
 pub use restart_signal::{RESTART_REQUEST, RestartSignal};
 pub use running_server::Server;

@@ -17,6 +17,7 @@ use super::dispatcher::Dispatcher;
 use super::event_hub::EventHub;
 use super::hierarchy_requests::HierarchyGateway;
 use super::hold_requests::HoldGateway;
+use super::hook_requests::HookGateway;
 use super::notification_requests::NotificationGateway;
 use super::restart_signal::RestartSignal;
 use super::resume_requests::ResumeGateway;
@@ -54,6 +55,9 @@ pub struct ServerState {
     /// Journals the refusals the agent-call gateway itself rejects; the use
     /// case journals the attempts it runs.
     pub directive_journal: Arc<DirectiveJournalBridge>,
+    /// The status-hook reports of the `claude` sessions (0024). The route
+    /// answers with the session secret, never with the office token.
+    pub hooks: HookGateway,
     pub notification: NotificationGateway,
     /// The user's `template.*` requests. Only the user connection routes to
     /// it; the agent connection never does (0009).
