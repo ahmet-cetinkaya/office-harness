@@ -30,6 +30,7 @@ const ACTION_TEXT: Record<string, string> = {
   helper_limit: "Stopped storing helpers",
   sleep: "Put to sleep",
   wake: "Woke",
+  end: "Ended",
 };
 
 /**

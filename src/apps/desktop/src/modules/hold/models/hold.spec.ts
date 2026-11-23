@@ -9,7 +9,14 @@ import {
   readHoldState,
   type Hold,
 } from "./hold";
-import { LIMIT_INVALID_MESSAGE, LIMIT_SETTINGS, limitProblem } from "./limits";
+import {
+  firstLimitProblem,
+  LIMIT_INVALID_MESSAGE,
+  LIMIT_SETTINGS,
+  limitProblem,
+  TEMP_SETTINGS,
+  tempProblem,
+} from "./limits";
 
 const ada: Hold = { agent_id: "ada", set_by: "user", since: 1 };
 const bo: Hold = {
@@ -114,6 +121,41 @@ describe("limit values", () => {
     }
     expect(LIMIT_INVALID_MESSAGE).toBe(
       "a limit is a whole number of at least 1 and at most 1000",
+    );
+  });
+});
+
+describe("temp settings", () => {
+  const [cap, idle] = TEMP_SETTINGS;
+
+  test("the cap is 1 to 100 and the idle limit 5 to 1440", () => {
+    for (const text of ["1", "8", " 100 "])
+      expect(tempProblem(text, cap)).toBeNull();
+    for (const text of ["0", "101", "2.5", "abc", ""]) {
+      expect(tempProblem(text, cap)).toBe(
+        "temp_cap is a whole number from 1 to 100",
+      );
+    }
+    for (const text of ["5", "30", "1440"]) {
+      expect(tempProblem(text, idle)).toBeNull();
+    }
+    for (const text of ["4", "1441", "x"]) {
+      expect(tempProblem(text, idle)).toBe(
+        "temp_idle_minutes is a whole number of minutes from 5 to 1440",
+      );
+    }
+  });
+
+  test("the first refused setting names its label", () => {
+    const values = {
+      ...Object.fromEntries(
+        LIMIT_SETTINGS.map((limit) => [limit.key, String(limit.defaultValue)]),
+      ),
+      temp_cap: "8",
+      temp_idle_minutes: "4",
+    };
+    expect(firstLimitProblem(values)?.limit.label).toBe(
+      "Temp idle limit, minutes",
     );
   });
 });

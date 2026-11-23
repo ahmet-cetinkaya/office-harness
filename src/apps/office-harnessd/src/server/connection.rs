@@ -17,6 +17,7 @@ use super::notification_requests::NotificationGateway;
 use super::restart_signal::RESTART_REQUEST;
 use super::resume_requests::ResumeGateway;
 use super::server_state::ServerState;
+use super::temp_requests::TempGateway;
 use super::template_requests::TemplateGateway;
 use super::terminal_requests::{
     ConnectionTerminals, FRAME_BACKLOG, TERMINAL_PREFIX, TerminalAnswer,
@@ -263,6 +264,16 @@ async fn answer_request(
             let responses = responses.clone();
             tokio::spawn(async move {
                 let answer = notification.handle(request).await.encode();
+                // The connection may be gone by now; the request still ran.
+                let _ = responses.send(answer).await;
+            });
+            return Ok(());
+        }
+        Some(request) if TempGateway::accepts(&request.kind) => {
+            let temps = state.temps.clone();
+            let responses = responses.clone();
+            tokio::spawn(async move {
+                let answer = temps.handle(request).await.encode();
                 // The connection may be gone by now; the request still ran.
                 let _ = responses.send(answer).await;
             });

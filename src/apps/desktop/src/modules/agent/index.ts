@@ -18,7 +18,13 @@ export type {
   NewAgent,
   Project,
 } from "./models/agent";
-export { isActive, shownStatusText } from "./models/agent";
+export {
+  creatorText,
+  isActive,
+  shownStatusText,
+  statusText,
+} from "./models/agent";
+export { confirmationText } from "./services/confirmations";
 export { taskRowText, visibleText } from "./models/task-text";
 export {
   environmentLineText,

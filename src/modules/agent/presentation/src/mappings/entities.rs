@@ -4,8 +4,10 @@ use agent_application::commands::delete_agent::WorktreeOutcome;
 use agent_application::common::interfaces::WorktreeInfo;
 use agent_application::common::models::{AdditionsView, SessionView};
 use agent_application::queries::worktrees::WorktreeStatusView;
-use agent_domain::entities::{Agent, Project};
-use agent_domain::value_objects::{AgentWorktree, OfficeAdditions, TaskText};
+use agent_domain::entities::{Agent, FinishedTemp, Project};
+use agent_domain::value_objects::{
+    AgentWorktree, OfficeAdditions, TaskText, TempMark, creator_text,
+};
 use serde_json::{Value, json};
 
 #[must_use]
@@ -25,6 +27,40 @@ pub fn agent_json(agent: &Agent) -> Value {
         "last_line": Value::Null,
         "task": task_json(agent.task.as_ref()),
         "worktree": agent.worktree.as_ref().map_or(Value::Null, worktree_json),
+        "temp": agent.temp.as_ref().map_or(Value::Null, temp_json),
+    })
+}
+
+/// `{objective, creator}` of a temp; the creator is `user` or an agent id
+/// (0020 D1).
+#[must_use]
+pub fn temp_json(temp: &TempMark) -> Value {
+    json!({
+        "objective": temp.objective.as_str(),
+        "creator": creator_text(temp.creator),
+    })
+}
+
+/// One finished temp entry (0020 D11).
+#[must_use]
+pub fn finished_temp_json(entry: &FinishedTemp) -> Value {
+    json!({
+        "id": entry.id.to_string(),
+        "agent_id": entry.agent_id.to_string(),
+        "name": entry.name,
+        "objective": entry.objective,
+        "creator": creator_text(entry.creator),
+        "parent_name": entry.parent_name,
+        "started_at": entry.started_at.as_unix_millis(),
+        "ended_at": entry.ended_at.as_unix_millis(),
+        "reason": entry.reason,
+        "report": entry
+            .report
+            .as_ref()
+            .map(|report| json!({"kind": report.kind, "text": report.text})),
+        "kept_folder": entry.kept_folder.as_ref().map(|folder| folder.to_string_lossy()),
+        "kept_branch": entry.kept_branch,
+        "removal_failure": entry.removal_failure,
     })
 }
 
@@ -153,3 +189,7 @@ pub fn session_json(view: &SessionView) -> Value {
     }
     body
 }
+
+#[cfg(test)]
+#[path = "entities.tests.rs"]
+mod tests;

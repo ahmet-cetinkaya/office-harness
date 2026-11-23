@@ -107,6 +107,15 @@ fn serve_bound(mut office: RunningOffice) -> ServingOffice {
 /// Starts a server again on the data folder of a stopped one, as a restart of
 /// the server process does: new services over the same database.
 pub async fn serve_again(stopped: RunningOffice, login: LoginSetup) -> ServingOffice {
+    serve_again_with(stopped, login, ServerOptions::default()).await
+}
+
+/// As `serve_again`, with the options the new server runs with.
+pub async fn serve_again_with(
+    stopped: RunningOffice,
+    login: LoginSetup,
+    options: ServerOptions,
+) -> ServingOffice {
     let RunningOffice {
         config,
         log,
@@ -114,7 +123,7 @@ pub async fn serve_again(stopped: RunningOffice, login: LoginSetup) -> ServingOf
         ..
     } = stopped;
     let services = bootstrap::start_with(&config, &log, login).expect("restart");
-    let server = Server::bind(&config, &services, &log, ServerOptions::default())
+    let server = Server::bind(&config, &services, &log, options)
         .await
         .expect("bind");
     serve_bound(RunningOffice {

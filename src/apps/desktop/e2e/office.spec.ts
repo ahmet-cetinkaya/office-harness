@@ -94,6 +94,7 @@ test("an agent is created and started from the keyboard alone", async ({
   await page.keyboard.type("/work/ada");
   await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
   await expect(
     page.getByRole("button", { name: "Create agent" }),
   ).toBeFocused();

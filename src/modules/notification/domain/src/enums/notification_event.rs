@@ -23,10 +23,12 @@ pub enum NotificationEvent {
     LeftoverKept,
     /// The agent sent a report for the person (0015/FR-007).
     Report,
+    /// A temp ended for the idle limit and no parent heard of it (0020/FR-007).
+    TempEnded,
 }
 
 impl NotificationEvent {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Exited,
         Self::Failed,
         Self::WaitingForInput,
@@ -35,6 +37,7 @@ impl NotificationEvent {
         Self::ResumeHold,
         Self::LeftoverKept,
         Self::Report,
+        Self::TempEnded,
     ];
 
     /// The stored and wire name.
@@ -49,6 +52,7 @@ impl NotificationEvent {
             Self::ResumeHold => "resume_hold",
             Self::LeftoverKept => "leftover_kept",
             Self::Report => "report",
+            Self::TempEnded => "temp_ended",
         }
     }
 }
@@ -67,7 +71,7 @@ impl FromStr for NotificationEvent {
             .into_iter()
             .find(|event| event.as_str() == text)
             .ok_or_else(|| NotificationError(format!(
-                "notification event is not one of exited, failed, waiting_for_input, bell, auto_hold, resume_hold, leftover_kept, report: {text}"
+                "notification event is not one of exited, failed, waiting_for_input, bell, auto_hold, resume_hold, leftover_kept, report, temp_ended: {text}"
             )))
     }
 }

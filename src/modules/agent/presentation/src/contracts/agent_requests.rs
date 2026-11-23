@@ -30,6 +30,8 @@ pub struct CreateAgentRequest {
     pub role: Option<RolePlacement>,
     /// The own worktree choice (0010); `None` without `own_worktree: true`.
     pub worktree: Option<OwnWorktree>,
+    /// The objective of a temp (0020); `None` without `temp: true`.
+    pub temp_objective: Option<String>,
 }
 
 impl CreateAgentRequest {
@@ -51,6 +53,7 @@ impl CreateAgentRequest {
                 Some(value) => Some(read_role(value)?),
             },
             worktree: read_own_worktree(&fields)?,
+            temp_objective: read_temp_objective(&fields)?,
         })
     }
 }
@@ -67,6 +70,18 @@ fn read_own_worktree(fields: &Fields<'_>) -> Result<Option<OwnWorktree>, String>
         (None, None) => Ok(None),
         (Some(_), _) => Err("base is only taken with own_worktree".to_owned()),
         (None, Some(_)) => Err("branch_name is only taken with own_worktree".to_owned()),
+    }
+}
+
+/// `temp` and `objective` (0020 D3). A temp needs its objective, and an
+/// objective alone is refused, so a stray one never acts on its own.
+fn read_temp_objective(fields: &Fields<'_>) -> Result<Option<String>, String> {
+    let objective = fields.optional_text("objective")?;
+    match (fields.optional_bool("temp")?, objective) {
+        (Some(true), Some(objective)) => Ok(Some(objective)),
+        (Some(true), None) => Err("a temp needs an objective".to_owned()),
+        (_, None) => Ok(None),
+        (_, Some(_)) => Err("objective is only taken with temp".to_owned()),
     }
 }
 
@@ -252,6 +267,42 @@ impl SleepAgentRequest {
             idle_minutes: fields
                 .optional_u32("idle_minutes")?
                 .ok_or_else(|| "idle_minutes is required".to_owned())?,
+        })
+    }
+}
+
+/// `temp.end`: the temp to end, nothing else.
+#[derive(Debug)]
+pub struct TempEndRequest {
+    pub agent_id: String,
+}
+
+impl TempEndRequest {
+    /// # Errors
+    /// The text names the field at fault.
+    pub fn read(body: &Map<String, Value>) -> Result<Self, String> {
+        let fields = Fields(body);
+        fields.refuse_other_than("temp.end", &["agent_id"])?;
+        Ok(Self {
+            agent_id: fields.required_text("agent_id")?,
+        })
+    }
+}
+
+/// `temp.dismiss`: the finished entry to remove, nothing else.
+#[derive(Debug)]
+pub struct TempDismissRequest {
+    pub entry_id: String,
+}
+
+impl TempDismissRequest {
+    /// # Errors
+    /// The text names the field at fault.
+    pub fn read(body: &Map<String, Value>) -> Result<Self, String> {
+        let fields = Fields(body);
+        fields.refuse_other_than("temp.dismiss", &["entry_id"])?;
+        Ok(Self {
+            entry_id: fields.required_text("entry_id")?,
         })
     }
 }

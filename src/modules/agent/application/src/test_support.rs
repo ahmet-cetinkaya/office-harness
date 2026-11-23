@@ -886,6 +886,7 @@ impl Office {
             self.projects.clone(),
             self.additions.clone(),
             Arc::new(FixedClock),
+            self.settings.clone(),
             self.journal(),
             self.machine_id,
         )

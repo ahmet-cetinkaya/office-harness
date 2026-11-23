@@ -5,7 +5,7 @@ use std::sync::{Arc, OnceLock};
 
 use agent_application::commands::continue_session::ContinueSessionHandler;
 use agent_application::commands::create_agent::{
-    CreateAgentHandler, CreateAgentRequest as CreateAgent,
+    CreateAgentHandler, CreateAgentRequest as CreateAgent, NewTemp,
 };
 use agent_application::commands::create_project::{
     CreateProjectHandler, CreateProjectRequest as CreateProject,
@@ -20,6 +20,7 @@ use agent_application::commands::sleep_agent::SleepAgentHandler;
 use agent_application::commands::start_agent::{StartAgentHandler, StartOutcome};
 use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
+use agent_application::common::actor_scope::ActorScope;
 use agent_application::common::continuation::fresh_session_view;
 use agent_application::queries::file_view::{DiffQuestion, FileViewHandler};
 use agent_application::queries::get_office_additions::GetOfficeAdditionsHandler;
@@ -266,6 +267,7 @@ impl AgentHandlers {
             .as_deref()
             .map(|text| parse_id::<ProjectId>("project_id", text))
             .transpose()?;
+        let temp = new_temp(&body);
         let agent = self.use_cases.create_agent.handle(CreateAgent {
             name: body.name,
             command: body.command,
@@ -273,6 +275,7 @@ impl AgentHandlers {
             project_id,
             additions: body.additions,
             worktree: body.worktree,
+            temp,
         })?;
         Ok(Success::result(agent_json(&agent)).with_event(agent_changed_event(&agent)))
     }
@@ -299,6 +302,7 @@ impl AgentHandlers {
             project_id: body.project_id.clone(),
             additions: body.additions.clone(),
             worktree: body.worktree.clone(),
+            temp: new_temp(body),
         };
         match roles.create_role_agent(
             &seed,
@@ -590,6 +594,16 @@ fn subtree_outcome(
             events: agents.into_iter().map(event_of).collect(),
         }),
     }
+}
+
+/// The temp choice of a create. The creator is the actor of the request, so
+/// an agent-made create names that agent and the person's names the person
+/// (0020 D4).
+fn new_temp(body: &CreateAgentRequest) -> Option<NewTemp> {
+    body.temp_objective.clone().map(|objective| NewTemp {
+        objective,
+        creator: ActorScope::current(),
+    })
 }
 
 fn parse_id<T: std::str::FromStr>(field: &str, text: &str) -> Result<T, HandlerError> {

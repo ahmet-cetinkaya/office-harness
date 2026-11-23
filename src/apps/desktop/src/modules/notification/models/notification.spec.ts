@@ -87,6 +87,18 @@ describe("notification rows", () => {
     );
   });
 
+  test("an ended temp names the end reason from the detail (0020)", () => {
+    const ended = row({
+      event: "temp_ended",
+      detail: "no output for 30 minutes",
+    });
+    expect(announcementText(ended)).toBe("Ada ended: no output for 30 minutes");
+    expect(rowText(ended, false)).toBe(
+      "Ada, ended: no output for 30 minutes, agent deleted",
+    );
+    expect(announcementText(row({ event: "temp_ended" }))).toBe("Ada ended");
+  });
+
   test("a row reads as one sentence in its reading order (D11)", () => {
     expect(rowText(row(), true)).toBe("Ada, exited");
     expect(rowText(row({ event: "bell" }), true)).toBe("Ada, rang the bell");

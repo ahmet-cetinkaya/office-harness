@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use super::*;
 use hierarchy_domain::{Role, TreeRow};
-use kernel::Timestamp;
+use kernel::{Actor, Timestamp};
 
 use crate::commands::send_directive::{QUEUE_LIMIT, SETTLE_AFTER_TYPING, WAIT_LIMIT};
 
@@ -99,6 +99,7 @@ struct ToggledTargets {
     names: Vec<(AgentId, &'static str)>,
     readiness: Mutex<Readiness>,
     asleep: Mutex<Option<AgentId>>,
+    temps: Vec<AgentId>,
 }
 
 impl ToggledTargets {
@@ -116,7 +117,13 @@ impl ToggledTargets {
             names,
             readiness: Mutex::new(Readiness::Ready),
             asleep: Mutex::new(None),
+            temps: Vec::new(),
         }
+    }
+
+    fn with_temp(mut self, agent_id: AgentId) -> Self {
+        self.temps.push(agent_id);
+        self
     }
 
     fn with_stopped_and_names(agent_id: AgentId, names: Vec<(AgentId, &'static str)>) -> Self {
@@ -125,6 +132,7 @@ impl ToggledTargets {
             names,
             readiness: Mutex::new(Readiness::Ready),
             asleep: Mutex::new(None),
+            temps: Vec::new(),
         }
     }
 }
@@ -136,6 +144,10 @@ impl DirectiveTarget for ToggledTargets {
 
     fn is_asleep(&self, agent_id: AgentId) -> bool {
         *locked(&self.asleep) == Some(agent_id)
+    }
+
+    fn is_temp(&self, agent_id: AgentId) -> bool {
+        self.temps.contains(&agent_id)
     }
 
     fn name_of(&self, agent_id: AgentId) -> Option<String> {
@@ -212,11 +224,16 @@ impl DirectiveClock for ManualClock {
 #[derive(Default)]
 struct RecordingJournal {
     attempts: Mutex<Vec<Journaled>>,
+    objectives: Mutex<Vec<(Actor, AgentId)>>,
 }
 
 impl RecordingJournal {
     fn attempts(&self) -> Vec<Journaled> {
         locked(&self.attempts).clone()
+    }
+
+    fn objectives(&self) -> Vec<(Actor, AgentId)> {
+        locked(&self.objectives).clone()
     }
 }
 
@@ -228,6 +245,10 @@ impl DirectiveJournal for RecordingJournal {
             text: text.to_owned(),
             failure: failure.map(str::to_owned),
         });
+    }
+
+    fn record_objective(&self, creator: Actor, temp: AgentId) {
+        locked(&self.objectives).push((creator, temp));
     }
 }
 
@@ -955,6 +976,204 @@ fn a_head_claimed_before_a_server_stop_is_not_typed() {
     );
 }
 
+const TEMP_REASON: &str = "idle for 30 minutes";
+
+fn temp_harness(family: &Family, is_temp: bool) -> Harness {
+    let mut targets = ToggledTargets::with_names(vec![(family.lead, "Lead")]);
+    if is_temp {
+        targets = targets.with_temp(family.member);
+    }
+    let harness = harness_for(family, targets, RecordingWriter::new(None));
+    harness.set_readiness(Readiness::Busy);
+    harness
+}
+
+fn parent_report(family: &Family) -> ParentReport {
+    ParentReport {
+        sender: family.member,
+        parent: family.lead,
+        line: "[report from Member: done] built".to_owned(),
+        record_text: "done: built".to_owned(),
+    }
+}
+
+fn remove_member(harness: &Harness, family: &Family) {
+    locked(&harness.store.rows).retain(|row| row.agent_id != family.member);
+}
+
+/// What waits for `target`, oldest first, left in the queue.
+fn waiting_of(harness: &Harness, target: AgentId) -> Vec<WaitingDirective> {
+    let waiting = harness.handler.queue.drain(target);
+    for entry in &waiting {
+        harness.handler.queue.push(entry.clone());
+    }
+    waiting
+}
+
+#[test]
+fn an_objective_waits_for_its_own_temp_and_is_recorded_once_with_the_creator() {
+    let family = family();
+    let harness = temp_harness(&family, true);
+    let temp = family.member;
+
+    let position = harness
+        .handler
+        .queue_objective(temp, "build the parser", Actor::User)
+        .expect("queued");
+
+    assert_eq!(position, 1);
+    assert_eq!(harness.journal.objectives(), [(Actor::User, temp)]);
+    assert!(harness.journal.attempts().is_empty());
+    assert_eq!(
+        waiting_of(&harness, temp)[0].origin,
+        Origin::Objective { by: Actor::User }
+    );
+    harness.set_readiness(Readiness::Ready);
+    harness.deliver_all();
+    assert_eq!(harness.texts_written(), ["build the parser"]);
+    assert_eq!(harness.receipt.received().len(), 1);
+    assert_eq!(harness.journal.objectives().len(), 1);
+}
+
+#[test]
+fn an_objective_is_refused_when_its_text_breaks_the_directive_rules() {
+    let family = family();
+    let harness = temp_harness(&family, true);
+
+    let error = harness
+        .handler
+        .queue_objective(family.member, "", Actor::User)
+        .expect_err("blank text");
+
+    assert!(matches!(error, HierarchyApplicationError::Invalid(_)));
+    assert_eq!(harness.journal.objectives(), Vec::<(Actor, AgentId)>::new());
+    assert_eq!(harness.handler.waiting_count(family.member), 0);
+}
+
+#[test]
+fn a_waiting_report_of_a_removed_temp_stays_and_is_typed_as_a_report() {
+    let family = family();
+    let harness = temp_harness(&family, true);
+    harness
+        .handler
+        .send_report(&parent_report(&family), &family.rows)
+        .expect("queued");
+    let waiting = waiting_of(&harness, family.lead);
+    assert_eq!(
+        waiting[0].origin,
+        Origin::Report {
+            text: "done: built".to_owned()
+        }
+    );
+    assert!(waiting[0].from_temp);
+
+    remove_member(&harness, &family);
+    harness.set_readiness(Readiness::Ready);
+    harness.deliver_all();
+
+    assert_eq!(
+        harness.texts_written(),
+        ["[report from Member: done] built"]
+    );
+    assert_eq!(harness.failures(), Vec::<String>::new());
+}
+
+#[test]
+fn a_waiting_report_of_a_removed_non_temp_sender_is_withdrawn() {
+    let family = family();
+    let harness = temp_harness(&family, false);
+    harness
+        .handler
+        .send_report(&parent_report(&family), &family.rows)
+        .expect("queued");
+    assert!(!waiting_of(&harness, family.lead)[0].from_temp);
+
+    remove_member(&harness, &family);
+    harness.set_readiness(Readiness::Ready);
+    harness.deliver_all();
+
+    assert!(harness.writer.lines().is_empty());
+    assert_eq!(
+        harness.failures(),
+        ["withdrawn before typing: the sender is no longer a child of Lead"]
+    );
+}
+
+#[test]
+fn an_end_notice_of_a_removed_temp_stays_and_is_typed_as_an_end_notice() {
+    let family = family();
+    let harness = temp_harness(&family, true);
+    let line = hierarchy_domain::end_notice_line("Member", family.member, TEMP_REASON);
+
+    assert!(
+        harness
+            .handler
+            .push_end_notice(family.member, family.lead, &line)
+    );
+    let waiting = waiting_of(&harness, family.lead);
+    assert_eq!(waiting[0].origin, Origin::EndNotice { text: line.clone() });
+    assert!(waiting[0].from_temp);
+
+    remove_member(&harness, &family);
+    harness.set_readiness(Readiness::Ready);
+    harness.deliver_all();
+
+    assert_eq!(harness.texts_written(), [line]);
+    assert_eq!(harness.failures(), Vec::<String>::new());
+    assert!(harness.receipt.received().is_empty());
+}
+
+#[test]
+fn an_end_notice_takes_the_one_report_place_of_its_sender() {
+    let family = family();
+    let harness = temp_harness(&family, true);
+    harness
+        .handler
+        .send_report(&parent_report(&family), &family.rows)
+        .expect("queued");
+
+    assert!(
+        harness
+            .handler
+            .push_end_notice(family.member, family.lead, "[temp ended]")
+    );
+
+    assert_eq!(harness.handler.waiting_count(family.lead), 1);
+    assert_eq!(
+        harness.failures(),
+        ["withdrawn before typing: replaced by a newer report"]
+    );
+}
+
+#[test]
+fn an_end_notice_is_not_queued_when_the_report_share_is_used_or_the_server_stops() {
+    let family = family();
+    let harness = temp_harness(&family, true);
+    let other_temps = (100..).take(REPORT_SHARE).map(AgentId::from_u128);
+    for temp in other_temps {
+        assert!(
+            harness
+                .handler
+                .push_end_notice(temp, family.lead, "[ended]")
+        );
+    }
+
+    assert!(
+        !harness
+            .handler
+            .push_end_notice(family.member, family.lead, "[ended]")
+    );
+
+    harness
+        .handler
+        .withdraw_all("the office server is stopping");
+    assert!(
+        !harness
+            .handler
+            .push_end_notice(family.member, family.lead, "[ended]")
+    );
+}
+
 mod hold_guard {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -1217,5 +1436,71 @@ mod hold_guard {
         guarded.harness.set_readiness(Readiness::Ready);
         guarded.harness.deliver_all();
         send("the last slot").expect("one slot is left");
+    }
+
+    #[test]
+    fn a_hold_set_while_the_persons_objective_waits_does_not_withdraw_it() {
+        let family = family();
+        let guarded = guarded(&family, ToggledTargets::all_running());
+        guarded.harness.set_readiness(Readiness::Busy);
+        guarded
+            .harness
+            .handler
+            .queue_objective(family.member, "build it", Actor::User)
+            .expect("queued");
+        guarded.service.set_hold(HoldScope::Office).expect("hold");
+
+        guarded.harness.set_readiness(Readiness::Ready);
+        guarded.harness.handler.deliver_waiting();
+
+        assert_eq!(guarded.harness.writer.lines().len(), 1);
+        assert_eq!(guarded.harness.failures(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_hold_set_while_an_agents_objective_waits_withdraws_it() {
+        let family = family();
+        let guarded = guarded(&family, ToggledTargets::all_running());
+        guarded.harness.set_readiness(Readiness::Busy);
+        guarded
+            .harness
+            .handler
+            .queue_objective(family.member, "build it", Actor::Agent(family.lead))
+            .expect("queued");
+        guarded.service.set_hold(HoldScope::Office).expect("hold");
+
+        guarded.harness.set_readiness(Readiness::Ready);
+        guarded.harness.handler.deliver_waiting();
+
+        assert!(guarded.harness.writer.lines().is_empty());
+        assert_eq!(
+            guarded.harness.failures(),
+            ["withdrawn before typing: the office is on hold"]
+        );
+    }
+
+    #[test]
+    fn objectives_count_toward_no_directive_limit_and_pass_a_hold() {
+        let family = family();
+        let limits = RateLimits {
+            directive: 1,
+            directive_target: 1,
+            ..RateLimits::default()
+        };
+        let guarded = guarded_with(&family, ToggledTargets::all_running(), limits);
+        guarded.harness.set_readiness(Readiness::Busy);
+        guarded.service.set_hold(HoldScope::Office).expect("hold");
+
+        for _ in 0..=AUTO_HOLD_REFUSAL_COUNT {
+            guarded
+                .harness
+                .handler
+                .queue_objective(family.member, "build it", Actor::User)
+                .expect("an objective meets no limit and no hold");
+        }
+
+        assert_eq!(guarded.counting.notifications.load(Ordering::SeqCst), 0);
+        assert_eq!(guarded.service.list().agents.len(), 0);
+        assert!(guarded.harness.journal.attempts().is_empty());
     }
 }

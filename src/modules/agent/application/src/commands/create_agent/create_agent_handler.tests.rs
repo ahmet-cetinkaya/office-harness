@@ -5,6 +5,7 @@ use crate::common::errors::PortError;
 use crate::common::interfaces::WorktreeError;
 use crate::common::models::AgentActionEntry;
 use crate::test_support::{FakeWorktrees, Office, absolute_folder, project_named};
+use agent_domain::enums::AgentStatus;
 
 struct FailingAdditions;
 
@@ -29,6 +30,7 @@ fn request(name: &str) -> CreateAgentRequest {
         project_id: None,
         additions: None,
         worktree: None,
+        temp: None,
     }
 }
 
@@ -190,6 +192,7 @@ fn an_agent_whose_additions_cannot_be_saved_is_not_left_behind() {
         office.projects.clone(),
         Arc::new(FailingAdditions),
         Office::clock(),
+        office.settings.clone(),
         ActionJournal::new(office.recorder.clone(), Office::clock()),
         office.machine_id,
     );
@@ -298,6 +301,7 @@ fn a_failed_additions_save_discards_the_worktree() {
         office.projects.clone(),
         Arc::new(FailingAdditions),
         Office::clock(),
+        office.settings.clone(),
         ActionJournal::new(office.recorder.clone(), Office::clock()),
         office.machine_id,
     )
@@ -366,4 +370,208 @@ fn without_a_worktree_service_the_choice_is_refused() {
         ApplicationError::Invalid(NEEDS_REPOSITORY.to_owned())
     );
     assert_eq!(office.agents.all().len(), 0);
+}
+
+const OBJECTIVE: &str = "fix the failing build";
+
+fn temp_request(name: &str) -> CreateAgentRequest {
+    CreateAgentRequest {
+        temp: Some(NewTemp {
+            objective: OBJECTIVE.to_owned(),
+            creator: kernel::Actor::User,
+        }),
+        ..request(name)
+    }
+}
+
+fn set_temp_cap(office: &Office, cap: &str) {
+    let mut settings = office.settings.current();
+    settings
+        .set_from_text(agent_domain::value_objects::SettingKey::TempCap, cap)
+        .expect("cap");
+    office.settings.save(&settings).expect("save");
+}
+
+fn stored_temps(office: &Office) -> usize {
+    office
+        .agents
+        .all()
+        .iter()
+        .filter(|agent| agent.temp.is_some())
+        .count()
+}
+
+#[test]
+fn a_temp_create_stores_the_objective_and_the_creator() {
+    let office = Office::new();
+    let creator = kernel::Actor::Agent(AgentId::generate());
+    let request = CreateAgentRequest {
+        temp: Some(NewTemp {
+            objective: OBJECTIVE.to_owned(),
+            creator,
+        }),
+        ..request("Ana")
+    };
+
+    let agent = office.create_agent().handle(request).expect("create");
+
+    let mark = agent.temp.as_ref().expect("a temp");
+    assert_eq!(mark.objective.as_str(), OBJECTIVE);
+    assert_eq!(mark.creator, creator);
+    assert_eq!(office.agents.all(), vec![agent]);
+}
+
+#[test]
+fn a_create_without_the_temp_choice_makes_no_temp() {
+    let office = Office::new();
+
+    let agent = office
+        .create_agent()
+        .handle(request("Ana"))
+        .expect("create");
+
+    assert_eq!(agent.temp, None);
+}
+
+#[test]
+fn a_bad_objective_creates_nothing_and_records_nothing() {
+    for objective in ["", "  ", "red \u{1b}[31m", &"x".repeat(8193)] {
+        let office = Office::new();
+        let request = CreateAgentRequest {
+            temp: Some(NewTemp {
+                objective: objective.to_owned(),
+                creator: kernel::Actor::User,
+            }),
+            ..request("Ana")
+        };
+
+        let error = office.create_agent().handle(request).expect_err("bad");
+
+        assert!(matches!(error, ApplicationError::Invalid(_)), "{error:?}");
+        assert_eq!(office.agents.all().len(), 0);
+        assert_eq!(office.recorder.entries().len(), 0);
+    }
+}
+
+#[test]
+fn the_ninth_temp_is_refused_at_the_default_cap_and_names_the_cap() {
+    let office = Office::new();
+    for number in 0..8 {
+        office
+            .create_agent()
+            .handle(temp_request(&format!("Temp {number}")))
+            .expect("within the cap");
+    }
+
+    let error = office
+        .create_agent()
+        .handle(temp_request("Temp 8"))
+        .expect_err("over the cap");
+
+    assert_eq!(
+        error,
+        ApplicationError::Refused("the temp cap is 8; end a temp or raise the cap".to_owned())
+    );
+    assert_eq!(stored_temps(&office), 8);
+    assert_eq!(office.recorder.entries().len(), 8);
+}
+
+#[test]
+fn the_cap_counts_temps_of_every_status_and_not_other_agents() {
+    let office = Office::new();
+    set_temp_cap(&office, "2");
+    office
+        .create_agent()
+        .handle(request("Plain"))
+        .expect("not a temp");
+    let first = office
+        .create_agent()
+        .handle(temp_request("One"))
+        .expect("first");
+    office
+        .create_agent()
+        .handle(temp_request("Two"))
+        .expect("second");
+    office
+        .agents
+        .update_status(first.id, AgentStatus::Failed)
+        .expect("status");
+
+    let error = office
+        .create_agent()
+        .handle(temp_request("Three"))
+        .expect_err("over");
+
+    assert!(matches!(error, ApplicationError::Refused(_)), "{error:?}");
+}
+
+#[test]
+fn a_raised_cap_applies_to_the_next_create() {
+    let office = Office::new();
+    set_temp_cap(&office, "1");
+    office
+        .create_agent()
+        .handle(temp_request("One"))
+        .expect("one");
+    office
+        .create_agent()
+        .handle(temp_request("Two"))
+        .expect_err("full");
+
+    set_temp_cap(&office, "2");
+
+    office
+        .create_agent()
+        .handle(temp_request("Two"))
+        .expect("room");
+}
+
+#[test]
+fn a_refused_temp_discards_the_worktree_made_for_it() {
+    let office = Office::new();
+    set_temp_cap(&office, "1");
+    let worktrees = FakeWorktrees::new(&absolute_folder("wt"));
+    let handler = office.create_agent_with(&worktrees);
+    handler.handle(temp_request("One")).expect("one");
+
+    let refused = CreateAgentRequest {
+        worktree: Some(OwnWorktree::default()),
+        ..temp_request("Two")
+    };
+    handler.handle(refused).expect_err("full");
+
+    assert_eq!(
+        worktrees.calls().last().map(String::as_str),
+        Some("discard")
+    );
+}
+
+#[test]
+fn two_creates_at_once_with_one_place_left_make_one_temp() {
+    for round in 0..20 {
+        let office = Office::new();
+        set_temp_cap(&office, "2");
+        office
+            .create_agent()
+            .handle(temp_request("Seed"))
+            .expect("seed");
+        let handler = office.create_agent();
+
+        let outcomes: Vec<_> = std::thread::scope(|scope| {
+            let attempts: Vec<_> = ["Left", "Right"]
+                .map(|name| {
+                    let handler = handler.clone();
+                    scope.spawn(move || handler.handle(temp_request(name)))
+                })
+                .into();
+            attempts
+                .into_iter()
+                .map(|attempt| attempt.join().expect("thread"))
+                .collect()
+        });
+
+        let made = outcomes.iter().filter(|outcome| outcome.is_ok()).count();
+        assert_eq!(made, 1, "round {round}");
+        assert_eq!(stored_temps(&office), 2, "round {round}");
+    }
 }

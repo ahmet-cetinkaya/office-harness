@@ -16,6 +16,12 @@ pub const IDLE_SLEEP_TICK: Duration = Duration::from_secs(15);
 /// The length of one minute of the idle time setting (0018/FR-001).
 pub const IDLE_SLEEP_MINUTE: Duration = Duration::from_secs(60);
 
+/// How often the temp watcher looks at the temps (0020 D8).
+pub const TEMP_TICK: Duration = Duration::from_secs(2);
+
+/// The length of one minute of the temp idle limit (0020 D8).
+pub const TEMP_MINUTE: Duration = Duration::from_secs(60);
+
 /// Server settings that tests change; the defaults follow the contract.
 #[derive(Debug, Clone, Copy)]
 pub struct ServerOptions {
@@ -31,6 +37,10 @@ pub struct ServerOptions {
     /// One minute of the idle time setting; tests shorten it so a 5-minute
     /// idle time passes in a test.
     pub idle_sleep_minute: Duration,
+    /// How often the temp watcher looks at the temps; tests shorten it.
+    pub temp_tick: Duration,
+    /// One minute of the temp idle limit; tests shorten it.
+    pub temp_minute: Duration,
 }
 
 impl Default for ServerOptions {
@@ -41,6 +51,8 @@ impl Default for ServerOptions {
             resume_check_period: RESUME_CHECK_PERIOD,
             idle_sleep_tick: IDLE_SLEEP_TICK,
             idle_sleep_minute: IDLE_SLEEP_MINUTE,
+            temp_tick: TEMP_TICK,
+            temp_minute: TEMP_MINUTE,
         }
     }
 }

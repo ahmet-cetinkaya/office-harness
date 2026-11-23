@@ -25,6 +25,10 @@ pub enum AgentAction {
     Sleep,
     /// The user woke an asleep agent (0018).
     Wake,
+    /// The office ended a temp agent and removed it (0020).
+    End,
+    /// The person dismissed the finished entry of an ended temp (0020).
+    Dismiss,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

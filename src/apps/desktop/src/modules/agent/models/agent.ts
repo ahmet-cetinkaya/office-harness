@@ -34,6 +34,13 @@ export interface AgentWorktree {
   folder: string;
 }
 
+/** What marks a temporary agent: its one job and who created it (0020). */
+export interface AgentTemp {
+  objective: string;
+  /** "user", or the id of the agent that created it. */
+  creator: string;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -49,6 +56,8 @@ export interface Agent {
   task?: AgentTask | null;
   /** Absent or null when the agent works in its own folder. */
   worktree?: AgentWorktree | null;
+  /** Null, or absent, for an agent that is not a temp. */
+  temp?: AgentTemp | null;
 }
 
 export interface Project {
@@ -97,6 +106,36 @@ export interface NewAgent {
   own_worktree?: boolean;
   base?: string;
   branch_name?: string;
+  /** A temporary agent needs an objective (0020). */
+  temp?: boolean;
+  objective?: string;
+}
+
+export const OBJECTIVE_MAX_CHARACTERS = 8192;
+export const OBJECTIVE_HINT = `The one job of the temp. It must not be blank and has at most ${OBJECTIVE_MAX_CHARACTERS.toLocaleString("en-US")} characters, on one line.`;
+export const OBJECTIVE_REQUIRED_TEXT = "A temp needs an objective";
+export const OBJECTIVE_ONE_LINE_TEXT = "The objective must be one line.";
+const LINE_BREAK = /[\r\n]/;
+export const OBJECTIVE_TOO_LONG_TEXT = `The objective has at most ${OBJECTIVE_MAX_CHARACTERS.toLocaleString("en-US")} characters`;
+
+/** The refusal of a temp objective, or null when it can be sent. */
+export function objectiveProblem(objective: string): string | null {
+  const sent = objective.trim();
+  if (sent === "") return OBJECTIVE_REQUIRED_TEXT;
+  if (LINE_BREAK.test(sent)) return OBJECTIVE_ONE_LINE_TEXT;
+  if (objective.length > OBJECTIVE_MAX_CHARACTERS) {
+    return OBJECTIVE_TOO_LONG_TEXT;
+  }
+  return null;
+}
+
+/** The creator of a temp as text: the person, the agent's name, or its id. */
+export function creatorText(
+  creator: string,
+  agents: readonly Pick<Agent, "id" | "name">[],
+): string {
+  if (creator === "user") return "the person";
+  return agents.find((agent) => agent.id === creator)?.name ?? creator;
 }
 
 export interface NewProject {

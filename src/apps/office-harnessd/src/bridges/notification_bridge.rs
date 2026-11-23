@@ -193,6 +193,24 @@ impl NotificationBridge {
         );
     }
 
+    /// Records that a temp ended for the idle limit and no parent heard of it
+    /// (0020/FR-007). The temp is gone or going, so the caller gives its name,
+    /// and no Needs you item follows: nothing would ever clear it.
+    pub fn record_temp_ended(&self, agent_id: AgentId, name: &str, reason: &str) {
+        let created = self.create.handle(CreateNotification {
+            agent_id,
+            agent_name: name.to_owned(),
+            event: NotificationEvent::TempEnded,
+            at: self.clock.now(),
+            detail: Some(reason.to_owned()),
+        });
+        match created {
+            Ok(Some(notification)) => self.hub.publish(&created_event(&notification)),
+            Ok(None) => {}
+            Err(error) => self.report(&error, agent_id, NotificationEvent::TempEnded),
+        }
+    }
+
     /// Records that the sweep after an unclean stop could not end a process
     /// of the agent; the reason travels as the row's detail (0017/FR-006).
     pub fn record_leftover_kept(&self, agent_id: AgentId, reason: &str) {
@@ -237,8 +255,11 @@ impl NotificationBridge {
             event,
             notification_detail,
             |at, origin, announce_created| {
+                let Some(kind) = attention_kind_of(event) else {
+                    return;
+                };
                 let attention = AttentionEvent {
-                    kind: attention_kind_of(event),
+                    kind,
                     detail: attention_detail,
                     at,
                 };
@@ -401,8 +422,10 @@ impl StatusFrame {
     }
 }
 
-const fn attention_kind_of(event: NotificationEvent) -> AttentionKind {
-    match event {
+/// The queue kind of an event, or `None` for an event that never reaches the
+/// Needs you queue.
+const fn attention_kind_of(event: NotificationEvent) -> Option<AttentionKind> {
+    Some(match event {
         NotificationEvent::Exited => AttentionKind::Exited,
         NotificationEvent::Failed => AttentionKind::Failed,
         NotificationEvent::WaitingForInput => AttentionKind::WaitingForInput,
@@ -411,7 +434,8 @@ const fn attention_kind_of(event: NotificationEvent) -> AttentionKind {
         NotificationEvent::ResumeHold => AttentionKind::ResumeHold,
         NotificationEvent::LeftoverKept => AttentionKind::LeftoverKept,
         NotificationEvent::Report => AttentionKind::Report,
-    }
+        NotificationEvent::TempEnded => return None,
+    })
 }
 
 fn created_event(notification: &Notification) -> Event {
