@@ -761,7 +761,7 @@ fn readiness_after_reports(kinds: &[crate::server::HookEventKind]) -> Readiness 
     let hooks = HookSessions::default();
     hooks.session_started(agent_id, Some(RunId(1)), None);
     for kind in kinds {
-        hooks.apply_report(
+        let _ = hooks.apply_report(
             &HookReport {
                 agent_id,
                 session: "s".to_owned(),

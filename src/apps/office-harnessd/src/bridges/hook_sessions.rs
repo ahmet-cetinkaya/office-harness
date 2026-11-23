@@ -172,6 +172,7 @@ impl HookSessions {
     /// for a turn that is open and silent for a whole quiet period: its
     /// report was lost or the person interrupted it, so the session turns
     /// late and the quiet period decides again (0024/FR-014).
+    #[must_use]
     pub fn judge_terminal_event(&self, agent_id: AgentId, event: TerminalEvent) -> TerminalVerdict {
         let (verdict, turned_late) = self.judge_locked(agent_id, event);
         if let Some(state) = turned_late {
@@ -215,6 +216,7 @@ impl HookSessions {
     /// Applies a report of the session that runs in `run`, and says what the
     /// status machine does with it. A report of a helper sub-agent, of a
     /// session that is not running, or of an earlier run changes nothing.
+    #[must_use]
     pub fn apply_report(&self, report: &HookReport, run: RunId) -> Option<ReportOutcome> {
         if report.from_helper {
             return None;
@@ -268,6 +270,7 @@ impl HookSessions {
 
     /// A person's input reached the terminal: it ends an open permission
     /// ask, and the status event to apply follows (0024/FR-013).
+    #[must_use]
     pub fn input_ends_ask(&self, agent_id: AgentId) -> Option<StatusEvent> {
         let (event, state) = {
             let mut sessions = self.locked();

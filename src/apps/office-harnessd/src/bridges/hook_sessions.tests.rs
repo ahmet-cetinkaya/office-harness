@@ -223,7 +223,7 @@ fn an_ended_session_has_no_state() {
 fn a_late_session_forgets_its_open_work_so_a_later_compaction_ends_in_a_wait() {
     let sessions = sessions();
     apply(&sessions, HookEventKind::TurnStarted);
-    sessions.judge_terminal_event(agent(), TerminalEvent::QuietPeriod);
+    let _ = sessions.judge_terminal_event(agent(), TerminalEvent::QuietPeriod);
     let state = sessions.state(agent()).expect("state");
     assert_eq!(state.source, StatusSource::Late);
     assert!(!state.turn_open && !state.compacting);
