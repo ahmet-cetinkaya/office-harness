@@ -5,8 +5,9 @@
 
 //! Crash test (0013 research R1): the server process is killed with SIGKILL
 //! while agents run. The test shows which CLI processes outlive the server
-//! and that the next server start can continue a session. It reads process
-//! start times from `/proc`, so it runs on Linux only.
+//! and that the next server start can continue a session. Since 0017 the
+//! sweep at that start ends the orphan before the plan lists the agents. It
+//! reads process start times from `/proc`, so it runs on Linux only.
 
 mod support;
 
@@ -132,6 +133,20 @@ async fn connect(config: &Config) -> Client {
     Client::new(WireClient::authenticate_ok(port, &token).await)
 }
 
+/// The answer of `resume.plan` once the sweep is over; while it runs, the
+/// plan holds no agent.
+async fn plan_after_the_sweep(client: &mut Client) -> Value {
+    let deadline = Instant::now() + WAIT_LIMIT;
+    loop {
+        let plan = client.ask("resume.plan", json!({})).await;
+        if plan["result"]["sweeping"] == false {
+            return plan["result"].clone();
+        }
+        assert!(Instant::now() < deadline, "the sweep did not end: {plan}");
+        tokio::time::sleep(POLL).await;
+    }
+}
+
 async fn create_and_start(client: &mut Client, name: &str, command: &str, folder: &Path) -> Value {
     let created = client
         .ask(
@@ -227,20 +242,28 @@ async fn after_a_sigkill_only_a_cli_that_ignores_the_hangup_outlives_the_server_
         let agent = started["agent"].as_str().expect("agent");
         assert_eq!(client.status_of(agent).await, "interrupted");
     }
+    let plan = plan_after_the_sweep(&mut client).await;
     assert!(
-        ignoring.still_runs(),
-        "the next server start leaves the orphan running"
+        !ignoring.still_runs(),
+        "the sweep of 0017 ends the orphan before the plan lists the agents"
     );
-    let plan = client.ask("resume.plan", json!({})).await;
-    let marked = plan["result"]["agents"]
-        .as_array()
-        .expect("planned agents")
-        .iter()
-        .filter(|entry| entry["after_unclean_stop"] == true)
-        .count();
+    let finding_of = |started: &Value| {
+        let agent = started["agent"].as_str().expect("agent");
+        plan["agents"]
+            .as_array()
+            .expect("planned agents")
+            .iter()
+            .find(|entry| entry["agent_id"] == agent)
+            .unwrap_or_else(|| panic!("no entry for {agent}: {plan}"))
+            .clone()
+    };
+    assert_eq!(finding_of(&ignores)["unclean_stop"], json!({"ended": 1}));
+    assert_eq!(finding_of(&ends)["unclean_stop"], Value::Null);
+    assert_eq!(finding_of(&claude)["unclean_stop"], Value::Null);
     assert_eq!(
-        marked, 3,
-        "every agent of the unclean stop is marked: {plan}"
+        finding_of(&ignores)["after_unclean_stop"],
+        false,
+        "an ended leftover is not a warning: {plan}"
     );
 
     let continued = client

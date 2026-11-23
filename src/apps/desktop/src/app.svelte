@@ -105,6 +105,7 @@
     void panel.notifications.watch();
     void panel.hold.watch();
     void panel.resume.watch();
+    void panel.sweep.watch();
     void panel.sleep.watch();
     void panel.temps.watch();
     void panel.needsYou.watch();
@@ -120,6 +121,7 @@
       void panel.office.controller.load();
       void panel.notifications.load();
       void panel.hold.load();
+      void panel.sweep.load();
       void panel.needsYou.load();
       void hierarchy.load();
       void panel.templates.load();

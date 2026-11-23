@@ -18,17 +18,20 @@ pub enum AttentionKind {
     AutoHold,
     /// A resume that failed twice put the agent on hold (0013).
     ResumeHold,
+    /// The sweep after an unclean stop could not end a process (0017).
+    LeftoverKept,
     Exited,
     Report,
 }
 
 impl AttentionKind {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Failed,
         Self::WaitingForInput,
         Self::Bell,
         Self::AutoHold,
         Self::ResumeHold,
+        Self::LeftoverKept,
         Self::Exited,
         Self::Report,
     ];
@@ -42,6 +45,7 @@ impl AttentionKind {
             Self::Bell => "bell",
             Self::AutoHold => "auto_hold",
             Self::ResumeHold => "resume_hold",
+            Self::LeftoverKept => "leftover_kept",
             Self::Exited => "exited",
             Self::Report => "report",
         }
@@ -63,7 +67,7 @@ impl FromStr for AttentionKind {
             .find(|kind| kind.as_str() == text)
             .ok_or_else(|| {
                 NotificationError(format!(
-                    "attention kind is not one of failed, waiting_for_input, bell, auto_hold, resume_hold, exited, report: {text}"
+                    "attention kind is not one of failed, waiting_for_input, bell, auto_hold, resume_hold, leftover_kept, exited, report: {text}"
                 ))
             })
     }

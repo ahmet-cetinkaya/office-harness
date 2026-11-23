@@ -18,6 +18,9 @@ pub enum NotificationEvent {
     AutoHold,
     /// A resume that failed twice put the agent on hold (0013).
     ResumeHold,
+    /// The sweep after an unclean stop could not end a process of the agent
+    /// (0017).
+    LeftoverKept,
     /// The agent sent a report for the person (0015/FR-007).
     Report,
     /// A temp ended for the idle limit and no parent heard of it (0020/FR-007).
@@ -25,13 +28,14 @@ pub enum NotificationEvent {
 }
 
 impl NotificationEvent {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Exited,
         Self::Failed,
         Self::WaitingForInput,
         Self::Bell,
         Self::AutoHold,
         Self::ResumeHold,
+        Self::LeftoverKept,
         Self::Report,
         Self::TempEnded,
     ];
@@ -46,6 +50,7 @@ impl NotificationEvent {
             Self::Bell => "bell",
             Self::AutoHold => "auto_hold",
             Self::ResumeHold => "resume_hold",
+            Self::LeftoverKept => "leftover_kept",
             Self::Report => "report",
             Self::TempEnded => "temp_ended",
         }
@@ -66,7 +71,7 @@ impl FromStr for NotificationEvent {
             .into_iter()
             .find(|event| event.as_str() == text)
             .ok_or_else(|| NotificationError(format!(
-                "notification event is not one of exited, failed, waiting_for_input, bell, auto_hold, resume_hold, report, temp_ended: {text}"
+                "notification event is not one of exited, failed, waiting_for_input, bell, auto_hold, resume_hold, leftover_kept, report, temp_ended: {text}"
             )))
     }
 }

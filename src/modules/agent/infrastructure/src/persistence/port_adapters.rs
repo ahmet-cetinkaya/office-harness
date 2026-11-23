@@ -4,8 +4,10 @@
 
 use agent_application::common::errors::PortError;
 use agent_application::common::interfaces::{
-    AdditionsStore, AgentStore, FinishedTempStore, ProjectStore, SessionStore, SettingsStore,
+    AdditionsStore, AgentStore, FinishedTempStore, ProjectStore, SessionProcessStore, SessionStore,
+    SettingsStore,
 };
+use agent_application::common::models::{ProcessKind, SessionProcess, StoredProcess};
 use agent_domain::entities::{AdditionsRecord, Agent, FinishedTemp, Project, Session};
 use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::{
@@ -15,7 +17,7 @@ use kernel::{AgentId, Timestamp};
 
 use crate::persistence::{
     AdditionsRepository, AgentRepository, FinishedTempRepository, PersistenceError,
-    ProjectRepository, SessionRepository, SettingsRepository,
+    ProjectRepository, SessionProcessRepository, SessionRepository, SettingsRepository,
 };
 
 impl From<PersistenceError> for PortError {
@@ -140,6 +142,10 @@ impl SessionStore for SessionRepository {
         Ok(Self::set_cli_session_id(self, id, cli_session_id)?)
     }
 
+    fn running(&self) -> Result<Vec<Session>, PortError> {
+        Ok(Self::running(self)?)
+    }
+
     fn end_running(
         &self,
         agent_id: AgentId,
@@ -153,3 +159,30 @@ impl SessionStore for SessionRepository {
 #[cfg(test)]
 #[path = "port_adapters.tests.rs"]
 mod tests;
+
+impl SessionProcessStore for SessionProcessRepository {
+    fn insert_open(
+        &self,
+        session_id: SessionId,
+        kind: ProcessKind,
+        process: &SessionProcess,
+    ) -> Result<bool, PortError> {
+        Ok(Self::insert_open(self, session_id, kind, process)?)
+    }
+
+    fn open_for_session(&self, session_id: SessionId) -> Result<Vec<StoredProcess>, PortError> {
+        Ok(Self::open_for_session(self, session_id)?)
+    }
+
+    fn update_command(&self, id: i64, process: &SessionProcess) -> Result<(), PortError> {
+        Ok(Self::update_command(self, id, process)?)
+    }
+
+    fn drop_helper(&self, id: i64) -> Result<(), PortError> {
+        Ok(Self::drop_helper(self, id)?)
+    }
+
+    fn mark_helper_limit(&self, session_id: SessionId) -> Result<(), PortError> {
+        Ok(Self::mark_helper_limit(self, session_id)?)
+    }
+}

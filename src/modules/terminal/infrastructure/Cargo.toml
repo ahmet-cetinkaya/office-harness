@@ -13,6 +13,7 @@ kernel = { path = "../../../kernel" }
 private-fs = { path = "../../../shared/private-fs" }
 portable-pty.workspace = true
 vt100.workspace = true
+sysinfo.workspace = true
 # The test fixture binary clears the Windows line input modes to read single
 # keys; this crate holds the one console `unsafe` of the server.
 console-control = { path = "../../../shared/console-control" }
@@ -20,6 +21,19 @@ console-control = { path = "../../../shared/console-control" }
 # Signals to a process group need no `unsafe` through nix's wrappers.
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["signal"] }
+
+# Linux hands out a pidfd for a process; the poll on it is nix's safe wrapper.
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+nix = { workspace = true, features = ["signal", "poll"] }
+
+# One process handle on Windows reads and ends a process (0017 plan D1).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Wdk_System_Threading",
+] }
 
 [dev-dependencies]
 tempfile.workspace = true
@@ -33,5 +47,14 @@ name = "terminal-fixture"
 path = "tests/support/fixture_cli.rs"
 test = false
 
-[lints]
-workspace = true
+# The pidfd calls on Linux and the process handle calls on Windows need
+# `unsafe`; each block sits in its own module that says why. The other
+# workspace lints apply unchanged.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+todo = "deny"

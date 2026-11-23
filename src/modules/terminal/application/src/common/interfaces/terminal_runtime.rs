@@ -66,6 +66,12 @@ pub trait TerminalRuntime: Send + Sync {
 
     fn is_running(&self, agent_id: AgentId) -> bool;
 
+    /// The OS process id of the running child, or `None` when it does not
+    /// run. A runtime without a child process of its own reads as `None`.
+    fn process_id(&self, _agent_id: AgentId) -> Option<u32> {
+        None
+    }
+
     /// The run of the agent's latest start, also after its child exited, or
     /// `None` when it never started.
     fn current_run(&self, agent_id: AgentId) -> Option<RunId>;

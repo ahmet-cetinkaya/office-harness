@@ -19,6 +19,7 @@ use super::hierarchy_requests::HierarchyGateway;
 use super::hold_requests::HoldGateway;
 use super::idle_sleep_run::IdleSleeper;
 use super::notification_requests::NotificationGateway;
+use super::process_scan::spawn_process_scan;
 use super::restart_signal::RestartSignal;
 use super::resume_requests::ResumeGateway;
 use super::resume_run::ResumeContext;
@@ -47,6 +48,30 @@ pub struct Server {
     announcement_path: PathBuf,
 }
 
+/// Starts the tasks that turn terminal events into statuses, lines, and
+/// notifications.
+fn spawn_terminal_bridges(services: &Services, events: &EventHub, log: &ServerLog) {
+    AgentStatusBridge {
+        change_status: services.agent.change_status.clone(),
+        end_session: services.agent.end_session.clone(),
+        runtime: Arc::clone(&services.terminal.runtime),
+        hub: events.clone(),
+        order: Arc::clone(&services.agent.status_order),
+        alerts: services.storage_alerts.clone(),
+        log: log.clone(),
+        calls: services.access.agent_calls.clone(),
+        sign_in_ends: services.terminal.sign_in_ends.clone(),
+        journal: services.agent.journal.clone(),
+    }
+    .spawn(services.terminal.events.subscribe());
+    AgentLineBridge::new(services.terminal.events.clone(), events.clone())
+        .spawn(services.terminal.events.subscribe_lines());
+    services.notification_bridge.clone().spawn(
+        services.events.subscribe(),
+        services.terminal.events.subscribe(),
+    );
+}
+
 /// The bulk resume of 0013: it starts through the agent gateway, so every
 /// start keeps the status order and the action record.
 fn resume_gateway(
@@ -59,6 +84,7 @@ fn resume_gateway(
         ResumeContext {
             agents: agents.clone(),
             store: Arc::clone(&services.agent_bridge_store),
+            processes: Arc::clone(&services.session_processes),
             holds: Arc::clone(&services.hierarchy.holds),
             events: events.clone(),
             alerts: services.storage_alerts.clone(),
@@ -85,30 +111,6 @@ fn idle_sleeper(
         options.idle_sleep_minute,
         log.clone(),
     )
-}
-
-/// The tasks that turn terminal events into statuses, last lines, and
-/// notifications.
-fn spawn_event_bridges(services: &Services, events: &EventHub, log: &ServerLog) {
-    AgentStatusBridge {
-        change_status: services.agent.change_status.clone(),
-        end_session: services.agent.end_session.clone(),
-        runtime: Arc::clone(&services.terminal.runtime),
-        hub: events.clone(),
-        order: Arc::clone(&services.agent.status_order),
-        alerts: services.storage_alerts.clone(),
-        log: log.clone(),
-        calls: services.access.agent_calls.clone(),
-        sign_in_ends: services.terminal.sign_in_ends.clone(),
-        journal: services.agent.journal.clone(),
-    }
-    .spawn(services.terminal.events.subscribe());
-    AgentLineBridge::new(services.terminal.events.clone(), events.clone())
-        .spawn(services.terminal.events.subscribe_lines());
-    services.notification_bridge.clone().spawn(
-        services.events.subscribe(),
-        services.terminal.events.subscribe(),
-    );
 }
 
 /// What the agent gateway and the temp ender share (0020): the ending set,
@@ -263,7 +265,7 @@ impl Server {
         let port = address.port();
         let events = services.events.clone();
         events.forward_storage_alerts(services.storage_alerts.subscribe(), log.clone());
-        spawn_event_bridges(services, &events, log);
+        spawn_terminal_bridges(services, &events, log);
         let temp_hooks = temp_hooks(services, &events);
         let holds = HoldGateway::new(
             Arc::clone(&services.hierarchy.holds),
@@ -272,6 +274,7 @@ impl Server {
             events.clone(),
             services.storage_alerts.clone(),
         );
+        let sweep_gate = services.orphan_sweep.gate();
         let agents = AgentGateway::new(
             Arc::clone(&services.agent.handlers),
             services.agent.audit.clone(),
@@ -286,6 +289,7 @@ impl Server {
             holds.clone(),
             services.needs_you_bridge.clone(),
         )
+        .with_sweep_gate(sweep_gate.clone())
         .with_sign_in_checks(services.agent.sign_in_checks.clone())
         .with_temps(temp_hooks.clone());
         let hierarchy = HierarchyGateway::new(
@@ -294,8 +298,15 @@ impl Server {
             events.clone(),
             services.storage_alerts.clone(),
         );
-        let resume = resume_gateway(services, &agents, &events, options.resume_check_period);
+        let resume = resume_gateway(services, &agents, &events, options.resume_check_period)
+            .with_sweep_gate(sweep_gate);
         let (shutdown, stopping) = watch::channel(false);
+        spawn_process_scan(
+            services.agent.process_recorder.clone(),
+            stopping.clone(),
+            log.clone(),
+        );
+        services.orphan_sweep.spawn(&events);
         idle_sleeper(services, &agents, log, &options).spawn(stopping.clone());
         let temps = temp_gateway(services, &agents, &temp_hooks, log, &options, &stopping);
         let state = ServerState {

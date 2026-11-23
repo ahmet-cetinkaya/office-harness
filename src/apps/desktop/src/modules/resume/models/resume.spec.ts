@@ -3,6 +3,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   confirmBlock,
+  endedLeftoversText,
+  hasUncleanStopMark,
+  isSweepingPlan,
   interruptedCount,
   marksOf,
   planText,
@@ -20,7 +23,7 @@ function entry(overrides: Partial<PlanEntry> = {}): PlanEntry {
     canContinue: true,
     reason: null,
     isHeld: false,
-    isAfterUncleanStop: false,
+    uncleanStop: { kind: "none" },
     ...overrides,
   };
 }
@@ -71,7 +74,7 @@ describe("plan", () => {
       canContinue: false,
       reason: "gone",
       isHeld: true,
-      isAfterUncleanStop: true,
+      uncleanStop: { kind: "may_run", reason: null },
     });
     expect(readPlan(null)).toEqual([]);
   });
@@ -88,10 +91,11 @@ describe("plan", () => {
 
   test("marks say on hold and the unclean stop", () => {
     expect(marksOf(entry())).toEqual([]);
-    expect(marksOf(entry({ isHeld: true, isAfterUncleanStop: true }))).toEqual([
-      "On hold",
-      "Was running when the server stopped uncleanly",
-    ]);
+    expect(
+      marksOf(
+        entry({ isHeld: true, uncleanStop: { kind: "may_run", reason: null } }),
+      ),
+    ).toEqual(["On hold", "Was running when the server stopped uncleanly"]);
   });
 });
 
@@ -133,7 +137,7 @@ describe("result", () => {
 describe("confirm block", () => {
   const entries = [
     entry(),
-    entry({ agent_id: "bo", isAfterUncleanStop: true }),
+    entry({ agent_id: "bo", uncleanStop: { kind: "may_run", reason: null } }),
   ];
 
   test("nothing checked blocks", () => {
@@ -147,5 +151,78 @@ describe("confirm block", () => {
 
   test("an unmarked selection needs no acknowledgement", () => {
     expect(confirmBlock(entries, ["ada"], false)).toBeNull();
+  });
+});
+
+describe("sweep finding (0017, D8, D9)", () => {
+  const findingOf = (fields: Record<string, unknown>) =>
+    readPlan({ agents: [{ agent_id: "ada", ...fields }] })[0].uncleanStop;
+
+  test("reads the three findings", () => {
+    expect(findingOf({ unclean_stop: null })).toEqual({ kind: "none" });
+    expect(findingOf({ unclean_stop: { ended: 2 } })).toEqual({
+      kind: "ended",
+      count: 2,
+    });
+    expect(findingOf({ unclean_stop: { may_run: "could not end" } })).toEqual({
+      kind: "may_run",
+      reason: "could not end",
+    });
+  });
+
+  test("an older server's boolean counts as may_run, a newer finding wins", () => {
+    expect(findingOf({ after_unclean_stop: true })).toEqual({
+      kind: "may_run",
+      reason: null,
+    });
+    expect(findingOf({ after_unclean_stop: false })).toEqual({ kind: "none" });
+    expect(
+      findingOf({ unclean_stop: { ended: 1 }, after_unclean_stop: false }),
+    ).toEqual({ kind: "ended", count: 1 });
+  });
+
+  test("the ended note has the right grammar and no warning", () => {
+    expect(endedLeftoversText(1)).toBe(
+      "Ended 1 process left from the last run",
+    );
+    expect(endedLeftoversText(3)).toBe(
+      "Ended 3 processes left from the last run",
+    );
+    const ended = entry({ uncleanStop: { kind: "ended", count: 1 } });
+    expect(marksOf(ended)).toEqual(["Ended 1 process left from the last run"]);
+    expect(hasUncleanStopMark([ended])).toBe(false);
+  });
+
+  test("may_run gives the 0013 mark with the reason, and nothing gives no mark", () => {
+    expect(
+      marksOf(entry({ uncleanStop: { kind: "may_run", reason: "denied" } })),
+    ).toEqual(["Was running when the server stopped uncleanly: denied"]);
+    expect(marksOf(entry())).toEqual([]);
+  });
+
+  test("only may_run gates Confirm", () => {
+    const ended = entry({
+      agent_id: "a",
+      uncleanStop: { kind: "ended", count: 1 },
+    });
+    const none = entry({ agent_id: "b" });
+    const mayRun = entry({
+      agent_id: "c",
+      uncleanStop: { kind: "may_run", reason: "x" },
+    });
+    expect(confirmBlock([ended, none], ["a", "b"], false)).toBeNull();
+    expect(confirmBlock([ended, none, mayRun], ["a", "c"], false)).toBe(
+      "needs_acknowledgement",
+    );
+    expect(confirmBlock([ended, none, mayRun], ["a", "c"], true)).toBeNull();
+    expect(confirmBlock([ended, none, mayRun], ["a", "b"], false)).toBeNull();
+    expect(hasUncleanStopMark([ended, none, mayRun])).toBe(true);
+  });
+
+  test("a sweeping plan is told by its flag", () => {
+    expect(isSweepingPlan({ sweeping: true, agents: [] })).toBe(true);
+    expect(isSweepingPlan({ sweeping: false, agents: [] })).toBe(false);
+    expect(isSweepingPlan({ agents: [] })).toBe(false);
+    expect(isSweepingPlan(null)).toBe(false);
   });
 });

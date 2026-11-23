@@ -47,6 +47,7 @@
   } from "../../needs-you";
   import { FileViewDialog } from "../../files";
   import { interruptedCount, ResumeAction } from "../../resume";
+  import { SweepStatus } from "../../sweep";
   import { IdleSleepDialog } from "../../sleep";
   import { TempsDialog } from "../../temps";
   import { WorktreeDependenciesDialog } from "../../worktree-dependencies";
@@ -461,6 +462,8 @@
       </div>
     {/if}
   </header>
+
+  <SweepStatus controller={store.sweep} />
 
   {#if office.notice !== null}
     <FailureMessage lead={office.notice.lead} message={office.notice.message} />

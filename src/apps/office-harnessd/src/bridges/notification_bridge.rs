@@ -211,6 +211,18 @@ impl NotificationBridge {
         }
     }
 
+    /// Records that the sweep after an unclean stop could not end a process
+    /// of the agent; the reason travels as the row's detail (0017/FR-006).
+    pub fn record_leftover_kept(&self, agent_id: AgentId, reason: &str) {
+        let detail = Some(reason.to_owned());
+        self.record(
+            agent_id,
+            NotificationEvent::LeftoverKept,
+            detail.clone(),
+            detail,
+        );
+    }
+
     /// Records a report for the person (0015/FR-007): a `report`
     /// notification naming the kind, coalesced while one is unread, and the
     /// report on the agent's item. `text` is already in visible form.
@@ -420,6 +432,7 @@ const fn attention_kind_of(event: NotificationEvent) -> Option<AttentionKind> {
         NotificationEvent::Bell => AttentionKind::Bell,
         NotificationEvent::AutoHold => AttentionKind::AutoHold,
         NotificationEvent::ResumeHold => AttentionKind::ResumeHold,
+        NotificationEvent::LeftoverKept => AttentionKind::LeftoverKept,
         NotificationEvent::Report => AttentionKind::Report,
         NotificationEvent::TempEnded => return None,
     })
