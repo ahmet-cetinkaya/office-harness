@@ -116,7 +116,9 @@ impl NotificationStore for MemoryNotifications {
     ) -> Result<Vec<Notification>, NotificationApplicationError> {
         Ok(locked(&self.0)
             .iter()
-            .filter(|notification| notification.agent_id == agent_id && notification.is_unread())
+            .filter(|notification| {
+                notification.agent_id == Some(agent_id) && notification.is_unread()
+            })
             .cloned()
             .collect())
     }
@@ -132,7 +134,7 @@ pub fn notification_of(
 ) -> Notification {
     Notification::new(
         NotificationId::generate(),
-        agent_id,
+        Some(agent_id),
         name.to_owned(),
         event,
         Timestamp::from_unix_millis(created_at),

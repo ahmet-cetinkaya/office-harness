@@ -272,7 +272,7 @@ impl NotificationBridge {
     /// and no Needs you item follows: nothing would ever clear it.
     pub fn record_temp_ended(&self, agent_id: AgentId, name: &str, reason: &str) {
         let created = self.create.handle(CreateNotification {
-            agent_id,
+            agent_id: Some(agent_id),
             agent_name: name.to_owned(),
             event: NotificationEvent::TempEnded,
             at: self.clock.now(),
@@ -394,7 +394,7 @@ impl NotificationBridge {
             }
         };
         let created = self.create.handle(CreateNotification {
-            agent_id,
+            agent_id: Some(agent_id),
             agent_name: name,
             event,
             at,
@@ -508,7 +508,7 @@ const fn attention_kind_of(event: NotificationEvent) -> Option<AttentionKind> {
         NotificationEvent::ResumeHold => AttentionKind::ResumeHold,
         NotificationEvent::LeftoverKept => AttentionKind::LeftoverKept,
         NotificationEvent::Report => AttentionKind::Report,
-        NotificationEvent::TempEnded => return None,
+        NotificationEvent::TempEnded | NotificationEvent::Schedule => return None,
     })
 }
 

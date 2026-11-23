@@ -32,7 +32,7 @@ const LIST_UNREAD_ORDER: &str = "WHERE read_at IS NULL ORDER BY created_at DESC,
 
 struct NotificationRow {
     id: String,
-    agent_id: String,
+    agent_id: Option<String>,
     agent_name: String,
     event: String,
     created_at: i64,
@@ -60,7 +60,8 @@ impl NotificationRow {
             .map_err(|error| corrupt("notification id", &error.to_string()))?;
         let agent_id = self
             .agent_id
-            .parse::<AgentId>()
+            .map(|text| text.parse::<AgentId>())
+            .transpose()
             .map_err(|error| corrupt("agent id", &error.to_string()))?;
         Ok(Notification {
             id,
@@ -128,7 +129,7 @@ impl NotificationRepository {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     notification.id.as_uuid_text(),
-                    notification.agent_id.to_string(),
+                    notification.agent_id.map(|agent_id| agent_id.to_string()),
                     notification.agent_name,
                     notification.event.as_str(),
                     notification.created_at.as_unix_millis(),

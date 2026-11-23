@@ -30,6 +30,9 @@ const SWITCH_OFF: &str = "off";
 const DEFAULT_TEMP_CAP: u32 = 8;
 const DEFAULT_TEMP_IDLE_MINUTES: u32 = 30;
 
+/// The most schedules the office holds, on and off (0025 D8).
+const DEFAULT_SCHEDULE_CAP: u32 = 50;
+
 /// The range of a rate limit (0007 D4). The upper bound keeps a typo from
 /// turning the limit off.
 const LIMIT_MIN: u32 = 1;
@@ -45,6 +48,10 @@ const TEMP_CAP_MIN: u32 = 1;
 const TEMP_CAP_MAX: u32 = 100;
 const TEMP_IDLE_MINUTES_MIN: u32 = 5;
 const TEMP_IDLE_MINUTES_MAX: u32 = 1_440;
+
+/// The range of the schedule cap (0025 D8).
+const SCHEDULE_CAP_MIN: u32 = 1;
+const SCHEDULE_CAP_MAX: u32 = 200;
 
 /// The longest stored text of one setting, in bytes (0003 data model).
 const LAST_VIEW_MAX_BYTES: usize = 1_024;
@@ -132,6 +139,7 @@ pub struct Settings {
     pub temp_cap: u32,
     pub temp_idle_minutes: u32,
     pub worktree_dependency_links: bool,
+    pub schedule_cap: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,10 +158,11 @@ pub enum SettingKey {
     TempCap,
     TempIdleMinutes,
     WorktreeDependencyLinks,
+    ScheduleCap,
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::QuietPeriodMs,
         Self::OutputLineLimit,
         Self::FocusShortcut,
@@ -168,6 +177,7 @@ impl SettingKey {
         Self::TempCap,
         Self::TempIdleMinutes,
         Self::WorktreeDependencyLinks,
+        Self::ScheduleCap,
     ];
 
     #[must_use]
@@ -187,6 +197,7 @@ impl SettingKey {
             Self::TempCap => "temp_cap",
             Self::TempIdleMinutes => "temp_idle_minutes",
             Self::WorktreeDependencyLinks => "worktree_dependency_links",
+            Self::ScheduleCap => "schedule_cap",
         }
     }
 
@@ -217,6 +228,7 @@ impl Default for Settings {
             temp_cap: DEFAULT_TEMP_CAP,
             temp_idle_minutes: DEFAULT_TEMP_IDLE_MINUTES,
             worktree_dependency_links: DEFAULT_WORKTREE_DEPENDENCY_LINKS,
+            schedule_cap: DEFAULT_SCHEDULE_CAP,
         }
     }
 }
@@ -243,6 +255,7 @@ impl Settings {
             SettingKey::WorktreeDependencyLinks => {
                 switch_text(self.worktree_dependency_links).to_owned()
             }
+            SettingKey::ScheduleCap => self.schedule_cap.to_string(),
         }
     }
 
@@ -290,6 +303,10 @@ impl Settings {
             }
             SettingKey::WorktreeDependencyLinks => {
                 self.worktree_dependency_links = parse_switch(key, text)?;
+            }
+            SettingKey::ScheduleCap => {
+                self.schedule_cap =
+                    parse_whole_number(key, text, SCHEDULE_CAP_MIN, SCHEDULE_CAP_MAX)?;
             }
         }
         Ok(())

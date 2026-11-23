@@ -10,7 +10,8 @@ use crate::common::interfaces::NotificationStore;
 
 /// The event to record, with the agent name copied at creation.
 pub struct CreateNotification {
-    pub agent_id: AgentId,
+    /// See `Notification::agent_id`.
+    pub agent_id: Option<AgentId>,
     pub agent_name: String,
     pub event: NotificationEvent,
     pub at: Timestamp,
@@ -48,8 +49,9 @@ impl CreateNotificationHandler {
         &self,
         request: CreateNotification,
     ) -> Result<Option<Notification>, NotificationApplicationError> {
-        if COALESCED_EVENTS.contains(&request.event)
-            && self.has_unread(request.agent_id, request.event)?
+        if let Some(agent_id) = request.agent_id
+            && COALESCED_EVENTS.contains(&request.event)
+            && self.has_unread(agent_id, request.event)?
         {
             return Ok(None);
         }

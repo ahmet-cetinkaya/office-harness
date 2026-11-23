@@ -41,3 +41,24 @@ fn a_detailed_entry_keeps_its_reason_and_a_plain_one_has_none() {
     assert_eq!(entries[0].detail.as_deref(), Some("new session: why"));
     assert_eq!(entries[1].detail, None);
 }
+
+#[test]
+fn the_entry_carries_the_label_of_the_current_scope_and_none_without_one() {
+    let recorder = Arc::new(RecordingRecorder::default());
+    let journal = ActionJournal::new(recorder.clone(), Arc::new(FixedClock));
+    let agent_id = AgentId::generate();
+
+    {
+        let _scope = ActorScope::enter_labeled(Actor::Office, "Nightly report");
+        journal
+            .record(agent_id, AgentAction::Directive, None)
+            .expect("record");
+    }
+    journal
+        .record(agent_id, AgentAction::Stop, None)
+        .expect("record");
+
+    let entries = recorder.entries();
+    assert_eq!(entries[0].actor_label.as_deref(), Some("Nightly report"));
+    assert_eq!(entries[1].actor_label, None);
+}

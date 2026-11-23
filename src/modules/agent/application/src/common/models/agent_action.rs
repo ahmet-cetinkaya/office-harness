@@ -40,5 +40,7 @@ pub struct AgentActionEntry {
     pub failure: Option<String>,
     /// Why the action happened, when the action alone does not say it.
     pub detail: Option<String>,
+    /// The label of the current actor scope, such as a schedule's name (0025 D7).
+    pub actor_label: Option<String>,
     pub at: Timestamp,
 }

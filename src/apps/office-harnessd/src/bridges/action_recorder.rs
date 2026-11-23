@@ -52,6 +52,7 @@ impl ActionRecorder for ActionRecorderBridge {
                 .clone()
                 .map_or(ActionResult::Ok, ActionResult::Failed),
             detail: entry.detail.clone(),
+            actor_label: entry.actor_label.clone(),
             at: entry.at,
         });
         match stored {

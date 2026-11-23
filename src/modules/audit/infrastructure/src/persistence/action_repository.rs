@@ -31,6 +31,7 @@ struct ActionRow {
     result: String,
     at: i64,
     detail: Option<String>,
+    actor_label: Option<String>,
 }
 
 impl ActionRow {
@@ -43,6 +44,7 @@ impl ActionRow {
             result: row.get(4)?,
             at: row.get(5)?,
             detail: row.get(6)?,
+            actor_label: row.get(7)?,
         })
     }
 
@@ -60,6 +62,7 @@ impl ActionRow {
                 result: ActionResult::from_text(&self.result),
                 at: Timestamp::from_unix_millis(self.at),
                 detail: self.detail,
+                actor_label: self.actor_label,
             },
         })
     }
@@ -133,8 +136,8 @@ impl ActionRepository {
     ) -> Result<ActionEntry, AuditError> {
         connection
             .execute(
-                "INSERT INTO audit_actions (actor, target_agent_id, action, result, at, detail) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO audit_actions (actor, target_agent_id, action, result, at, detail, \
+                 actor_label) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     actor_text(record.actor),
                     record.target_agent_id.map(|agent_id| agent_id.to_string()),
@@ -142,6 +145,7 @@ impl ActionRepository {
                     record.result.as_text(),
                     record.at.as_unix_millis(),
                     record.detail.as_deref(),
+                    record.actor_label.as_deref(),
                 ],
             )
             .map_err(|error| storage_failure(&error))?;
@@ -169,7 +173,8 @@ impl ActionLog for ActionRepository {
         let connection = self.connection();
         let mut statement = connection
             .prepare(
-                "SELECT id, actor, target_agent_id, action, result, at, detail FROM audit_actions \
+                "SELECT id, actor, target_agent_id, action, result, at, detail, actor_label \
+                 FROM audit_actions \
                  WHERE target_agent_id = ?1 ORDER BY id",
             )
             .map_err(|error| storage_failure(&error))?;
@@ -185,7 +190,8 @@ impl ActionLog for ActionRepository {
         let connection = self.connection();
         let mut statement = connection
             .prepare(
-                "SELECT id, actor, target_agent_id, action, result, at, detail FROM audit_actions \
+                "SELECT id, actor, target_agent_id, action, result, at, detail, actor_label \
+                 FROM audit_actions \
                  WHERE target_agent_id IS NULL ORDER BY id DESC LIMIT ?1",
             )
             .map_err(|error| storage_failure(&error))?;

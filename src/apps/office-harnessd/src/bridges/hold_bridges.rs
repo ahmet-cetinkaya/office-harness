@@ -59,6 +59,7 @@ impl HoldJournalBridge {
             action,
             result: ActionResult::Ok,
             detail: None,
+            actor_label: None,
             at,
         });
         match stored {
