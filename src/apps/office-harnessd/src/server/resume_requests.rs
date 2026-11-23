@@ -12,12 +12,15 @@ use serde_json::{Map, Value, json};
 use tokio::task::spawn_blocking;
 use wire::{ErrorCode, Request, Response};
 
+use super::agent_requests::STOPPING_MESSAGE;
 use super::resume_order::start_order;
 use super::resume_run::{ResumeContext, run_resume};
+use crate::sweep::{SweepGate, SweepState};
 
 const RESUME_PLAN: &str = "resume.plan";
 const RESUME_START: &str = "resume.start";
-const RESUME_REQUESTS: [&str; 2] = [RESUME_PLAN, RESUME_START];
+const SWEEP_STATE: &str = "sweep.state";
+const RESUME_REQUESTS: [&str; 3] = [RESUME_PLAN, RESUME_START, SWEEP_STATE];
 const AGENT_IDS_FIELD: &str = "agent_ids";
 const MAX_AGENT_IDS: usize = 1000;
 const SESSION_LIST: &str = "session.list";
@@ -34,12 +37,25 @@ type Refusal = (ErrorCode, String);
 pub struct ResumeGateway {
     context: ResumeContext,
     tree: Arc<TreeQuery>,
+    /// The sweep of 0017: `resume.start` waits for it, and `resume.plan`
+    /// answers that it runs.
+    sweep_gate: SweepGate,
 }
 
 impl ResumeGateway {
     #[must_use]
     pub fn new(context: ResumeContext, tree: Arc<TreeQuery>) -> Self {
-        Self { context, tree }
+        Self {
+            context,
+            tree,
+            sweep_gate: SweepGate::default(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_sweep_gate(mut self, sweep_gate: SweepGate) -> Self {
+        self.sweep_gate = sweep_gate;
+        self
     }
 
     #[must_use]
@@ -49,6 +65,9 @@ impl ResumeGateway {
 
     pub async fn handle(&self, request: Request) -> Response {
         let id = request.id;
+        if request.kind == RESUME_START && self.sweep_gate.wait_until_done().await.is_err() {
+            return Response::failure(id, ErrorCode::Refused, STOPPING_MESSAGE);
+        }
         let gateway = self.clone();
         let answered = spawn_blocking(move || gateway.answer(&request)).await;
         match answered {
@@ -70,6 +89,12 @@ impl ResumeGateway {
     /// The answer and, for `resume.start`, the agents to start in order.
     fn answer(&self, request: &Request) -> Result<(Value, Vec<AgentId>), Refusal> {
         refuse_unknown_fields(request)?;
+        if request.kind == SWEEP_STATE {
+            return Ok((
+                json!({ "state": self.sweep_gate.state().as_str() }),
+                Vec::new(),
+            ));
+        }
         if request.kind == RESUME_PLAN {
             return Ok((self.plan()?, Vec::new()));
         }
@@ -81,6 +106,9 @@ impl ResumeGateway {
     /// The interrupted agents in start order, with what will happen to each
     /// (FR-002, FR-008).
     fn plan(&self) -> Result<Value, Refusal> {
+        if self.sweep_gate.state() == SweepState::Running {
+            return Ok(json!({ "sweeping": true, "agents": [] }));
+        }
         let interrupted: Vec<AgentId> = self
             .context
             .store
@@ -96,7 +124,7 @@ impl ResumeGateway {
             .into_iter()
             .map(|agent_id| self.plan_entry(agent_id, held.contains(&agent_id)))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(json!({ "agents": entries }))
+        Ok(json!({ "sweeping": false, "agents": entries }))
     }
 
     fn plan_entry(&self, agent_id: AgentId, held: bool) -> Result<Value, Refusal> {

@@ -130,6 +130,7 @@ impl Server {
             events.clone(),
             services.storage_alerts.clone(),
         );
+        let sweep_gate = services.orphan_sweep.gate();
         let agents = AgentGateway::new(
             Arc::clone(&services.agent.handlers),
             services.agent.audit.clone(),
@@ -143,7 +144,8 @@ impl Server {
             Arc::clone(&services.hierarchy.tree),
             holds.clone(),
             services.needs_you_bridge.clone(),
-        );
+        )
+        .with_sweep_gate(sweep_gate.clone());
         let hierarchy = HierarchyGateway::new(
             Arc::clone(&services.hierarchy.handlers),
             services.agent.agent_reader.clone(),
@@ -154,13 +156,15 @@ impl Server {
             Arc::new(services.notification.handlers.clone()),
             services.needs_you_bridge.clone(),
         );
-        let resume = resume_gateway(services, &agents, &events, options.resume_check_period);
+        let resume = resume_gateway(services, &agents, &events, options.resume_check_period)
+            .with_sweep_gate(sweep_gate);
         let (shutdown, stopping) = watch::channel(false);
         spawn_process_scan(
             services.agent.process_recorder.clone(),
             stopping.clone(),
             log.clone(),
         );
+        services.orphan_sweep.spawn(&events);
         let state = ServerState {
             port,
             options,

@@ -13,8 +13,11 @@ use super::{ServerLog, Services};
 /// stopped, and the agent and its session become `interrupted`. Every client
 /// that is still connected hears about it. A child that cannot be ended is
 /// logged, and the others still end. Waiting directives are withdrawn first,
-/// with the server stop as the reason (0012/FR-005).
+/// with the server stop as the reason (0012/FR-005). A request that waits for
+/// the sweep of 0017 is refused at once.
 pub async fn interrupt_running_agents(services: &Services, log: &ServerLog) {
+    // A start that waits for the sweep is refused now, not after the sweep.
+    services.orphan_sweep.gate().stop();
     withdraw_waiting_directives(&services.hierarchy.send_directive, &services.events, log).await;
     let handler = services.agent.interrupt_agents.clone();
     let order = std::sync::Arc::clone(&services.agent.status_order);

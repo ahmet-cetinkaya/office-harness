@@ -195,6 +195,14 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - **T2, ports.** The agent module owns `ProcessProbe` and `SessionProcessStore`; `ProcessProbeBridge` in the server app adapts the terminal runtime and `ProcessInspector` to them, so no module depends on another.
 - **T2, scan cost.** Each `descendants` call refreshes the whole process table. With many sessions, T3 may share one snapshot per scan.
 
+- **T3, one transaction, no fallback.** The audit and agent tables share the one office database connection, so `SharedLedger` writes the `end_leftover` entry (`ActionRepository::append_in`) and the `ended` mark (`SessionProcessRepository::end_one_in`) in one transaction. The D6 idempotency-key route is not needed; the entry detail still starts with `identity <row id>`.
+- **T3, `sweep.state` in place of a hello field.** The auth answer carries only the proof, and the hold state is also read by request, so a client reads the sweep state with the new `sweep.state` request (`{state: "running" | "done"}`) and follows the `office.sweep` event. T5 and the T6 contract use this.
+- **T3, `resume.plan` key.** The answer keeps its existing `agents` key: `{sweeping: true, agents: []}` while the sweep runs, and `sweeping: false` beside the list after it.
+- **T3, one `leftover_kept` per agent.** A notification row names one agent, so each agent with a `could not end` result gets its own row with the first OS reason.
+- **T3, after the request.** A process that is gone or has another start time after the end request counts as ended and gets no force. One that cannot be read right then is usually exiting, so it gets a short wait first. Every result marks its identity ended (FR-009), `could not end` too.
+- **T3, `server_crash` test.** It asserted that the orphan keeps running after the restart; that is now the reverse by design, so it waits for `sweeping: false` and asserts the orphan ended.
+- **T3, limits of the evidence.** A real `could not end` needs another user's process, so it is covered by fake inspector unit tests only. The real-process tests (`server_sweep.rs`) need `/proc` and run on Linux only. At the default 10 s grace, 30 stubborn agents with one helper each were listed by `resume.plan` after 10.1 s (SC-001 bound: 30 s).
+
 ## Review log
 
 r1 (Efe, fa44fb0): M1 to M3, L1, L2 resolved as below. r2 (Efe, 350ff07): PASS for coding; N1 (macOS FR-011 residual under A10) is checked in the code review.

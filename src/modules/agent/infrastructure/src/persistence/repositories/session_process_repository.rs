@@ -132,13 +132,22 @@ impl SessionProcessRepository {
     /// # Errors
     /// A storage failure.
     pub fn end_one(&self, id: i64) -> Result<(), PersistenceError> {
-        self.connection.with(|connection| {
-            connection.execute(
-                "UPDATE agent_session_processes SET state = 'ended' WHERE id = ?1",
-                [id],
-            )?;
-            Ok(())
-        })
+        self.connection
+            .with(|connection| Self::end_one_in(connection, id))
+    }
+
+    /// Marks one row as ended on the caller's connection or transaction, so
+    /// the sweep can write it in one transaction with its action record
+    /// entry (0017/FR-009).
+    ///
+    /// # Errors
+    /// A storage failure.
+    pub fn end_one_in(connection: &Connection, id: i64) -> Result<(), PersistenceError> {
+        connection.execute(
+            "UPDATE agent_session_processes SET state = 'ended' WHERE id = ?1",
+            [id],
+        )?;
+        Ok(())
     }
 
     /// Marks every open row of the session as ended.
