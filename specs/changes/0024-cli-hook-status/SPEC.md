@@ -294,5 +294,6 @@ The desktop app gets one setting and a few words of text. No new view.
 - Q: Can the person turn the hook status off? → A: Yes, one office-wide switch, default on (FR-024, A6). Default adopted by the spec writer; review may change it.
 - Q: Is a permission ask a status of its own? → A: No. It is `waiting for input` with the event `asks permission`, so the eight statuses stay (PB-1, FR-013). Default adopted by the spec writer; review may change it.
 - Q: Does the first session start count as a report? → A: No. Only the four event groups of this change count, so a freshly started agent follows the quiet period until its first turn (A7). Default adopted by the spec writer.
+- Q: What does the item say when a manual compaction ends and no turn is open? → A: `finished its turn`, on purpose: the agent waits for the person and has nothing more to say (FR-012). Confirmed in spec review r1.
 
 ## Deviations
