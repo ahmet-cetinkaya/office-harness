@@ -15,16 +15,20 @@ use gethostname::gethostname;
 use notification_infrastructure::persistence::{
     LEDGER_TABLE as NOTIFICATION_LEDGER_TABLE, SCRIPTS as NOTIFICATION_SCRIPTS,
 };
+use schedule_infrastructure::persistence::{
+    LEDGER_TABLE as SCHEDULE_LEDGER_TABLE, SCRIPTS as SCHEDULE_SCRIPTS,
+};
 use template_infrastructure::persistence::{
     LEDGER_TABLE as TEMPLATE_LEDGER_TABLE, SCRIPTS as TEMPLATE_SCRIPTS,
 };
 
 use super::start_maintenance::clear_freed_text;
 use super::{
-    AccessServices, AgentServices, HierarchyServices, LoginSetup, NotificationServices, ServerLog,
-    StartupError, StorageAlerts, TemplateServices, TerminalServices, build_access_services,
-    build_agent_services, build_hierarchy_services, build_notification_services,
-    build_template_services, build_terminal_services, open_database, run_migrations,
+    AccessServices, AgentServices, HierarchyServices, LoginSetup, NotificationServices,
+    ScheduleServices, ServerLog, StartupError, StorageAlerts, TemplateServices, TerminalServices,
+    build_access_services, build_agent_services, build_hierarchy_services,
+    build_notification_services, build_schedule_services, build_template_services,
+    build_terminal_services, open_database, run_migrations,
 };
 use crate::bridges::{
     AgentCalls, CallHelper, GateInputs, NeedsYouBridge, NotificationBridge, SystemClock,
@@ -49,6 +53,7 @@ pub struct Services {
     pub hierarchy: HierarchyServices,
     pub notification: NotificationServices,
     pub template: TemplateServices,
+    pub schedule: ScheduleServices,
     /// Writes the notification rows; the hold notifier shares it with the
     /// status stream (0007 D7).
     pub notification_bridge: NotificationBridge,
@@ -80,6 +85,7 @@ fn migrate_modules(connection: &mut rusqlite::Connection) -> Result<(), StartupE
         &[],
     )?;
     run_migrations(connection, TEMPLATE_LEDGER_TABLE, TEMPLATE_SCRIPTS, &[])?;
+    run_migrations(connection, SCHEDULE_LEDGER_TABLE, SCHEDULE_SCRIPTS, &[])?;
     Ok(())
 }
 
@@ -206,6 +212,7 @@ pub fn start_with(
         &storage_alerts,
     );
     let session_processes = Arc::new(SessionProcessRepository::new(connection.clone()));
+    let schedule = build_schedule_services(&connection, Arc::clone(&agent.settings), log);
     let services = Services {
         machine,
         agents,
@@ -219,6 +226,7 @@ pub fn start_with(
         hierarchy,
         notification,
         template,
+        schedule,
         notification_bridge,
         needs_you_bridge,
         agent_bridge_store,

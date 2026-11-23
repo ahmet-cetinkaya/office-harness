@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use crate::bridges::WORK_BOUND_EXTRA;
+use crate::bridges::{ScheduleTime, WORK_BOUND_EXTRA};
 
 /// How many connections may be in the handshake at once. Each can buffer up
 /// to one maximum frame before it proves anything, so this bounds that memory.
@@ -23,6 +23,10 @@ pub const TEMP_TICK: Duration = Duration::from_secs(2);
 
 /// The length of one minute of the temp idle limit (0020 D8).
 pub const TEMP_MINUTE: Duration = Duration::from_secs(60);
+
+/// How often the scheduler looks at the schedules. Twelve looks a minute keep
+/// a run within 60 seconds after its due time (0025/FR-005).
+pub const SCHEDULE_TICK: Duration = Duration::from_secs(5);
 
 /// Server settings that tests change; the defaults follow the contract.
 #[derive(Debug, Clone, Copy)]
@@ -46,6 +50,11 @@ pub struct ServerOptions {
     /// The time added to the quiet period to make the work bound (0022 D3);
     /// tests shorten it.
     pub work_bound_extra: Duration,
+    /// How often the scheduler looks at the schedules; tests shorten it.
+    pub schedule_tick: Duration,
+    /// The wall clock and the time zone that schedules use; `None` is the
+    /// machine's own. Tests pass a fake that they leak for the process.
+    pub schedule_time: Option<&'static dyn ScheduleTime>,
 }
 
 impl Default for ServerOptions {
@@ -59,6 +68,8 @@ impl Default for ServerOptions {
             temp_tick: TEMP_TICK,
             temp_minute: TEMP_MINUTE,
             work_bound_extra: WORK_BOUND_EXTRA,
+            schedule_tick: SCHEDULE_TICK,
+            schedule_time: None,
         }
     }
 }

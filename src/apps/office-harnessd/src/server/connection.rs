@@ -16,6 +16,7 @@ use super::hold_requests::HoldGateway;
 use super::notification_requests::NotificationGateway;
 use super::restart_signal::RESTART_REQUEST;
 use super::resume_requests::ResumeGateway;
+use super::schedule_requests::ScheduleGateway;
 use super::server_state::ServerState;
 use super::temp_requests::TempGateway;
 use super::template_requests::TemplateGateway;
@@ -215,6 +216,10 @@ async fn handle_incoming(
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arm for each request family hands the request to its gateway"
+)]
 async fn answer_request(
     socket: &mut WebSocket,
     state: &ServerState,
@@ -296,6 +301,14 @@ async fn answer_request(
             });
             return Ok(());
         }
+        Some(request) if ScheduleGateway::accepts(&request.kind) => {
+            let schedules = state.schedules.clone();
+            spawn_answer(
+                responses.clone(),
+                async move { schedules.handle(request).await },
+            );
+            return Ok(());
+        }
         Some(request) if TemplateGateway::accepts(&request.kind) => {
             let templates = state.templates.clone();
             let responses = responses.clone();
@@ -324,6 +337,18 @@ async fn answer_request(
         Some(snapshot) => send_binary(socket, snapshot).await,
         None => Ok(()),
     }
+}
+
+/// Runs a request apart from the connection loop and queues its encoded
+/// answer for the loop to send. The connection may be gone by then; the
+/// request still ran.
+fn spawn_answer(
+    responses: mpsc::Sender<String>,
+    answer: impl std::future::Future<Output = Response> + Send + 'static,
+) {
+    tokio::spawn(async move {
+        let _ = responses.send(answer.await.encode()).await;
+    });
 }
 
 /// Runs an agent request apart from the connection loop and queues its

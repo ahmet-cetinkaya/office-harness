@@ -9,6 +9,8 @@ use std::time::Duration;
 use access_application::common::interfaces::NonceSource;
 use access_infrastructure::services::RandomNonceSource;
 use axum::Router;
+use schedule_application::services::ScheduleService;
+use schedule_presentation::ScheduleHandlers;
 use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, watch};
 
@@ -24,6 +26,8 @@ use super::restart_signal::RestartSignal;
 use super::resume_requests::ResumeGateway;
 use super::resume_run::ResumeContext;
 use super::router::build_router;
+use super::schedule_requests::ScheduleGateway;
+use super::schedule_run::{RunnerParts, ScheduleRunner};
 use super::server_error::ServerError;
 use super::server_file::write_server_file;
 use super::server_options::ServerOptions;
@@ -34,9 +38,12 @@ use super::template_requests::TemplateGateway;
 use super::terminal_requests::TerminalGateway;
 use crate::bootstrap::{ServerLog, Services};
 use crate::bridges::{
-    AgentLineBridge, AgentStatusBridge, SystemClock, TempEnder, TempEndings, TempHooks, TempLedger,
+    AgentLineBridge, AgentStatusBridge, ScheduleBridge, ScheduleParts, ScheduleTime,
+    SharedScheduleTime, SystemClock, SystemScheduleTime, TempEnder, TempEndings, TempHooks,
+    TempLedger,
 };
 use crate::config::Config;
+use crate::sweep::SweepGate;
 
 /// The loopback WebSocket server, bound and announced in `server.json` but
 /// not yet serving.
@@ -73,25 +80,101 @@ fn spawn_terminal_bridges(services: &Services, events: &EventHub, log: &ServerLo
     );
 }
 
-/// The bulk resume of 0013: it starts through the agent gateway, so every
-/// start keeps the status order and the action record.
-fn resume_gateway(
+/// What a bulk resume and a wake need after their request was answered: they
+/// start through the agent gateway, so every start keeps the status order and
+/// the action record.
+fn resume_context(
     services: &Services,
     agents: &AgentGateway,
     events: &EventHub,
     check_period: Duration,
-) -> ResumeGateway {
-    ResumeGateway::new(
-        ResumeContext {
-            agents: agents.clone(),
-            store: Arc::clone(&services.agent_bridge_store),
-            processes: Arc::clone(&services.session_processes),
-            holds: Arc::clone(&services.hierarchy.holds),
-            events: events.clone(),
-            alerts: services.storage_alerts.clone(),
-            check_period,
-        },
-        Arc::clone(&services.hierarchy.tree),
+) -> ResumeContext {
+    ResumeContext {
+        agents: agents.clone(),
+        store: Arc::clone(&services.agent_bridge_store),
+        processes: Arc::clone(&services.session_processes),
+        holds: Arc::clone(&services.hierarchy.holds),
+        events: events.clone(),
+        alerts: services.storage_alerts.clone(),
+        check_period,
+        labels: services.hierarchy.schedule_labels.clone(),
+    }
+}
+
+/// The bulk resume of 0013 over `context`.
+fn resume_gateway(services: &Services, context: ResumeContext) -> ResumeGateway {
+    ResumeGateway::new(context, Arc::clone(&services.hierarchy.tree))
+}
+
+/// The scheduler, the run executor, and the user's `schedule.*` requests
+/// (0025). The executor wakes and removes agents through the agent gateway,
+/// which tells it about each delete.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the schedule wiring joins the agent, hierarchy, notification, and sweep services"
+)]
+fn schedule_gateway(
+    services: &Services,
+    agents: &AgentGateway,
+    context: ResumeContext,
+    sweep_gate: &SweepGate,
+    events: &EventHub,
+    log: &ServerLog,
+    options: &ServerOptions,
+    stopping: &watch::Receiver<bool>,
+) -> ScheduleGateway {
+    let time: &'static dyn ScheduleTime = options.schedule_time.unwrap_or(&SystemScheduleTime);
+    let store = Arc::clone(&services.schedule.store);
+    let bridge = ScheduleBridge::new(ScheduleParts {
+        store: Arc::clone(&store),
+        agents: Arc::clone(&services.agent_bridge_store),
+        tree: Arc::clone(&services.hierarchy.tree),
+        holds: Arc::clone(&services.hierarchy.holds),
+        directives: Arc::clone(&services.hierarchy.send_directive),
+        resume: context,
+        sleeping: services.agent.sleep_gate.sleeping(),
+        journal: services.agent.journal.clone(),
+        notifications: services.notification_bridge.clone(),
+        events: events.clone(),
+        alerts: services.storage_alerts.clone(),
+        labels: services.hierarchy.schedule_labels.clone(),
+        cap: Arc::clone(&services.schedule.cap),
+        time,
+        stopping: stopping.clone(),
+        runtime: tokio::runtime::Handle::current(),
+        log: log.clone(),
+    });
+    services
+        .hierarchy
+        .scheduled_outcomes
+        .connect(Arc::new(bridge.clone()));
+    agents.connect_schedules(bridge.clone());
+    ScheduleRunner::new(RunnerParts {
+        bridge: bridge.clone(),
+        store: Arc::clone(&store),
+        cap: Arc::clone(&services.schedule.cap),
+        notifications: services.notification_bridge.clone(),
+        time,
+        gate: sweep_gate.clone(),
+        tick: options.schedule_tick,
+        log: log.clone(),
+    })
+    .spawn(stopping.clone());
+    let service = ScheduleService::new(
+        Arc::clone(&store),
+        Arc::new(SharedScheduleTime(time)),
+        Arc::clone(&services.schedule.cap),
+        Arc::new(bridge.clone()),
+        Arc::new(SharedScheduleTime(time)),
+    );
+    ScheduleGateway::new(
+        Arc::new(ScheduleHandlers::new(service, Arc::new(bridge.clone()))),
+        bridge,
+        store,
+        Arc::clone(&services.agent_bridge_store),
+        services.agent.journal.clone(),
+        events.clone(),
+        services.storage_alerts.clone(),
     )
 }
 
@@ -305,8 +388,8 @@ impl Server {
             events.clone(),
             services.storage_alerts.clone(),
         );
-        let resume = resume_gateway(services, &agents, &events, options.resume_check_period)
-            .with_sweep_gate(sweep_gate);
+        let context = resume_context(services, &agents, &events, options.resume_check_period);
+        let resume = resume_gateway(services, context.clone()).with_sweep_gate(sweep_gate.clone());
         let (shutdown, stopping) = watch::channel(false);
         spawn_process_scan(
             services.agent.process_recorder.clone(),
@@ -316,6 +399,17 @@ impl Server {
         services.orphan_sweep.spawn(&events);
         idle_sleeper(services, &agents, log, &options).spawn(stopping.clone());
         let temps = temp_gateway(services, &agents, &temp_hooks, log, &options, &stopping);
+        let schedules = schedule_gateway(
+            services,
+            &agents,
+            context,
+            &sweep_gate,
+            &events,
+            log,
+            &options,
+            &stopping,
+        );
+        let max_handshakes = options.max_concurrent_handshakes;
         let state = ServerState {
             port,
             options,
@@ -335,11 +429,12 @@ impl Server {
             templates: template_gateway(services),
             resume,
             temps,
+            schedules,
             events,
             restart: RestartSignal::default(),
             token_generations: services.access.token_store.subscribe(),
             shutdown: stopping,
-            handshake_permits: Arc::new(Semaphore::new(options.max_concurrent_handshakes)),
+            handshake_permits: Arc::new(Semaphore::new(max_handshakes)),
             log: log.clone(),
         };
         Self {

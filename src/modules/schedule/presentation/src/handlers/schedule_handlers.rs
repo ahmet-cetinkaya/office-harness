@@ -20,9 +20,8 @@ use crate::mappings::{run_json, schedule_changed_event, schedule_json, schedule_
 pub const REQUEST_PREFIX: &str = "schedule.";
 
 /// The answer to one request, the events that every client gets because of
-/// it, the `fields` array of an `invalid` answer, and the disk failure text
-/// when the disk is at fault. The wire answer has no slot for `fields` yet,
-/// so the host adds it to the error object when it writes the frame.
+/// it, the `fields` array of an `invalid` answer (also inside `response`), and
+/// the disk failure text when the disk is at fault.
 #[derive(Debug)]
 pub struct Handled {
     pub response: Response,
@@ -76,7 +75,12 @@ impl ScheduleHandlers {
                 disk_failure: None,
             },
             Err(error) => Handled {
-                response: Response::failure(id, error.code, error.message),
+                response: Response::failure_with_fields(
+                    id,
+                    error.code,
+                    error.message,
+                    error.fields.clone(),
+                ),
                 events: Vec::new(),
                 error_fields: error.fields,
                 disk_failure: error.disk_failure,

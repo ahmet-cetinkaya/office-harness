@@ -66,6 +66,16 @@ impl CreateNotificationHandler {
         Ok(Some(self.store.insert(&notification)?))
     }
 
+    /// Rewrites the text and times of a stored row, for a notification that
+    /// counts what it reports, such as the missed runs of one minute
+    /// (0025/FR-006).
+    ///
+    /// # Errors
+    /// `Storage`.
+    pub fn amend(&self, notification: &Notification) -> Result<(), NotificationApplicationError> {
+        self.store.update(notification)
+    }
+
     fn has_unread(
         &self,
         agent_id: AgentId,

@@ -39,6 +39,11 @@ const ALLOWED_REQUESTS: [&str; 8] = [
     "report.send",
 ];
 
+/// Every request of this family is the person's: an agent that sends one is
+/// told why, and the refusal is recorded (0025/FR-014, D15).
+const SCHEDULE_PREFIX: &str = "schedule.";
+const ONLY_THE_PERSON_SCHEDULES: &str = "only the person makes schedules";
+
 /// What the connection of an agent says about a request it will not run.
 const NOT_ALLOWED: &str = "an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants, and send reports to its parent or the person";
 
@@ -66,6 +71,8 @@ enum Refusal {
     NotAllowed,
     /// The type is allowed but not served yet.
     NotYet,
+    /// A schedule request: only the person makes schedules.
+    ScheduleRequest,
     /// The frame names an actor or caller, which the credential already is.
     SmuggledField(String),
 }
@@ -124,6 +131,8 @@ async fn answer_request(state: &ServerState, grant: &AgentGrant, frame: &str) ->
                 _ => Refusal::NotYet,
             }
         }
+    } else if request.kind.starts_with(SCHEDULE_PREFIX) {
+        Refusal::ScheduleRequest
     } else {
         // `{:?}` quotes and escapes, so an embedded newline cannot fake a log
         // line of its own.
@@ -179,6 +188,7 @@ fn smuggled_field(fields: &serde_json::Map<String, Value>) -> Option<String> {
 fn refusal_reason(refusal: &Refusal, kind: &str) -> String {
     match refusal {
         Refusal::NotAllowed => NOT_ALLOWED.to_owned(),
+        Refusal::ScheduleRequest => ONLY_THE_PERSON_SCHEDULES.to_owned(),
         Refusal::NotYet => format!(
             "{} is not available to agents yet",
             truncated(kind, MAX_REFUSAL_TEXT_CHARS)
