@@ -71,6 +71,7 @@ mod with_a_stand_in_program {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
+    use std::thread;
 
     use tempfile::TempDir;
 

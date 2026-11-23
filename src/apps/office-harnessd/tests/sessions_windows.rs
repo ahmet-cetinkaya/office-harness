@@ -50,7 +50,7 @@ fn write_fake_script(clis: &FakeClis, records: &Path) {
     fs::create_dir_all(&script_folder).expect("script folder");
     let target = serde_json::to_string(&record_path.display().to_string()).expect("path");
     let script = format!(
-        "const fs = require('node:fs');\nconst target = {target};\nfs.writeFileSync(target + '.part', JSON.stringify({{ argv: process.argv.slice(2), pid: process.pid, ppid: process.ppid }}));\nfs.renameSync(target + '.part', target);\nconsole.log('ready');\nsetInterval(() => {{}}, 1000);\n"
+        "if (process.argv.slice(2, 4).join(' ') === 'auth status') process.exit(0);\nconst fs = require('node:fs');\nconst target = {target};\nfs.writeFileSync(target + '.part', JSON.stringify({{ argv: process.argv.slice(2), pid: process.pid, ppid: process.ppid }}));\nfs.renameSync(target + '.part', target);\nconsole.log('ready');\nsetInterval(() => {{}}, 1000);\n"
     );
     fs::write(script_folder.join("cli.js"), script).expect("script");
     fs::write(clis.tool_folder().join("claude.cmd"), NPM_SHIM).expect("shim");

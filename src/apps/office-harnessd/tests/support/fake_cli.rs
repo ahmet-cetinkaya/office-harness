@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use agent_infrastructure::services::{AttributionTiming, Environment, LoginEnvironment};
 use office_harnessd::bootstrap::LoginSetup;
+use office_harnessd::bridges::SignInWatchTiming;
 use tempfile::TempDir;
 
 #[cfg(unix)]
@@ -27,6 +28,14 @@ const SHELL_TIMEOUT: Duration = Duration::from_secs(5);
 /// stand-in holds only the tool folder.
 #[cfg(unix)]
 const SCRIPT_PATH: &str = "PATH=/usr/bin:/bin";
+/// Every fake CLI answers a sign-in status command (`claude auth status`,
+/// `codex login status`) as signed in, so a test that is not about the
+/// check sees each start as before (0019).
+#[cfg(unix)]
+const SIGNED_IN_STATUS: &str = "case \"$1 $2\" in 'auth status'|'login status') exit 0;; esac";
+#[cfg(windows)]
+const SIGNED_IN_STATUS: &str =
+    "if \"%~1 %~2\"==\"auth status\" exit /b 0\r\nif \"%~1 %~2\"==\"login status\" exit /b 0";
 #[cfg(windows)]
 const SYSTEM_ROOT_VARIABLE: &str = "SystemRoot";
 #[cfg(windows)]
@@ -59,6 +68,7 @@ pub struct FakeClis {
     #[cfg(windows)]
     extra_path_folders: Vec<PathBuf>,
     attribution: AttributionTiming,
+    sign_in_watch: SignInWatchTiming,
 }
 
 impl FakeClis {
@@ -88,7 +98,15 @@ impl FakeClis {
                 timeout: ATTRIBUTION_TIMEOUT,
                 settle: ATTRIBUTION_POLL,
             },
+            sign_in_watch: SignInWatchTiming::default(),
         }
+    }
+
+    /// A shorter sign-in watch, for tests that wait for its end (0019).
+    #[must_use]
+    pub fn with_sign_in_watch_period(mut self, period: Duration) -> Self {
+        self.sign_in_watch.period = period;
+        self
     }
 
     /// The folder that holds the fake CLIs, the first one on the login `PATH`.
@@ -140,11 +158,23 @@ impl FakeClis {
         self
     }
 
-    /// Adds an executable `name` that runs `body` with `sh`.
+    /// Adds an executable `name` that runs `body` with `sh`, and answers a
+    /// sign-in status command as signed in.
     #[cfg(unix)]
     pub fn add(&self, name: &str, body: &str) {
+        self.add_with_status_answer(name, SIGNED_IN_STATUS, body);
+    }
+
+    /// As `add`, with `status` as the script's first lines, so a test of the
+    /// sign-in check decides how the status command answers (0019).
+    #[cfg(unix)]
+    pub fn add_with_status_answer(&self, name: &str, status: &str, body: &str) {
         let path = self.tool_folder.join(name);
-        fs::write(&path, format!("#!/bin/sh\n{SCRIPT_PATH}\n{body}\n")).expect("write script");
+        fs::write(
+            &path,
+            format!("#!/bin/sh\n{SCRIPT_PATH}\n{status}\n{body}\n"),
+        )
+        .expect("write script");
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("make executable");
     }
 
@@ -153,7 +183,10 @@ impl FakeClis {
     #[cfg(windows)]
     pub fn add(&self, name: &str, body: &str) {
         let path = self.tool_folder.join(format!("{name}.cmd"));
-        let lines: Vec<&str> = std::iter::once("@echo off").chain(body.lines()).collect();
+        let lines: Vec<&str> = ["@echo off", SIGNED_IN_STATUS]
+            .into_iter()
+            .chain(body.lines())
+            .collect();
         fs::write(&path, lines.join("\r\n")).expect("write script");
     }
 
@@ -168,6 +201,7 @@ impl FakeClis {
                 "/appimage/mount".to_owned(),
             )]),
             attribution: self.attribution,
+            sign_in_watch: self.sign_in_watch,
         }
     }
 

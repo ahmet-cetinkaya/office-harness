@@ -16,6 +16,8 @@ mod person_reports;
 mod rate_limit_source;
 mod role_requests;
 mod saved_output;
+mod sign_in_watch;
+mod status_command_bridge;
 mod subtree_requests;
 mod system_clock;
 mod template_create;
@@ -42,6 +44,8 @@ pub use person_reports::PersonReportsBridge;
 pub use rate_limit_source::SettingsRateLimits;
 pub use role_requests::{AgentCreatorBridge, RoleRequestsBridge};
 pub use saved_output::{SavedOutputError, SavedOutputs};
+pub use sign_in_watch::{SignInEnds, SignInWatch, SignInWatchTiming};
+pub use status_command_bridge::StatusCommandBridge;
 pub use subtree_requests::{
     SubtreeRequestsBridge, delete_worktrees, subtree_worktrees, worktree_report,
 };
