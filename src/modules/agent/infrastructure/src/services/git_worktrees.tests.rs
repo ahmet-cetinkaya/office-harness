@@ -999,6 +999,10 @@ impl FailureReporter for RecordedFailures {
     fn report(&self, error: &PortError) {
         self.0.lock().expect("lock").push(error.to_string());
     }
+
+    fn note(&self, message: &str) {
+        self.0.lock().expect("lock").push(message.to_owned());
+    }
 }
 
 #[test]

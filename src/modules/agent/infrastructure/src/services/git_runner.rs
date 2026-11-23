@@ -216,15 +216,18 @@ impl GitRunner {
             .stderr
             .take()
             .map(|pipe| bounded_reader(pipe, STDERR_LIMIT_BYTES));
-        let Some(status) = wait_until(&mut child, deadline) else {
+        if !wait_until(&mut child, deadline) {
             end_tree(&mut child);
             return Err(GitFailure::Timeout);
-        };
+        }
         let (Some((stdout, stdout_overflow)), stderr) =
             exited_output(&mut child, stdout.as_ref(), stderr.as_ref())
         else {
             return Err(GitFailure::Timeout);
         };
+        let status = child
+            .wait()
+            .map_err(|error| GitFailure::Start(error.to_string()))?;
         if !status.success() {
             return Err(GitFailure::Exit(clean_reason(&String::from_utf8_lossy(
                 &stderr,

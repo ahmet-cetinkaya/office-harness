@@ -243,5 +243,5 @@ The person turns Worktree dependencies off in the office settings. The create fo
 
 Implementation notes. None of them defers or changes a requirement.
 
-- **Log line.** The reasons of FR-004 and FR-007 reach the background server's log through its storage alert channel as failures that are not disk failures, so each line starts with `a background write failed: storage failure:` and then names the place and the reason. No storage alert shows in the app.
+- **Log line.** The reasons of FR-004 and FR-007 reach the background server's log through the failure reporter's plain log call (`FailureReporter::note`), so each line starts with `dependency links: ` and then names the place and the reason. No storage alert shows in the app. (Amended after the review of 0021: the first build used the storage alert channel, which wrote `a background write failed: storage failure:` before the text.)
 - **Where a place's links are found at removal.** The office finds the dependency places again from the worktree's tracked `package.json` files. A place whose `package.json` the agent deleted keeps its links until git removes the worktree; git's removal deletes a link without following it, so the base checkout is still never changed (FR-006).

@@ -10,8 +10,8 @@
 mod support;
 
 use std::fs;
-use std::path::Path;
-use std::time::{Duration, Instant};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::{Value, json};
 use support::fake_cli::FakeClis;
@@ -38,6 +38,25 @@ fn add_claude(office: &Office, on_status: &str) {
         ),
         KEEPS_RUNNING,
     );
+}
+
+/// Every file and folder under `folder` with its size and change time, so a
+/// created, changed, or deleted entry shows as a difference.
+fn snapshot(folder: &Path) -> Vec<(PathBuf, u64, SystemTime)> {
+    let mut entries = Vec::new();
+    let mut pending = vec![folder.to_path_buf()];
+    while let Some(current) = pending.pop() {
+        for entry in fs::read_dir(&current).expect("folder") {
+            let path = entry.expect("entry").path();
+            let metadata = fs::symlink_metadata(&path).expect("metadata");
+            if metadata.is_dir() {
+                pending.push(path.clone());
+            }
+            entries.push((path, metadata.len(), metadata.modified().expect("time")));
+        }
+    }
+    entries.sort();
+    entries
 }
 
 fn status_runs(office: &Office) -> usize {
@@ -312,4 +331,22 @@ async fn a_startup_prompt_with_the_words_turns_the_watch_off() {
     tokio::time::sleep(Duration::from_secs(3)).await;
 
     assert_ne!(client.status_of(&agent).await, "failed");
+}
+
+#[tokio::test]
+async fn a_check_leaves_the_home_folder_unchanged() {
+    let office = Office::open().await;
+    add_claude(&office, NOT_SIGNED_IN);
+    let home = office.clis.home_folder();
+    // A file that the CLI's own sign-in state could stand for.
+    fs::write(home.join("credentials"), "kept").expect("seed");
+    let mut client = office.client().await;
+    let agent = client.create_agent(&office, "Ana", "claude", None).await;
+    let before = snapshot(&home);
+
+    client.start(&agent).await;
+
+    assert_eq!(status_runs(&office), 1);
+    assert_eq!(client.status_of(&agent).await, "failed");
+    assert_eq!(snapshot(&home), before);
 }
