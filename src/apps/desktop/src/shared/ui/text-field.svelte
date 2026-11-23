@@ -10,6 +10,8 @@
     errorId?: string;
     /** More than one line of text, for example a prompt. */
     isMultiline?: boolean;
+    /** Shows dots for the text, for a secret that is typed in (0026/FR-018). */
+    isSecret?: boolean;
   }
 
   let {
@@ -18,6 +20,7 @@
     hint = "",
     errorId,
     isMultiline = false,
+    isSecret = false,
   }: Props = $props();
 
   const id = $props.id();
@@ -43,8 +46,8 @@
     <input
       {id}
       bind:value
-      type="text"
-      autocomplete="off"
+      type={isSecret ? "password" : "text"}
+      autocomplete={isSecret ? "new-password" : "off"}
       spellcheck="false"
       aria-describedby={describedBy}
       aria-invalid={errorId === undefined ? undefined : "true"}

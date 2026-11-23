@@ -15,6 +15,7 @@ const DEFAULT_LIMIT_DIRECTIVES_PER_TARGET: u32 = 3;
 const DEFAULT_LIMIT_CREATES_PER_AGENT: u32 = 5;
 const DEFAULT_LIMIT_LIFECYCLE_PER_AGENT: u32 = 10;
 const DEFAULT_LIMIT_REPORTS_PER_AGENT: u32 = 5;
+const DEFAULT_LIMIT_SECRET_READS_PER_AGENT: u32 = 20;
 /// Idle sleep is off until the person turns it on (0018 D1).
 const DEFAULT_IDLE_SLEEP_MINUTES: u32 = 0;
 /// A new own worktree shares the installed packages unless the person turns
@@ -128,6 +129,7 @@ pub struct Settings {
     pub limit_creates_per_agent: u32,
     pub limit_lifecycle_per_agent: u32,
     pub limit_reports_per_agent: u32,
+    pub limit_secret_reads_per_agent: u32,
     pub idle_sleep_minutes: u32,
     pub temp_cap: u32,
     pub temp_idle_minutes: u32,
@@ -146,6 +148,7 @@ pub enum SettingKey {
     LimitCreatesPerAgent,
     LimitLifecyclePerAgent,
     LimitReportsPerAgent,
+    LimitSecretReadsPerAgent,
     IdleSleepMinutes,
     TempCap,
     TempIdleMinutes,
@@ -153,7 +156,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::QuietPeriodMs,
         Self::OutputLineLimit,
         Self::FocusShortcut,
@@ -164,6 +167,7 @@ impl SettingKey {
         Self::LimitCreatesPerAgent,
         Self::LimitLifecyclePerAgent,
         Self::LimitReportsPerAgent,
+        Self::LimitSecretReadsPerAgent,
         Self::IdleSleepMinutes,
         Self::TempCap,
         Self::TempIdleMinutes,
@@ -183,6 +187,7 @@ impl SettingKey {
             Self::LimitCreatesPerAgent => "limit_creates_per_agent",
             Self::LimitLifecyclePerAgent => "limit_lifecycle_per_agent",
             Self::LimitReportsPerAgent => "limit_reports_per_agent",
+            Self::LimitSecretReadsPerAgent => "limit_secret_reads_per_agent",
             Self::IdleSleepMinutes => "idle_sleep_minutes",
             Self::TempCap => "temp_cap",
             Self::TempIdleMinutes => "temp_idle_minutes",
@@ -213,6 +218,7 @@ impl Default for Settings {
             limit_creates_per_agent: DEFAULT_LIMIT_CREATES_PER_AGENT,
             limit_lifecycle_per_agent: DEFAULT_LIMIT_LIFECYCLE_PER_AGENT,
             limit_reports_per_agent: DEFAULT_LIMIT_REPORTS_PER_AGENT,
+            limit_secret_reads_per_agent: DEFAULT_LIMIT_SECRET_READS_PER_AGENT,
             idle_sleep_minutes: DEFAULT_IDLE_SLEEP_MINUTES,
             temp_cap: DEFAULT_TEMP_CAP,
             temp_idle_minutes: DEFAULT_TEMP_IDLE_MINUTES,
@@ -237,6 +243,7 @@ impl Settings {
             SettingKey::LimitCreatesPerAgent => self.limit_creates_per_agent.to_string(),
             SettingKey::LimitLifecyclePerAgent => self.limit_lifecycle_per_agent.to_string(),
             SettingKey::LimitReportsPerAgent => self.limit_reports_per_agent.to_string(),
+            SettingKey::LimitSecretReadsPerAgent => self.limit_secret_reads_per_agent.to_string(),
             SettingKey::IdleSleepMinutes => self.idle_sleep_minutes.to_string(),
             SettingKey::TempCap => self.temp_cap.to_string(),
             SettingKey::TempIdleMinutes => self.temp_idle_minutes.to_string(),
@@ -274,6 +281,9 @@ impl Settings {
             }
             SettingKey::LimitLifecyclePerAgent => {
                 self.limit_lifecycle_per_agent = parse_limit(key, text)?;
+            }
+            SettingKey::LimitSecretReadsPerAgent => {
+                self.limit_secret_reads_per_agent = parse_limit(key, text)?;
             }
             SettingKey::LimitReportsPerAgent => {
                 self.limit_reports_per_agent = parse_limit(key, text)?;

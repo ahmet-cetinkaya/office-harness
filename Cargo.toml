@@ -49,6 +49,12 @@ nix = { version = "0.28", default-features = false }
 sysinfo = { version = "=0.40.1", default-features = false, features = ["system"] }
 # The pidfd system calls that nix 0.28 has no wrapper for (0017 plan D1).
 libc = "0.2"
+# Seals the 0026 secret values (RustCrypto, pure Rust, same result on every OS).
+chacha20poly1305 = "=0.11.0"
+# Clears the 0026 secret and store key buffers when they drop.
+zeroize = "=1.9.2"
+# The OS keyring (Keychain, Credential Manager, Secret Service) for the 0026 store key.
+keyring = "=4.2.0"
 tauri = { version = "=2.12.5", features = [] }
 tauri-build = "=2.7.4"
 # OS notifications for the 0003 panel (research R7, plan D7).
