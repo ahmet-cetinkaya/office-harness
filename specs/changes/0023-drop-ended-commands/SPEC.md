@@ -173,7 +173,8 @@ none: no user interface
 
 ## Clarifications
 
-None yet.
+- Q: Delete the stored process identities of a normally ended session, or blank their display text and keep the hash? → A: Delete them (A2). Decided under the owner's spec delegation, 2026-11-23.
+- Q: When must the freed space and the write log hold no copy of a removed display text? → A: By the next server start (FR-004). A copy may stay while the server runs; only the owner can read the database. Decided under the owner's spec delegation, 2026-11-23. The plan weighs a secure delete for these removals and a write-log checkpoint at the start.
 
 ## Deviations
 
