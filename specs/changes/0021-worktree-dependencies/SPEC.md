@@ -238,3 +238,8 @@ The person turns Worktree dependencies off in the office settings. The create fo
 - Q: Must git ignore the dependency folder inside the new worktree too? → A: Yes. Without an ignore or exclude entry from the office, that is the only way that a link never shows as a change (FR-003 e, A9). Decided under the owner's spec delegation, 2026-11-23.
 
 ## Deviations
+
+Implementation notes. None of them defers or changes a requirement.
+
+- **Log line.** The reasons of FR-004 and FR-007 reach the background server's log through its storage alert channel as failures that are not disk failures, so each line starts with `a background write failed: storage failure:` and then names the place and the reason. No storage alert shows in the app.
+- **Where a place's links are found at removal.** The office finds the dependency places again from the worktree's tracked `package.json` files. A place whose `package.json` the agent deleted keeps its links until git removes the worktree; git's removal deletes a link without following it, so the base checkout is still never changed (FR-006).
