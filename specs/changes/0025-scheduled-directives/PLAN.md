@@ -110,7 +110,7 @@ Done when: every SC has evidence in the qa report; `scripts/check-boundaries.sh`
 - Rust: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace -- --test-threads=4`, `scripts/check-boundaries.sh`.
 - Desktop: `bun run check`, `bun run lint`, `bun run format:check`, `bun test`, Playwright `e2e/schedules.spec.ts` plus `idle-sleep.spec.ts` as regression.
 - CI green on Linux, macOS, and Windows.
-- Repo text check before each push: no other project's name, no hive or home path, no agent name (grep the diff).
+- Repo text check before each push: no other product name, no path outside the repo, no agent name (grep the diff).
 - Real-surface check: one run of the server with a fake CLI and a once schedule 1 minute ahead (SC-001), watched in the action record.
 
 ## Risks
