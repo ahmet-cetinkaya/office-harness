@@ -34,7 +34,7 @@ No fields. Result: `{store, secrets: [secret]}`, ordered by name. Works while lo
 | Field | Type | Rule |
 |---|---|---|
 | `name` | name | creates when it does not exist, replaces when it does |
-| `value` | string | 1 to 8192 bytes of UTF-8, no NUL |
+| `value` | string | 8 to 8192 bytes of UTF-8, no NUL |
 
 Result: `{secret}` (no value). The first save creates the store key and chooses the custody (FR-003). Errors: `invalid` for the name, the value, or the 101st secret, with the reason and never the value; `refused` `the secret store is locked: <locked_reason>` (FR-019); `internal` when the record cannot be stored (the previous state stays).
 
@@ -77,7 +77,7 @@ Every `secret.get` is recorded (FR-010), accepted or refused. Refusals for a hol
 
 ### Helper
 
-`office-harnessd agent-call secret.get '{"name":"NAME"}' --value-only` prints the value alone, with no line break and no JSON, to standard output, and nothing else. On any error it prints the error text to standard error and exits with a non-zero status, and prints nothing to standard output. Without `--value-only` the helper prints the result JSON as it does for other requests. `--value-only` is accepted only for `secret.get`. The intended use is `$(office-harnessd agent-call secret.get ... --value-only)` inside a command, so that the CLI shows the command and not the value.
+`office-harnessd agent-call secret.get '{"name":"NAME"}' --value-only` prints the value alone, with no line break and no JSON, to standard output, and nothing else. On any error it prints the error text to standard error and exits with a non-zero status, and prints nothing to standard output. Without `--value-only` the helper prints the result JSON as it does for other requests. `--value-only` is accepted only for `secret.get`. The intended use is a pipe into a tool's standard input (`... --value-only | tool --password-stdin`) or a file descriptor (`tool --key-file <(...)`), never an argument and never `$(...)` inside an argument: a command line is stored (0017) and shown in the CLI's transcript.
 
 ## Settings (amends 0007 `hold-protocol.md`)
 
@@ -98,12 +98,12 @@ Two new kinds. An entry never holds a value.
 
 ## Sealing and storage rules (binding on the plan)
 
-- The value is sealed with an authenticated cipher under the store key and a fresh random nonce for every seal, including every replace. The secret's name and a per-secret random id are bound to the record as authenticated data, so a record moved to another secret, or an old record put back, fails to open. The record holds the nonce and the ciphertext only.
+- The value is sealed with an authenticated cipher under the store key and a fresh random nonce for every seal, including every replace. The secret's per-secret random id, its name, and its version are bound to the record as authenticated data, so a record moved to another secret, or an old version put back after a rotation, fails to open. The record holds the nonce and the ciphertext only.
 - The store key is a random 256-bit key made by the OS random source. It is never written to the office database, to the server log, or to an event. In `key_file` custody it is written with the private-file rule of 0001/FR-009 and replaced atomically.
-- A save writes the new sealed record and the version in one transaction. The server stops during it with the old record or the new one in the database, never half of one.
+- A save writes the new sealed record and the version in one transaction. A replace seals the new value with the new version in the associated data. The server stops during it with the old record or the new one in the database, never half of one.
 - A delete and a reset remove the rows in one transaction. The office connection runs with `secure_delete` on (0023), and a reset ends with a write-log checkpoint that truncates the log.
 - A value held in memory for a seal, an open, or a replacement search is held in a buffer that is cleared when it is dropped. A value type has no `Debug`, `Display`, `Serialize`, or `Clone` that shows it; its printed form is `[secret]`.
-- The replacement of values (FR-012) is one function that every storing point calls. It holds the values of all secrets, opened when the store is ready at a server start and kept until the secret changes, is deleted, or the process ends, and it refreshes at each save, replace, delete, and reset. While the store is locked from the start, it holds no value and cannot replace one (A12).
+- The replacement of values (FR-012) is one function that every storing point listed in FR-012 calls. For process identities it runs on the display text only; the command hash is computed from the original command line before it. A storing point that is not on the list is a defect of this change, and a test enumerates the stored agent-supplied text columns and the send paths against the list. It holds the values of all secrets, opened when the store is ready at a server start and kept until the secret changes, is deleted, or the process ends, and it refreshes at each save, replace, delete, and reset. While the store is locked from the start, it holds no value and cannot replace one (A12).
 
 ## Amends
 
