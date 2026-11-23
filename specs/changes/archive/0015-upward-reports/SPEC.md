@@ -1,11 +1,11 @@
 ---
-status: in_progress
+status: shipped
 capability: office
-plan: specs/changes/0015-upward-reports/PLAN.md
+plan: specs/changes/archive/0015-upward-reports/PLAN.md
 supersedes: 0002/FR-008 (as modified by 0014), 0003/FR-006 (as modified by 0007), 0008/FR-002, 0008/FR-003, 0008/FR-005
 ---
 
-<!-- Approved for implementation 2026-11-23 through the review gate (spec review r2 PASS at fd21cae), under the owner's spec delegation. -->
+<!-- Approved for implementation 2026-11-23 through the review gate (spec review r2 PASS at fd21cae), under the owner's spec delegation; shipped in PR #124. -->
 
 # 0015: Upward reports
 

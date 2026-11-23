@@ -1,6 +1,6 @@
 # Requirements checklist: 0015-upward-reports
 
-Spec: `specs/changes/0015-upward-reports/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass after four rounds. No `[NEEDS CLARIFICATION]` marker; the judgment calls (any agent may mark a report for the person, A7; control characters are shown, not refused, A3) are flagged for the review gate in the Clarifications. Every `0002/`, `0003/`, `0007/`, `0008/`, and `0014/` reference was checked against the specs on `main` at 468ad56; every `0012/` reference against `feat/0012-safe-directive-delivery` at 92d7a4c.
+Spec: `specs/changes/archive/0015-upward-reports/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass after four rounds. No `[NEEDS CLARIFICATION]` marker; the judgment calls (any agent may mark a report for the person, A7; control characters are shown, not refused, A3) are flagged for the review gate in the Clarifications. Every `0002/`, `0003/`, `0007/`, `0008/`, and `0014/` reference was checked against the specs on `main` at 468ad56; every `0012/` reference against `feat/0012-safe-directive-delivery` at 92d7a4c.
 
 ## Content quality
 
