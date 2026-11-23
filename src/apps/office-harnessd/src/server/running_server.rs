@@ -137,6 +137,8 @@ impl Server {
             alerts: services.storage_alerts.clone(),
             log: log.clone(),
             calls: services.access.agent_calls.clone(),
+            sign_in_ends: services.terminal.sign_in_ends.clone(),
+            journal: services.agent.journal.clone(),
         }
         .spawn(services.terminal.events.subscribe());
         AgentLineBridge::new(services.terminal.events.clone(), events.clone())
@@ -165,7 +167,8 @@ impl Server {
             Arc::clone(&services.hierarchy.tree),
             holds.clone(),
             services.needs_you_bridge.clone(),
-        );
+        )
+        .with_sign_in_checks(services.agent.sign_in_checks.clone());
         let hierarchy = HierarchyGateway::new(
             Arc::clone(&services.hierarchy.handlers),
             services.agent.agent_reader.clone(),

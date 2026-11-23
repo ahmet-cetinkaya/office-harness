@@ -463,20 +463,37 @@ async fn failure_containing(client: &mut Client, agent_id: &str, needle: &str) -
     panic!("no directive entry of {agent_id} contains {needle:?}");
 }
 
-/// A member that shows a permission question for a while, notes whatever
-/// reached it meanwhile, then clears the question, shows an input line with
-/// echo, and reads one directive.
-fn questioning_cli(records: &Path) -> String {
+/// A permission question with a yes-or-no choice, as `printf` text.
+const YES_NO_QUESTION: &str = "Do you want to proceed? (y/n)\\n";
+
+/// A start-up question whose choices have no numbers, as `printf` text:
+/// a marked entry, one more entry under it, and a key hint.
+const UNNUMBERED_CHOICES: &str =
+    " Pick a mode for this folder.\\n\\n ❯ Leave\\n   Stay and work here\\n\\n Enter to confirm\\n";
+
+/// A member that shows the question for a while, notes whatever reached it
+/// meanwhile, then clears the question, shows an input line with echo, and
+/// reads one directive.
+fn questioning_cli(records: &Path, question: &str) -> String {
     let folder = records.display();
     format!(
-        "echo 'Do you want to proceed? (y/n)'\nsleep 4\nstty raw -echo min 0 time 1\ndd bs=64 count=1 of={folder}/early 2>/dev/null\nprintf '\\033[2J\\033[H> '\nstty raw echo min 1 time 0\ndd bs=1 count={DIRECTIVE_BYTES} of={folder}/typed 2>/dev/null\nsleep 30\n"
+        "printf '{question}'\nsleep 4\nstty raw -echo min 0 time 1\ndd bs=64 count=1 of={folder}/early 2>/dev/null\nprintf '\\033[2J\\033[H> '\nstty raw echo min 1 time 0\ndd bs=1 count={DIRECTIVE_BYTES} of={folder}/typed 2>/dev/null\nsleep 30\n"
     )
 }
 
 #[tokio::test]
 async fn a_directive_waits_while_a_question_shows_and_is_typed_after_it() {
+    directive_waits_for_the_question_and_is_typed_after_it(YES_NO_QUESTION).await;
+}
+
+#[tokio::test]
+async fn a_directive_waits_while_a_choice_list_without_numbers_shows_and_is_typed_after_it() {
+    directive_waits_for_the_question_and_is_typed_after_it(UNNUMBERED_CHOICES).await;
+}
+
+async fn directive_waits_for_the_question_and_is_typed_after_it(question: &str) {
     let office = Office::open().await;
-    let cli = questioning_cli(office.records_path());
+    let cli = questioning_cli(office.records_path(), question);
     let (_lead, member, token, server_file) =
         office_with_member_cli(&office, Some(Role::Lead), &cli).await;
     let mut client = office.client().await;

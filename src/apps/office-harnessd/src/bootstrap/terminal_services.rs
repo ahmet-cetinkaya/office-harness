@@ -15,7 +15,9 @@ use terminal_infrastructure::services::{PortableTerminalRuntime, RuntimeSettings
 use terminal_presentation::handlers::TerminalHandlers;
 
 use super::StorageAlerts;
-use crate::bridges::{PersonInput, TerminalEvents, TerminalLauncher};
+use crate::bridges::{
+    PersonInput, SignInEnds, SignInWatchTiming, TerminalEvents, TerminalLauncher,
+};
 use crate::config::Config;
 
 /// The terminal module, wired: the PTY runtime, the `terminal.*` handlers,
@@ -33,6 +35,9 @@ pub struct TerminalServices {
     pub file_view: Arc<dyn FileView>,
     /// What people type into each terminal, for the directive gate (0012).
     pub person_input: PersonInput,
+    /// The runs that the sign-in watch stopped, for the status bridge (0019).
+    pub sign_in_ends: SignInEnds,
+    pub sign_in_timing: SignInWatchTiming,
 }
 
 /// The environment a launched agent starts from: the server's own, and the
@@ -42,6 +47,8 @@ pub struct LoginSetup {
     pub login_environment: Arc<LoginEnvironment>,
     pub server_environment: Environment,
     pub attribution: AttributionTiming,
+    /// How long each new session is watched for a sign-in screen (0019).
+    pub sign_in_watch: SignInWatchTiming,
 }
 
 impl LoginSetup {
@@ -53,6 +60,7 @@ impl LoginSetup {
             login_environment: Arc::new(LoginEnvironment::detect(&server_environment)),
             server_environment,
             attribution: AttributionTiming::default(),
+            sign_in_watch: SignInWatchTiming::default(),
         }
     }
 }
@@ -71,6 +79,7 @@ pub fn build_terminal_services(
     let LoginSetup {
         login_environment,
         server_environment,
+        sign_in_watch,
         ..
     } = login;
     let line_limit = usize::try_from(settings.output_line_limit).unwrap_or(usize::MAX);
@@ -101,6 +110,8 @@ pub fn build_terminal_services(
         runtime,
         events,
         person_input: PersonInput::default(),
+        sign_in_ends: SignInEnds::default(),
+        sign_in_timing: sign_in_watch,
     })
 }
 
