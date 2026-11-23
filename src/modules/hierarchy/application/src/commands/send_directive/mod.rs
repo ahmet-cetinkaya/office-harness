@@ -3,8 +3,10 @@
 mod directive_queue;
 mod send_directive_handler;
 
-pub use directive_queue::{Origin, QUEUE_LIMIT, REPORT_SHARE, SETTLE_AFTER_TYPING, WAIT_LIMIT};
+pub use directive_queue::{
+    Origin, QUEUE_LIMIT, REPORT_SHARE, SETTLE_AFTER_TYPING, Sender, WAIT_LIMIT,
+};
 pub use send_directive_handler::{
-    DirectiveOutcome, DirectivePorts, ParentReport, SendDirectiveHandler,
+    DirectiveOutcome, DirectivePorts, ParentReport, ScheduledDirective, SendDirectiveHandler,
 };
 pub(crate) use send_directive_handler::{UNSUBMITTED, not_running_error};
