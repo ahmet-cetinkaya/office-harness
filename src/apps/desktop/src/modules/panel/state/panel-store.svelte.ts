@@ -16,6 +16,7 @@ import { createHoldController } from "../../hold";
 import { createNeedsYouController } from "../../needs-you";
 import { createResumeController } from "../../resume";
 import { createSweepController } from "../../sweep";
+import { createSecretsController } from "../../secrets";
 import { createSleepController } from "../../sleep";
 import { createTempsController } from "../../temps";
 import { createTemplateController } from "../../template";
@@ -49,6 +50,7 @@ export function createPanelStore(client: CoreClient) {
   );
   const resume = createResumeController(client);
   const sweep = createSweepController(client);
+  const secrets = createSecretsController(client);
   const sleep = createSleepController(client);
   const temps = createTempsController(client);
   const worktreeDependencies = createWorktreeDependenciesController(client);
@@ -179,6 +181,7 @@ export function createPanelStore(client: CoreClient) {
     hold,
     resume,
     sweep,
+    secrets,
     sleep,
     temps,
     worktreeDependencies,
