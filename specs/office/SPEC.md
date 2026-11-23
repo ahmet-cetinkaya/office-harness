@@ -482,7 +482,7 @@ Directives go down the tree (0002), and a parent can read its descendants' state
 - **0015/FR-009** (US1, US2, US3): THE SYSTEM SHALL add each accepted report to the action record with the sender as the actor, the kind, and the text in visible form, under the parent for a report to a parent and under the sender for a report for the person, and SHALL record each refusal in the sender's action record and, when the report had a parent, in the parent's.
 - **0015/FR-010** (US1): WHILE reports wait in a parent's queue, THE SYSTEM SHALL keep at most one waiting report per sender, replacing a sender's waiting report with its newer report in the same place and recording the replaced one as withdrawn, and SHALL keep at most 10 waiting reports per queue, refusing a further report with the reason that the parent's queue has no room for reports, and SHALL NOT count such a refusal toward any rate limit or automatic hold.
 
-This change modified: 0002/FR-008, 0003/FR-006, 0008/FR-002, 0008/FR-003, 0008/FR-005. The final text is under the change that owns each id.
+This change modified: 0002/FR-008, 0003/FR-006, 0008/FR-002, 0008/FR-003, 0008/FR-005. The final text of 0002/FR-008 and 0003/FR-006 is under the change that owns each id. 0008 is not in this file yet: the final text of 0008/FR-002, FR-003, and FR-005 is in the MODIFIED section of [0015](../changes/archive/0015-upward-reports/SPEC.md), and the fold of 0008 takes that text.
 
 ### Preserved behaviors
 
