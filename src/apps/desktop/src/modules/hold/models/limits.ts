@@ -41,6 +41,43 @@ export const LIMIT_SETTINGS: readonly LimitSetting[] = [
   },
 ];
 
+/** A temporary agent setting: a whole number in its own range (0020, D2). */
+export interface TempSetting {
+  key: string;
+  label: string;
+  defaultValue: number;
+  min: number;
+  max: number;
+  invalidMessage: string;
+}
+
+/** The two settings of temporary agents, in the order the dialog lists them. */
+export const TEMP_SETTINGS: readonly TempSetting[] = [
+  {
+    key: "temp_cap",
+    label: "Temp cap",
+    defaultValue: 8,
+    min: 1,
+    max: 100,
+    invalidMessage: "temp_cap is a whole number from 1 to 100",
+  },
+  {
+    key: "temp_idle_minutes",
+    label: "Temp idle limit, minutes",
+    defaultValue: 30,
+    min: 5,
+    max: 1440,
+    invalidMessage:
+      "temp_idle_minutes is a whole number of minutes from 5 to 1440",
+  },
+];
+
+/** Every setting that the limits dialog stores, rate limits first. */
+export const ALL_LIMIT_SETTINGS: readonly {
+  key: string;
+  defaultValue: number;
+}[] = [...LIMIT_SETTINGS, ...TEMP_SETTINGS];
+
 const WHOLE_NUMBER = /^\d+$/;
 
 /** The message that refuses the text as a limit, or null when it is one. */
@@ -53,13 +90,27 @@ export function limitProblem(text: string): string | null {
     : LIMIT_INVALID_MESSAGE;
 }
 
-/** The first limit whose text is refused, with the reason, or null. */
+/** The message that refuses the text as the temp setting, or null. */
+export function tempProblem(text: string, setting: TempSetting): string | null {
+  const trimmed = text.trim();
+  if (!WHOLE_NUMBER.test(trimmed)) return setting.invalidMessage;
+  const value = Number(trimmed);
+  return value >= setting.min && value <= setting.max
+    ? null
+    : setting.invalidMessage;
+}
+
+/** The first setting whose text is refused, with the reason, or null. */
 export function firstLimitProblem(
   values: Record<string, string>,
-): { limit: LimitSetting; problem: string } | null {
+): { limit: { key: string; label: string }; problem: string } | null {
   for (const limit of LIMIT_SETTINGS) {
     const problem = limitProblem(values[limit.key]);
     if (problem !== null) return { limit, problem };
+  }
+  for (const setting of TEMP_SETTINGS) {
+    const problem = tempProblem(values[setting.key], setting);
+    if (problem !== null) return { limit: setting, problem };
   }
   return null;
 }

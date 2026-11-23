@@ -268,6 +268,7 @@ fn lead_seed(
         )));
     }
     Ok(AgentSeed {
+        temp: None,
         name: read_string(fields, "name").ok_or_else(missing("lead.name"))?,
         command: read_string(fields, "command").ok_or_else(missing("lead.command"))?,
         working_folder: read_string(fields, "working_folder")

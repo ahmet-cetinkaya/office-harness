@@ -33,6 +33,9 @@ impl From<AgentError> for ApplicationError {
             // A shortcut that a fixed agent or switcher shortcut takes is a
             // conflict, not a malformed value (0003 contract).
             AgentError::ReservedShortcut { .. } => Self::Conflict(error.to_string()),
+            // A full cap is the office's rule saying no, not a malformed
+            // request (0020 D3).
+            AgentError::TempCapReached { .. } => Self::Refused(error.to_string()),
             other => Self::Invalid(other.to_string()),
         }
     }

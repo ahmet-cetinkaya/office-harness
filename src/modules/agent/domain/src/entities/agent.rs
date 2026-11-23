@@ -8,7 +8,7 @@ use crate::enums::{AgentStatus, StatusEvent};
 use crate::errors::AgentError;
 use crate::services::next_status;
 use crate::value_objects::{
-    AgentCommand, AgentWorktree, DisplayName, MachineId, ProjectId, TaskText,
+    AgentCommand, AgentWorktree, DisplayName, MachineId, ProjectId, TaskText, TempMark,
 };
 
 /// An agent definition and its status.
@@ -28,6 +28,8 @@ pub struct Agent {
     /// The agent's own branch and worktree, when it was created with one
     /// (0010). The working folder then lies inside the worktree.
     pub worktree: Option<AgentWorktree>,
+    /// Present for a temp agent: its objective and who made it (0020).
+    pub temp: Option<TempMark>,
 }
 
 impl Agent {
@@ -67,6 +69,7 @@ impl Agent {
             created_at,
             task: None,
             worktree: None,
+            temp: None,
         })
     }
 

@@ -7,7 +7,7 @@ export interface NotificationRow {
   /** The agent's name at creation, kept for the rows of a deleted agent. */
   agent_name: string;
   event: string;
-  /** The limit's name for an `auto_hold`, the reason for a `resume_hold`, the report kind for a `report`, the OS reason for a `leftover_kept`; null otherwise. */
+  /** The limit's name for an `auto_hold`, the reason for a `resume_hold` or a `temp_ended`, the report kind for a `report`, the OS reason for a `leftover_kept`; null otherwise. */
   detail?: string | null;
   created_at: number;
   /** Null while unread (FR-007). */
@@ -24,6 +24,7 @@ const EVENT_TEXT: Record<string, string> = {
 const EVENT_AUTO_HOLD = "auto_hold";
 const EVENT_RESUME_HOLD = "resume_hold";
 const EVENT_REPORT = "report";
+const EVENT_TEMP_ENDED = "temp_ended";
 /** An agent's leftover process that the sweep could not end (0017, FR-006). */
 export const EVENT_LEFTOVER_KEPT = "leftover_kept";
 /**
@@ -66,6 +67,9 @@ export function eventText(event: string, detail: string | null = null): string {
   }
   if (event === EVENT_REPORT) {
     return detail === null ? "sent a report" : `sent a report: ${detail}`;
+  }
+  if (event === EVENT_TEMP_ENDED) {
+    return detail === null ? "ended" : `ended: ${detail}`;
   }
   return EVENT_TEXT[event] ?? event.replaceAll("_", " ");
 }

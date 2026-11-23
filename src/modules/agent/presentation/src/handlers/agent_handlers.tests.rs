@@ -3,7 +3,7 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use agent_application::commands::continue_session::ContinueSessionHandler;
-use agent_application::commands::create_agent::CreateAgentHandler;
+use agent_application::commands::create_agent::{CreateAgentHandler, NewTemp};
 use agent_application::commands::create_project::CreateProjectHandler;
 use agent_application::commands::delete_agent::DeleteAgentHandler;
 use agent_application::commands::delete_project::DeleteProjectHandler;
@@ -16,6 +16,7 @@ use agent_application::commands::start_agent::StartAgentHandler;
 use agent_application::commands::start_new_task::StartNewTaskHandler;
 use agent_application::commands::stop_agent::StopAgentHandler;
 use agent_application::common::action_journal::ActionJournal;
+use agent_application::common::actor_scope::ActorScope;
 use agent_application::common::errors::{PortError, TerminalHostError};
 use agent_application::common::interfaces::{
     ActionRecorder, AdditionsStore, AgentStore, CliAdapter, CliAdapters, Clock, DiffRequest,
@@ -42,11 +43,12 @@ use agent_domain::services::RelativePath;
 use agent_domain::value_objects::{
     AgentCommand, DisplayName, ExitResult, MachineId, ProjectId, SessionId, Settings,
 };
-use kernel::{AgentId, Timestamp};
+use kernel::{Actor, AgentId, Timestamp};
 use serde_json::{Value, json};
 use wire::{Request, Response};
 
 use super::*;
+use crate::RoleSeed;
 use agent_application::commands::delete_agent::WorktreeOutcome;
 
 fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -106,7 +108,7 @@ impl AgentStore for FakeAgents {
     }
 
     fn list(&self) -> Result<Vec<Agent>, PortError> {
-        never_called()
+        Ok(locked(&self.agents).clone())
     }
 
     fn update_status(&self, agent_id: AgentId, status: AgentStatus) -> Result<(), PortError> {
@@ -187,7 +189,7 @@ impl AdditionsStore for FakeAdditions {
     }
 
     fn save(&self, _agent_id: AgentId, _record: &AdditionsRecord) -> Result<(), PortError> {
-        never_called()
+        Ok(())
     }
 }
 
@@ -507,6 +509,7 @@ fn use_cases(stores: &FakeStores) -> AgentUseCases {
             Arc::clone(&stores.projects),
             Arc::clone(&stores.additions),
             Arc::clone(&stores.clock),
+            Arc::clone(&stores.settings),
             journal.clone(),
             MachineId::generate(),
         ),
@@ -1058,5 +1061,98 @@ fn a_files_request_maps_the_failures_to_the_contract_codes() {
     assert_eq!(
         failure_of(&internal),
         ("internal", "git is not available".to_owned())
+    );
+}
+
+fn temp_create_fields(name: &str) -> Value {
+    json!({
+        "name": name,
+        "command": "claude",
+        "working_folder": std::env::temp_dir().to_string_lossy(),
+        "temp": true,
+        "objective": "fix the failing build",
+    })
+}
+
+#[test]
+fn a_user_create_with_temp_answers_the_mark_with_the_user_as_creator() {
+    let (agents, handlers) = single_agent_office();
+
+    let handled = handlers.handle(&request("agent.create", &temp_create_fields("Ana")));
+
+    let Response::Success { result, .. } = &handled.response else {
+        panic!("expected success, got {:?}", handled.response);
+    };
+    let result: Value = serde_json::from_str(&result.to_string()).expect("json");
+    assert_eq!(
+        result["temp"],
+        json!({"objective": "fix the failing build", "creator": "user"})
+    );
+    assert_eq!(locked(&agents.agents).len(), 1);
+}
+
+#[test]
+fn a_create_past_the_temp_cap_is_refused_with_the_cap_in_the_text() {
+    let (agents, handlers) = single_agent_office();
+    for number in 0..8 {
+        let handled = handlers.handle(&request(
+            "agent.create",
+            &temp_create_fields(&format!("Temp {number}")),
+        ));
+        assert!(matches!(handled.response, Response::Success { .. }));
+    }
+
+    let handled = handlers.handle(&request("agent.create", &temp_create_fields("Temp 8")));
+
+    assert_eq!(
+        failure_of(&handled),
+        (
+            "refused",
+            "the temp cap is 8; end a temp or raise the cap".to_owned()
+        )
+    );
+    assert_eq!(locked(&agents.agents).len(), 8);
+}
+
+/// Keeps the seed of the last role create and refuses it, so a test reads
+/// what the handler passed on.
+#[derive(Default)]
+struct SeedCapture {
+    seed: Mutex<Option<RoleSeed>>,
+}
+
+impl RoleRequests for SeedCapture {
+    fn create_role_agent(
+        &self,
+        seed: &RoleSeed,
+        _kind: &str,
+        _parent_agent_id: Option<String>,
+        _team_id: Option<String>,
+    ) -> RoleResult {
+        *locked(&self.seed) = Some(seed.clone());
+        RoleResult::failed(wire::ErrorCode::Refused, "captured".to_owned())
+    }
+}
+
+#[test]
+fn a_temp_with_a_role_reaches_the_role_port_with_its_objective_and_creator() {
+    let (_agents, handlers) = single_agent_office();
+    let capture = Arc::new(SeedCapture::default());
+    handlers.with_roles(Arc::clone(&capture) as Arc<dyn RoleRequests>);
+    let mut fields = temp_create_fields("Ana");
+    fields["role"] = json!({"kind": "member"});
+    let caller = AgentId::generate();
+    let _scope = ActorScope::enter(Actor::Agent(caller));
+
+    let handled = handlers.handle(&request("agent.create", &fields));
+
+    assert_eq!(failure_of(&handled).0, "refused");
+    let seed = locked(&capture.seed).clone().expect("the port was asked");
+    assert_eq!(
+        seed.temp,
+        Some(NewTemp {
+            objective: "fix the failing build".to_owned(),
+            creator: Actor::Agent(caller),
+        })
     );
 }

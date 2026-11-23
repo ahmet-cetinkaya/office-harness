@@ -28,10 +28,14 @@ use super::server_error::ServerError;
 use super::server_file::write_server_file;
 use super::server_options::ServerOptions;
 use super::server_state::ServerState;
+use super::temp_requests::TempGateway;
+use super::temp_run::{QuietBoard, TempWatcher, WatcherParts};
 use super::template_requests::TemplateGateway;
 use super::terminal_requests::TerminalGateway;
 use crate::bootstrap::{ServerLog, Services};
-use crate::bridges::{AgentLineBridge, AgentStatusBridge};
+use crate::bridges::{
+    AgentLineBridge, AgentStatusBridge, SystemClock, TempEnder, TempEndings, TempHooks, TempLedger,
+};
 use crate::config::Config;
 
 /// The loopback WebSocket server, bound and announced in `server.json` but
@@ -109,6 +113,83 @@ fn idle_sleeper(
     )
 }
 
+/// What the agent gateway and the temp ender share (0020): the ending set,
+/// the ledger of finished entries, and the stores they read.
+fn temp_hooks(services: &Services, events: &EventHub) -> TempHooks {
+    TempHooks {
+        endings: TempEndings::new(
+            Arc::clone(&services.agent_bridge_store),
+            Arc::clone(&services.agent.sessions),
+        ),
+        ledger: TempLedger::new(
+            Arc::clone(&services.agent.finished_temps),
+            services.agent.journal.clone(),
+            Arc::new(SystemClock),
+            events.clone(),
+            services.storage_alerts.clone(),
+        ),
+        directives: Arc::clone(&services.hierarchy.send_directive),
+        agents: Arc::clone(&services.agent_bridge_store),
+    }
+}
+
+/// The temp watcher of 0020: it ends temps through the ender, which runs
+/// every stop and delete through the agent gateway.
+fn temp_watcher(
+    services: &Services,
+    ender: &TempEnder,
+    hooks: &TempHooks,
+    board: &QuietBoard,
+    log: &ServerLog,
+    options: &ServerOptions,
+) -> TempWatcher {
+    TempWatcher::new(WatcherParts {
+        agents: Arc::clone(&services.agent_bridge_store),
+        sessions: Arc::clone(&services.agent.sessions),
+        settings: Arc::clone(&services.agent.settings),
+        actions: services.agent.actions.clone(),
+        gate: Arc::clone(&services.agent.sleep_gate),
+        endings: hooks.endings.clone(),
+        ender: ender.clone(),
+        board: board.clone(),
+        tick: options.temp_tick,
+        minute: options.temp_minute,
+        log: log.clone(),
+    })
+}
+
+/// The temp watcher and the user's `temp.*` requests (0020): both end temps
+/// through one ender, which runs every stop and delete through the agent
+/// gateway.
+fn temp_gateway(
+    services: &Services,
+    agents: &AgentGateway,
+    hooks: &TempHooks,
+    log: &ServerLog,
+    options: &ServerOptions,
+    stopping: &watch::Receiver<bool>,
+) -> TempGateway {
+    let ender = TempEnder::new(
+        agents.clone(),
+        hooks.clone(),
+        Arc::clone(&services.hierarchy.tree),
+        Arc::clone(&services.terminal.worktrees),
+        services.notification_bridge.clone(),
+        log.clone(),
+    );
+    let board = QuietBoard::default();
+    temp_watcher(services, &ender, hooks, &board, log, options).spawn(stopping.clone());
+    TempGateway::new(
+        ender,
+        Arc::clone(&services.agent_bridge_store),
+        Arc::clone(&services.agent.finished_temps),
+        Arc::new(hooks.ledger.clone()),
+        Arc::clone(&services.hierarchy.tree),
+        board,
+        services.storage_alerts.clone(),
+    )
+}
+
 /// The terminal requests of a user client, over the terminal services.
 fn terminal_gateway(services: &Services) -> Arc<TerminalGateway> {
     Arc::new(TerminalGateway::new(
@@ -160,9 +241,32 @@ impl Server {
         write_server_file(&announcement_path, port, start_nonce.as_str())
             .map_err(ServerError::ServerFile)?;
 
+        Ok(Self::assemble(
+            listener,
+            address,
+            announcement_path,
+            services,
+            log,
+            options,
+        ))
+    }
+
+    /// Everything after the bind: the gateways, the watchers, and the state
+    /// that every connection shares. It blocks on nothing, so it stays out of
+    /// the future of `bind`.
+    fn assemble(
+        listener: TcpListener,
+        address: SocketAddr,
+        announcement_path: PathBuf,
+        services: &Services,
+        log: &ServerLog,
+        options: ServerOptions,
+    ) -> Self {
+        let port = address.port();
         let events = services.events.clone();
         events.forward_storage_alerts(services.storage_alerts.subscribe(), log.clone());
         spawn_terminal_bridges(services, &events, log);
+        let temp_hooks = temp_hooks(services, &events);
         let holds = HoldGateway::new(
             Arc::clone(&services.hierarchy.holds),
             Arc::clone(&services.agent_bridge_store),
@@ -186,7 +290,8 @@ impl Server {
             services.needs_you_bridge.clone(),
         )
         .with_sweep_gate(sweep_gate.clone())
-        .with_sign_in_checks(services.agent.sign_in_checks.clone());
+        .with_sign_in_checks(services.agent.sign_in_checks.clone())
+        .with_temps(temp_hooks.clone());
         let hierarchy = HierarchyGateway::new(
             Arc::clone(&services.hierarchy.handlers),
             services.agent.agent_reader.clone(),
@@ -203,6 +308,7 @@ impl Server {
         );
         services.orphan_sweep.spawn(&events);
         idle_sleeper(services, &agents, log, &options).spawn(stopping.clone());
+        let temps = temp_gateway(services, &agents, &temp_hooks, log, &options, &stopping);
         let state = ServerState {
             port,
             options,
@@ -221,6 +327,7 @@ impl Server {
             notification: notification_gateway(services),
             templates: template_gateway(services),
             resume,
+            temps,
             events,
             restart: RestartSignal::default(),
             token_generations: services.access.token_store.subscribe(),
@@ -228,13 +335,13 @@ impl Server {
             handshake_permits: Arc::new(Semaphore::new(options.max_concurrent_handshakes)),
             log: log.clone(),
         };
-        Ok(Self {
+        Self {
             listener,
             address,
             state,
             shutdown,
             announcement_path,
-        })
+        }
     }
 
     #[must_use]

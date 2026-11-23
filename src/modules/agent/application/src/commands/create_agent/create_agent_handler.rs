@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use agent_domain::entities::{AdditionsRecord, Agent};
 use agent_domain::errors::AgentError;
 use agent_domain::value_objects::{
-    AgentCommand, AgentWorktree, DisplayName, MachineId, OfficeAdditions, ProjectId, Settings,
+    AgentCommand, AgentWorktree, DisplayName, MachineId, Objective, OfficeAdditions, ProjectId,
+    TempMark,
 };
-use kernel::AgentId;
+use kernel::{Actor, AgentId};
 
 use crate::common::action_journal::ActionJournal;
 use crate::common::additions_input::AdditionsInput;
@@ -32,6 +33,29 @@ pub struct CreateAgentRequest {
     pub additions: Option<AdditionsInput>,
     /// Present asks for the agent's own branch and worktree (0010).
     pub worktree: Option<OwnWorktree>,
+    /// Present makes the agent a temp (0020).
+    pub temp: Option<NewTemp>,
+}
+
+/// The temp choice of a create: the objective as entered and who asks. The
+/// caller names the creator, so an agent-made create never reads as the user's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewTemp {
+    pub objective: String,
+    pub creator: Actor,
+}
+
+/// Held from the count of temps to the insert of the new one, so two creates
+/// at once cannot both take the last place under the cap (0020 D3). Clones
+/// share one lock.
+#[derive(Clone, Default)]
+pub struct TempCapLock(Arc<Mutex<()>>);
+
+impl TempCapLock {
+    fn hold(&self) -> MutexGuard<'_, ()> {
+        // The lock guards no data, so a poisoned lock is safe to reuse.
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
 }
 
 /// The own worktree choice of a create (0010 FR-002). Absent fields take
@@ -46,19 +70,20 @@ pub struct OwnWorktree {
 pub const NEEDS_REPOSITORY: &str = "own worktree needs a git repository";
 
 /// Creates an agent that never ran, so it shows `stopped` (`agent.create`,
-/// FR-012).
+/// FR-012). With a temp choice the agent is a temp, counted against the temp
+/// cap (0020).
 #[derive(Clone)]
 pub struct CreateAgentHandler {
     agents: Arc<dyn AgentStore>,
     projects: Arc<dyn ProjectStore>,
     additions: Arc<dyn AdditionsStore>,
     clock: Arc<dyn Clock>,
+    settings: Arc<dyn SettingsStore>,
     journal: ActionJournal,
     machine_id: MachineId,
+    temp_cap_lock: TempCapLock,
     /// Absent refuses every own-worktree create.
     worktrees: Option<Arc<dyn WorktreeManager>>,
-    /// Absent takes the default settings (0021 D11).
-    settings: Option<Arc<dyn SettingsStore>>,
 }
 
 impl CreateAgentHandler {
@@ -68,6 +93,7 @@ impl CreateAgentHandler {
         projects: Arc<dyn ProjectStore>,
         additions: Arc<dyn AdditionsStore>,
         clock: Arc<dyn Clock>,
+        settings: Arc<dyn SettingsStore>,
         journal: ActionJournal,
         machine_id: MachineId,
     ) -> Self {
@@ -76,10 +102,11 @@ impl CreateAgentHandler {
             projects,
             additions,
             clock,
+            settings,
             journal,
             machine_id,
+            temp_cap_lock: TempCapLock::default(),
             worktrees: None,
-            settings: None,
         }
     }
 
@@ -91,26 +118,20 @@ impl CreateAgentHandler {
         self
     }
 
-    /// Attaches the office settings, which say whether a new own worktree
-    /// shares the installed packages (0021).
-    #[must_use]
-    pub fn with_settings(mut self, settings: Arc<dyn SettingsStore>) -> Self {
-        self.settings = Some(settings);
-        self
-    }
-
     /// # Errors
     /// `Invalid` naming the field at fault, `NotFound` for an unknown project,
     /// and `Conflict` when another agent has the name, ignoring case. A
     /// malformed addition is `Invalid` and creates nothing. An own worktree
     /// that cannot be made creates nothing either: no agent, branch, or
-    /// folder is left (0010 FR-004).
+    /// folder is left (0010 FR-004). A temp with a bad objective is `Invalid`,
+    /// and one past the temp cap is `Refused`; both create nothing (0020).
     pub fn handle(&self, request: CreateAgentRequest) -> Result<Agent, ApplicationError> {
         let name = DisplayName::parse("agent name", &request.name)?;
         let command = AgentCommand::parse(&request.command)?;
         // A command that cannot be split would fail every start.
         split_command(&command)?;
         let additions = request.additions.unwrap_or_default().into_additions()?;
+        let temp = request.temp.as_ref().map(temp_mark).transpose()?;
         if let Some(project_id) = request.project_id {
             require_project(&*self.projects, project_id)?;
         }
@@ -129,7 +150,7 @@ impl CreateAgentHandler {
             None => None,
         };
         // A refused agent discards the worktree made for it.
-        let agent = self.new_agent(
+        let mut agent = self.new_agent(
             agent_id,
             name,
             command,
@@ -137,13 +158,10 @@ impl CreateAgentHandler {
             request.project_id,
             created,
         )?;
-        if let Err(error) = self.agents.insert(&agent) {
+        agent.temp = temp;
+        if let Err(error) = self.insert_agent(&agent) {
             self.discard_worktree(&agent);
-            return Err(ApplicationError::from_insert(
-                error,
-                "agent name",
-                agent.name.as_str(),
-            ));
+            return Err(error);
         }
         self.save_additions_or_undo_insert(&agent, additions)?;
         if let Err(recording) = self.journal.record(agent.id, AgentAction::Create, None) {
@@ -199,6 +217,34 @@ impl CreateAgentHandler {
         }
     }
 
+    /// Stores the agent. A temp is counted against the cap under the lock,
+    /// which stays held until the insert is done.
+    fn insert_agent(&self, agent: &Agent) -> Result<(), ApplicationError> {
+        let _place = agent.temp.is_some().then(|| self.temp_cap_lock.hold());
+        if agent.temp.is_some() {
+            self.require_room_for_temp()?;
+        }
+        self.agents.insert(agent).map_err(|error| {
+            ApplicationError::from_insert(error, "agent name", agent.name.as_str())
+        })
+    }
+
+    /// Counts temps of every status, so an ended-but-not-yet-removed temp
+    /// still holds its place.
+    fn require_room_for_temp(&self) -> Result<(), ApplicationError> {
+        let cap = self.settings.load()?.temp_cap;
+        let temps = self
+            .agents
+            .list()?
+            .iter()
+            .filter(|agent| agent.temp.is_some())
+            .count();
+        if temps >= usize::try_from(cap).unwrap_or(usize::MAX) {
+            return Err(AgentError::TempCapReached { cap }.into());
+        }
+        Ok(())
+    }
+
     /// Makes the branch and the worktree from the chosen folder, which is
     /// the working folder or else the project's folder.
     fn make_worktree(
@@ -234,11 +280,7 @@ impl CreateAgentHandler {
     }
 
     fn links_dependencies(&self) -> Result<bool, ApplicationError> {
-        let settings = match &self.settings {
-            Some(store) => store.load()?,
-            None => Settings::default(),
-        };
-        Ok(settings.worktree_dependency_links)
+        Ok(self.settings.load()?.worktree_dependency_links)
     }
 
     fn discard_worktree(&self, agent: &Agent) {
@@ -278,6 +320,13 @@ impl CreateAgentHandler {
         let _ = self.agents.delete(agent.id);
         self.discard_worktree(agent);
     }
+}
+
+fn temp_mark(new: &NewTemp) -> Result<TempMark, AgentError> {
+    Ok(TempMark {
+        objective: Objective::new(&new.objective)?,
+        creator: new.creator,
+    })
 }
 
 #[cfg(test)]

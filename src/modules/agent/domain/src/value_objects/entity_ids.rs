@@ -58,6 +58,7 @@ macro_rules! uuid_identifier {
 
 uuid_identifier!(MachineId, "machine id");
 uuid_identifier!(SessionId, "session id");
+uuid_identifier!(FinishedTempId, "finished temp id");
 
 #[cfg(test)]
 #[path = "entity_ids.tests.rs"]

@@ -7,6 +7,7 @@
     AgentDetails,
     AgentFormDialog,
     ConfirmDialog,
+    creatorText,
     isActive,
     ProjectFormDialog,
     ProjectList,
@@ -48,6 +49,7 @@
   import { interruptedCount, ResumeAction } from "../../resume";
   import { SweepStatus } from "../../sweep";
   import { IdleSleepDialog } from "../../sleep";
+  import { TempsDialog } from "../../temps";
   import { WorktreeDependenciesDialog } from "../../worktree-dependencies";
   import { SaveAsTemplateDialog, TemplatesView } from "../../template";
   import {
@@ -166,6 +168,9 @@
     }),
   );
 
+  const tempCount = $derived(
+    office.agents.filter((agent) => agent.temp).length,
+  );
   const interrupted = $derived(interruptedCount(office.agents));
 
   function identifyForResume(agentId: string): { name: string; role: string } {
@@ -182,6 +187,7 @@
   let createAgentInProject = $state<string | null>(null);
   let isCreatingProject = $state(false);
   let isEditingIdleSleep = $state(false);
+  let isShowingTemps = $state(false);
   let isEditingWorktreeDependencies = $state(false);
   let isSwitchingAgent = $state(false);
   let isShowingNotifications = $state(false);
@@ -444,6 +450,9 @@
         <Button variant="secondary" onclick={() => (isEditingIdleSleep = true)}>
           Idle sleep
         </Button>
+        <Button variant="secondary" onclick={() => (isShowingTemps = true)}>
+          Temps ({tempCount})
+        </Button>
         <Button
           variant="secondary"
           onclick={() => (isEditingWorktreeDependencies = true)}
@@ -582,6 +591,9 @@
                   details={office.details}
                   statusDetail={office.statusDetails[agentId] ?? null}
                   projectName={projectNameOf(selected, office.projects)}
+                  creatorName={selected.temp
+                    ? creatorText(selected.temp.creator, office.agents)
+                    : null}
                   isBusy={office.isBusy}
                   isStopping={office.stoppingAgentIds.has(agentId)}
                   isOnHold={holdOfAgent(holds, agentId) !== null}
@@ -693,6 +705,12 @@
   <IdleSleepDialog
     controller={store.sleep}
     onclose={() => (isEditingIdleSleep = false)}
+  />
+{/if}
+{#if isShowingTemps}
+  <TempsDialog
+    controller={store.temps}
+    onclose={() => (isShowingTemps = false)}
   />
 {/if}
 {#if isEditingWorktreeDependencies}

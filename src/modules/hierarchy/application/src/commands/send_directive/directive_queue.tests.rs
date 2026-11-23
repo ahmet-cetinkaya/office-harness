@@ -19,7 +19,8 @@ fn waiting(text: &str, accepted_at: Timestamp) -> WaitingDirective {
         target: target(),
         text: text.to_owned(),
         accepted_at,
-        report: None,
+        origin: Origin::Directive,
+        from_temp: false,
     }
 }
 
@@ -29,7 +30,10 @@ fn report_from(sender: u128, text: &str, accepted_at: Timestamp) -> WaitingDirec
         target: target(),
         text: text.to_owned(),
         accepted_at,
-        report: Some(text.to_owned()),
+        origin: Origin::Report {
+            text: text.to_owned(),
+        },
+        from_temp: false,
     }
 }
 
