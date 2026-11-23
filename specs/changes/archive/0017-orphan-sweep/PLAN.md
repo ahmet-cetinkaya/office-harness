@@ -1,6 +1,6 @@
 ---
-status: approved
-spec: specs/changes/0017-orphan-sweep/SPEC.md
+status: completed
+spec: specs/changes/archive/0017-orphan-sweep/SPEC.md
 commits: per-task
 ---
 
