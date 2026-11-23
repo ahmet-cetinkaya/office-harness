@@ -297,3 +297,10 @@ The desktop app gets one setting and a few words of text. No new view.
 - Q: What does the item say when a manual compaction ends and no turn is open? → A: `finished its turn`, on purpose: the agent waits for the person and has nothing more to say (FR-012). Confirmed in spec review r1.
 
 ## Deviations
+
+- **A silent compaction turns the session late, like a silent turn (FR-014).** The spec of the review r1 text excluded a running compaction. A hands-on step and the CLI's behavior showed why it must not: an interrupted compaction sends no end report, so the agent would stay `working`. FR-014 and its edge row were changed in the same PR (2026-11-23, commit 52fad25) and are in this text.
+- **A late session forgets its open work.** When the session turns late, the server clears the open-turn and compaction flags. A real `claude` run showed that a turn that the person interrupted with Escape kept the flag, so a later `/compact` did not end in `waiting for input` until the quiet period. The spec says only that the quiet rules apply again (FR-014).
+- **The hook state reaches the desktop inside each agent object, not through `hook.states` (plan D9).** Every agent answer carries `hook`, and `hook.changed` updates it. No new query exists.
+- **The minimum CLI version is 2.1.295 (plan D5).** It comes from the CLI's documentation; only 2.1.322 was run.
+- **The scene desk, the agent switcher, and the live-region announcement show only the plain status.** `asks permission` and `compacting` show in the agent list row and the details (FR-020 names the list).
+- **The hands-on run is an ignored test (`tests/hands_on_claude.rs`).** It needs the owner's account, so it does not run in CI.

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: in-progress
 spec: specs/changes/0024-cli-hook-status/SPEC.md
 commits: per-task
 ---
