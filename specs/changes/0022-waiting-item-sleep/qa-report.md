@@ -3,7 +3,7 @@
 ## Summary
 
 - **Date:** 2026-11-23.
-- **Build under test:** branch `spec/0022-waiting-item-sleep`, with `origin/main` 5272d6f included. The Rust gates ran on the final tree. The hands-on run used the app built at 449535e (T3); the later commits change only tests and docs.
+- **Build under test:** branch `spec/0022-waiting-item-sleep`, with `origin/main` 5272d6f included. The Rust gates ran on the final tree. The hands-on run used the app built at 449535e (T3); the later commits change tests, docs, and the removal of an item on input while the agent shows `working` (5cc10c8). The hands-on run typed nothing during its idle wait, so that fix does not change what it measured.
 - **Overall status:** automated tests prove every requirement. Criteria with counts are PARTIAL where the tests ran fewer rounds or shorter times than stated. The hands-on check with a real signed-in `claude` passed SC-004: the agent slept 5 min 11.6 s after its prompted wait, with no dismiss and no terminal view open.
 - **Status of this file:** the gate numbers come from local runs on 2026-11-23. The CI result is in the PR, not here.
 
