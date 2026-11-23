@@ -14,6 +14,7 @@ use kernel::{AgentId, Timestamp};
 use crate::common::errors::ApplicationError;
 use crate::common::interfaces::{AdditionsStore, AgentStore, SessionStore};
 use crate::common::models::{AgentAction, StatusRunResult};
+use crate::common::session_launcher::HOOKS_REFUSED_NOTE;
 use crate::common::sign_in_check::SIGN_IN_TIMEOUT;
 use crate::test_support::Office;
 
@@ -358,6 +359,37 @@ fn the_terminal_gets_the_sign_in_screen_words_of_the_cli() {
     let started = office.terminals.started();
     assert_eq!(started[0].sign_in.screen_words, ["please sign in"]);
     assert_eq!(started[1].sign_in.screen_words.len(), 0);
+}
+
+#[test]
+fn a_batch_script_that_cannot_take_the_settings_path_starts_without_the_hook_arguments() {
+    let office = Office::new();
+    office.terminals.make_batch_script("shim");
+    office
+        .terminals
+        .give_hook_arguments(&["--settings", "C:\\Users\\Name %Work%\\hooks\\one.json"]);
+    let agent = agent_with(&office, "shim", AgentStatus::Stopped);
+
+    office.start_agent().handle(agent.id).expect("start");
+
+    let started = office.terminals.started();
+    assert_eq!(started.len(), 1);
+    assert!(!started[0].arguments.iter().any(|word| word == "--settings"));
+    assert!(!started[0].has_hook_arguments);
+    assert_eq!(started[0].hook_note.as_deref(), Some(HOOKS_REFUSED_NOTE));
+}
+
+#[test]
+fn a_batch_script_that_refuses_the_agents_own_arguments_still_refuses_the_start() {
+    let office = Office::new();
+    office.terminals.make_batch_script("shim");
+    office
+        .terminals
+        .give_hook_arguments(&["--settings", "one.json"]);
+    let agent = agent_with(&office, "shim 100%", AgentStatus::Stopped);
+
+    assert!(office.start_agent().handle(agent.id).is_err());
+    assert_eq!(office.terminals.started().len(), 0);
 }
 
 mod status_hooks {

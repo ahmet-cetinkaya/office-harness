@@ -612,6 +612,27 @@ async fn has_needs_you_item(client: &mut Client, agent_id: &str) -> bool {
         .any(|item| item["agent_id"] == agent_id)
 }
 
+/// Waits until the hooks of the agent report an open permission ask.
+async fn wait_ask_open(client: &mut Client, agent_id: &str) {
+    let deadline = Instant::now() + END_LIMIT;
+    loop {
+        let listed = client.ask("agent.list", json!({})).await;
+        let open = listed["result"].as_array().is_some_and(|agents| {
+            agents
+                .iter()
+                .any(|agent| agent["id"] == agent_id && agent["hook"]["ask_open"] == true)
+        });
+        if open {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "no open ask reported for {agent_id}"
+        );
+        tokio::time::sleep(POLL).await;
+    }
+}
+
 /// Waits until the objective of the temp was typed and the temp settled into
 /// waiting again, so the Needs you item that the test dismisses is the last.
 async fn wait_objective_taken(fixture: &mut Fixture, agent_id: &str) {
@@ -826,6 +847,8 @@ async fn an_open_permission_ask_keeps_a_temp_from_the_idle_end_after_its_item_is
     let poster = HookPoster::for_agent(&fixture.office, &temp);
     poster.report("UserPromptSubmit", "").await;
     poster.report("PermissionRequest", "").await;
+    wait_ask_open(&mut fixture.client, &temp).await;
+    wait_needs_you_item(&mut fixture.client, &temp).await;
     let dismissed = fixture
         .client
         .ask("needs_you.dismiss", json!({"agent_id": temp}))
@@ -835,15 +858,9 @@ async fn an_open_permission_ask_keeps_a_temp_from_the_idle_end_after_its_item_is
     tokio::time::sleep(IDLE_LIMIT * 3).await;
 
     assert_eq!(fixture.temp_count().await, 1, "the open ask keeps the temp");
-    // The end of the turn is a new wait with a new item (0022 A9): the temp
-    // ends one idle limit after the person dismisses that one.
+    // The end of the turn closes the ask: the dismissed wait is plain again
+    // and its idle limit has passed, so the temp ends.
     poster.report("Stop", "").await;
-    wait_needs_you_item(&mut fixture.client, &temp).await;
-    let dismissed = fixture
-        .client
-        .ask("needs_you.dismiss", json!({"agent_id": temp}))
-        .await;
-    assert_eq!(dismissed["ok"], true, "{dismissed}");
     fixture.wait_finished(1, END_LIMIT).await;
     fixture.office.serving.stop().await;
 }

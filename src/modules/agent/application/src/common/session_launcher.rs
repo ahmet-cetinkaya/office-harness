@@ -289,7 +289,7 @@ impl SessionLauncher {
         let (program, fixed_arguments) =
             split_command(&agent.command).map_err(PrepareError::Refused)?;
         let adapter = adapter_of(&*self.adapters, &agent.command).map_err(PrepareError::Refused)?;
-        let launch = self
+        let mut launch = self
             .terminals
             .prepare(&PrepareLaunch {
                 program: program.clone(),
@@ -320,18 +320,44 @@ impl SessionLauncher {
                     ))
                 })?,
         };
-        command
-            .arguments
-            .extend(launch.hook_arguments.iter().cloned());
-        self.terminals
-            .validate_arguments(&launch, &command.arguments)
-            .map_err(|error| PrepareError::Refused(host_failure(error)))?;
+        self.validate_with_hooks(&mut launch, &mut command)?;
         Ok(Prepared {
             folder: folder.to_path_buf(),
             launch,
             command,
             adapter,
         })
+    }
+
+    /// Adds the hook arguments of 0024 to the command and checks the whole
+    /// line. A line that the host refuses only because of them (a settings
+    /// path that a batch script cannot receive safely) starts without them,
+    /// as a session with estimated status, instead of refusing the start.
+    fn validate_with_hooks(
+        &self,
+        launch: &mut PreparedLaunch,
+        command: &mut SessionCommand,
+    ) -> Result<(), PrepareError> {
+        let own_length = command.arguments.len();
+        command
+            .arguments
+            .extend(launch.hook_arguments.iter().cloned());
+        let refused = match self
+            .terminals
+            .validate_arguments(launch, &command.arguments)
+        {
+            Ok(()) => return Ok(()),
+            Err(error) => error,
+        };
+        if launch.hook_arguments.is_empty() {
+            return Err(PrepareError::Refused(host_failure(refused)));
+        }
+        command.arguments.truncate(own_length);
+        launch.hook_arguments.clear();
+        launch.hook_note = Some(HOOKS_REFUSED_NOTE.to_owned());
+        self.terminals
+            .validate_arguments(launch, &command.arguments)
+            .map_err(|error| PrepareError::Refused(host_failure(error)))
     }
 
     fn begin_terminal(
@@ -506,6 +532,12 @@ enum PrepareError {
 /// pass a settings option already.
 const OWN_SETTINGS_OPTION_NOTE: &str =
     "the agent's command or office additions pass their own settings option";
+
+/// The note when the host refuses the command line only because of the
+/// settings path of the office (a Windows batch script cannot receive some
+/// characters of a folder name safely).
+pub(crate) const HOOKS_REFUSED_NOTE: &str =
+    "the settings file path of the office cannot be passed to this command safely";
 
 const SETTINGS_OPTION: &str = "--settings";
 

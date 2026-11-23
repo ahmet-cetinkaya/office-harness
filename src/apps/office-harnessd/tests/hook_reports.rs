@@ -96,6 +96,15 @@ async fn serve() -> Fixture {
 
 /// One raw HTTP request on a new connection: its status code.
 async fn post(port: u16, path: &str, headers: &[(&str, String)], body: &[u8]) -> u16 {
+    try_post(port, path, headers, body)
+        .await
+        .expect("status line")
+}
+
+/// Like `post`, with no code when the server closed the connection before
+/// its answer arrived (Windows resets a connection that closes with unread
+/// data and drops the answer).
+async fn try_post(port: u16, path: &str, headers: &[(&str, String)], body: &[u8]) -> Option<u16> {
     let header_lines = headers
         .iter()
         .map(|(name, value)| format!("{name}: {value}"))
@@ -116,7 +125,6 @@ async fn post(port: u16, path: &str, headers: &[(&str, String)], body: &[u8]) ->
     text.split_whitespace()
         .nth(1)
         .and_then(|code| code.parse().ok())
-        .expect("status line")
 }
 
 fn good_headers(fixture: &Fixture) -> Vec<(&'static str, String)> {
@@ -222,14 +230,14 @@ async fn a_report_over_64_kib_is_refused() {
         r#"{{"hook_event_name":"Stop","prompt":"{}"}}"#,
         "x".repeat(1024 * 1024)
     );
-    let code = post(
+    let code = try_post(
         fixture.port,
         &path(SESSION),
         &good_headers(&fixture),
         big.as_bytes(),
     )
     .await;
-    assert_eq!(code, 404);
+    assert!(matches!(code, None | Some(404)), "{code:?}");
     assert_eq!(fixture.recorder.reports(), Vec::<HookReport>::new());
     let _ = fixture.stop.send(());
 }

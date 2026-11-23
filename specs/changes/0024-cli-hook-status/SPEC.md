@@ -303,4 +303,5 @@ The desktop app gets one setting and a few words of text. No new view.
 - **The hook state reaches the desktop inside each agent object, not through `hook.states` (plan D9).** Every agent answer carries `hook`, and `hook.changed` updates it. No new query exists.
 - **The minimum CLI version is 2.1.295 (plan D5).** It comes from the CLI's documentation; only 2.1.322 was run.
 - **The scene desk, the agent switcher, and the live-region announcement show only the plain status.** `asks permission` and `compacting` show in the agent list row and the details (FR-020 names the list).
+- **A command line that the host refuses only for the settings path starts without the hook arguments.** On Windows a `.cmd` command cannot receive some characters of a data folder path. The session starts as an estimated session with a note instead of a refused start (FR-004 and FR-019 keep their meaning: no file, no secret). A refusal that the agent's own arguments cause still refuses the start.
 - **The hands-on run is an ignored test (`tests/hands_on_claude.rs`).** It needs the owner's account, so it does not run in CI.
