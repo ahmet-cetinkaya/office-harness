@@ -1,6 +1,6 @@
 # Requirements checklist: 0022-waiting-item-sleep
 
-Spec: `specs/changes/0022-waiting-item-sleep/SPEC.md` · Status: draft · Date: 2026-11-23 · Revised for spec review r1 · Result: 16 of 16 items pass (16 before r1, 16 after). No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0003/`, `0007/`, `0008/`, `0012/`, `0013/`, `0015/`, `0017/`, `0018/`, and `0020/` reference was checked against the specs on this branch. The item kinds were checked against the attention events that the office records today: failed, waiting for input, bell, automatic hold, resume hold, kept leftover, exited, and report. No "question" or "permission" item kind exists.
+Spec: `specs/changes/0022-waiting-item-sleep/SPEC.md` · Status: approved · Date: 2026-11-23 · Revised for spec review r1 · Result: 16 of 16 items pass (16 before r1, 16 after). No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0003/`, `0007/`, `0008/`, `0012/`, `0013/`, `0015/`, `0017/`, `0018/`, and `0020/` reference was checked against the specs on this branch. The item kinds were checked against the attention events that the office records today: failed, waiting for input, bell, automatic hold, resume hold, kept leftover, exited, and report. No "question" or "permission" item kind exists.
 
 ## Content quality
 
