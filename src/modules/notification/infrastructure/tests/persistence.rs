@@ -267,6 +267,7 @@ fn waiting_item(agent_id: AgentId, first_event_at: i64) -> NeedsYouItem {
         },
         origin: Some(NotificationId::generate()),
         report: None,
+        waits_only: true,
     }
 }
 
@@ -394,4 +395,47 @@ fn a_report_on_an_item_reads_back_and_a_0003_item_has_none() {
 
     assert_eq!(old.report, None);
     assert_eq!(read, Some(reported));
+}
+
+#[test]
+fn the_waits_only_flag_round_trips_and_a_row_from_before_0022_reads_false() {
+    let handle = Arc::new(Mutex::new(Connection::open_in_memory().expect("open")));
+    let (up_to_0004, from_0005) = SCRIPTS.split_at(4);
+    for script in up_to_0004 {
+        handle
+            .lock()
+            .expect("lock")
+            .execute_batch(script)
+            .expect("migrate to 0004");
+    }
+    let old_agent = AgentId::generate();
+    handle
+        .lock()
+        .expect("lock")
+        .execute(
+            "INSERT INTO notification_needs_you \
+             (agent_id, first_event_at, latest_kind, latest_detail, latest_at, origin) \
+             VALUES (?1, 5, 'waiting_for_input', NULL, 5, NULL)",
+            [old_agent.to_string()],
+        )
+        .expect("old row");
+    for script in from_0005 {
+        handle
+            .lock()
+            .expect("lock")
+            .execute_batch(script)
+            .expect("migrate to 0005");
+    }
+    let repository = NeedsYouRepository::new(Arc::clone(&handle));
+    let plain = waiting_item(AgentId::generate(), 10);
+    let mut mixed = waiting_item(AgentId::generate(), 20);
+    mixed.waits_only = false;
+    repository.save(&plain).expect("save");
+    repository.save(&mixed).expect("save");
+
+    let old = repository.find(old_agent).expect("find").expect("old item");
+
+    assert!(!old.waits_only);
+    assert_eq!(repository.find(plain.agent_id).expect("find"), Some(plain));
+    assert_eq!(repository.find(mixed.agent_id).expect("find"), Some(mixed));
 }

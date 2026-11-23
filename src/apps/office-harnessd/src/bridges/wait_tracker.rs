@@ -105,6 +105,12 @@ impl WaitTracker {
         self.locked().work_bound_extra = work_bound_extra;
     }
 
+    /// How long a stretch of `working` may last before it counts as work.
+    #[must_use]
+    pub fn work_bound(&self) -> Duration {
+        self.locked().work_bound()
+    }
+
     /// A person's input or the office's text reached the agent's terminal.
     pub fn wait_end(&self, agent_id: AgentId) {
         self.locked().agent(agent_id).ended_since_wait = true;
