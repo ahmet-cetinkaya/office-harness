@@ -377,7 +377,7 @@ This change modified: 0002/FR-010. The final text is under the change that owns 
 - **Readiness has three answers.** The handler needs only ready, busy, or gone, so the reasons a target is busy are not carried.
 - **Input-line check by count.** The check counts how often the text's end, and a paste placeholder, show at the input line before and after typing, so a line that already held the same text elsewhere does not count.
 - **Commits.** The hierarchy change and the server change do not build apart, so their code and tests are one commit, and the documents are another.
-- **Gap found after ship (2026-11-23).** 0012/FR-002 is not met for an unnumbered choice list, such as the start question of `claude` in a new folder: the office typed the directive after the quiet period, without Enter (0012/FR-003 held). A follow-up change fixes it.
+- **Gap found after ship (2026-11-23).** 0012/FR-002 is not met for an unnumbered choice list, such as the start question of `claude` in a new folder: the office typed the directive after the quiet period, without Enter (0012/FR-003 held). #127 closed it: the check now reads such a list as an open question.
 
 ## Change 0013: Resume all interrupted agents
 
