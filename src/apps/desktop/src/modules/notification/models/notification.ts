@@ -7,7 +7,7 @@ export interface NotificationRow {
   /** The agent's name at creation, kept for the rows of a deleted agent. */
   agent_name: string;
   event: string;
-  /** The limit's name for an `auto_hold`, the reason for a `resume_hold`, the report kind for a `report`; null otherwise. */
+  /** The limit's name for an `auto_hold`, the reason for a `resume_hold`, the report kind for a `report`, the OS reason for a `leftover_kept`; null otherwise. */
   detail?: string | null;
   created_at: number;
   /** Null while unread (FR-007). */
@@ -24,15 +24,19 @@ const EVENT_TEXT: Record<string, string> = {
 const EVENT_AUTO_HOLD = "auto_hold";
 const EVENT_RESUME_HOLD = "resume_hold";
 const EVENT_REPORT = "report";
+/** An agent's leftover process that the sweep could not end (0017, FR-006). */
+export const EVENT_LEFTOVER_KEPT = "leftover_kept";
 /**
  * Events the agent's terminal does not show, so they stay unread and ping
  * the OS even while that terminal is open and focused: the holds (0007,
- * 0013/PB-6) and a report for the person (0015, MODIFIED 0003/FR-006).
+ * 0013/PB-6), a report for the person (0015, MODIFIED 0003/FR-006), and a
+ * leftover that could not be ended (0017).
  */
 const EVENTS_NEVER_READ_ON_ARRIVAL: readonly string[] = [
   EVENT_AUTO_HOLD,
   EVENT_RESUME_HOLD,
   EVENT_REPORT,
+  EVENT_LEFTOVER_KEPT,
 ];
 
 /** Whether the focused-terminal exception must not mark this event read. */
@@ -54,6 +58,10 @@ export function eventText(event: string, detail: string | null = null): string {
   }
   if (event === EVENT_RESUME_HOLD) {
     const base = "was put on hold after its resume failed";
+    return detail === null ? base : `${base}: ${detail}`;
+  }
+  if (event === EVENT_LEFTOVER_KEPT) {
+    const base = "has a leftover process that could not be ended";
     return detail === null ? base : `${base}: ${detail}`;
   }
   if (event === EVENT_REPORT) {
@@ -92,4 +100,13 @@ export function sortRows(rows: NotificationRow[]): NotificationRow[] {
     if (isUnread(first) !== isUnread(second)) return isUnread(first) ? -1 : 1;
     return second.created_at - first.created_at;
   });
+}
+
+/**
+ * The one OS notification for the agents whose leftovers could not be ended
+ * (0017, FR-006): it names each agent once, in the order the rows came.
+ */
+export function leftoverKeptBody(agentNames: string[]): string {
+  const names = [...new Set(agentNames)].join(", ");
+  return `Could not end a leftover process of: ${names}`;
 }

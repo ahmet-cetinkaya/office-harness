@@ -46,6 +46,7 @@
   } from "../../needs-you";
   import { FileViewDialog } from "../../files";
   import { interruptedCount, ResumeAction } from "../../resume";
+  import { SweepStatus } from "../../sweep";
   import { SaveAsTemplateDialog, TemplatesView } from "../../template";
   import {
     isJumpUnbound,
@@ -439,6 +440,8 @@
       </div>
     {/if}
   </header>
+
+  <SweepStatus controller={store.sweep} />
 
   {#if office.notice !== null}
     <FailureMessage lead={office.notice.lead} message={office.notice.message} />

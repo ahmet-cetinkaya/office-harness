@@ -4,8 +4,10 @@ import { describe, expect, test } from "bun:test";
 import {
   actorText,
   actionText,
+  detailText,
   mergeEntry,
   resultText,
+  visibleDetail,
   type ActionEntry,
 } from "./action-entry";
 
@@ -42,5 +44,37 @@ describe("action entries", () => {
     expect(actionText("report")).toBe("Sent a report");
     expect(actorText("office")).toBe("the office");
     expect(actorText("user")).toBe("user");
+  });
+});
+
+describe("sweep entries", () => {
+  const LEFTOVER_DETAIL =
+    "identity 12: ended by force: pid 4242, session s1, node server.js";
+
+  test("the sweep actions read as text", () => {
+    expect(actionText("end_leftover")).toBe("Ended a leftover process");
+    expect(actionText("helper_limit")).toBe("Stopped storing helpers");
+  });
+
+  test("the detail of a sweep action is labelled Detail, any other Reason", () => {
+    const sweep = {
+      ...entry(1),
+      action: "end_leftover",
+      detail: LEFTOVER_DETAIL,
+    };
+    expect(detailText(sweep)).toBe(`Detail: ${LEFTOVER_DETAIL}`);
+    expect(detailText({ ...entry(2), detail: "why" })).toBe("Reason: why");
+    expect(detailText(entry(3))).toBeNull();
+  });
+
+  test("a control or bidirectional-control character is written as an escape", () => {
+    expect(visibleDetail("run\u001b[2Jx")).toBe("run\\u{1b}[2Jx");
+    expect(visibleDetail("a\u202Eb\u2066c")).toBe("a\\u{202e}b\\u{2066}c");
+    expect(visibleDetail("tab\there")).toBe("tab\\u{9}here");
+  });
+
+  test("text the server already escaped stays as it is", () => {
+    const escaped = "cmd \\u{1b}[0m and an ellipsis... 1a2b3c4d";
+    expect(visibleDetail(escaped)).toBe(escaped);
   });
 });
