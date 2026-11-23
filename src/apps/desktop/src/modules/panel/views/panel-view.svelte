@@ -459,6 +459,11 @@
       <div class="flex basis-full flex-wrap items-start gap-3">
         <OfficeHoldBar
           controller={store.hold}
+          secrets={store.secrets}
+          agents={office.agents.map((agent) => ({
+            id: agent.id,
+            name: agent.name,
+          }))}
           isOfficeHeld={holds.office !== null}
           failure={officeHoldFailure}
           isPending={holdSnapshot.isOfficeRequestPending}

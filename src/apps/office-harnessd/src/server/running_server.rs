@@ -28,6 +28,7 @@ use super::resume_run::ResumeContext;
 use super::router::build_router;
 use super::schedule_requests::ScheduleGateway;
 use super::schedule_run::{RunnerParts, ScheduleRunner};
+use super::secret_requests::SecretGateway;
 use super::server_error::ServerError;
 use super::server_file::write_server_file;
 use super::server_options::ServerOptions;
@@ -38,7 +39,7 @@ use super::template_requests::TemplateGateway;
 use super::terminal_requests::TerminalGateway;
 use crate::bootstrap::{ServerLog, Services};
 use crate::bridges::{
-    AgentLineBridge, AgentStatusBridge, ScheduleBridge, ScheduleParts, ScheduleTime,
+    AgentLineBridge, AgentStatusBridge, ScheduleBridge, ScheduleParts, ScheduleTime, SecretJournal,
     SharedScheduleTime, SystemClock, SystemScheduleTime, TempEnder, TempEndings, TempHooks,
     TempLedger,
 };
@@ -292,6 +293,37 @@ fn notification_gateway(services: &Services) -> NotificationGateway {
     )
 }
 
+fn hierarchy_gateway(services: &Services, events: &EventHub) -> HierarchyGateway {
+    HierarchyGateway::new(
+        Arc::clone(&services.hierarchy.handlers),
+        services.agent.agent_reader.clone(),
+        events.clone(),
+        services.storage_alerts.clone(),
+    )
+}
+
+/// The `secret.*` requests of the person and of agents (0026). Grants of
+/// agents that were deleted while the server was down go at once.
+fn secret_gateway(services: &Services, events: &EventHub) -> SecretGateway {
+    let gateway = SecretGateway::new(
+        Arc::clone(&services.secret.service),
+        SecretJournal::new(
+            services.agent.record_action.clone(),
+            events.clone(),
+            services.storage_alerts.clone(),
+        ),
+        events.clone(),
+        (
+            Arc::clone(&services.hierarchy.holds),
+            Arc::clone(&services.hierarchy.tree),
+        ),
+        Arc::clone(&services.secret.redactor),
+        services.storage_alerts.clone(),
+    );
+    gateway.forget_deleted_agents();
+    gateway
+}
+
 /// The user's `template.*` requests, over the template services.
 fn template_gateway(services: &Services) -> TemplateGateway {
     TemplateGateway::new(
@@ -364,6 +396,7 @@ impl Server {
             events.clone(),
             services.storage_alerts.clone(),
         );
+        let secrets = secret_gateway(services, &events);
         let sweep_gate = services.orphan_sweep.gate();
         let agents = AgentGateway::new(
             Arc::clone(&services.agent.handlers),
@@ -379,15 +412,11 @@ impl Server {
             holds.clone(),
             services.needs_you_bridge.clone(),
         )
+        .with_secrets(secrets.clone())
         .with_sweep_gate(sweep_gate.clone())
         .with_sign_in_checks(services.agent.sign_in_checks.clone())
         .with_temps(temp_hooks.clone());
-        let hierarchy = HierarchyGateway::new(
-            Arc::clone(&services.hierarchy.handlers),
-            services.agent.agent_reader.clone(),
-            events.clone(),
-            services.storage_alerts.clone(),
-        );
+        let hierarchy = hierarchy_gateway(services, &events);
         let context = resume_context(services, &agents, &events, options.resume_check_period);
         let resume = resume_gateway(services, context.clone()).with_sweep_gate(sweep_gate.clone());
         let (shutdown, stopping) = watch::channel(false);
@@ -426,6 +455,8 @@ impl Server {
             hierarchy_tree: Arc::clone(&services.hierarchy.tree),
             directive_journal: Arc::clone(&services.hierarchy.directive_journal),
             notification: notification_gateway(services),
+            secrets,
+            redactor: Arc::clone(&services.terminal.redactor),
             templates: template_gateway(services),
             resume,
             temps,

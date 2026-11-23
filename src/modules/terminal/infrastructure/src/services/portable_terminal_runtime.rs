@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use kernel::AgentId;
+use kernel::{AgentId, NoRedaction, TextRedactor};
 use terminal_application::commands::spawn_terminal::validate_spawn_terminal;
 use terminal_application::common::errors::TerminalRuntimeError;
 use terminal_application::common::interfaces::{
@@ -36,6 +36,7 @@ pub struct RuntimeSettings {
 pub struct PortableTerminalRuntime {
     settings: RuntimeSettings,
     sink: Arc<dyn TerminalEventSink>,
+    redactor: Arc<dyn TextRedactor>,
     sessions: Mutex<HashMap<AgentId, Arc<TerminalSession>>>,
     last_run: AtomicU64,
 }
@@ -46,9 +47,18 @@ impl PortableTerminalRuntime {
         Self {
             settings,
             sink,
+            redactor: Arc::new(NoRedaction),
             sessions: Mutex::new(HashMap::new()),
             last_run: AtomicU64::new(0),
         }
+    }
+
+    /// Replaces what the redactor names in every session's stored output and
+    /// screen from now on (0026/FR-012).
+    #[must_use]
+    pub fn with_redactor(mut self, redactor: Arc<dyn TextRedactor>) -> Self {
+        self.redactor = redactor;
+        self
     }
 
     fn sessions(&self) -> MutexGuard<'_, HashMap<AgentId, Arc<TerminalSession>>> {
@@ -123,6 +133,7 @@ impl TerminalRuntime for PortableTerminalRuntime {
             agent_id: request.agent_id,
             pty,
             emulator: ScreenEmulator::new(request.size, self.settings.limits.max_lines()),
+            redaction: self.redactor.stream(),
             store,
             size: request.size,
             quiet_period: self.settings.quiet_period,

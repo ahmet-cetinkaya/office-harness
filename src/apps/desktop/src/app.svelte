@@ -107,6 +107,7 @@
     void panel.resume.watch();
     void panel.sweep.watch();
     void panel.sleep.watch();
+    void panel.secrets.watch();
     void panel.temps.watch();
     void panel.schedules.watch();
     void panel.needsYou.watch();

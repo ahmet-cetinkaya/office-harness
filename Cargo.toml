@@ -51,6 +51,12 @@ sysinfo = { version = "=0.40.1", default-features = false, features = ["system"]
 libc = "0.2"
 # Time zone and daylight saving arithmetic for schedule due times (0025 plan D1).
 jiff = "=0.2.45"
+# Seals the 0026 secret values (RustCrypto, pure Rust, same result on every OS).
+chacha20poly1305 = "=0.11.0"
+# Clears the 0026 secret and store key buffers when they drop.
+zeroize = "=1.9.2"
+# The OS keyring (Keychain, Credential Manager, Secret Service) for the 0026 store key.
+keyring = "=4.2.0"
 tauri = { version = "=2.12.5", features = [] }
 tauri-build = "=2.7.4"
 # OS notifications for the 0003 panel (research R7, plan D7).

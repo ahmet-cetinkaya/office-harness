@@ -8,6 +8,7 @@ use agent_domain::value_objects::Settings;
 use agent_infrastructure::services::{
     AttributionTiming, Environment, GitWorktrees, LazyGitRunner, LocalFileView, LoginEnvironment,
 };
+use kernel::TextRedactor;
 use terminal_application::common::interfaces::{
     ProcessInspector, TerminalEventSink, TerminalRuntime,
 };
@@ -28,6 +29,9 @@ use crate::config::Config;
 /// the launcher that applies the login environment, and the plain events.
 pub struct TerminalServices {
     pub runtime: Arc<dyn TerminalRuntime>,
+    /// Replaces secret values in what the office stores of agent output and
+    /// processes (0026/FR-012); the stores of other modules take it from here.
+    pub redactor: Arc<dyn TextRedactor>,
     /// Reads the processes of this machine, for the identities of 0017.
     pub inspector: Arc<dyn ProcessInspector>,
     pub handlers: Arc<TerminalHandlers>,
@@ -81,6 +85,7 @@ pub fn build_terminal_services(
     settings: &Settings,
     login: LoginSetup,
     alerts: &StorageAlerts,
+    redactor: Arc<dyn TextRedactor>,
 ) -> Result<TerminalServices, TerminalError> {
     let LoginSetup {
         login_environment,
@@ -91,14 +96,17 @@ pub fn build_terminal_services(
     let quiet_period = Duration::from_millis(settings.quiet_period_ms);
     let line_limit = usize::try_from(settings.output_line_limit).unwrap_or(usize::MAX);
     let events = TerminalEvents::new();
-    let runtime: Arc<dyn TerminalRuntime> = Arc::new(PortableTerminalRuntime::new(
-        RuntimeSettings {
-            output_folder: config.output_folder_path(),
-            limits: OutputLimits::with_lines(line_limit)?,
-            quiet_period,
-        },
-        Arc::new(events.clone()) as Arc<dyn TerminalEventSink>,
-    ));
+    let runtime: Arc<dyn TerminalRuntime> = Arc::new(
+        PortableTerminalRuntime::new(
+            RuntimeSettings {
+                output_folder: config.output_folder_path(),
+                limits: OutputLimits::with_lines(line_limit)?,
+                quiet_period,
+            },
+            Arc::new(events.clone()) as Arc<dyn TerminalEventSink>,
+        )
+        .with_redactor(Arc::clone(&redactor)),
+    );
     let git = Arc::new(LazyGitRunner::login(
         config.worktrees_folder_path(),
         Arc::clone(&login_environment),
@@ -116,6 +124,7 @@ pub fn build_terminal_services(
         inspector: Arc::new(SystemProcessInspector::new()),
         file_view: Arc::new(LocalFileView::new(git)),
         runtime,
+        redactor,
         events,
         person_input: PersonInput::default().with_wait_tracker(WaitTracker::new(quiet_period)),
         sign_in_ends: SignInEnds::default(),

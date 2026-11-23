@@ -305,7 +305,7 @@ The server keeps its state in your local application data folder:
 | macOS   | `~/Library/Application Support/dev.office-harness.office-harness` |
 | Windows | `%LOCALAPPDATA%\office-harness\office-harness\data`             |
 
-The folder holds `office.db` (the office), `token` (the office token), `server.json` (the port of the running server), `server.lock`, `server.log`, `output/` (one capped output file for each session), `worktrees/` (the agents' own git worktrees, see [Own worktree per agent](#own-worktree-per-agent)), and `bin/` (the login copies). The token file and the stored output are readable only by your OS user.
+The folder holds `office.db` (the office), `token` (the office token), `server.json` (the port of the running server), `server.lock`, `server.log`, `output/` (one capped output file for each session), `secrets.key` (the store key of your secrets, only when no OS keyring keeps it, see [Secrets for agents](#secrets-for-agents)), `worktrees/` (the agents' own git worktrees, see [Own worktree per agent](#own-worktree-per-agent)), and `bin/` (the login copies). The token file, the stored output, and the key file are readable only by your OS user.
 
 The server accepts `--data-folder <path>` to use another folder. A server started at login always uses the default folder.
 
@@ -410,7 +410,7 @@ An agent creates a temp below it with `agent.create` and the fields `"temp": tru
 office-harnessd agent-call agent.create '{"name":"docs","command":"claude","role":{"kind":"member"},"temp":true,"objective":"update the changelog and report done"}'
 ```
 
-An agent also creates, starts, and stops agents below it, starts new tasks on them, and sends them directives; the protocol contract lists the request shapes. Every other request type is refused, and the refusal names the rule: an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants, and send reports to its parent or the person.
+An agent also creates, starts, and stops agents below it, starts new tasks on them, and sends them directives; the protocol contract lists the request shapes. Every other request type is refused, and the refusal names the rule: an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants, send reports to its parent or the person, and read the secrets that you granted to it.
 
 A hold or a limit can refuse these requests as well. The answer is `refused`, and its message is one of these, checked after the rules above in this order:
 
@@ -418,11 +418,37 @@ A hold or a limit can refuse these requests as well. The answer is `refused`, an
 | ------- | ------- |
 | `the office is on hold` | You hold the office. |
 | `the agent <id> is on hold` | The asking agent, the target, or one of their ancestors is on hold. |
-| `the limit "<name>" allows <n> per 60 seconds` | The agent is over a limit. `<name>` is `directives sent by one agent`, `directives sent to one target agent`, `agents created by one agent`, `starts, stops, and new tasks by one agent`, or `reports sent by one agent`. |
+| `the limit "<name>" allows <n> per 60 seconds` | The agent is over a limit. `<name>` is `directives sent by one agent`, `directives sent to one target agent`, `agents created by one agent`, `starts, stops, and new tasks by one agent`, `reports sent by one agent`, or `reads of secrets by one agent`. |
 
 The agent decides whether to try again. See [Holding the office and limiting agents](#holding-the-office-and-limiting-agents).
 
 An agent acts only within its own descendants: the agents under it in the tree. When the actions of that list arrive, a request about an agent that is not the asking agent's descendant will be refused and recorded.
+
+## Secrets for agents
+
+Open **Secrets** next to **Limits** to save an API key once and let running agents read it without a restart. You give a secret a name such as `OPENAI_API_KEY` and a value of at least 8 bytes, and grant it to each agent that may read it. A grant belongs to one agent: it passes to no parent, child, or later agent. The value is write-only. The dialog never shows it again; to change it, save a new value under the same name, and every agent reads the new value at its next read. For each grant the dialog shows the version the agent read last, so you see which agents are behind after a rotation. Deleting a secret removes it and its grants at once; revoking a grant applies at the agent's next read.
+
+The office keeps every value sealed (an authenticated cipher, a fresh nonce for each save, bound to the secret's name and version). The key that seals them is kept outside `office.db`:
+
+| OS      | Where the key lives                                                                  |
+| ------- | ------------------------------------------------------------------------------------ |
+| macOS   | The Keychain of your login.                                                          |
+| Windows | The Credential Manager of your login.                                                |
+| Linux   | The Secret Service of your login session (GNOME Keyring, KWallet), when one answers. |
+| Any     | `secrets.key` in the data folder, readable only by your OS user, when no keyring takes the key (for example a headless Linux machine). |
+
+The choice is made once, when you save the first secret, and the dialog says which one it is (`Stored with: OS keyring` or `Stored with: key file`). If a keyring is locked or its entry is gone, the dialog says `Locked` with the reason, reads and saves are refused, and nothing is overwritten; it works again when the keyring returns. **Reset** removes every secret and the key, after a confirmation, for a key that is lost for good.
+
+An agent asks for what it may read with `secret.available` and reads one value with `secret.get`:
+
+```sh
+office-harnessd agent-call secret.available
+office-harnessd agent-call secret.get '{"name":"OPENAI_API_KEY"}' --value-only | tool --password-stdin
+```
+
+`--value-only` prints the value alone, with no line break, and prints nothing to standard output on an error. Hand the value to a tool through standard input or a file descriptor, never as an argument: a command line is stored for the sweep of leftover processes and shown in the CLI's own transcript. Every read, and every refusal, is in the agent's action record with the name and the version, never the value. A hold refuses a read, and the limit `reads of secrets by one agent` (default 20 per 60 seconds) applies.
+
+What the office does with a value besides sealing it: it replaces each exact occurrence of a saved value by `[secret NAME]` in the output it stores and replays, in the stored command lines of processes, in the action record, in notifications and Needs you items, and in the text agents send in directives, reports, task texts, and the names and objectives of new agents; template exports never hold a secret. It does not change the live terminal you watch, a value that an agent changed (for example base64), or what a CLI keeps in its own transcript. A value that an agent has read is in the agent's hands: revoke the grant and save a new value. The server asks the OS not to write a memory dump of itself (Linux and macOS); Windows has no per-process switch for that. A program that runs as you can read the keyring and the key file, as it can read the office token. The full threat model is in `specs/changes/0026-agent-secrets/SPEC.md`.
 
 ## Known limits
 
