@@ -588,6 +588,20 @@ async fn notifications_of(client: &mut Client, event: &str) -> Vec<Value> {
         .collect()
 }
 
+/// The notification follows the finish record, so a single read can come
+/// too early on a busy machine.
+async fn wait_notifications(client: &mut Client, event: &str, count: usize) -> Vec<Value> {
+    let deadline = Instant::now() + END_LIMIT;
+    loop {
+        let notified = notifications_of(client, event).await;
+        if notified.len() == count {
+            return notified;
+        }
+        assert!(Instant::now() < deadline, "{notified:?}");
+        tokio::time::sleep(POLL).await;
+    }
+}
+
 async fn has_needs_you_item(client: &mut Client, agent_id: &str) -> bool {
     let listed = client.ask("needs_you.list", json!({})).await;
     listed["result"]["items"]
@@ -790,8 +804,7 @@ async fn a_temp_with_a_needs_you_item_is_not_ended_and_ends_one_idle_limit_after
     );
     assert_eq!(finished[0]["reason"], "no output for 5 minutes");
     // No parent heard of it, so the person gets exactly one notification.
-    let notified = notifications_of(&mut fixture.client, "temp_ended").await;
-    assert_eq!(notified.len(), 1, "{notified:?}");
+    let notified = wait_notifications(&mut fixture.client, "temp_ended", 1).await;
     assert_eq!(notified[0]["agent_name"], "paused");
     assert_eq!(notified[0]["detail"], "no output for 5 minutes");
     fixture.office.serving.stop().await;
