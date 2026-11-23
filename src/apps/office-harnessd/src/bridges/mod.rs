@@ -18,6 +18,7 @@ mod process_probe_bridge;
 mod rate_limit_source;
 mod role_requests;
 mod saved_output;
+mod secret_bridges;
 mod sign_in_watch;
 mod status_command_bridge;
 mod subtree_requests;
@@ -53,6 +54,7 @@ pub use process_probe_bridge::ProcessProbeBridge;
 pub use rate_limit_source::SettingsRateLimits;
 pub use role_requests::{AgentCreatorBridge, RoleRequestsBridge};
 pub use saved_output::{SavedOutputError, SavedOutputs};
+pub use secret_bridges::{AgentDirectoryBridge, SecretJournal};
 pub use sign_in_watch::{SignInEnds, SignInWatch, SignInWatchTiming};
 pub use status_command_bridge::StatusCommandBridge;
 pub use subtree_requests::{

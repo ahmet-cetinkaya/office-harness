@@ -11,5 +11,5 @@ mod store_key_generator;
 
 pub use chacha_sealer::ChaChaRecordSealer;
 pub use key_file_vault::KeyFileVault;
-pub use keyring_vault::KeyringVault;
+pub use keyring_vault::{KeyringVault, UnavailableKeyring};
 pub use store_key_generator::{OsStoreKeyGenerator, generate_store_key};

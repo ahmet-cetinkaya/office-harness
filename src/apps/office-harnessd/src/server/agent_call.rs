@@ -28,7 +28,7 @@ use crate::bridges::{EndOrder, EndReason, take_recorded_events};
 /// other type is refused, so no agent reaches `terminal.*`, `agent.delete`,
 /// `team.*`, `hierarchy.*`, `server.*`, `settings.*`, `project.*`,
 /// `template.*`, or the additions of an agent.
-const ALLOWED_REQUESTS: [&str; 8] = [
+const ALLOWED_REQUESTS: [&str; 10] = [
     "agent.whoami",
     "agent.subtree",
     "agent.create",
@@ -37,10 +37,12 @@ const ALLOWED_REQUESTS: [&str; 8] = [
     "agent.stop",
     "directive.send",
     "report.send",
+    "secret.available",
+    "secret.get",
 ];
 
 /// What the connection of an agent says about a request it will not run.
-const NOT_ALLOWED: &str = "an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants, and send reports to its parent or the person";
+const NOT_ALLOWED: &str = "an agent may only create, start, stop, give new tasks to, send directives to, and read the state of its own descendants, send reports to its parent or the person, and read the secrets that the person granted to it";
 
 /// The longest client text a refusal reason keeps: the type and a field key
 /// travel into the log and the record, so the limit keeps one hostile frame
@@ -118,6 +120,10 @@ async fn answer_request(state: &ServerState, grant: &AgentGrant, frame: &str) ->
                 "agent.subtree" => return answer_subtree(state, grant, &request).await,
                 "directive.send" => return answer_directive(state, grant, &request).await,
                 "report.send" => return answer_report(state, grant, &request).await,
+                "secret.available" => {
+                    return state.secrets.agent_available(grant.agent_id, request).await;
+                }
+                "secret.get" => return state.secrets.agent_get(grant.agent_id, request).await,
                 "agent.create" | "agent.start" | "agent.new_task" | "agent.stop" => {
                     return answer_office_request(state, grant, &request).await;
                 }

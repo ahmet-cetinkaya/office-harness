@@ -15,6 +15,7 @@ const DATABASE_FILE: &str = "office.db";
 const LOCK_FILE: &str = "server.lock";
 const LOG_FILE: &str = "server.log";
 const TOKEN_FILE: &str = "token";
+const SECRET_KEY_FILE: &str = "secrets.key";
 const OUTPUT_FOLDER: &str = "output";
 const WORKTREES_FOLDER: &str = "worktrees";
 
@@ -53,6 +54,12 @@ impl Config {
     #[must_use]
     pub fn database_path(&self) -> PathBuf {
         self.data_folder.join(DATABASE_FILE)
+    }
+
+    /// The store key of the secrets, when no OS keyring keeps it (0026).
+    #[must_use]
+    pub fn secret_key_path(&self) -> PathBuf {
+        self.data_folder.join(SECRET_KEY_FILE)
     }
 
     #[must_use]

@@ -71,6 +71,29 @@ fn translate(error: &Error) -> VaultError {
     }
 }
 
+/// A keyring that is not there: it takes no key, so the store key goes to the
+/// key file. For a machine that must not touch the OS keyring, and for tests.
+#[derive(Debug, Default)]
+pub struct UnavailableKeyring;
+
+impl StoreKeyVault for UnavailableKeyring {
+    fn custody(&self) -> Custody {
+        Custody::OsKeyring
+    }
+
+    fn load(&self) -> Result<Option<StoreKey>, VaultError> {
+        Err(VaultError::Locked(LockedReason::KeyringNotRunning))
+    }
+
+    fn store(&self, _key: &StoreKey) -> Result<(), VaultError> {
+        Err(VaultError::Locked(LockedReason::KeyringNotRunning))
+    }
+
+    fn remove(&self) -> Result<(), VaultError> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 #[path = "keyring_vault.tests.rs"]
 mod tests;

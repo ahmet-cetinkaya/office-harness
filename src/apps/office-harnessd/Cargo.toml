@@ -26,6 +26,10 @@ notification-application = { path = "../../modules/notification/application" }
 notification-domain = { path = "../../modules/notification/domain" }
 notification-infrastructure = { path = "../../modules/notification/infrastructure" }
 notification-presentation = { path = "../../modules/notification/presentation" }
+secret-application = { path = "../../modules/secret/application" }
+secret-domain = { path = "../../modules/secret/domain" }
+secret-infrastructure = { path = "../../modules/secret/infrastructure" }
+secret-presentation = { path = "../../modules/secret/presentation" }
 template-application = { path = "../../modules/template/application" }
 template-domain = { path = "../../modules/template/domain" }
 template-infrastructure = { path = "../../modules/template/infrastructure" }

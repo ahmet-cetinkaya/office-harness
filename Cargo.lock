@@ -3197,6 +3197,10 @@ dependencies = [
  "notification-presentation",
  "private-fs",
  "rusqlite",
+ "secret-application",
+ "secret-domain",
+ "secret-infrastructure",
+ "secret-presentation",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -3995,6 +3999,17 @@ dependencies = [
  "secret-domain",
  "tempfile",
  "zeroize",
+]
+
+[[package]]
+name = "secret-presentation"
+version = "0.1.0"
+dependencies = [
+ "kernel",
+ "secret-application",
+ "secret-domain",
+ "serde_json",
+ "wire",
 ]
 
 [[package]]
