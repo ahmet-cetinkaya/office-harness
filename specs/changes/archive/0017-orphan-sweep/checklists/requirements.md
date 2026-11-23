@@ -1,6 +1,6 @@
 # Requirements checklist: 0017-orphan-sweep
 
-Spec: `specs/changes/0017-orphan-sweep/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass (round 4 after the review of Efe, r1 at fa44fb0). No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0007/`, and `0013/` reference was checked against the specs on `main` at b768b63.
+Spec: `specs/changes/archive/0017-orphan-sweep/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass (round 4 after the review of Efe, r1 at fa44fb0). No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0007/`, and `0013/` reference was checked against the specs on `main` at b768b63.
 
 ## Content quality
 

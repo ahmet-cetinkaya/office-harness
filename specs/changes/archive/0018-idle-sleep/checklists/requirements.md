@@ -1,6 +1,6 @@
 # Requirements checklist: 0018-idle-sleep
 
-Spec: `specs/changes/0018-idle-sleep/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0003/`, `0007/`, `0008/`, `0010/`, `0012/`, `0013/`, `0014/`, and `0015/` reference was checked against the specs on this branch.
+Spec: `specs/changes/archive/0018-idle-sleep/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0003/`, `0007/`, `0008/`, `0010/`, `0012/`, `0013/`, `0014/`, and `0015/` reference was checked against the specs on this branch.
 
 ## Content quality
 

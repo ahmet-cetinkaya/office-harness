@@ -1,6 +1,6 @@
 ---
 status: completed
-spec: specs/changes/0021-worktree-dependencies/SPEC.md
+spec: specs/changes/archive/0021-worktree-dependencies/SPEC.md
 commits: per-task
 ---
 
@@ -84,7 +84,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 ### T4: Docs and QA (commit 4)
 
 - README "Own worktree per agent": a short paragraph on shared packages, the setting, and Windows.
-- `specs/changes/0021-worktree-dependencies/qa-report.md` with one row per FR and SC, and the hands-on rows: a real agent in a worktree of this repository runs `bun test` in the desktop folder without an install, and a Vite build in that worktree leaves the checkout's `node_modules/.vite` unchanged (review r1 N1).
+- `specs/changes/archive/0021-worktree-dependencies/qa-report.md` with one row per FR and SC, and the hands-on rows: a real agent in a worktree of this repository runs `bun test` in the desktop folder without an install, and a Vite build in that worktree leaves the checkout's `node_modules/.vite` unchanged (review r1 N1).
 - SPEC Deviations for anything shipped differently.
 - **Acceptance:** links in the docs resolve; no other product is named; no zero-width character in added lines.
 

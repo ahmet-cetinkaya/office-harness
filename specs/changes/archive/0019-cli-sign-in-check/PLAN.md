@@ -1,6 +1,6 @@
 ---
-status: in_progress
-spec: specs/changes/0019-cli-sign-in-check/SPEC.md
+status: completed
+spec: specs/changes/archive/0019-cli-sign-in-check/SPEC.md
 commits: per-task
 ---
 
