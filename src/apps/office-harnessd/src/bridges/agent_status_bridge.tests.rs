@@ -247,6 +247,7 @@ mod runs {
             calls: Arc::new(access_infrastructure::services::MemoryAgentCallStore::new()),
             sign_in_ends: SignInEnds::default(),
             journal: ActionJournal::new(records.clone(), Arc::new(crate::bridges::SystemClock)),
+            waits: crate::bridges::WaitTracker::default(),
         };
         (bridge, store, ends, records)
     }

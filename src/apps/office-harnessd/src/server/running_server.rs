@@ -62,6 +62,7 @@ fn spawn_terminal_bridges(services: &Services, events: &EventHub, log: &ServerLo
         calls: services.access.agent_calls.clone(),
         sign_in_ends: services.terminal.sign_in_ends.clone(),
         journal: services.agent.journal.clone(),
+        waits: services.terminal.person_input.wait_tracker().clone(),
     }
     .spawn(services.terminal.events.subscribe());
     AgentLineBridge::new(services.terminal.events.clone(), events.clone())
@@ -263,6 +264,11 @@ impl Server {
         options: ServerOptions,
     ) -> Self {
         let port = address.port();
+        services
+            .terminal
+            .person_input
+            .wait_tracker()
+            .set_work_bound_extra(options.work_bound_extra);
         let events = services.events.clone();
         events.forward_storage_alerts(services.storage_alerts.subscribe(), log.clone());
         spawn_terminal_bridges(services, &events, log);

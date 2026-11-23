@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::collections::HashSet;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use agent_application::common::errors::PortError;
 use agent_application::common::interfaces::{AgentStore, Clock};
 use agent_domain::entities::Agent;
+use agent_domain::enums::AgentStatus;
 use kernel::{AgentId, Timestamp};
 use notification_application::commands::create_notification::{
     CreateNotification, CreateNotificationHandler,
@@ -22,6 +24,7 @@ use wire::Event;
 
 use super::NeedsYouBridge;
 use super::terminal_events::AgentTerminalEvent;
+use super::wait_tracker::{Change, StatusChange, WaitTracker};
 use crate::bootstrap::{ServerLog, StorageAlerts};
 use crate::server::EventHub;
 
@@ -48,6 +51,13 @@ pub struct NotificationBridge {
     /// terminal waits for before it calls an agent waiting.
     quiet_period_ms: u64,
     needs_you: NeedsYouBridge,
+    /// Judges each change between `working` and `waiting for input`; this
+    /// bridge is the only one that asks, so each change is judged once.
+    waits: WaitTracker,
+    /// The agents whose last status frame was `waiting_for_input`: the next
+    /// `working` of such an agent is a change out of a wait, and a `working`
+    /// that follows `starting` is not (0022 D5).
+    waiting_agents: Arc<Mutex<HashSet<AgentId>>>,
     hub: EventHub,
     alerts: StorageAlerts,
     log: ServerLog,
@@ -66,10 +76,12 @@ impl NotificationBridge {
         clock: Arc<dyn Clock>,
         quiet_period_ms: u64,
         needs_you: NeedsYouBridge,
+        waits: WaitTracker,
         hub: EventHub,
         alerts: StorageAlerts,
         log: ServerLog,
     ) -> Self {
+        clear_on_input_while_working(&waits, Arc::clone(&agents), needs_you.clone());
         Self {
             create,
             agents,
@@ -77,6 +89,8 @@ impl NotificationBridge {
             clock,
             quiet_period_ms,
             needs_you,
+            waits,
+            waiting_agents: Arc::default(),
             hub,
             alerts,
             log,
@@ -135,6 +149,14 @@ impl NotificationBridge {
         let Some(status) = StatusFrame::parse(frame) else {
             return;
         };
+        if let Some((change, Change::Unprompted)) = self.judge(&status) {
+            // A redraw of the screen: it clears nothing and records nothing
+            // (0022 FR-001), and a `working` one is bounded by a timer.
+            if change == StatusChange::ToWorking {
+                self.arm_work_bound(status.agent_id);
+            }
+            return;
+        }
         if let Some(reason) = status.clear_reason() {
             self.needs_you.clear(status.agent_id, reason);
         }
@@ -142,6 +164,58 @@ impl NotificationBridge {
             let attention_detail = self.attention_detail(event, status.detail);
             self.record(status.agent_id, event, None, attention_detail);
         }
+    }
+
+    /// Asks the tracker about the frame once, when the frame is a change
+    /// between `working` and `waiting for input`.
+    fn judge(&self, status: &StatusFrame) -> Option<(StatusChange, Change)> {
+        let change = self.status_change(status)?;
+        Some((change, self.waits.classify(status.agent_id, change)))
+    }
+
+    /// The change between the two statuses that the frame makes, and the
+    /// bookkeeping of which agents are waiting.
+    fn status_change(&self, status: &StatusFrame) -> Option<StatusChange> {
+        let mut waiting = self
+            .waiting_agents
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if status.name == "waiting_for_input" {
+            waiting.insert(status.agent_id);
+            return Some(StatusChange::ToWaitingForInput);
+        }
+        let was_waiting = waiting.remove(&status.agent_id);
+        (status.name == "working" && was_waiting).then_some(StatusChange::ToWorking)
+    }
+
+    /// Removes the agent's item when its unprompted stretch of `working`
+    /// passes the work bound: long work is not a redraw, so the item no
+    /// longer describes the agent (0022 D4). One timer per stretch; a timer
+    /// whose stretch is over finds a different start and does nothing.
+    fn arm_work_bound(&self, agent_id: AgentId) {
+        let Some(since) = self.waits.working_since(agent_id) else {
+            return;
+        };
+        let deadline = tokio::time::Instant::from_std(since + self.waits.work_bound());
+        let bridge = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep_until(deadline).await;
+            let _ = tokio::task::spawn_blocking(move || {
+                bridge.end_stretch_at_bound(agent_id, since);
+            })
+            .await;
+        });
+    }
+
+    fn end_stretch_at_bound(&self, agent_id: AgentId, since: std::time::Instant) {
+        if self.waits.working_since(agent_id) != Some(since)
+            || !shows_working(self.agents.as_ref(), agent_id)
+        {
+            return;
+        }
+        // The return reads as prompted even when this timer ran late, and
+        // the wait end clears the item (see `clear_on_input_while_working`).
+        self.waits.wait_end(agent_id);
     }
 
     /// What the queue shows beside the event (0008 D3): the terminal's quiet
@@ -440,6 +514,28 @@ const fn attention_kind_of(event: NotificationEvent) -> Option<AttentionKind> {
 
 fn created_event(notification: &Notification) -> Event {
     notification_presentation::notification_created_event(notification)
+}
+
+/// A person's input or office text that reaches an agent while it shows
+/// `working` removes its item, as a resume does (0008/FR-005 as modified by
+/// 0022): the person has dealt with the agent, whatever the screen redraws.
+fn clear_on_input_while_working(
+    waits: &WaitTracker,
+    agents: Arc<dyn AgentStore>,
+    needs_you: NeedsYouBridge,
+) {
+    waits.on_wait_end(move |agent_id| {
+        if shows_working(agents.as_ref(), agent_id) {
+            needs_you.clear(agent_id, NeedsYouClearReason::Resumed);
+        }
+    });
+}
+
+fn shows_working(agents: &dyn AgentStore, agent_id: AgentId) -> bool {
+    matches!(
+        agents.find(agent_id),
+        Ok(Some(agent)) if agent.status == AgentStatus::Working
+    )
 }
 
 #[cfg(test)]

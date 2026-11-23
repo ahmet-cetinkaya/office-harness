@@ -22,6 +22,10 @@ pub struct NeedsYouItem {
     /// The agent's latest report for the person, kept through later events
     /// until the item leaves (0015/FR-008).
     pub report: Option<ItemReport>,
+    /// The item has recorded only changes to `waiting for input`: no bell,
+    /// end, hold, or report. Such an item is the one an idle sleep may
+    /// pass over (0022 D6).
+    pub waits_only: bool,
 }
 
 /// A report for the person as its item shows it: the kind's wire name and
@@ -76,8 +80,10 @@ pub fn record_event(
     event: AttentionEvent,
     origin: Option<NotificationId>,
 ) -> NeedsYouItem {
+    let is_wait = event.kind == AttentionKind::WaitingForInput;
     match existing {
         Some(item) => NeedsYouItem {
+            waits_only: item.waits_only && is_wait,
             latest: event,
             ..item
         },
@@ -87,6 +93,7 @@ pub fn record_event(
             latest: event,
             origin,
             report: None,
+            waits_only: is_wait,
         },
     }
 }
@@ -108,6 +115,7 @@ pub fn record_report(
     };
     NeedsYouItem {
         report: Some(report),
+        waits_only: false,
         ..record_event(existing, agent_id, event, origin)
     }
 }

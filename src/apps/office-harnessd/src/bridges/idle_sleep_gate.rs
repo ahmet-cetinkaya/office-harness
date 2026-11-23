@@ -11,14 +11,18 @@ use agent_application::common::interfaces::{AgentStore, SleepGate};
 use hierarchy_application::{HoldService, SendDirectiveHandler, TreeQuery};
 use hierarchy_domain::{Hold, TreeRow, hold_refusal};
 use kernel::AgentId;
+use notification_domain::NeedsYouItem;
 use notification_presentation::NeedsYouUseCases;
 use terminal_application::common::interfaces::TerminalRuntime;
+use terminal_domain::services::shows_open_question;
 
 use super::{NeedsYouBridge, PersonInput};
 
 const NOT_CONNECTED: &str = "the office is still starting";
 const SLEEP_OFF: &str = "idle sleep is off";
 const WAITS_IN_NEEDS_YOU: &str = "it waits in Needs you";
+const SCREEN_UNREADABLE: &str = "its screen cannot be read";
+const QUESTION_SHOWS: &str = "its screen shows an open question";
 const HOLD_COVERS_IT: &str = "a hold covers it";
 const QUEUE_NOT_EMPTY: &str = "a directive or a report waits in its queue";
 const TEXT_WAITS: &str = "text waits at its input line";
@@ -70,9 +74,6 @@ pub struct GateInputs {
     pub directives: Arc<SendDirectiveHandler>,
     pub person_input: PersonInput,
     pub runtime: Arc<dyn TerminalRuntime>,
-    /// The quiet period the terminals run with: an agent shows `waiting for
-    /// input` this long after its last output.
-    pub quiet_period: Duration,
 }
 
 /// Decides whether an idle agent may be put to sleep. The idle sleep task
@@ -108,13 +109,15 @@ impl IdleSleepGate {
         *self.rule.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// How long the agent has shown no activity: no output beyond the quiet
-    /// period and no person input. `None` until the gate is connected.
+    /// When the agent last changed to `waiting for input` with a prompt
+    /// (0022 D8). `None` until the gate is connected or when it has none.
     #[must_use]
-    pub fn quiet_for(&self, agent_id: AgentId) -> Option<Duration> {
+    pub fn last_prompted_wait(&self, agent_id: AgentId) -> Option<Instant> {
         self.inputs
-            .get()
-            .map(|inputs| inputs.without_activity(agent_id))
+            .get()?
+            .person_input
+            .wait_tracker()
+            .last_prompted_wait(agent_id)
     }
 
     /// How long ago the agent last wrote output or got person input, which is
@@ -149,7 +152,7 @@ impl IdleSleepGate {
                 rule.idle_time.as_secs()
             ));
         }
-        inputs.check_attention(agent_id)?;
+        inputs.check_attention_for_sleep(agent_id)?;
         inputs.check_input_line(agent_id)?;
         inputs.check_tree(agent_id)
     }
@@ -170,14 +173,15 @@ impl SleepGate for IdleSleepGate {
 }
 
 impl GateInputs {
-    /// The shorter of the time since the agent changed to `waiting for
-    /// input` and the time since the last person input (Terms: Idle since).
+    /// The shorter of the time since the agent's last prompted wait and the
+    /// time since the last person input (Terms: Idle since). A redrawing CLI
+    /// writes output without being active, so output does not count.
     fn without_activity(&self, agent_id: AgentId) -> Duration {
         let since_waiting = self
-            .runtime
-            .quiet_for(agent_id)
-            .unwrap_or_default()
-            .saturating_sub(self.quiet_period);
+            .person_input
+            .wait_tracker()
+            .last_prompted_wait(agent_id)
+            .map_or(Duration::ZERO, |waited_at| waited_at.elapsed());
         let since_input = self
             .person_input
             .since_last_input(agent_id)
@@ -197,13 +201,17 @@ impl GateInputs {
             .map(|since_output| since_output.min(since_input))
     }
 
-    /// FR-002 b: an item in Needs you.
+    /// FR-002 b for the idle end of a temp: any item in Needs you.
     fn check_attention(&self, agent_id: AgentId) -> Result<(), String> {
         let items = self.needs_you.list().map_err(|error| error.to_string())?;
-        if items.iter().any(|item| item.agent_id == agent_id) {
-            return Err(WAITS_IN_NEEDS_YOU.to_owned());
-        }
-        Ok(())
+        item_blocks_idle_end(&items, agent_id)
+    }
+
+    /// FR-002 b for a sleep: an item in Needs you, unless it only records
+    /// waits and the screen is readable and shows no open question (0022 D7).
+    fn check_attention_for_sleep(&self, agent_id: AgentId) -> Result<(), String> {
+        let items = self.needs_you.list().map_err(|error| error.to_string())?;
+        item_allows_sleep(&items, self.runtime.as_ref(), agent_id)
     }
 
     /// FR-002 d and e: a waiting directive or report, or text that a stop
@@ -250,6 +258,38 @@ impl GateInputs {
             .iter()
             .any(|agent| children.contains(&agent.id) && agent.status.is_running()))
     }
+}
+
+/// Any item keeps a temp from the idle end, a plain waiting item too (0022
+/// A9): the person has not seen what the temp waits for.
+fn item_blocks_idle_end(items: &[NeedsYouItem], agent_id: AgentId) -> Result<(), String> {
+    if items.iter().any(|item| item.agent_id == agent_id) {
+        return Err(WAITS_IN_NEEDS_YOU.to_owned());
+    }
+    Ok(())
+}
+
+/// A plain waiting item does not keep the agent awake; any other item does.
+/// An unreadable screen cannot show that no question waits, so it blocks
+/// (0022/FR-002).
+fn item_allows_sleep(
+    items: &[NeedsYouItem],
+    runtime: &dyn TerminalRuntime,
+    agent_id: AgentId,
+) -> Result<(), String> {
+    let Some(item) = items.iter().find(|item| item.agent_id == agent_id) else {
+        return Ok(());
+    };
+    if !item.waits_only {
+        return Err(WAITS_IN_NEEDS_YOU.to_owned());
+    }
+    let screen = runtime
+        .screen(agent_id)
+        .ok_or_else(|| SCREEN_UNREADABLE.to_owned())?;
+    if shows_open_question(&screen) {
+        return Err(QUESTION_SHOWS.to_owned());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
