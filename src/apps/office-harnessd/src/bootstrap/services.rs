@@ -175,6 +175,7 @@ pub fn start_with(
         Arc::new(SystemClock),
         startup_settings.quiet_period_ms,
         needs_you_bridge.clone(),
+        terminal.person_input.wait_tracker().clone(),
         events.clone(),
         storage_alerts.clone(),
         log.clone(),

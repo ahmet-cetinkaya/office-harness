@@ -53,7 +53,7 @@ impl Office {
             .await
     }
 
-    async fn open_with_options_and_quiet_period(
+    pub async fn open_with_options_and_quiet_period(
         clis: FakeClis,
         options: ServerOptions,
         quiet_period_ms: u64,
