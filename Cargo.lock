@@ -3713,12 +3713,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "schedule-application"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "kernel",
+ "schedule-domain",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "schedule-domain"
 version = "0.1.0"
 dependencies = [
  "jiff",
  "kernel",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "schedule-infrastructure"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "kernel",
+ "rusqlite",
+ "schedule-application",
+ "schedule-domain",
+ "tempfile",
+]
+
+[[package]]
+name = "schedule-presentation"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "kernel",
+ "schedule-application",
+ "schedule-domain",
+ "serde_json",
+ "wire",
 ]
 
 [[package]]
