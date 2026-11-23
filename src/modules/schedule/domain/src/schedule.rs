@@ -13,6 +13,23 @@ pub enum OffReason {
     TimeMissed,
 }
 
+impl OffReason {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::TargetDeleted => "target_deleted",
+            Self::TimeMissed => "time_missed",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        [Self::TargetDeleted, Self::TimeMissed]
+            .into_iter()
+            .find(|reason| reason.as_str() == text)
+    }
+}
+
 /// A directive that the person set to go to one agent at due times.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Schedule {

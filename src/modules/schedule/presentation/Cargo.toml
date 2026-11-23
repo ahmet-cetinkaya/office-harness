@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[package]
+name = "schedule-presentation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+schedule-application = { path = "../application" }
+schedule-domain = { path = "../domain" }
+kernel = { path = "../../../kernel" }
+jiff.workspace = true
+serde_json.workspace = true
+wire = { path = "../../../shared/wire" }
+
+[lints]
+workspace = true

@@ -12,9 +12,10 @@ pub const TEXT_MAX_CHARS: usize = 8192;
 pub const MIN_HOURS: u32 = 1;
 pub const MAX_HOURS: u32 = 168;
 
-const NAME_FIELD: &str = "name";
-const TEXT_FIELD: &str = "text";
-const REPEAT_FIELD: &str = "repeat";
+pub const NAME_FIELD: &str = "name";
+pub const TEXT_FIELD: &str = "text";
+pub const REPEAT_FIELD: &str = "repeat";
+pub const TARGET_FIELD: &str = "target";
 
 /// The rule that a field broke.
 #[derive(Debug, Clone, Copy, Error, PartialEq, Eq)]
@@ -31,6 +32,14 @@ pub enum Rule {
     HoursOutOfRange,
     #[error("a once repeat must name a future local time")]
     NotInFuture,
+    #[error("a time must be hours and minutes, HH:MM")]
+    BadTime,
+    #[error("a date must be a real calendar date, YYYY-MM-DD")]
+    BadDate,
+    #[error("is used by another schedule")]
+    NameTaken,
+    #[error("must name an agent that exists")]
+    TargetMissing,
 }
 
 /// One failing field and the rule it broke.

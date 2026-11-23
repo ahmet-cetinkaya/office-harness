@@ -14,8 +14,11 @@ mod zone_source;
 pub use due::{
     DueWindow, MAX_STEPS, Missed, Split, TAIL_LEN, classify, due_times_in, next_due_after,
 };
-pub use repeat::Repeat;
+pub use repeat::{Repeat, parse_time, parse_weekday, time_text, weekday_code};
 pub use schedule::{OffReason, Schedule};
 pub use schedule_cap::{ScheduleCap, ScheduleCapError};
-pub use validation::{FieldError, NAME_MAX_CHARS, Rule, TEXT_MAX_CHARS, validate_fields};
+pub use validation::{
+    FieldError, NAME_FIELD, NAME_MAX_CHARS, REPEAT_FIELD, Rule, TARGET_FIELD, TEXT_FIELD,
+    TEXT_MAX_CHARS, validate_fields,
+};
 pub use zone_source::ZoneSource;
