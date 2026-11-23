@@ -23,7 +23,7 @@ use terminal_application::common::interfaces::TerminalRuntime;
 use terminal_domain::services::{shows_open_question, shows_typed_text};
 use terminal_domain::value_objects::ScreenView;
 
-use super::{PersonInput, SystemClock};
+use super::{PersonInput, SleepingAgents, SystemClock};
 use crate::bootstrap::StorageAlerts;
 use crate::server::EventHub;
 
@@ -54,6 +54,7 @@ pub struct DirectiveTargetBridge {
     agents: Arc<dyn AgentStore>,
     runtime: Arc<dyn TerminalRuntime>,
     person_input: PersonInput,
+    sleeping: SleepingAgents,
 }
 
 impl DirectiveTargetBridge {
@@ -67,7 +68,16 @@ impl DirectiveTargetBridge {
             agents,
             runtime,
             person_input,
+            sleeping: SleepingAgents::default(),
         }
+    }
+
+    /// The agents going to sleep, which count as asleep and not running
+    /// (0018/FR-005).
+    #[must_use]
+    pub fn with_sleeping(mut self, sleeping: SleepingAgents) -> Self {
+        self.sleeping = sleeping;
+        self
     }
 
     /// A screen the office cannot read counts as busy: it cannot tell that
@@ -85,8 +95,23 @@ impl DirectiveTarget for DirectiveTargetBridge {
         // not read a broken store as a stopped member.
         self.agents
             .find(agent_id)
-            .map(|found| found.is_some_and(|agent| agent.status.is_running()))
+            .map(|found| {
+                found.is_some_and(|agent| {
+                    agent.status.is_running() && !self.sleeping.contains(agent_id)
+                })
+            })
             .map_err(|error| error.to_string())
+    }
+
+    fn is_asleep(&self, agent_id: AgentId) -> bool {
+        if self.sleeping.contains(agent_id) {
+            return true;
+        }
+        self.agents
+            .find(agent_id)
+            .ok()
+            .flatten()
+            .is_some_and(|agent| agent.status == AgentStatus::Asleep)
     }
 
     fn name_of(&self, agent_id: AgentId) -> Option<String> {

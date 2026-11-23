@@ -80,5 +80,7 @@ fn action_kind(action: AgentAction) -> ActionKind {
         AgentAction::Refused => ActionKind::Refused,
         AgentAction::TaskText => ActionKind::TaskText,
         AgentAction::Report => ActionKind::Report,
+        AgentAction::Sleep => ActionKind::Sleep,
+        AgentAction::Wake => ActionKind::Wake,
     }
 }

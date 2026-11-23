@@ -22,7 +22,9 @@ use hierarchy_domain::Role;
 use hierarchy_infrastructure::persistence::repositories::hierarchy_repository::HierarchyRepository;
 use hierarchy_infrastructure::services::agent_places::AgentPlaces;
 use kernel::AgentId;
+use office_harnessd::server::ServerOptions;
 use serde_json::{Value, json};
+use support::fake_cli::FakeClis;
 use support::office_client::{Client, Office, wait_for};
 
 /// The real server binary that the fake CLIs run as the helper.
@@ -641,5 +643,93 @@ async fn a_waiting_directive_is_withdrawn_and_recorded_when_its_target_stops() {
         assert!(result.contains("no longer running"), "{entry}");
         assert!(result.contains(DIRECTIVE), "{entry}");
     }
+    office.serving.stop().await;
+}
+
+/// An office whose idle sleep minute lasts 100 ms, checked every 50 ms
+/// (0018); the tests turn idle sleep on with 5 minutes.
+async fn office_with_fast_idle_sleep() -> Office {
+    Office::open_with_options(
+        FakeClis::new(),
+        ServerOptions {
+            idle_sleep_tick: std::time::Duration::from_millis(50),
+            idle_sleep_minute: std::time::Duration::from_millis(100),
+            ..ServerOptions::default()
+        },
+    )
+    .await
+}
+
+/// Three idle times of the fast office: long enough for any sleep the rule
+/// would allow.
+const AWAKE_WATCH: std::time::Duration = std::time::Duration::from_millis(1_500);
+
+#[tokio::test]
+async fn a_directive_to_an_asleep_member_is_refused_as_asleep_and_recorded() {
+    let office = office_with_fast_idle_sleep().await;
+    let (lead, member, token, server_file) =
+        office_with_member_cli(&office, Some(Role::Lead), "echo ready; sleep 30").await;
+    let mut client = office.client().await;
+    client.wait_for_status(&member, "waiting_for_input").await;
+    client.dismiss_needs_you(&member).await;
+    client.set_setting("idle_sleep_minutes", "5").await;
+    client.wait_for_status(&member, "asleep").await;
+
+    let request = json!({"target_agent_id": member, "text": DIRECTIVE});
+    let answer = answer_of(&send_directive(&token, &server_file, &request).await);
+
+    let message = answer["error"]["message"].as_str().expect("message");
+    assert!(message.contains("it is asleep"), "{answer}");
+    for agent in [&lead, &member] {
+        failure_containing(&mut client, agent, "it is asleep").await;
+    }
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_waiting_directive_keeps_its_target_awake() {
+    let office = office_with_fast_idle_sleep().await;
+    let cli = "echo 'Do you want to proceed? (y/n)'; sleep 30";
+    let (_lead, member, token, server_file) =
+        office_with_member_cli(&office, Some(Role::Lead), cli).await;
+    let mut client = office.client().await;
+    client.wait_for_status(&member, "waiting_for_input").await;
+    let request = json!({"target_agent_id": member, "text": DIRECTIVE});
+    let answer = answer_of(&send_directive(&token, &server_file, &request).await);
+    assert_eq!(answer["result"]["delivery"], "waiting", "{answer}");
+    client.dismiss_needs_you(&member).await;
+
+    client.set_setting("idle_sleep_minutes", "5").await;
+    tokio::time::sleep(AWAKE_WATCH).await;
+
+    assert_eq!(client.status_of(&member).await, "waiting_for_input");
+    office.serving.stop().await;
+}
+
+#[tokio::test]
+async fn a_running_child_keeps_its_parent_awake() {
+    let office = office_with_fast_idle_sleep().await;
+    office.clis.add("idle-cli", "echo ready; sleep 30");
+    office.clis.add(
+        "busy-cli",
+        "echo ready; while :; do echo tick; sleep 0.1; done",
+    );
+    let mut client = office.client().await;
+    let lead = client.create_agent(&office, "Lead", "idle-cli", None).await;
+    let member = client
+        .create_agent(&office, "Member", "busy-cli", None)
+        .await;
+    place(&office, &lead, Role::Ceo, None);
+    place(&office, &member, Role::Lead, Some(&lead));
+    client.start(&member).await;
+    client.start(&lead).await;
+    client.wait_for_status(&lead, "waiting_for_input").await;
+    client.dismiss_needs_you(&lead).await;
+
+    client.set_setting("idle_sleep_minutes", "5").await;
+    tokio::time::sleep(AWAKE_WATCH).await;
+
+    assert_eq!(client.status_of(&member).await, "working");
+    assert_eq!(client.status_of(&lead).await, "waiting_for_input");
     office.serving.stop().await;
 }

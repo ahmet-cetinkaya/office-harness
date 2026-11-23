@@ -112,6 +112,9 @@ async fn an_agent_may_not_ask_for_a_type_outside_the_allowlist() {
         ("resume_plan", "resume.plan"),
         ("resume_start", "resume.start"),
         ("agent_resume", "agent.resume"),
+        ("wake_start", "wake.start"),
+        ("agent_wake", "agent.wake"),
+        ("agent_sleep", "agent.sleep"),
     ];
     office
         .clis
