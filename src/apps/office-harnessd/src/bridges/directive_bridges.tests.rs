@@ -97,6 +97,7 @@ impl RecordingRuntime {
             screen: Mutex::new(ScreenView {
                 rows: rows.iter().map(|row| (*row).to_owned()).collect(),
                 cursor_row: rows.len().saturating_sub(1),
+                cursor_column: 0,
             }),
             echo,
             running_for,

@@ -21,10 +21,11 @@ use agent_application::commands::stop_agent::StopAgentHandler;
 use agent_application::common::action_journal::ActionJournal;
 use agent_application::common::interfaces::{
     AdditionsStore, AgentStore, CliAdapters, Clock, FileView, ProjectStore, SessionStore,
-    SettingsStore, SleepGate, TerminalHost, WorktreeManager,
+    SettingsStore, SleepGate, StatusCommandRunner, TerminalHost, WorktreeManager,
 };
 use agent_application::common::session_ender::SessionEnder;
 use agent_application::common::session_launcher::{LauncherServices, SessionLauncher};
+use agent_application::common::sign_in_check::SIGN_IN_TIMEOUT;
 use agent_application::queries::file_view::FileViewHandler;
 use agent_application::queries::get_office_additions::GetOfficeAdditionsHandler;
 use agent_application::queries::get_settings::GetSettingsHandler;
@@ -48,8 +49,8 @@ use audit_presentation::AuditHandlers;
 
 use super::{ServerLog, StorageAlerts, TerminalServices};
 use crate::bridges::{
-    ActionRecorderBridge, AgentCalls, IdleSleepGate, SavedOutputs, StatusOrder, StoppingFlag,
-    SystemClock, TaskOrder, TerminalHostBridge,
+    ActionRecorderBridge, AgentCalls, IdleSleepGate, SavedOutputs, SignInWatch,
+    StatusCommandBridge, StatusOrder, StoppingFlag, SystemClock, TaskOrder, TerminalHostBridge,
 };
 
 /// The agent and audit modules, wired: the use cases behind their handlers,
@@ -88,6 +89,8 @@ pub struct AgentServices {
     /// The settings as the use cases read them; the idle sleep task reads
     /// the idle time here on every round.
     pub settings: Arc<dyn SettingsStore>,
+    /// Runs a start's sign-in check before the status order (0019 D13).
+    pub sign_in_checks: SessionLauncher,
 }
 
 /// The stores and services that the use cases share.
@@ -100,6 +103,7 @@ struct Wiring {
     adapters: Arc<dyn CliAdapters>,
     clock: Arc<dyn Clock>,
     terminals: Arc<dyn TerminalHost>,
+    status_commands: Arc<dyn StatusCommandRunner>,
     journal: ActionJournal,
     alerts: StorageAlerts,
     worktrees: Arc<dyn WorktreeManager>,
@@ -142,8 +146,16 @@ pub fn build_agent_services(
                 log.clone(),
                 agent_calls,
             )
-            .with_person_input(terminal.person_input.clone()),
+            .with_person_input(terminal.person_input.clone())
+            .with_sign_in_watch(SignInWatch {
+                runtime: Arc::clone(&terminal.runtime),
+                person_input: terminal.person_input.clone(),
+                ends: terminal.sign_in_ends.clone(),
+                timing: terminal.sign_in_timing,
+                log: log.clone(),
+            }),
         ),
+        status_commands: Arc::new(StatusCommandBridge::new(terminal.launcher.clone())),
         journal: ActionJournal::new(recorder, Arc::clone(&clock)),
         alerts: alerts.clone(),
         clock,
@@ -157,6 +169,7 @@ pub fn build_agent_services(
         office_actions: ListOfficeActionsHandler::new(action_log),
         record_action,
         agent_reader: ListAgentsHandler::new(Arc::clone(&wiring.agents)),
+        sign_in_checks: launcher_of(&wiring),
         change_status: ChangeAgentStatusHandler::new(Arc::clone(&wiring.agents)),
         end_session: EndSessionHandler::new(
             Arc::clone(&wiring.sessions),
@@ -190,6 +203,8 @@ fn launcher_of(wiring: &Wiring) -> SessionLauncher {
             adapters: Arc::clone(&wiring.adapters),
             clock: Arc::clone(&wiring.clock),
             failures: Arc::new(wiring.alerts.clone()),
+            status_commands: Arc::clone(&wiring.status_commands),
+            sign_in_timeout: SIGN_IN_TIMEOUT,
         },
     )
 }

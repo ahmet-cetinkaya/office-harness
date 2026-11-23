@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::common::models::{SessionCommand, SessionPlan, TrackedSession, TrackingRequest};
+use crate::common::models::{SessionCommand, SessionPlan, SignIn, TrackedSession, TrackingRequest};
 
 /// Follows a started CLI until its own session id is known.
 pub trait SessionTracking: Send {
@@ -35,6 +35,13 @@ pub trait CliAdapter: Send + Sync {
         _request: &TrackingRequest<'_>,
     ) -> Option<Box<dyn SessionTracking>> {
         None
+    }
+
+    /// How the office tells whether the CLI is signed in (0019). The
+    /// default knows no status command and no sign-in screen, so a start
+    /// works as before (0019 PB-2).
+    fn sign_in(&self) -> SignIn {
+        SignIn::default()
     }
 }
 

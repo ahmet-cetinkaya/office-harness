@@ -21,6 +21,8 @@ struct TerminalInput {
     /// The run into which the office typed text without Enter that waits
     /// for the person: a startup prompt or an unsubmitted directive.
     pending_office_text: Option<RunId>,
+    /// When the office last typed a directive in (0019 A5).
+    last_directive: Option<Instant>,
 }
 
 /// What people type into each terminal, as far as directives need it: when
@@ -52,6 +54,31 @@ impl PersonInput {
         terminal.last_input = Some(at);
         terminal.draft.feed(bytes);
         terminal.pending_office_text = None;
+    }
+
+    /// True when a person's input reached the agent's terminal at or after
+    /// `since` (0019 A5).
+    #[must_use]
+    pub fn typed_since(&self, agent_id: AgentId, since: Instant) -> bool {
+        self.locked()
+            .get(&agent_id)
+            .and_then(|terminal| terminal.last_input)
+            .is_some_and(|at| at >= since)
+    }
+
+    /// The office is about to type a directive into the agent's terminal.
+    pub fn directive_typed(&self, agent_id: AgentId) {
+        self.locked().entry(agent_id).or_default().last_directive = Some(Instant::now());
+    }
+
+    /// True when the office typed a directive into the agent's terminal at
+    /// or after `since` (0019 A5).
+    #[must_use]
+    pub fn directive_typed_since(&self, agent_id: AgentId, since: Instant) -> bool {
+        self.locked()
+            .get(&agent_id)
+            .and_then(|terminal| terminal.last_directive)
+            .is_some_and(|at| at >= since)
     }
 
     /// A new session starts with an empty input line.

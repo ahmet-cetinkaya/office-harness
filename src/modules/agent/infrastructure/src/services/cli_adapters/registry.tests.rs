@@ -135,3 +135,50 @@ fn the_adapter_follows_the_program_name_without_folder_extension_or_case() {
     }
     assert_eq!(new_session_arguments("claude-wrapper", None), ["--flag"]);
 }
+
+#[test]
+fn claude_and_codex_have_a_status_command_and_gemini_only_screen_words() {
+    let claude = registry().for_program("claude").sign_in();
+    let status = claude.status.expect("claude status");
+    assert_eq!(status.arguments, ["auth", "status", "--text"]);
+    assert_eq!(status.not_signed_in_words, ["not logged in"]);
+    assert_eq!(claude.cli, "claude");
+
+    let codex = registry().for_program("/usr/bin/codex").sign_in();
+    assert_eq!(
+        codex.status.expect("codex status").arguments,
+        ["login", "status"]
+    );
+    assert_eq!(
+        codex.screen_words,
+        ["sign in with chatgpt", "provide your own api key"]
+    );
+
+    let gemini = registry().for_program("gemini").sign_in();
+    assert_eq!(gemini.status, None);
+    assert!(
+        gemini
+            .screen_words
+            .contains(&"how would you like to authenticate")
+    );
+
+    for program in ["opencode", "bash"] {
+        assert_eq!(
+            registry().for_program(program).sign_in(),
+            agent_application::common::models::SignIn::default()
+        );
+    }
+}
+
+#[test]
+fn every_word_is_lower_case_so_a_case_free_match_finds_it() {
+    for program in ["claude", "codex", "gemini"] {
+        let sign_in = registry().for_program(program).sign_in();
+        let status_words = sign_in
+            .status
+            .map_or(&[][..], |status| status.not_signed_in_words);
+        for word in sign_in.screen_words.iter().chain(status_words) {
+            assert_eq!(*word, word.to_lowercase(), "{program}: {word}");
+        }
+    }
+}

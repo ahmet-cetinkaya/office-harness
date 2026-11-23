@@ -89,7 +89,7 @@ See `specs/changes/archive/0007-hold-and-limits/contracts/hold-protocol.md`.
 
 - `event` may also be `"report"`: an agent sent a report for the person. Its `detail` is the report's kind. While an unread `report` notification of the agent exists, a further report adds none.
 
-See `specs/changes/0015-upward-reports/contracts/report-protocol.md`.
+See `specs/changes/archive/0015-upward-reports/contracts/report-protocol.md`.
 
 ## Changed validation: `settings.set` with key `focus_shortcut`
 
