@@ -208,6 +208,11 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - **T4, the old boolean.** `after_unclean_stop` is now `true` only with `may_run`. `server_crash` therefore asserts per agent (the ignoring CLI gives `{ended: 1}`, the others `null`) in place of three warnings.
 - **T4, limits of the evidence.** The integration test (`server_sweep.rs`, Linux) covers `ended`, `not readable`, `null` after a hang-up, `no stored process`, and `helper limit` (the flag is set in the database, not by 200 real helpers; T2 tests the cap itself). `could not end` and `not swept` are unit and repository tests.
 
+- **T5, one OS notification per server start (FR-006).** The server keeps one `leftover_kept` row per agent, because a notification row names one agent; the list and Needs you show each row. The desktop holds back only the OS notification and sends one, naming every such agent, when `office.sweep` says `done` (the server writes all rows before it), or 1.5 s after the first row for a client that joined during the sweep.
+- **T5, sweep state.** The panel reads `sweep.state` on connect and on `client.resync`, then follows `office.sweep`. The `role="status"` region stays mounted, so the start and the end of the sweep are announced; the end text is for screen readers only. A failed read (an older server) shows nothing.
+- **T5, marks.** `ended` shows "Ended N processes left from the last run" (singular for 1) and does not gate Confirm. `may_run` shows the 0013 mark with the reason after a colon and gates Confirm. An older server that sends only `after_unclean_stop: true` reads as `may_run`.
+- **T5, detail text.** The action record escapes every control and format character (`\p{Cc}`, `\p{Cf}`, which include the bidirectional controls) in any detail as `\u{..}` and renders text only. The new action texts start with a capital, as the existing ones do.
+
 ## Review log
 
 r1 (Efe, fa44fb0): M1 to M3, L1, L2 resolved as below. r2 (Efe, 350ff07): PASS for coding; N1 (macOS FR-011 residual under A10) is checked in the code review.

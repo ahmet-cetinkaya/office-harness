@@ -4,6 +4,7 @@
   import Button from "$shared/ui/button.svelte";
   import Dialog from "$shared/ui/dialog.svelte";
   import FailureMessage from "$shared/ui/failure-message.svelte";
+  import { SWEEP_RUNNING_TEXT } from "../../sweep";
   import {
     ACKNOWLEDGEMENT_LABEL,
     ACKNOWLEDGEMENT_NEEDED_TEXT,
@@ -55,6 +56,8 @@
 <Dialog title="Resume interrupted agents" {onclose} {initialFocus}>
   {#if snapshot.phase === "loading"}
     <p role="status" class="text-neutral-700">Loading the resume plan.</p>
+  {:else if snapshot.phase === "sweeping"}
+    <p role="status" class="text-neutral-700">{SWEEP_RUNNING_TEXT}</p>
   {:else if snapshot.phase === "failed"}
     <FailureMessage
       lead="The resume plan did not load."

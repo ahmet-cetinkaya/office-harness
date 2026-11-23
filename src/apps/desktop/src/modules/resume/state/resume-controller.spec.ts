@@ -164,3 +164,41 @@ describe("resume controller", () => {
     expect(controller.snapshot.isStarting).toBe(false);
   });
 });
+
+describe("resume controller during a sweep (0017, FR-007)", () => {
+  test("a plan read while the sweep runs waits, and loads the plan on done", async () => {
+    let isSweeping = true;
+    const fake = fakeClient((kind) =>
+      kind === "resume.plan"
+        ? isSweeping
+          ? { sweeping: true, agents: [] }
+          : PLAN
+        : undefined,
+    );
+    const controller = createResumeController(fake.client);
+    await controller.watch();
+    await controller.open();
+    expect(controller.snapshot.phase).toBe("sweeping");
+    expect(controller.snapshot.entries).toEqual([]);
+
+    isSweeping = false;
+    fake.push({ type: "office.sweep", state: "done" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(controller.snapshot.phase).toBe("choosing");
+    expect(controller.snapshot.entries).toHaveLength(3);
+  });
+
+  test("a running event does not reload, and a done event outside the wait does nothing", async () => {
+    const { controller, requests, push } = await opened();
+    const reads = () => requests.filter((r) => r.kind === "resume.plan").length;
+    expect(reads()).toBe(1);
+
+    push({ type: "office.sweep", state: "running" });
+    push({ type: "office.sweep", state: "done" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reads()).toBe(1);
+    expect(controller.snapshot.phase).toBe("choosing");
+  });
+});
