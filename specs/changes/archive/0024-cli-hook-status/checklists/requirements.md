@@ -1,6 +1,6 @@
 # Requirements checklist: 0024-cli-hook-status
 
-Spec: `specs/changes/0024-cli-hook-status/SPEC.md` · Status: draft · Date: 2026-11-23 · Result: 16 of 16 items pass after round 3. No `[NEEDS CLARIFICATION]` marker. References to 0001, 0003, 0008, 0012, 0018, 0019, 0020, and 0022 were checked against the specs on this branch.
+Spec: `specs/changes/archive/0024-cli-hook-status/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass after round 3. No `[NEEDS CLARIFICATION]` marker. References to 0001, 0003, 0008, 0012, 0018, 0019, 0020, and 0022 were checked against the specs on this branch.
 
 ## Content quality
 

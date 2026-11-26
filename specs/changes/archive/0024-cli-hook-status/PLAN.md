@@ -1,6 +1,6 @@
 ---
-status: in-progress
-spec: specs/changes/0024-cli-hook-status/SPEC.md
+status: completed
+spec: specs/changes/archive/0024-cli-hook-status/SPEC.md
 commits: per-task
 ---
 
