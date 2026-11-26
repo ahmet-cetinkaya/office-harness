@@ -7,7 +7,8 @@ use access_application::commands::authenticate_connection::AuthenticationHandler
 use access_application::commands::regenerate_token::RegenerateTokenHandler;
 use access_application::common::errors::AccessError;
 use access_infrastructure::services::{
-    FileTokenStore, HmacProofScheme, MemoryAgentCallStore, RandomNonceSource, random_decoy_token,
+    FileTokenStore, HmacProofScheme, MemoryAgentCallStore, MemoryHookSecretStore,
+    RandomNonceSource, random_decoy_token,
 };
 use access_presentation::AccessHandlers;
 
@@ -21,6 +22,8 @@ pub struct AccessServices {
     /// The call credentials of the running agents (0002), in memory only.
     pub agent_calls: Arc<MemoryAgentCallStore>,
     pub agent_authentication: AgentAuthenticationHandler,
+    /// The status-hook secrets of the running sessions (0024), in memory only.
+    pub hook_secrets: Arc<MemoryHookSecretStore>,
     pub handlers: AccessHandlers,
 }
 
@@ -41,12 +44,14 @@ pub fn build_access_services(config: &Config) -> Result<AccessServices, AccessEr
         Arc::new(HmacProofScheme),
         random_decoy_token()?,
     );
+    let hook_secrets = Arc::new(MemoryHookSecretStore::new()?);
     let handlers = AccessHandlers::new(RegenerateTokenHandler::new(token_store.clone()));
     Ok(AccessServices {
         token_store,
         authentication,
         agent_calls,
         agent_authentication,
+        hook_secrets,
         handlers,
     })
 }

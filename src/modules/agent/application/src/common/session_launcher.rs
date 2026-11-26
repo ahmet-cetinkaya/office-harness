@@ -18,8 +18,8 @@ use crate::common::interfaces::{
 use crate::common::lookup::require_agent;
 use crate::common::lookup::start_folder;
 use crate::common::models::{
-    PrepareLaunch, PreparedLaunch, SessionCommand, SessionPlan, StartTerminal, TrackedSession,
-    TrackingRequest,
+    PrepareLaunch, PreparedLaunch, SessionCommand, SessionPlan, StartTerminal, StatusHooksRequest,
+    TrackedSession, TrackingRequest,
 };
 use crate::common::session_process_recorder::SessionProcessRecorder;
 use crate::common::sign_in_checker::{SignInChecker, environment_pairs};
@@ -288,7 +288,8 @@ impl SessionLauncher {
     ) -> Result<Prepared, PrepareError> {
         let (program, fixed_arguments) =
             split_command(&agent.command).map_err(PrepareError::Refused)?;
-        let launch = self
+        let adapter = adapter_of(&*self.adapters, &agent.command).map_err(PrepareError::Refused)?;
+        let mut launch = self
             .terminals
             .prepare(&PrepareLaunch {
                 program: program.clone(),
@@ -296,12 +297,12 @@ impl SessionLauncher {
                 environment_additions: environment_pairs(additions),
                 agent_id: agent.id,
                 session_id,
+                status_hooks: status_hooks_request(&*adapter, &fixed_arguments, additions.flags()),
             })
             .map_err(|error| match error {
                 TerminalHostError::Failed(text) => PrepareError::NotStartable(text),
                 other => PrepareError::Refused(host_failure(other)),
             })?;
-        let adapter = adapter_of(&*self.adapters, &agent.command).map_err(PrepareError::Refused)?;
         let proposed_cli_session_id = session_id.to_string();
         let plan = SessionPlan {
             fixed_arguments: &fixed_arguments,
@@ -309,7 +310,7 @@ impl SessionLauncher {
             startup_prompt: additions.startup_prompt(),
             proposed_cli_session_id: &proposed_cli_session_id,
         };
-        let command = match kind {
+        let mut command = match kind {
             LaunchKind::NewTask => adapter.new_session(&plan),
             LaunchKind::Continue { cli_session_id, .. } => adapter
                 .continue_session(&plan, cli_session_id)
@@ -319,15 +320,44 @@ impl SessionLauncher {
                     ))
                 })?,
         };
-        self.terminals
-            .validate_arguments(&launch, &command.arguments)
-            .map_err(|error| PrepareError::Refused(host_failure(error)))?;
+        self.validate_with_hooks(&mut launch, &mut command)?;
         Ok(Prepared {
             folder: folder.to_path_buf(),
             launch,
             command,
             adapter,
         })
+    }
+
+    /// Adds the hook arguments of 0024 to the command and checks the whole
+    /// line. A line that the host refuses only because of them (a settings
+    /// path that a batch script cannot receive safely) starts without them,
+    /// as a session with estimated status, instead of refusing the start.
+    fn validate_with_hooks(
+        &self,
+        launch: &mut PreparedLaunch,
+        command: &mut SessionCommand,
+    ) -> Result<(), PrepareError> {
+        let own_length = command.arguments.len();
+        command
+            .arguments
+            .extend(launch.hook_arguments.iter().cloned());
+        let refused = match self
+            .terminals
+            .validate_arguments(launch, &command.arguments)
+        {
+            Ok(()) => return Ok(()),
+            Err(error) => error,
+        };
+        if launch.hook_arguments.is_empty() {
+            return Err(PrepareError::Refused(host_failure(refused)));
+        }
+        command.arguments.truncate(own_length);
+        launch.hook_arguments.clear();
+        launch.hook_note = Some(HOOKS_REFUSED_NOTE.to_owned());
+        self.terminals
+            .validate_arguments(launch, &command.arguments)
+            .map_err(|error| PrepareError::Refused(host_failure(error)))
     }
 
     fn begin_terminal(
@@ -348,6 +378,8 @@ impl SessionLauncher {
             working_folder: prepared.folder.clone(),
             environment: prepared.launch.environment.clone(),
             typed_input: prepared.command.typed_input.clone(),
+            has_hook_arguments: !prepared.launch.hook_arguments.is_empty(),
+            hook_note: prepared.launch.hook_note.clone(),
             sign_in: prepared.adapter.sign_in(),
         });
         if let Err(error) = started {
@@ -493,6 +525,41 @@ enum PrepareError {
     NotStartable(String),
     /// The request is refused and nothing changes.
     Refused(ApplicationError),
+}
+
+/// The note that tells the host why a session gets no office settings file
+/// of its own (0024/FR-004): the agent's command or its office additions
+/// pass a settings option already.
+const OWN_SETTINGS_OPTION_NOTE: &str =
+    "the agent's command or office additions pass their own settings option";
+
+/// The note when the host refuses the command line only because of the
+/// settings path of the office (a Windows batch script cannot receive some
+/// characters of a folder name safely).
+pub(crate) const HOOKS_REFUSED_NOTE: &str =
+    "the settings file path of the office cannot be passed to this command safely";
+
+const SETTINGS_OPTION: &str = "--settings";
+
+fn passes_settings_option(arguments: &[String]) -> bool {
+    arguments.iter().any(|argument| {
+        argument == SETTINGS_OPTION || argument.starts_with(&format!("{SETTINGS_OPTION}="))
+    })
+}
+
+/// Whether a session of the adapter's CLI wants the office settings file.
+fn status_hooks_request(
+    adapter: &dyn CliAdapter,
+    fixed_arguments: &[String],
+    flags: &[String],
+) -> StatusHooksRequest {
+    if !adapter.status_hooks() {
+        return StatusHooksRequest::Unsupported;
+    }
+    if passes_settings_option(fixed_arguments) || passes_settings_option(flags) {
+        return StatusHooksRequest::Refused(OWN_SETTINGS_OPTION_NOTE.to_owned());
+    }
+    StatusHooksRequest::Wanted
 }
 
 fn host_failure(error: TerminalHostError) -> ApplicationError {

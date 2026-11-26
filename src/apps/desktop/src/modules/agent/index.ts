@@ -21,7 +21,9 @@ export type {
 export {
   creatorText,
   isActive,
+  listStatusText,
   shownStatusText,
+  statusSourceText,
   statusText,
 } from "./models/agent";
 export { confirmationText } from "./services/confirmations";

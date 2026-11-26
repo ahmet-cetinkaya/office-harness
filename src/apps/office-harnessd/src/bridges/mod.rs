@@ -9,6 +9,8 @@ mod agent_line_bridge;
 mod agent_status_bridge;
 mod directive_bridges;
 mod hold_bridges;
+mod hook_sessions;
+mod hook_status_bridge;
 mod idle_sleep_gate;
 mod needs_you_bridge;
 mod notification_bridge;
@@ -27,6 +29,7 @@ mod schedule_time;
 mod secret_bridges;
 mod sign_in_watch;
 mod status_command_bridge;
+mod status_hook_files;
 mod subtree_requests;
 mod system_clock;
 mod temp_ender;
@@ -51,6 +54,11 @@ pub use directive_bridges::{
     TaskOrder,
 };
 pub use hold_bridges::{HoldJournalBridge, HoldNotifierBridge};
+pub use hook_sessions::{
+    DETAIL_PERMISSION_ASKED, DETAIL_TURN_FAILED, DETAIL_TURN_STOPPED, HookSessions, HookState,
+    StatusSource,
+};
+pub use hook_status_bridge::HookStatusBridge;
 pub use idle_sleep_gate::{GateInputs, IdleRule, IdleSleepGate, SleepingAgents};
 pub use needs_you_bridge::{AgentNames, NeedsYouBridge};
 pub use notification_bridge::NotificationBridge;
@@ -68,6 +76,7 @@ pub use schedule_time::{ScheduleTime, SharedScheduleTime, SystemScheduleTime};
 pub use secret_bridges::{AgentDirectoryBridge, SecretJournal};
 pub use sign_in_watch::{SignInEnds, SignInWatch, SignInWatchTiming};
 pub use status_command_bridge::StatusCommandBridge;
+pub use status_hook_files::{HOOK_SECRET_VARIABLE, HookPlan, SETTINGS_OPTION, StatusHookFiles};
 pub use subtree_requests::{
     SubtreeRequestsBridge, delete_worktrees, subtree_worktrees, worktree_report,
 };

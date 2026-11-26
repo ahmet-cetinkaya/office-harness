@@ -23,6 +23,7 @@ use tokio::sync::broadcast::error::RecvError;
 use wire::Event;
 
 use super::NeedsYouBridge;
+use super::hook_sessions::{DETAIL_PERMISSION_ASKED, DETAIL_TURN_FAILED, DETAIL_TURN_STOPPED};
 use super::terminal_events::AgentTerminalEvent;
 use super::wait_tracker::{Change, StatusChange, WaitTracker};
 use crate::bootstrap::{ServerLog, StorageAlerts};
@@ -229,10 +230,22 @@ impl NotificationBridge {
         event: NotificationEvent,
         frame_detail: Option<String>,
     ) -> Option<String> {
-        if event == NotificationEvent::WaitingForInput {
-            return Some(self.quiet_period_ms.to_string());
+        match event {
+            NotificationEvent::WaitingForInput => Some(
+                frame_detail
+                    .filter(|word| word == DETAIL_TURN_STOPPED || word == DETAIL_TURN_FAILED)
+                    .unwrap_or_else(|| self.quiet_period_ms.to_string()),
+            ),
+            NotificationEvent::PermissionAsked => None,
+            _ => frame_detail,
         }
-        frame_detail
+    }
+
+    /// Records that an exact session asked for permission while its status
+    /// already showed `waiting for input`, so that no status frame carries
+    /// the event (0024/FR-013).
+    pub fn record_permission_ask(&self, agent_id: AgentId) {
+        self.record(agent_id, NotificationEvent::PermissionAsked, None, None);
     }
 
     /// Records a bell of the terminal's current run; an earlier run's bell is
@@ -587,6 +600,9 @@ impl StatusFrame {
         match self.name.as_str() {
             "exited" => Some(NotificationEvent::Exited),
             "failed" => Some(NotificationEvent::Failed),
+            "waiting_for_input" if self.detail.as_deref() == Some(DETAIL_PERMISSION_ASKED) => {
+                Some(NotificationEvent::PermissionAsked)
+            }
             "waiting_for_input" => Some(NotificationEvent::WaitingForInput),
             _ => None,
         }
@@ -605,6 +621,7 @@ const fn attention_kind_of(event: NotificationEvent) -> Option<AttentionKind> {
         NotificationEvent::ResumeHold => AttentionKind::ResumeHold,
         NotificationEvent::LeftoverKept => AttentionKind::LeftoverKept,
         NotificationEvent::Report => AttentionKind::Report,
+        NotificationEvent::PermissionAsked => AttentionKind::PermissionAsked,
         NotificationEvent::TempEnded | NotificationEvent::Schedule => return None,
     })
 }

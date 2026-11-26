@@ -541,6 +541,7 @@ pub struct FakeTerminals {
     stopped: Mutex<Vec<(AgentId, Duration)>>,
     unstartable: Mutex<Vec<String>>,
     batch_programs: Mutex<Vec<String>>,
+    hook_arguments: Mutex<Vec<String>>,
     ended_on_its_own: Mutex<bool>,
     ignores_stop_requests: Mutex<bool>,
     refuses_stop_requests: Mutex<bool>,
@@ -590,6 +591,12 @@ impl FakeTerminals {
     pub fn make_batch_script(&self, program: &str) {
         locked(&self.batch_programs).push(program.to_owned());
     }
+
+    /// From now on a prepared launch names these hook arguments, as for a
+    /// CLI that gets the office settings file.
+    pub fn give_hook_arguments(&self, arguments: &[&str]) {
+        *locked(&self.hook_arguments) = arguments.iter().map(|word| (*word).to_owned()).collect();
+    }
 }
 
 impl TerminalHost for FakeTerminals {
@@ -605,6 +612,8 @@ impl TerminalHost for FakeTerminals {
             program: request.program.clone(),
             environment: request.environment_additions.clone(),
             is_batch_script: locked(&self.batch_programs).contains(&request.program),
+            hook_arguments: locked(&self.hook_arguments).clone(),
+            hook_note: None,
         })
     }
 

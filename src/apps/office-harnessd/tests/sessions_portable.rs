@@ -86,7 +86,7 @@ async fn flags_env_and_the_startup_prompt_reach_the_child_at_the_next_session_an
     let records = wait_for_records(office.records_path(), 1).await;
     let cli_id = first["cli_session_id"].as_str().expect("cli id");
     assert_eq!(
-        records[0].arguments,
+        support::without_hook_settings(&records[0].arguments),
         ["--first", "--session-id", cli_id],
         "the prompt is typed in, never an argument"
     );
@@ -121,7 +121,7 @@ async fn flags_env_and_the_startup_prompt_reach_the_child_at_the_next_session_an
     let records = wait_for_records(office.records_path(), 2).await;
     let next_id = next["result"]["cli_session_id"].as_str().expect("cli id");
     assert_eq!(
-        records[1].arguments,
+        support::without_hook_settings(&records[1].arguments),
         ["--second", "--session-id", next_id],
         "the prompt is typed in, never an argument"
     );

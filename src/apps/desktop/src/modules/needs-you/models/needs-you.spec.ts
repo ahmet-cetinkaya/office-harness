@@ -46,6 +46,16 @@ describe("needs-you items", () => {
 });
 
 describe("event text", () => {
+  test("an exact session says its turn ended, or that it asks permission", () => {
+    const waiting = (detail: string) =>
+      eventText(item({ kind: "waiting_for_input", detail }));
+    expect(waiting("turn_stopped")).toBe("finished its turn");
+    expect(waiting("turn_failed")).toBe("its turn ended with an error");
+    expect(eventText(item({ kind: "permission_asked" }))).toBe(
+      "asks permission",
+    );
+  });
+
   test("a waiting agent shows the quiet period in seconds", () => {
     expect(eventText(item({ kind: "waiting_for_input", detail: "5000" }))).toBe(
       "quiet for 5 s",

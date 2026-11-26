@@ -749,3 +749,58 @@ fn a_failed_task_store_is_an_alert_and_publishes_nothing() {
     let alert = alert_feed.try_recv().expect("alert");
     assert!(alert.message.contains("the agent store cannot be written"));
 }
+
+/// A member of an exact session whose reports say `kinds`.
+fn readiness_after_reports(kinds: &[crate::server::HookEventKind]) -> Readiness {
+    use crate::bridges::HookSessions;
+    use crate::server::HookReport;
+    use terminal_application::common::models::RunId;
+
+    let runtime = RecordingRuntime::idle(AgentId::generate());
+    let agent_id = runtime.running_for;
+    let hooks = HookSessions::default();
+    hooks.session_started(agent_id, Some(RunId(1)), None);
+    for kind in kinds {
+        let _ = hooks.apply_report(
+            &HookReport {
+                agent_id,
+                session: "s".to_owned(),
+                kind: *kind,
+                from_helper: false,
+            },
+            RunId(1),
+        );
+    }
+    let store = Arc::new(OneAgent(agent_with_status(
+        agent_id,
+        "Ana",
+        AgentStatus::WaitingForInput,
+    )));
+    DirectiveTargetBridge::new(store, Arc::new(runtime), PersonInput::default())
+        .with_hook_sessions(hooks)
+        .readiness(agent_id)
+        .expect("readable store")
+}
+
+#[test]
+fn a_permission_ask_or_a_compaction_keeps_a_directive_in_its_queue() {
+    use crate::server::HookEventKind::{
+        CompactionEnded, CompactionStarted, PermissionAsked, TurnStarted, TurnStopped,
+    };
+    assert_eq!(
+        readiness_after_reports(&[TurnStarted, PermissionAsked]),
+        Readiness::Busy
+    );
+    assert_eq!(
+        readiness_after_reports(&[CompactionStarted]),
+        Readiness::Busy
+    );
+    assert_eq!(
+        readiness_after_reports(&[TurnStarted, TurnStopped]),
+        Readiness::Ready
+    );
+    assert_eq!(
+        readiness_after_reports(&[CompactionStarted, CompactionEnded]),
+        Readiness::Ready
+    );
+}

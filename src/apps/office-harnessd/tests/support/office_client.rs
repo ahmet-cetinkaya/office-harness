@@ -354,9 +354,28 @@ pub fn records_of(records: &Path) -> Vec<Record> {
 }
 
 pub async fn wait_for_records(records: &Path, count: usize) -> Vec<Record> {
-    wait_for("the fake CLI records", || {
+    let deadline = Instant::now() + WAIT_LIMIT;
+    loop {
         let found = records_of(records);
-        (found.len() >= count).then_some(found)
-    })
-    .await
+        if found.len() >= count {
+            return found;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for {count} fake CLI records; the folder holds {:?}",
+            record_folder_names(records)
+        );
+        tokio::time::sleep(POLL).await;
+    }
+}
+
+/// The file names in the records folder, so a timeout says how far the fake
+/// script got.
+fn record_folder_names(records: &Path) -> Vec<String> {
+    std::fs::read_dir(records)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect()
 }

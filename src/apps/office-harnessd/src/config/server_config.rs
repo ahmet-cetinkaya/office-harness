@@ -19,6 +19,7 @@ const SECRET_KEY_FILE: &str = "secrets.key";
 const SECRET_OFFICE_ID_FILE: &str = "secret-office-id";
 const OUTPUT_FOLDER: &str = "output";
 const WORKTREES_FOLDER: &str = "worktrees";
+const HOOKS_FOLDER: &str = "hooks";
 
 /// Where the server keeps its state.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,6 +96,13 @@ impl Config {
     #[must_use]
     pub fn worktrees_folder_path(&self) -> PathBuf {
         self.data_folder.join(WORKTREES_FOLDER)
+    }
+
+    /// The office settings file of each running `claude` session lives
+    /// here, outside every CLI folder (0024/FR-002).
+    #[must_use]
+    pub fn hooks_folder_path(&self) -> PathBuf {
+        self.data_folder.join(HOOKS_FOLDER)
     }
 
     #[must_use]

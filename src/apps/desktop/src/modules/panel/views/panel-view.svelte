@@ -52,6 +52,7 @@
   import { IdleSleepDialog } from "../../sleep";
   import { SchedulesDialog } from "../../schedule";
   import { TempsDialog } from "../../temps";
+  import { HookStatusDialog } from "../../hook-status";
   import { WorktreeDependenciesDialog } from "../../worktree-dependencies";
   import { SaveAsTemplateDialog, TemplatesView } from "../../template";
   import {
@@ -194,6 +195,7 @@
   /** The schedule that a notification named, or null: its row scrolls into view. */
   let highlightedScheduleName = $state<string | null>(null);
   let isEditingWorktreeDependencies = $state(false);
+  let isEditingHookStatus = $state(false);
   let isSwitchingAgent = $state(false);
   let isShowingNotifications = $state(false);
   let isShowingTemplates = $state(false);
@@ -484,6 +486,12 @@
         >
           Worktree dependencies
         </Button>
+        <Button
+          variant="secondary"
+          onclick={() => (isEditingHookStatus = true)}
+        >
+          Status from CLI hooks
+        </Button>
       </div>
     {/if}
   </header>
@@ -750,6 +758,12 @@
   <WorktreeDependenciesDialog
     controller={store.worktreeDependencies}
     onclose={() => (isEditingWorktreeDependencies = false)}
+  />
+{/if}
+{#if isEditingHookStatus}
+  <HookStatusDialog
+    controller={store.hookStatus}
+    onclose={() => (isEditingHookStatus = false)}
   />
 {/if}
 {#if isCreatingProject}

@@ -21,7 +21,8 @@ use terminal_presentation::handlers::TerminalHandlers;
 
 use super::StorageAlerts;
 use crate::bridges::{
-    PersonInput, SignInEnds, SignInWatchTiming, TerminalEvents, TerminalLauncher, WaitTracker,
+    HookSessions, PersonInput, SignInEnds, SignInWatchTiming, TerminalEvents, TerminalLauncher,
+    WaitTracker,
 };
 use crate::config::Config;
 
@@ -45,6 +46,9 @@ pub struct TerminalServices {
     pub file_view: Arc<dyn FileView>,
     /// What people type into each terminal, for the directive gate (0012).
     pub person_input: PersonInput,
+    /// What the reports of `claude` sessions say of each running session
+    /// (0024). It shares the wait tracker of `person_input`.
+    pub hook_sessions: HookSessions,
     /// The runs that the sign-in watch stopped, for the status bridge (0019).
     pub sign_in_ends: SignInEnds,
     pub sign_in_timing: SignInWatchTiming,
@@ -117,6 +121,7 @@ pub fn build_terminal_services(
         Arc::clone(&git),
         Arc::new(alerts.clone()),
     ));
+    let waits = WaitTracker::new(quiet_period);
     Ok(TerminalServices {
         handlers: Arc::new(TerminalHandlers::new(&runtime)),
         launcher: TerminalLauncher::new(runtime.clone(), login_environment, server_environment),
@@ -126,7 +131,8 @@ pub fn build_terminal_services(
         runtime,
         redactor,
         events,
-        person_input: PersonInput::default().with_wait_tracker(WaitTracker::new(quiet_period)),
+        person_input: PersonInput::default().with_wait_tracker(waits.clone()),
+        hook_sessions: HookSessions::new(waits),
         sign_in_ends: SignInEnds::default(),
         sign_in_timing: sign_in_watch,
     })

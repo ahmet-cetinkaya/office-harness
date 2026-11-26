@@ -279,5 +279,8 @@ async fn after_a_sigkill_only_a_cli_that_ignores_the_hangup_outlives_the_server_
         .expect("cli id");
     let started = wait_for_records(records.path(), 2).await;
     // The continued claude ends with the server's hang-up at cleanup.
-    assert_eq!(started[1].arguments, ["--resume", cli_id]);
+    assert_eq!(
+        support::without_hook_settings(&started[1].arguments),
+        ["--resume", cli_id]
+    );
 }
