@@ -46,6 +46,19 @@ fn a_success_and_a_failure_follow_the_contract_shape() {
 }
 
 #[test]
+fn a_failure_with_fields_carries_them_in_the_error_and_one_without_leaves_them_out() {
+    let fields = json!([{"field": "name", "rule": "blank"}]);
+    let with = Response::failure_with_fields(5, ErrorCode::Invalid, "bad", Some(fields.clone()));
+    assert_eq!(
+        parse(&with.encode()),
+        json!({"id": 5, "ok": false, "error": {"code": "invalid", "message": "bad", "fields": fields}})
+    );
+    let without = Response::failure_with_fields(6, ErrorCode::Invalid, "bad", None);
+    assert_eq!(without, Response::failure(6, ErrorCode::Invalid, "bad"));
+    assert!(parse(&without.encode())["error"].get("fields").is_none());
+}
+
+#[test]
 fn an_event_has_a_type_and_no_id() {
     let mut fields = Map::new();
     fields.insert("message".to_owned(), json!("disk full"));

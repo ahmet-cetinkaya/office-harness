@@ -58,6 +58,9 @@ pub struct NotificationBridge {
     /// `working` of such an agent is a change out of a wait, and a `working`
     /// that follows `starting` is not (0022 D5).
     waiting_agents: Arc<Mutex<HashSet<AgentId>>>,
+    /// The missed-runs notification of the minute that last had one, which a
+    /// later round in the same minute extends (0025/FR-006).
+    missed_notice: Arc<Mutex<Option<MissedNotice>>>,
     hub: EventHub,
     alerts: StorageAlerts,
     log: ServerLog,
@@ -91,6 +94,7 @@ impl NotificationBridge {
             needs_you,
             waits,
             waiting_agents: Arc::default(),
+            missed_notice: Arc::default(),
             hub,
             alerts,
             log,
@@ -272,7 +276,7 @@ impl NotificationBridge {
     /// and no Needs you item follows: nothing would ever clear it.
     pub fn record_temp_ended(&self, agent_id: AgentId, name: &str, reason: &str) {
         let created = self.create.handle(CreateNotification {
-            agent_id,
+            agent_id: Some(agent_id),
             agent_name: name.to_owned(),
             event: NotificationEvent::TempEnded,
             at: self.clock.now(),
@@ -282,6 +286,83 @@ impl NotificationBridge {
             Ok(Some(notification)) => self.hub.publish(&created_event(&notification)),
             Ok(None) => {}
             Err(error) => self.report(&error, agent_id, NotificationEvent::TempEnded),
+        }
+    }
+
+    /// Records that a run of a schedule did not deliver, or that the office
+    /// switched the schedule off (0025/FR-011): the schedule's name and the
+    /// target's id, and the text of the result as the detail. `target` is
+    /// `None` when the target is deleted, so the row names no agent that is
+    /// gone. It adds no Needs you item, because a schedule is no agent (0025
+    /// A6).
+    pub fn record_schedule_result(
+        &self,
+        schedule_name: &str,
+        target: Option<AgentId>,
+        detail: String,
+    ) {
+        let created = self.create.handle(CreateNotification {
+            agent_id: target,
+            agent_name: schedule_name.to_owned(),
+            event: NotificationEvent::Schedule,
+            at: self.clock.now(),
+            detail: Some(detail),
+        });
+        match created {
+            Ok(Some(notification)) => self.hub.publish(&created_event(&notification)),
+            Ok(None) => {}
+            Err(error) => match target {
+                Some(agent_id) => self.report(&error, agent_id, NotificationEvent::Schedule),
+                None => self.report_schedule_row(&error),
+            },
+        }
+    }
+
+    /// Records that `schedules` schedules missed runs at `at`. One
+    /// notification serves a whole minute: a call in a minute that already
+    /// has one adds its count to that row (0025/FR-006, D5).
+    pub fn record_missed_schedules(&self, schedules: u32, at: Timestamp) {
+        let minute = at.as_unix_millis().div_euclid(MILLIS_PER_MINUTE);
+        let mut notice = self
+            .missed_notice
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(open) = notice.as_mut().filter(|open| open.minute == minute) {
+            open.schedules += schedules;
+            open.notification.agent_name = missed_text(open.schedules);
+            match self.create.amend(&open.notification) {
+                Ok(amended) => self.hub.publish(&created_event(&amended)),
+                Err(error) => self.report_schedule_row(&error),
+            }
+            return;
+        }
+        let created = self.create.handle(CreateNotification {
+            agent_id: None,
+            agent_name: missed_text(schedules),
+            event: NotificationEvent::Schedule,
+            at,
+            detail: None,
+        });
+        match created {
+            Ok(Some(notification)) => {
+                self.hub.publish(&created_event(&notification));
+                *notice = Some(MissedNotice {
+                    minute,
+                    schedules,
+                    notification,
+                });
+            }
+            Ok(None) => {}
+            Err(error) => self.report_schedule_row(&error),
+        }
+    }
+
+    fn report_schedule_row(&self, error: &NotificationApplicationError) {
+        let message = format!("a schedule notification could not be stored: {error}");
+        if error.is_disk_failure() {
+            self.alerts.report_disk_failure(&message);
+        } else {
+            self.log.error(&message);
         }
     }
 
@@ -394,7 +475,7 @@ impl NotificationBridge {
             }
         };
         let created = self.create.handle(CreateNotification {
-            agent_id,
+            agent_id: Some(agent_id),
             agent_name: name,
             event,
             at,
@@ -448,6 +529,22 @@ impl NotificationBridge {
 }
 
 const DELETED_AGENT_NAME: &str = "deleted agent";
+const MILLIS_PER_MINUTE: i64 = 60_000;
+
+/// The missed-runs notification of one minute, with the number of schedules
+/// that it counts.
+struct MissedNotice {
+    minute: i64,
+    schedules: u32,
+    notification: Notification,
+}
+
+fn missed_text(schedules: u32) -> String {
+    match schedules {
+        1 => "1 schedule missed runs".to_owned(),
+        count => format!("{count} schedules missed runs"),
+    }
+}
 
 /// What one published `agent.status` frame says.
 struct StatusFrame {
@@ -508,7 +605,7 @@ const fn attention_kind_of(event: NotificationEvent) -> Option<AttentionKind> {
         NotificationEvent::ResumeHold => AttentionKind::ResumeHold,
         NotificationEvent::LeftoverKept => AttentionKind::LeftoverKept,
         NotificationEvent::Report => AttentionKind::Report,
-        NotificationEvent::TempEnded => return None,
+        NotificationEvent::TempEnded | NotificationEvent::Schedule => return None,
     })
 }
 

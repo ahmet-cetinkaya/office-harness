@@ -33,8 +33,8 @@ use super::{
 use crate::bridges::{
     AgentCreatorBridge, DirectiveJournalBridge, DirectiveReceiptBridge, DirectiveTargetBridge,
     DirectiveWriterBridge, HoldJournalBridge, HoldNotifierBridge, NeedsYouBridge,
-    NotificationBridge, PersonReportsBridge, RoleRequestsBridge, SettingsRateLimits, SteadyClock,
-    SubtreeRequestsBridge,
+    NotificationBridge, PersonReportsBridge, RoleRequestsBridge, ScheduleLabels,
+    ScheduledOutcomeRelay, SettingsRateLimits, SteadyClock, SubtreeRequestsBridge,
 };
 use crate::server::EventHub;
 
@@ -60,6 +60,11 @@ pub struct HierarchyServices {
     /// bridge joins under the same tree exclusion (0009 D5).
     pub store: Arc<dyn HierarchyStore>,
     pub creator: Arc<dyn AgentCreator>,
+    /// The names of schedules for the action record (0025 D7).
+    pub schedule_labels: ScheduleLabels,
+    /// Where the queue tells what became of a scheduled directive; the
+    /// schedule bridge connects it (0025 D10).
+    pub scheduled_outcomes: ScheduledOutcomeRelay,
 }
 
 /// One target bridge for directives and reports: both read whether the
@@ -152,10 +157,12 @@ pub fn build_hierarchy_services(
         place_agent: PlaceAgentHandler::new(Arc::clone(&store)),
         subtree: subtree(),
     }));
-    let directive_journal = Arc::new(DirectiveJournalBridge::new(
-        agent.journal.clone(),
-        alerts.clone(),
-    ));
+    let schedule_labels = ScheduleLabels::default();
+    let scheduled_outcomes = ScheduledOutcomeRelay::default();
+    let directive_journal = Arc::new(
+        DirectiveJournalBridge::new(agent.journal.clone(), alerts.clone())
+            .with_schedule_labels(schedule_labels.clone()),
+    );
     let agents: Arc<dyn AgentStore> = Arc::new(AgentRepository::new(connection.clone()));
     let holds = build_hold_service(
         connection,
@@ -186,7 +193,8 @@ pub fn build_hierarchy_services(
             clock: Arc::new(SteadyClock::default()),
         })
         .with_hold_guard(Arc::clone(&holds))
-        .with_report_journal(Arc::clone(&directive_journal) as Arc<dyn ReportJournal>),
+        .with_report_journal(Arc::clone(&directive_journal) as Arc<dyn ReportJournal>)
+        .with_scheduled_outcomes(Arc::new(scheduled_outcomes.clone())),
     );
     spawn_directive_delivery(&send_directive, events.clone());
     let send_report = Arc::new(
@@ -208,6 +216,8 @@ pub fn build_hierarchy_services(
         holds,
         store,
         creator,
+        schedule_labels,
+        scheduled_outcomes,
     })
 }
 

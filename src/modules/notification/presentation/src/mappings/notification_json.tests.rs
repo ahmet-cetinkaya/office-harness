@@ -13,7 +13,7 @@ fn stored(event: NotificationEvent, read_at: Option<Timestamp>) -> Notification 
     Notification {
         id: NotificationId::from_uuid_text("00000000-0000-0000-0000-000000000001")
             .expect("fixed id"),
-        agent_id: AgentId::from_u128(2),
+        agent_id: Some(AgentId::from_u128(2)),
         agent_name: "Ana".to_owned(),
         event,
         created_at: Timestamp::from_unix_millis(1_000),
@@ -114,4 +114,18 @@ fn an_item_with_a_report_sends_its_kind_text_and_time() {
         json["report"],
         serde_json::json!({"kind": "question", "text": "which branch?", "at": 2_000})
     );
+}
+
+#[test]
+fn a_notification_without_an_agent_has_a_null_agent_id_and_keeps_its_display_text() {
+    let mut row = stored(NotificationEvent::Schedule, None).with_detail("missed 2 runs".to_owned());
+    row.agent_id = None;
+    row.agent_name = "Nightly report".to_owned();
+
+    let body = notification_json(&row);
+
+    assert_eq!(body["agent_id"], Value::Null);
+    assert_eq!(body["agent_name"], "Nightly report");
+    assert_eq!(body["event"], "schedule");
+    assert_eq!(body["detail"], "missed 2 runs");
 }

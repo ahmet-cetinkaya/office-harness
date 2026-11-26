@@ -10,7 +10,8 @@ use crate::common::interfaces::NotificationStore;
 
 /// The event to record, with the agent name copied at creation.
 pub struct CreateNotification {
-    pub agent_id: AgentId,
+    /// See `Notification::agent_id`.
+    pub agent_id: Option<AgentId>,
     pub agent_name: String,
     pub event: NotificationEvent,
     pub at: Timestamp,
@@ -48,8 +49,9 @@ impl CreateNotificationHandler {
         &self,
         request: CreateNotification,
     ) -> Result<Option<Notification>, NotificationApplicationError> {
-        if COALESCED_EVENTS.contains(&request.event)
-            && self.has_unread(request.agent_id, request.event)?
+        if let Some(agent_id) = request.agent_id
+            && COALESCED_EVENTS.contains(&request.event)
+            && self.has_unread(agent_id, request.event)?
         {
             return Ok(None);
         }
@@ -62,6 +64,25 @@ impl CreateNotificationHandler {
         );
         notification.detail = request.detail;
         Ok(Some(self.store.insert(&notification)?))
+    }
+
+    /// Rewrites the text and times of a stored row, for a notification that
+    /// counts what it reports, such as the missed runs of one minute
+    /// (0025/FR-006). The row keeps the read time it has in the store, so a
+    /// row that the person read stays read. Returns the row as stored.
+    ///
+    /// # Errors
+    /// `Storage`.
+    pub fn amend(
+        &self,
+        notification: &Notification,
+    ) -> Result<Notification, NotificationApplicationError> {
+        let mut amended = notification.clone();
+        if let Some(stored) = self.store.find(notification.id)? {
+            amended.read_at = stored.read_at;
+        }
+        self.store.update(&amended)?;
+        Ok(amended)
     }
 
     fn has_unread(

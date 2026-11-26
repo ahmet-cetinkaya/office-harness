@@ -46,3 +46,16 @@ fn a_read_row_keeps_its_first_read_time() {
     let listed = store.list().expect("list");
     assert_eq!(listed[0].read_at, Some(NOW));
 }
+
+#[test]
+fn a_row_without_an_agent_is_read_by_id() {
+    let store = Arc::new(MemoryNotifications::default());
+    let read = handler(&store);
+    let mut orphan = stored_exited();
+    orphan.agent_id = None;
+    let stored = store.insert(&orphan).expect("insert");
+
+    read.handle(stored.id).expect("read");
+
+    assert_eq!(store.list().expect("list")[0].read_at, Some(NOW));
+}

@@ -8,7 +8,7 @@ use agent_domain::enums::AgentStatus;
 use agent_domain::value_objects::SessionId;
 use hierarchy_application::queries::tree::TreeQuery;
 use hierarchy_domain::HoldScope;
-use kernel::AgentId;
+use kernel::{Actor, AgentId};
 use serde_json::{Map, Value, json};
 use tokio::task::spawn_blocking;
 use wire::{ErrorCode, Request, Response};
@@ -113,7 +113,7 @@ impl ResumeGateway {
                     "agent_id must be an agent id".to_owned(),
                 )
             })?;
-        self.context.wake(agent_id).await
+        self.context.wake(agent_id, Actor::User).await
     }
 
     fn answer(&self, request: &Request) -> Result<(Value, Vec<AgentId>), Refusal> {

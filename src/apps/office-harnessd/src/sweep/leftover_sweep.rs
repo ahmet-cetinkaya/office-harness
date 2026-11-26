@@ -127,6 +127,7 @@ impl LeftoverSweep {
             action: ActionKind::EndLeftover,
             result: result.action_result(),
             detail: Some(entry_detail(&leftover.stored, result)),
+            actor_label: None,
             at: self.clock.now(),
         };
         match self

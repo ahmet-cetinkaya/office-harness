@@ -9,7 +9,7 @@ use wire::Event;
 pub fn notification_json(notification: &Notification) -> Value {
     json!({
         "id": notification.id.as_uuid_text(),
-        "agent_id": notification.agent_id.to_string(),
+        "agent_id": notification.agent_id.map(|agent_id| agent_id.to_string()),
         "agent_name": notification.agent_name,
         "event": notification.event.as_str(),
         "created_at": notification.created_at.as_unix_millis(),

@@ -19,6 +19,7 @@ fn record(agent_id: AgentId, action: ActionKind, result: ActionResult) -> Action
         result,
         at: Timestamp::from_unix_millis(1_700_000_000_000),
         detail: None,
+        actor_label: None,
     }
 }
 
@@ -90,6 +91,7 @@ fn office_record(action: ActionKind, at: i64) -> ActionRecord {
         result: ActionResult::Ok,
         at: Timestamp::from_unix_millis(at),
         detail: None,
+        actor_label: None,
     }
 }
 
@@ -204,6 +206,7 @@ fn the_nullable_target_migration_keeps_every_row() {
         ]
     );
     connection.execute_batch(SCRIPTS[2]).expect("0003");
+    connection.execute_batch(SCRIPTS[3]).expect("0004");
     let repository = ActionRepository::new(Arc::new(Mutex::new(connection)));
     let appended = repository
         .append(&office_record(ActionKind::Hold, 7))
@@ -227,6 +230,7 @@ fn a_detail_reads_back_and_an_entry_from_before_the_detail_column_reads_as_none(
         )
         .expect("insert");
     connection.execute_batch(SCRIPTS[2]).expect("0003");
+    connection.execute_batch(SCRIPTS[3]).expect("0004");
     let repository = ActionRepository::new(Arc::new(Mutex::new(connection)));
     let mut detailed = record(agent_id, ActionKind::Start, ActionResult::Ok);
     detailed.detail = Some("new session: the CLI cannot continue".to_owned());
@@ -236,4 +240,56 @@ fn a_detail_reads_back_and_an_entry_from_before_the_detail_column_reads_as_none(
 
     assert_eq!(listed[0].record.detail, None);
     assert_eq!(listed[1].record, detailed);
+}
+
+#[test]
+fn a_schedule_actor_survives_the_round_trip_as_schedule_text() {
+    let repository = repository();
+    let actor = Actor::Schedule(kernel::ScheduleId::from_u128(5));
+    let mut record = office_record(ActionKind::Hold, 1);
+    record.actor = actor;
+
+    let appended = repository.append(&record).expect("append");
+
+    assert_eq!(
+        actor_text(actor),
+        "schedule:00000000-0000-0000-0000-000000000005"
+    );
+    assert_eq!(repository.list_office_level().expect("list"), [appended]);
+}
+
+#[test]
+fn a_schedule_actor_with_a_bad_id_is_corrupt() {
+    assert!(parse_actor("schedule:not-an-id").is_err());
+    assert_eq!(
+        parse_actor("schedule:00000000-0000-0000-0000-000000000005").expect("parse"),
+        Actor::Schedule(kernel::ScheduleId::from_u128(5))
+    );
+}
+
+#[test]
+fn an_actor_label_reads_back_and_an_entry_from_before_the_column_reads_as_none() {
+    let connection = Connection::open_in_memory().expect("open");
+    for script in &SCRIPTS[..3] {
+        connection.execute_batch(script).expect("migrate");
+    }
+    let agent_id = AgentId::generate();
+    connection
+        .execute(
+            "INSERT INTO audit_actions (actor, target_agent_id, action, result, at) \
+             VALUES ('user', ?1, 'start', 'ok', 5)",
+            [agent_id.to_string()],
+        )
+        .expect("insert");
+    connection.execute_batch(SCRIPTS[3]).expect("0004");
+    let repository = ActionRepository::new(Arc::new(Mutex::new(connection)));
+    let mut labeled = record(agent_id, ActionKind::Directive, ActionResult::Ok);
+    labeled.actor = Actor::Schedule(ScheduleId::generate());
+    labeled.actor_label = Some("Nightly report".to_owned());
+    repository.append(&labeled).expect("append");
+
+    let listed = repository.list_for_agent(agent_id).expect("list");
+
+    assert_eq!(listed[0].record.actor_label, None);
+    assert_eq!(listed[1].record, labeled);
 }

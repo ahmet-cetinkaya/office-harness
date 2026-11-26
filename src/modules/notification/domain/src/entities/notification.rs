@@ -6,11 +6,14 @@ use crate::enums::NotificationEvent;
 use crate::value_objects::NotificationId;
 
 /// One event that the user must see. The agent name is copied at creation, so
-/// the row stays readable after the agent is deleted (spec edge case).
+/// the row stays readable after the agent is deleted (spec edge case); for a
+/// row without an agent it is the text to show.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Notification {
     pub id: NotificationId,
-    pub agent_id: AgentId,
+    /// `None` for a notification that no agent caused, such as the missed
+    /// runs of schedules (0025 D14).
+    pub agent_id: Option<AgentId>,
     pub agent_name: String,
     pub event: NotificationEvent,
     pub created_at: Timestamp,
@@ -26,7 +29,7 @@ impl Notification {
     #[must_use]
     pub fn new(
         id: NotificationId,
-        agent_id: AgentId,
+        agent_id: Option<AgentId>,
         agent_name: String,
         event: NotificationEvent,
         created_at: Timestamp,

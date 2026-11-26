@@ -98,7 +98,7 @@ export function createNotificationController(
     const fields = row as Record<string, unknown>;
     if (
       typeof fields.id !== "string" ||
-      typeof fields.agent_id !== "string" ||
+      (typeof fields.agent_id !== "string" && fields.agent_id !== null) ||
       typeof fields.agent_name !== "string" ||
       typeof fields.event !== "string" ||
       typeof fields.created_at !== "number"
@@ -148,6 +148,7 @@ export function createNotificationController(
     // 0013/PB-6; 0015).
     const isOnScreen =
       !isNeverReadOnArrival(row.event) &&
+      row.agent_id !== null &&
       row.agent_id === selectedAgentId() &&
       isWindowFocused();
     if (isOnScreen) {

@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use super::*;
 use hierarchy_domain::{Role, TreeRow};
-use kernel::{Actor, Timestamp};
+use kernel::{Actor, ScheduleId, Timestamp};
 
 use crate::commands::send_directive::{QUEUE_LIMIT, SETTLE_AFTER_TYPING, WAIT_LIMIT};
 
@@ -225,11 +225,19 @@ impl DirectiveClock for ManualClock {
 struct RecordingJournal {
     attempts: Mutex<Vec<Journaled>>,
     objectives: Mutex<Vec<(Actor, AgentId)>>,
+    scheduled: Mutex<Vec<ScheduledRecord>>,
 }
+
+/// One scheduled directive's record: schedule, target, text, failure.
+type ScheduledRecord = (ScheduleId, AgentId, String, String);
 
 impl RecordingJournal {
     fn attempts(&self) -> Vec<Journaled> {
         locked(&self.attempts).clone()
+    }
+
+    fn scheduled(&self) -> Vec<ScheduledRecord> {
+        locked(&self.scheduled).clone()
     }
 
     fn objectives(&self) -> Vec<(Actor, AgentId)> {
@@ -249,6 +257,10 @@ impl DirectiveJournal for RecordingJournal {
 
     fn record_objective(&self, creator: Actor, temp: AgentId) {
         locked(&self.objectives).push((creator, temp));
+    }
+
+    fn record_scheduled(&self, schedule: ScheduleId, target: AgentId, text: &str, failure: &str) {
+        locked(&self.scheduled).push((schedule, target, text.to_owned(), failure.to_owned()));
     }
 }
 
@@ -1502,5 +1514,357 @@ mod hold_guard {
         assert_eq!(guarded.counting.notifications.load(Ordering::SeqCst), 0);
         assert_eq!(guarded.service.list().agents.len(), 0);
         assert!(guarded.harness.journal.attempts().is_empty());
+    }
+
+    #[derive(Default)]
+    struct RecordingOutcomes(Mutex<Vec<(i64, ScheduledOutcome)>>);
+
+    impl ScheduledOutcomes for RecordingOutcomes {
+        fn settled(&self, run_id: i64, outcome: ScheduledOutcome) {
+            locked(&self.0).push((run_id, outcome));
+        }
+    }
+
+    const SCHEDULE: u128 = 90;
+    const RUN: i64 = 7;
+    const WITHDRAWN_BY_STOP: &str = "the office server stopped";
+
+    fn schedule() -> ScheduleId {
+        ScheduleId::from_u128(SCHEDULE)
+    }
+
+    fn scheduled(family: &Family, text: &str) -> ScheduledDirective {
+        ScheduledDirective {
+            schedule: schedule(),
+            target: family.member,
+            text: text.to_owned(),
+            run_id: RUN,
+        }
+    }
+
+    fn scheduled_guarded(family: &Family, limits: RateLimits) -> (Guarded, Arc<RecordingOutcomes>) {
+        let mut guarded = guarded_with(
+            family,
+            ToggledTargets::with_names(vec![(family.member, "Member")]),
+            limits,
+        );
+        let outcomes = Arc::new(RecordingOutcomes::default());
+        guarded.harness.handler = guarded
+            .harness
+            .handler
+            .with_scheduled_outcomes(outcomes.clone());
+        (guarded, outcomes)
+    }
+
+    fn outcomes_of(outcomes: &RecordingOutcomes) -> Vec<(i64, ScheduledOutcome)> {
+        locked(&outcomes.0).clone()
+    }
+
+    #[test]
+    fn a_scheduled_directive_to_a_ready_target_is_submitted_at_once_and_recorded_nowhere() {
+        let family = family();
+        let (guarded, outcomes) = scheduled_guarded(&family, RateLimits::default());
+
+        let outcome = guarded
+            .harness
+            .handler
+            .queue_scheduled(&scheduled(&family, "nightly check"))
+            .expect("accepted");
+
+        assert_eq!(outcome, DirectiveOutcome::Submitted);
+        assert_eq!(guarded.harness.texts_written(), ["nightly check"]);
+        assert_eq!(guarded.harness.receipt.received().len(), 1);
+        assert!(guarded.harness.journal.attempts().is_empty());
+        assert_eq!(guarded.harness.journal.scheduled().len(), 0);
+        assert_eq!(outcomes_of(&outcomes).len(), 0);
+    }
+
+    #[test]
+    fn a_waiting_scheduled_directive_names_the_schedule_as_sender_and_is_then_submitted_once() {
+        let family = family();
+        let (guarded, outcomes) = scheduled_guarded(&family, RateLimits::default());
+        guarded.harness.set_readiness(Readiness::Busy);
+
+        let outcome = guarded
+            .harness
+            .handler
+            .queue_scheduled(&scheduled(&family, "nightly check"))
+            .expect("accepted");
+        assert_eq!(outcome, DirectiveOutcome::Waiting { position: 1 });
+        let waiting = waiting_of(&guarded.harness, family.member);
+        assert_eq!(waiting[0].sender, Sender::Schedule(schedule()));
+        assert_eq!(waiting[0].origin, Origin::Scheduled { run_id: RUN });
+
+        guarded.harness.set_readiness(Readiness::Ready);
+        guarded.harness.deliver_all();
+
+        assert_eq!(guarded.harness.texts_written(), ["nightly check"]);
+        assert_eq!(guarded.harness.receipt.received().len(), 1);
+        assert_eq!(outcomes_of(&outcomes), [(RUN, ScheduledOutcome::Submitted)]);
+        assert!(guarded.harness.journal.attempts().is_empty());
+        assert_eq!(guarded.harness.journal.scheduled().len(), 0);
+    }
+
+    #[test]
+    fn an_unsubmitted_scheduled_directive_is_recorded_once_for_the_schedule_in_both_paths() {
+        let family = family();
+        let (guarded, outcomes) = scheduled_guarded(&family, RateLimits::default());
+        *locked(&guarded.harness.writer.delivery) = Delivery::Unsubmitted;
+
+        let immediate = guarded
+            .harness
+            .handler
+            .queue_scheduled(&scheduled(&family, "first"))
+            .expect("accepted");
+        assert_eq!(immediate, DirectiveOutcome::Unsubmitted);
+        assert_eq!(
+            guarded.harness.journal.scheduled(),
+            [(
+                schedule(),
+                family.member,
+                "first".to_owned(),
+                UNSUBMITTED.to_owned()
+            )]
+        );
+        assert_eq!(outcomes_of(&outcomes).len(), 0);
+
+        guarded.harness.set_readiness(Readiness::Busy);
+        guarded
+            .harness
+            .handler
+            .queue_scheduled(&scheduled(&family, "second"))
+            .expect("accepted");
+        guarded.harness.set_readiness(Readiness::Ready);
+        guarded.harness.deliver_all();
+
+        assert_eq!(guarded.harness.journal.scheduled().len(), 2);
+        assert_eq!(guarded.harness.journal.scheduled()[1].3, UNSUBMITTED);
+        assert!(guarded.harness.journal.attempts().is_empty());
+        assert_eq!(
+            outcomes_of(&outcomes),
+            [(RUN, ScheduledOutcome::Unsubmitted(UNSUBMITTED.to_owned()))]
+        );
+    }
+
+    #[test]
+    fn a_scheduled_directive_is_withdrawn_once_on_timeout_stop_and_server_stop() {
+        let family = family();
+        let (guarded, outcomes) = scheduled_guarded(&family, RateLimits::default());
+        guarded.harness.set_readiness(Readiness::Busy);
+        guarded
+            .harness
+            .handler
+            .queue_scheduled(&scheduled(&family, "slow"))
+            .expect("accepted");
+        guarded.harness.clock.advance(WAIT_LIMIT);
+        guarded.harness.handler.deliver_waiting();
+
+        guarded
+            .harness
+            .handler
+            .queue_scheduled(&scheduled(&family, "stopped"))
+            .expect("accepted");
+        guarded.harness.set_readiness(Readiness::Gone);
+        guarded.harness.deliver_all();
+
+        guarded.harness.set_readiness(Readiness::Busy);
+        guarded
+            .harness
+            .handler
+            .queue_scheduled(&scheduled(&family, "stopping"))
+            .expect("accepted");
+        guarded.harness.handler.withdraw_all(WITHDRAWN_BY_STOP);
+
+        let records = guarded.harness.journal.scheduled();
+        let texts: Vec<_> = records.iter().map(|record| record.2.as_str()).collect();
+        assert_eq!(texts, ["slow", "stopped", "stopping"]);
+        assert!(records.iter().all(|record| record.0 == schedule()));
+        assert_eq!(
+            records[0].3,
+            "withdrawn before typing: not typed within 10 minutes"
+        );
+        assert_eq!(
+            records[1].3,
+            "withdrawn before typing: Member is no longer running"
+        );
+        assert_eq!(
+            records[2].3,
+            format!("withdrawn before typing: {WITHDRAWN_BY_STOP}")
+        );
+        assert!(guarded.harness.journal.attempts().is_empty());
+        let settled = outcomes_of(&outcomes);
+        assert_eq!(settled.len(), 3);
+        assert_eq!(
+            settled[0],
+            (
+                RUN,
+                ScheduledOutcome::Withdrawn("not typed within 10 minutes".to_owned())
+            )
+        );
+        assert_eq!(guarded.harness.texts_written().len(), 0);
+    }
+
+    #[test]
+    fn a_hold_set_while_a_scheduled_directive_waits_withdraws_it_with_the_hold_reason() {
+        let family = family();
+        let (guarded, outcomes) = scheduled_guarded(&family, RateLimits::default());
+        guarded.harness.set_readiness(Readiness::Busy);
+        guarded
+            .harness
+            .handler
+            .queue_scheduled(&scheduled(&family, "nightly check"))
+            .expect("accepted");
+        guarded
+            .service
+            .set_hold(HoldScope::Agent(family.lead))
+            .expect("hold on an ancestor");
+
+        guarded.harness.set_readiness(Readiness::Ready);
+        guarded.harness.deliver_all();
+
+        assert_eq!(guarded.harness.texts_written().len(), 0);
+        let reason = format!("the agent {} is on hold", family.lead);
+        assert_eq!(
+            guarded.harness.journal.scheduled()[0].3,
+            format!("withdrawn before typing: {reason}")
+        );
+        assert_eq!(
+            outcomes_of(&outcomes),
+            [(RUN, ScheduledOutcome::Withdrawn(reason))]
+        );
+        assert_eq!(guarded.counting.notifications.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn a_waiting_scheduled_directive_survives_a_change_of_the_tree() {
+        let family = family();
+        let (guarded, outcomes) = scheduled_guarded(&family, RateLimits::default());
+        guarded.harness.set_readiness(Readiness::Busy);
+        guarded
+            .harness
+            .handler
+            .queue_scheduled(&scheduled(&family, "nightly check"))
+            .expect("accepted");
+        for row in locked(&guarded.harness.store.rows).iter_mut() {
+            if row.agent_id == family.member {
+                row.parent_agent_id = Some(family.other_lead);
+            }
+        }
+
+        guarded.harness.set_readiness(Readiness::Ready);
+        guarded.harness.deliver_all();
+
+        assert_eq!(guarded.harness.texts_written(), ["nightly check"]);
+        assert_eq!(outcomes_of(&outcomes), [(RUN, ScheduledOutcome::Submitted)]);
+    }
+
+    #[test]
+    fn a_full_queue_refuses_a_scheduled_directive_and_takes_no_window_slot() {
+        let family = family();
+        let one_over = u32::try_from(QUEUE_LIMIT).expect("small") + 1;
+        let limits = RateLimits {
+            directive_target: one_over,
+            ..RateLimits::default()
+        };
+        let (guarded, _) = scheduled_guarded(&family, limits);
+        guarded.harness.set_readiness(Readiness::Busy);
+        for number in 0..QUEUE_LIMIT {
+            guarded
+                .harness
+                .handler
+                .queue_scheduled(&scheduled(&family, &format!("task {number}")))
+                .expect("room");
+        }
+
+        let error = guarded
+            .harness
+            .handler
+            .queue_scheduled(&scheduled(&family, "one more"))
+            .expect_err("full");
+
+        let reason = format!("the queue of Member is full: {QUEUE_LIMIT} directives wait");
+        assert_eq!(error, HierarchyApplicationError::Refused(reason));
+        guarded.harness.set_readiness(Readiness::Ready);
+        guarded.harness.deliver_all();
+        guarded
+            .harness
+            .handler
+            .queue_scheduled(&scheduled(&family, "the last slot"))
+            .expect("one slot is left");
+        assert!(guarded.harness.journal.attempts().is_empty());
+    }
+
+    #[test]
+    fn the_schedule_window_refuses_the_fourth_scheduled_directive_but_not_a_parent_directive() {
+        let family = family();
+        let (guarded, _) = scheduled_guarded(&family, RateLimits::default());
+        guarded.harness.set_readiness(Readiness::Busy);
+        for number in 0..3 {
+            guarded
+                .harness
+                .handler
+                .queue_scheduled(&scheduled(&family, &format!("task {number}")))
+                .expect("within the limit");
+        }
+
+        let error = guarded
+            .harness
+            .handler
+            .queue_scheduled(&scheduled(&family, "fourth"))
+            .expect_err("limit");
+        let HierarchyApplicationError::Refused(reason) = error else {
+            panic!("expected a refusal");
+        };
+        assert!(
+            reason.contains("directives sent to one target agent"),
+            "{reason}"
+        );
+        assert!(reason.contains("allows 3"), "{reason}");
+
+        for _ in 0..3 {
+            guarded
+                .harness
+                .handler
+                .handle(family.lead, family.member, "from the parent")
+                .expect("the parent's window is untouched");
+        }
+        assert_eq!(guarded.counting.notifications.load(Ordering::SeqCst), 0);
+        assert_eq!(guarded.service.list().agents.len(), 0);
+    }
+
+    #[test]
+    fn a_hold_refuses_a_scheduled_directive_and_a_stopped_target_or_bad_text_is_invalid() {
+        let family = family();
+        let (guarded, _) = scheduled_guarded(&family, RateLimits::default());
+        guarded.service.set_hold(HoldScope::Office).expect("hold");
+        assert_eq!(
+            guarded
+                .harness
+                .handler
+                .queue_scheduled(&scheduled(&family, "nightly check")),
+            Err(HierarchyApplicationError::Refused(
+                "the office is on hold".to_owned()
+            ))
+        );
+
+        assert!(matches!(
+            guarded
+                .harness
+                .handler
+                .queue_scheduled(&scheduled(&family, "  ")),
+            Err(HierarchyApplicationError::Invalid(_))
+        ));
+        *locked(&guarded.harness.targets.stopped) = Some(family.member);
+        assert!(matches!(
+            guarded
+                .harness
+                .handler
+                .queue_scheduled(&scheduled(&family, "nightly check")),
+            Err(HierarchyApplicationError::Invalid(
+                HierarchyError::NotRunning { .. }
+            ))
+        ));
+        assert!(guarded.harness.journal.attempts().is_empty());
+        assert_eq!(guarded.harness.journal.scheduled().len(), 0);
     }
 }

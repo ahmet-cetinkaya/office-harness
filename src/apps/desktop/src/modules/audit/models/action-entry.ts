@@ -3,7 +3,10 @@
 /** One entry of the action record (FR-011). `result` is "ok" or error text. */
 export interface ActionEntry {
   id: number;
+  /** "user", "office", "agent:<id>", or "schedule:<id>". */
   actor: string;
+  /** The schedule's name when a schedule made the entry (0025). */
+  actor_label?: string;
   /** Null for an office-level entry, such as an office hold. */
   agent_id: string | null;
   action: string;
@@ -54,6 +57,8 @@ const DETAIL_ACTIONS: readonly string[] = [
 const UNSAFE_CHARACTERS = /[\p{Cc}\p{Cf}\u2028\u2029]/gu;
 
 const OFFICE_ACTOR = "office";
+const SCHEDULE_ACTOR_PREFIX = "schedule:";
+const SCHEDULE_ID_SHORT_LENGTH = 8;
 
 export function actionText(action: string): string {
   return ACTION_TEXT[action] ?? action.replaceAll("_", " ");
@@ -78,8 +83,16 @@ export function detailText(entry: ActionEntry): string | null {
   return `${label}: ${visibleDetail(entry.detail)}`;
 }
 
-export function actorText(actor: string): string {
-  return actor === OFFICE_ACTOR ? "the office" : actor;
+/**
+ * The actor as text. The actor is read by its kind, the text before the
+ * colon: the id after "schedule:" names a schedule, never an agent.
+ */
+export function actorText(actor: string, label?: string | null): string {
+  if (actor === OFFICE_ACTOR) return "the office";
+  if (!actor.startsWith(SCHEDULE_ACTOR_PREFIX)) return actor;
+  if (label) return `${label} (schedule, made by the person)`;
+  const id = actor.slice(SCHEDULE_ACTOR_PREFIX.length);
+  return `schedule ${id.slice(0, SCHEDULE_ID_SHORT_LENGTH)}`;
 }
 
 export function resultText(result: string): string {

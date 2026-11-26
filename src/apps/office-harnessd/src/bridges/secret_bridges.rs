@@ -117,6 +117,7 @@ impl SecretJournal {
             result,
             detail,
             at: Clock::now(&SystemClock),
+            actor_label: None,
         });
         match stored {
             Ok(entry) => self.hub.publish(&action_recorded_event(&entry)),

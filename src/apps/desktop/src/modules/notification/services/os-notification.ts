@@ -16,8 +16,8 @@ import {
 export interface OsNotificationService {
   /** True when the OS may show one. Asks once, at the first use. */
   isAllowed(): Promise<boolean>;
-  /** Shows one notification, tagged with the agent it came from. */
-  show(agentId: string, title: string, body: string): void;
+  /** Shows one notification, tagged with the agent it came from, if any. */
+  show(agentId: string | null, title: string, body: string): void;
   /** Calls back with the agent id of a tapped notification. */
   onTap(onTapAgent: (agentId: string) => void): Promise<void>;
 }
@@ -51,10 +51,14 @@ export function createOsNotificationService(): OsNotificationService {
   return {
     isAllowed,
 
-    show(agentId: string, title: string, body: string): void {
+    show(agentId: string | null, title: string, body: string): void {
       if (!allowed) return;
       try {
-        sendNotification({ title, body, extra: { agent_id: agentId } });
+        sendNotification({
+          title,
+          body,
+          extra: agentId === null ? {} : { agent_id: agentId },
+        });
       } catch (failure) {
         console.warn("office-harness could not notify:", failure);
       }

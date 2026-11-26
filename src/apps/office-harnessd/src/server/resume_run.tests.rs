@@ -5,7 +5,10 @@ use std::time::Duration;
 use kernel::AgentId;
 use serde_json::{Value, json};
 
-use super::{Flow, ResumeResult, SessionEnd, Started, end_of, hold_reason, status_of};
+use super::{
+    Flow, ResumeResult, SessionEnd, Started, WakeResult, end_of, final_wake_result, hold_reason,
+    status_of,
+};
 
 fn event_body(result: &ResumeResult, agent_id: AgentId) -> Value {
     serde_json::from_str(&result.event(Flow::Resume, agent_id).encode()).expect("event json")
@@ -151,5 +154,68 @@ fn a_wake_result_has_its_own_event_and_the_hold_names_the_wake() {
     assert_eq!(
         hold_reason(Flow::Wake, &started(false, None), ended),
         "the wake failed: the new session ended 1 s after its start"
+    );
+}
+
+fn wake_frame(agent_id: AgentId, result: &ResumeResult) -> String {
+    result.event(Flow::Wake, agent_id).encode()
+}
+
+#[test]
+fn a_schedule_run_waits_for_the_final_wake_result_of_its_own_agent_only() {
+    let agent_id = AgentId::generate();
+    let checking = ResumeResult::Checking {
+        continued: true,
+        reason: None,
+    };
+
+    assert_eq!(
+        final_wake_result(&wake_frame(agent_id, &checking), agent_id),
+        None
+    );
+    assert_eq!(
+        final_wake_result(
+            &wake_frame(agent_id, &ResumeResult::Continued),
+            AgentId::generate()
+        ),
+        None
+    );
+    assert_eq!(
+        final_wake_result(
+            &ResumeResult::Continued
+                .event(Flow::Resume, agent_id)
+                .encode(),
+            agent_id
+        ),
+        None,
+        "a resume result is no wake result"
+    );
+}
+
+#[test]
+fn the_final_wake_results_map_to_what_a_run_does_next() {
+    let agent_id = AgentId::generate();
+    let result_of =
+        |result: &ResumeResult| final_wake_result(&wake_frame(agent_id, result), agent_id);
+
+    assert_eq!(
+        result_of(&ResumeResult::Continued),
+        Some(WakeResult::Continued)
+    );
+    assert_eq!(
+        result_of(&ResumeResult::NewSession { reason: None }),
+        Some(WakeResult::NewSession)
+    );
+    assert_eq!(
+        result_of(&ResumeResult::Held {
+            reason: "the wake failed".to_owned()
+        }),
+        Some(WakeResult::Held("the wake failed".to_owned()))
+    );
+    assert_eq!(
+        result_of(&ResumeResult::Skipped {
+            reason: "no longer asleep".to_owned()
+        }),
+        Some(WakeResult::Refused("no longer asleep".to_owned()))
     );
 }

@@ -12,6 +12,10 @@ import type {
   FinishedTemp,
   TempRow,
 } from "../../src/modules/temps/models/temps";
+import type {
+  RunRecord,
+  Schedule,
+} from "../../src/modules/schedule/models/schedule";
 import type { ActionEntry } from "../../src/modules/audit/models/action-entry";
 import type { HierarchyTree } from "../../src/modules/hierarchy/models/hierarchy";
 import type { Hold, HoldState } from "../../src/modules/hold/models/hold";
@@ -178,6 +182,10 @@ export interface OfficeSeed {
   >;
   /** The finished temps that `temp.list` answers, newest first. None when left out. */
   finishedTemps?: FinishedTemp[];
+  /** The schedules that `schedule.list` answers, in the wire shape (0025). */
+  schedules?: Schedule[];
+  /** The history of each seeded schedule, newest first, by schedule id. */
+  scheduleRuns?: Record<string, RunRecord[]>;
   /** A refusal to answer with, by request type. The tree reads it too. */
   refusals?: Record<string, { code: string; message: string }>;
 }
@@ -353,6 +361,12 @@ export async function installMockCore(
         max: 100,
         refusal: "temp_cap is a whole number from 1 to 100",
       },
+      schedule_cap: {
+        fallback: "50",
+        min: 1,
+        max: 200,
+        refusal: "schedule_cap is a whole number from 1 to 200",
+      },
       temp_idle_minutes: {
         fallback: "30",
         min: 5,
@@ -409,11 +423,14 @@ export async function installMockCore(
         ...LIMIT_DEFAULTS,
         temp_cap: TEMP_SETTING_RULES.temp_cap.fallback,
         temp_idle_minutes: TEMP_SETTING_RULES.temp_idle_minutes.fallback,
+        schedule_cap: TEMP_SETTING_RULES.schedule_cap.fallback,
         ...mock.office?.limits,
         focus_shortcut: mock.office?.focusShortcut ?? "Ctrl+Shift+F12",
         last_view: mock.office?.lastView ?? null,
       } as Record<string, string | null>,
       finishedTemps: structuredClone(mock.office?.finishedTemps ?? []),
+      schedules: structuredClone(mock.office?.schedules ?? []),
+      scheduleRuns: structuredClone(mock.office?.scheduleRuns ?? {}),
       sweep: mock.office?.sweep ?? "done",
       nextId: 1,
     };
@@ -455,8 +472,14 @@ export async function installMockCore(
       frame.set(payload, 17);
       terminalChannels.forEach((id) => send(id, frame.buffer));
     };
-    const refuse = (code: string, message: string): never => {
-      throw { code, message };
+    const refuse = (
+      code: string,
+      message: string,
+      fields?: { field: string; rule: string; message: string }[],
+    ): never => {
+      throw fields === undefined
+        ? { code, message }
+        : { code, message, fields };
     };
     /** One new notification row, as the bridge makes it, with its event. */
     const createNotification = (
@@ -1791,6 +1814,72 @@ export async function installMockCore(
         case "terminal.resize":
         case "terminal.detach":
           return null;
+        case "schedule.list":
+          return {
+            schedules: structuredClone(office.schedules),
+            zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          };
+        case "schedule.save":
+          return saveSchedule(fields);
+        case "schedule.switch": {
+          const schedule = findSchedule(fields.schedule_id);
+          const on = fields.on === true;
+          if (on && !schedule.on) {
+            if (schedule.off_reason !== null) {
+              refuse(
+                "refused",
+                `a switch on is refused: ${SWITCH_REFUSALS[schedule.off_reason]}`,
+              );
+            }
+            if (nextDue(schedule.repeat, Date.now()) === null) {
+              refuse("refused", `a switch on is refused: ${ONCE_PASSED}`);
+            }
+          }
+          schedule.on = on;
+          schedule.next_due = on ? nextDue(schedule.repeat, Date.now()) : null;
+          pushEvent({ type: "schedule.changed", schedule });
+          return { schedule: structuredClone(schedule) };
+        }
+        case "schedule.run_now": {
+          const schedule = findSchedule(fields.schedule_id);
+          if (schedule.off_reason === "target_deleted") {
+            refuse(
+              "refused",
+              "its target was deleted; edit the schedule to name another target",
+            );
+          }
+          const runs = (office.scheduleRuns[schedule.id] ??= []);
+          const now = Date.now();
+          runs.unshift({
+            id: office.nextId++,
+            schedule_id: schedule.id,
+            due: now,
+            started: now,
+            via: "now",
+            result: "submitted",
+            reason: null,
+          });
+          pushEvent({ type: "schedule.changed", schedule });
+          return { schedule_id: schedule.id };
+        }
+        case "schedule.delete": {
+          const schedule = findSchedule(fields.schedule_id);
+          office.schedules = office.schedules.filter(
+            (known) => known.id !== schedule.id,
+          );
+          delete office.scheduleRuns[schedule.id];
+          pushEvent({ type: "schedule.removed", id: schedule.id });
+          return { schedule_id: schedule.id };
+        }
+        case "schedule.history": {
+          const schedule = findSchedule(fields.schedule_id);
+          return {
+            schedule_id: schedule.id,
+            runs: structuredClone(
+              (office.scheduleRuns[schedule.id] ?? []).slice(0, 20),
+            ),
+          };
+        }
         case "settings.get": {
           const answer = {
             key: fields.key,
@@ -2253,6 +2342,193 @@ export async function installMockCore(
         setTimeout(() => finishWake(agent), mock.office?.wakeCheckMs ?? 0);
       }, 0);
       return { session, continued: canContinue };
+    };
+
+    // The schedule requests of 0025, with the server's field rules.
+    const SWITCH_REFUSALS: Record<string, string> = {
+      target_deleted:
+        "its target was deleted; edit the schedule to name another target",
+      time_missed:
+        "the office switched it off because its time was missed; edit it to name a new time",
+    };
+    const ONCE_PASSED =
+      "its once time has passed; edit the schedule to name a future time";
+    const WEEKDAY_INDEX = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+    type ScheduleRepeat = Schedule["repeat"];
+    type WeekdayCode = NonNullable<ScheduleRepeat["days"]>[number];
+    type FieldFailure = { field: string; rule: string; message: string };
+    const findSchedule = (id: unknown): Schedule => {
+      const schedule = office.schedules.find((known) => known.id === id);
+      if (schedule === undefined) refuse("not_found", `no schedule ${id}`);
+      return schedule as Schedule;
+    };
+    const localTime = (date: Date, time: string): Date => {
+      const [hours, minutes] = time.split(":").map(Number);
+      const moved = new Date(date);
+      moved.setHours(hours, minutes, 0, 0);
+      return moved;
+    };
+    // The next due time after `now`, or null for a once time that passed.
+    const nextDue = (repeat: ScheduleRepeat, now: number): number | null => {
+      if (repeat.kind === "every_hours") {
+        return now + (repeat.hours ?? 1) * 3_600_000;
+      }
+      if (repeat.kind === "once") {
+        const [year, month, day] = (repeat.date ?? "").split("-").map(Number);
+        const due = localTime(
+          new Date(year, month - 1, day),
+          repeat.time ?? "",
+        );
+        return due.getTime() > now ? due.getTime() : null;
+      }
+      for (let ahead = 0; ahead < 8; ahead++) {
+        const day = new Date(now);
+        day.setDate(day.getDate() + ahead);
+        const due = localTime(day, repeat.time ?? "00:00");
+        const isDay =
+          repeat.kind === "daily" ||
+          (repeat.days ?? []).includes(
+            WEEKDAY_INDEX[day.getDay()] as WeekdayCode,
+          );
+        if (isDay && due.getTime() > now) return due.getTime();
+      }
+      return null;
+    };
+    const TIME_RULE = /^([01]\d|2[0-3]):[0-5]\d$/;
+    const textFailure = (
+      field: string,
+      value: unknown,
+      max: number,
+    ): FieldFailure | null => {
+      const text = typeof value === "string" ? value : "";
+      if (text.trim() === "")
+        return { field, rule: "blank", message: "must not be blank" };
+      if ([...text].length > max) {
+        return {
+          field,
+          rule: "too_long",
+          message: `must have at most ${max} characters`,
+        };
+      }
+      if (/\p{Cc}/u.test(text)) {
+        return {
+          field,
+          rule: "control_character",
+          message: "must not have control characters",
+        };
+      }
+      return null;
+    };
+    const repeatFailure = (
+      repeat: ScheduleRepeat,
+      isOn: boolean,
+    ): FieldFailure | null => {
+      const fail = (rule: string, message: string) => ({
+        field: "repeat",
+        rule,
+        message,
+      });
+      if (repeat.kind === "every_hours") {
+        const hours = repeat.hours ?? 0;
+        return Number.isInteger(hours) && hours >= 1 && hours <= 168
+          ? null
+          : fail(
+              "hours_out_of_range",
+              "hours must be a whole number from 1 to 168",
+            );
+      }
+      if (repeat.kind === "once") {
+        const date = new Date(`${repeat.date}T00:00:00Z`);
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(repeat.date ?? "") ||
+          Number.isNaN(date.getTime()) ||
+          date.toISOString().slice(0, 10) !== repeat.date
+        ) {
+          return fail(
+            "bad_date",
+            "a date must be a real calendar date, YYYY-MM-DD",
+          );
+        }
+      }
+      if (!TIME_RULE.test(repeat.time ?? "")) {
+        return fail("bad_time", "a time must be hours and minutes, HH:MM");
+      }
+      if (repeat.kind === "weekly" && (repeat.days ?? []).length === 0) {
+        return fail("no_day", "a weekly repeat needs at least one day");
+      }
+      if (
+        repeat.kind === "once" &&
+        isOn &&
+        nextDue(repeat, Date.now()) === null
+      ) {
+        return fail(
+          "not_in_future",
+          "a once repeat must name a future local time",
+        );
+      }
+      return null;
+    };
+    const saveSchedule = (fields: Record<string, unknown>) => {
+      const repeat = fields.repeat as ScheduleRepeat;
+      const isOn = fields.on === true;
+      const failures = [
+        textFailure("name", fields.name, 100),
+        textFailure("text", fields.text, 8192),
+        repeatFailure(repeat, isOn),
+        office.agents.some((agent) => agent.id === fields.target_agent_id)
+          ? null
+          : {
+              field: "target",
+              rule: "target_missing",
+              message: "must name an agent that exists",
+            },
+      ].filter((failure): failure is FieldFailure => failure !== null);
+      if (failures.length > 0) {
+        refuse(
+          "invalid",
+          failures.map((item) => `${item.field} ${item.message}`).join("; "),
+          failures,
+        );
+      }
+      const existing = office.schedules.find(
+        (known) => known.id === fields.schedule_id,
+      );
+      const name = String(fields.name).trim();
+      if (
+        office.schedules.some(
+          (known) => known.name === name && known.id !== existing?.id,
+        )
+      ) {
+        refuse("conflict", `schedule name "${name}" is already used`);
+      }
+      const cap = Number(
+        office.settings.schedule_cap ??
+          TEMP_SETTING_RULES.schedule_cap.fallback,
+      );
+      if (existing === undefined && office.schedules.length >= cap) {
+        refuse(
+          "refused",
+          `the office already has ${cap} schedules, the schedule cap`,
+        );
+      }
+      const schedule: Schedule = {
+        id: existing?.id ?? `schedule-${office.nextId++}`,
+        name,
+        text: String(fields.text),
+        target_agent_id: String(fields.target_agent_id),
+        repeat,
+        on: isOn,
+        next_due: isOn ? nextDue(repeat, Date.now()) : null,
+        last_handled_due: existing?.last_handled_due ?? null,
+        last_missed: existing?.last_missed ?? null,
+        off_reason: null,
+      };
+      office.schedules = [
+        ...office.schedules.filter((known) => known.id !== schedule.id),
+        schedule,
+      ];
+      pushEvent({ type: "schedule.changed", schedule });
+      return { schedule: structuredClone(schedule) };
     };
 
     const internals = {

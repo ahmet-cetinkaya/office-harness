@@ -15,6 +15,9 @@ pub struct ActionRecord {
     pub result: ActionResult,
     /// Why the action happened, when the action alone does not say it.
     pub detail: Option<String>,
+    /// The schedule's name when the actor is a schedule, as it was when the
+    /// action happened (0025 D7); it survives a rename or a delete.
+    pub actor_label: Option<String>,
     pub at: Timestamp,
 }
 

@@ -101,13 +101,13 @@ fn read_agent_marks_only_that_agents_rows() {
     let marked = read_agent.handle(ana).expect("read agent");
 
     assert_eq!(marked, 2);
-    let unread_agents: Vec<AgentId> = list
+    let unread_agents: Vec<Option<AgentId>> = list
         .handle_unread()
         .expect("unread list")
         .iter()
         .map(|notification| notification.agent_id)
         .collect();
-    assert_eq!(unread_agents, [raj]);
+    assert_eq!(unread_agents, [Some(raj)]);
 }
 
 #[test]
