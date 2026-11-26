@@ -54,6 +54,62 @@ fn name_rules() {
 }
 
 #[test]
+fn a_name_with_an_invisible_or_direction_changing_character_is_refused() {
+    let characters = [
+        '\u{00AD}',
+        '\u{034F}',
+        '\u{061C}',
+        '\u{0890}',
+        '\u{08E2}',
+        '\u{115F}',
+        '\u{1160}',
+        '\u{200B}',
+        '\u{200C}',
+        '\u{200D}',
+        '\u{200E}',
+        '\u{200F}',
+        '\u{202A}',
+        '\u{202E}',
+        '\u{2060}',
+        '\u{2066}',
+        '\u{2069}',
+        '\u{2800}',
+        '\u{3164}',
+        '\u{FEFF}',
+        '\u{FFA0}',
+        '\u{110BD}',
+        '\u{13430}',
+        '\u{1BCA0}',
+        '\u{1D173}',
+        '\u{E0041}',
+    ];
+    for character in characters {
+        let name = format!("Night{character}ly");
+        assert_eq!(
+            check(&name, "go", &daily(), true),
+            [error("name", Rule::FormatCharacter)],
+            "{character:?}"
+        );
+    }
+}
+
+#[test]
+fn the_text_of_a_schedule_may_keep_a_joiner_and_a_name_keeps_visible_characters() {
+    assert_eq!(
+        check(
+            "Nightly",
+            "family \u{1F468}\u{200D}\u{1F469}",
+            &daily(),
+            true
+        ),
+        []
+    );
+    assert_eq!(check("Gece görevi \u{1F319}", "go", &daily(), true), []);
+    // A variation selector makes an emoji, so a name may keep it.
+    assert_eq!(check("Moon \u{2764}\u{FE0F}", "go", &daily(), true), []);
+}
+
+#[test]
 fn text_rules() {
     let cases = [
         ("", Rule::Blank),
