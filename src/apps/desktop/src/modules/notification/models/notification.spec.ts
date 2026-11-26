@@ -32,6 +32,14 @@ describe("notification rows", () => {
     expect(eventText("failed")).toBe("failed");
     expect(eventText("waiting_for_input")).toBe("waits for your input");
     expect(eventText("bell")).toBe("rang the bell");
+    expect(eventText("permission_asked")).toBe("asks permission");
+    expect(eventText("waiting_for_input", "turn_stopped")).toBe(
+      "finished its turn",
+    );
+    expect(eventText("waiting_for_input", "turn_failed")).toBe(
+      "its turn ended with an error",
+    );
+    expect(eventText("waiting_for_input", "5000")).toBe("waits for your input");
     expect(eventText("surprise_kind")).toBe("surprise kind");
   });
 

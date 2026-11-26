@@ -19,6 +19,8 @@ use super::dispatcher::Dispatcher;
 use super::event_hub::EventHub;
 use super::hierarchy_requests::HierarchyGateway;
 use super::hold_requests::HoldGateway;
+use super::hook_events::hook_changed_event;
+use super::hook_requests::{HookGateway, HookReportSink};
 use super::idle_sleep_run::IdleSleeper;
 use super::notification_requests::NotificationGateway;
 use super::process_scan::spawn_process_scan;
@@ -39,9 +41,9 @@ use super::template_requests::TemplateGateway;
 use super::terminal_requests::TerminalGateway;
 use crate::bootstrap::{ServerLog, Services};
 use crate::bridges::{
-    AgentLineBridge, AgentStatusBridge, ScheduleBridge, ScheduleParts, ScheduleTime, SecretJournal,
-    SharedScheduleTime, SystemClock, SystemScheduleTime, TempEnder, TempEndings, TempHooks,
-    TempLedger,
+    AgentLineBridge, AgentStatusBridge, HookStatusBridge, ScheduleBridge, ScheduleParts,
+    ScheduleTime, SecretJournal, SharedScheduleTime, SystemClock, SystemScheduleTime, TempEnder,
+    TempEndings, TempHooks, TempLedger,
 };
 use crate::config::Config;
 use crate::sweep::SweepGate;
@@ -58,7 +60,11 @@ pub struct Server {
 
 /// Starts the tasks that turn terminal events into statuses, lines, and
 /// notifications.
-fn spawn_terminal_bridges(services: &Services, events: &EventHub, log: &ServerLog) {
+fn spawn_terminal_bridges(
+    services: &Services,
+    events: &EventHub,
+    log: &ServerLog,
+) -> Arc<dyn HookReportSink> {
     AgentStatusBridge {
         change_status: services.agent.change_status.clone(),
         end_session: services.agent.end_session.clone(),
@@ -71,6 +77,8 @@ fn spawn_terminal_bridges(services: &Services, events: &EventHub, log: &ServerLo
         sign_in_ends: services.terminal.sign_in_ends.clone(),
         journal: services.agent.journal.clone(),
         waits: services.terminal.person_input.wait_tracker().clone(),
+        hooks: services.terminal.hook_sessions.clone(),
+        hook_files: services.hook_files.clone(),
     }
     .spawn(services.terminal.events.subscribe());
     AgentLineBridge::new(services.terminal.events.clone(), events.clone())
@@ -79,6 +87,23 @@ fn spawn_terminal_bridges(services: &Services, events: &EventHub, log: &ServerLo
         services.events.subscribe(),
         services.terminal.events.subscribe(),
     );
+    let hook_events = events.clone();
+    services
+        .terminal
+        .hook_sessions
+        .on_change(move |agent_id, state| {
+            hook_events.publish(&hook_changed_event(agent_id, state.as_ref()));
+        });
+    HookStatusBridge {
+        change_status: services.agent.change_status.clone(),
+        runtime: Arc::clone(&services.terminal.runtime),
+        hub: events.clone(),
+        order: Arc::clone(&services.agent.status_order),
+        alerts: services.storage_alerts.clone(),
+        hooks: services.terminal.hook_sessions.clone(),
+        notifications: services.notification_bridge.clone(),
+    }
+    .spawn(services.terminal.person_input.wait_tracker())
 }
 
 /// What a bulk resume and a wake need after their request was answered: they
@@ -302,6 +327,15 @@ fn hierarchy_gateway(services: &Services, events: &EventHub) -> HierarchyGateway
     )
 }
 
+/// The report endpoint of 0024: the sink of the terminal bridges, unless a
+/// test brings its own.
+fn hook_gateway(services: &Services, sink: Arc<dyn HookReportSink>) -> HookGateway {
+    HookGateway::new(
+        services.access.hook_secrets.clone(),
+        services.hook_reports.clone().unwrap_or(sink),
+    )
+}
+
 /// The `secret.*` requests of the person and of agents (0026). Grants of
 /// agents that were deleted while the server was down go at once.
 fn secret_gateway(services: &Services, events: &EventHub) -> SecretGateway {
@@ -351,6 +385,7 @@ impl Server {
             .map_err(ServerError::Bind)?;
         let address = listener.local_addr().map_err(ServerError::Bind)?;
         let port = address.port();
+        services.hook_files.set_port(port);
         let start_nonce = RandomNonceSource
             .next_nonce()
             .map_err(ServerError::StartNonce)?;
@@ -387,7 +422,7 @@ impl Server {
             .set_work_bound_extra(options.work_bound_extra);
         let events = services.events.clone();
         events.forward_storage_alerts(services.storage_alerts.subscribe(), log.clone());
-        spawn_terminal_bridges(services, &events, log);
+        let hook_sink = spawn_terminal_bridges(services, &events, log);
         let temp_hooks = temp_hooks(services, &events);
         let holds = HoldGateway::new(
             Arc::clone(&services.hierarchy.holds),
@@ -415,7 +450,8 @@ impl Server {
         .with_secrets(secrets.clone())
         .with_sweep_gate(sweep_gate.clone())
         .with_sign_in_checks(services.agent.sign_in_checks.clone())
-        .with_temps(temp_hooks.clone());
+        .with_temps(temp_hooks.clone())
+        .with_hook_sessions(services.terminal.hook_sessions.clone());
         let hierarchy = hierarchy_gateway(services, &events);
         let context = resume_context(services, &agents, &events, options.resume_check_period);
         let resume = resume_gateway(services, context.clone()).with_sweep_gate(sweep_gate.clone());
@@ -454,6 +490,7 @@ impl Server {
             send_report: Arc::clone(&services.hierarchy.send_report),
             hierarchy_tree: Arc::clone(&services.hierarchy.tree),
             directive_journal: Arc::clone(&services.hierarchy.directive_journal),
+            hooks: hook_gateway(services, hook_sink),
             notification: notification_gateway(services),
             secrets,
             redactor: Arc::clone(&services.terminal.redactor),

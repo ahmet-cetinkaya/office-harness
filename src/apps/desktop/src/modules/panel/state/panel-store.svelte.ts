@@ -21,6 +21,7 @@ import { createSleepController } from "../../sleep";
 import { createSchedulesController } from "../../schedule";
 import { createTempsController } from "../../temps";
 import { createTemplateController } from "../../template";
+import { createHookStatusController } from "../../hook-status";
 import { createWorktreeDependenciesController } from "../../worktree-dependencies";
 
 export type OpenView = "panel" | "scene";
@@ -56,6 +57,7 @@ export function createPanelStore(client: CoreClient) {
   const temps = createTempsController(client);
   const schedules = createSchedulesController(client);
   const worktreeDependencies = createWorktreeDependenciesController(client);
+  const hookStatus = createHookStatusController(client);
   // The restore is the one reader of `last_view` and the only place the
   // stored view word is applied. The shell writes the last view only after
   // the restore has settled, or an eager write would clobber the stored
@@ -188,6 +190,7 @@ export function createPanelStore(client: CoreClient) {
     temps,
     schedules,
     worktreeDependencies,
+    hookStatus,
     templates,
     lastView,
     client,

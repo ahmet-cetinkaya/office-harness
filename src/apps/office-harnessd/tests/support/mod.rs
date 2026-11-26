@@ -3,6 +3,7 @@
 #![allow(dead_code, reason = "each test binary uses a part of the helpers")]
 
 pub mod fake_cli;
+pub mod hook_client;
 pub mod office_client;
 pub mod running_office;
 pub mod secret_agents;
@@ -23,6 +24,16 @@ pub fn config_in(folder: &TempDir) -> Config {
     Config {
         data_folder: folder.path().join("office"),
     }
+}
+
+/// The arguments of a CLI start without the office settings file that a
+/// `claude` session gets (0024): the last `--settings <file>` pair.
+pub fn without_hook_settings(arguments: &[String]) -> Vec<String> {
+    let mut kept = arguments.to_vec();
+    if let Some(at) = kept.iter().rposition(|argument| argument == "--settings") {
+        kept.drain(at..(at + 2).min(arguments.len()));
+    }
+    kept
 }
 
 pub fn agent_named(machine_id: MachineId, name: &str) -> Agent {

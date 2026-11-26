@@ -53,6 +53,10 @@ impl CliAdapter for ClaudeAdapter {
         Some(continue_command(plan, &["--resume", cli_session_id]))
     }
 
+    fn status_hooks(&self) -> bool {
+        true
+    }
+
     fn sign_in(&self) -> SignIn {
         SIGN_IN
     }

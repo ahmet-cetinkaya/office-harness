@@ -14,6 +14,7 @@ use kernel::{AgentId, Timestamp};
 use crate::common::errors::ApplicationError;
 use crate::common::interfaces::{AdditionsStore, AgentStore, SessionStore};
 use crate::common::models::{AgentAction, StatusRunResult};
+use crate::common::session_launcher::HOOKS_REFUSED_NOTE;
 use crate::common::sign_in_check::SIGN_IN_TIMEOUT;
 use crate::test_support::Office;
 
@@ -358,4 +359,106 @@ fn the_terminal_gets_the_sign_in_screen_words_of_the_cli() {
     let started = office.terminals.started();
     assert_eq!(started[0].sign_in.screen_words, ["please sign in"]);
     assert_eq!(started[1].sign_in.screen_words.len(), 0);
+}
+
+#[test]
+fn a_batch_script_that_cannot_take_the_settings_path_starts_without_the_hook_arguments() {
+    let office = Office::new();
+    office.terminals.make_batch_script("shim");
+    office
+        .terminals
+        .give_hook_arguments(&["--settings", "C:\\Users\\Name %Work%\\hooks\\one.json"]);
+    let agent = agent_with(&office, "shim", AgentStatus::Stopped);
+
+    office.start_agent().handle(agent.id).expect("start");
+
+    let started = office.terminals.started();
+    assert_eq!(started.len(), 1);
+    assert!(!started[0].arguments.iter().any(|word| word == "--settings"));
+    assert!(!started[0].has_hook_arguments);
+    assert_eq!(started[0].hook_note.as_deref(), Some(HOOKS_REFUSED_NOTE));
+}
+
+#[test]
+fn a_batch_script_that_refuses_the_agents_own_arguments_still_refuses_the_start() {
+    let office = Office::new();
+    office.terminals.make_batch_script("shim");
+    office
+        .terminals
+        .give_hook_arguments(&["--settings", "one.json"]);
+    let agent = agent_with(&office, "shim 100%", AgentStatus::Stopped);
+
+    assert!(office.start_agent().handle(agent.id).is_err());
+    assert_eq!(office.terminals.started().len(), 0);
+}
+
+mod status_hooks {
+    use super::super::*;
+    use crate::common::models::SessionCommand;
+
+    struct Hooked(bool);
+
+    impl CliAdapter for Hooked {
+        fn supports_continue(&self) -> bool {
+            false
+        }
+
+        fn new_session(&self, _plan: &SessionPlan<'_>) -> SessionCommand {
+            SessionCommand {
+                arguments: Vec::new(),
+                cli_session_id: None,
+                typed_input: None,
+            }
+        }
+
+        fn continue_session(
+            &self,
+            _plan: &SessionPlan<'_>,
+            _cli_session_id: &str,
+        ) -> Option<SessionCommand> {
+            None
+        }
+
+        fn status_hooks(&self) -> bool {
+            self.0
+        }
+    }
+
+    fn words(texts: &[&str]) -> Vec<String> {
+        texts.iter().map(|text| (*text).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_cli_without_hooks_is_unsupported() {
+        assert_eq!(
+            status_hooks_request(&Hooked(false), &[], &[]),
+            StatusHooksRequest::Unsupported
+        );
+    }
+
+    #[test]
+    fn a_cli_with_hooks_and_no_settings_option_wants_the_file() {
+        let flags = words(&["--model", "opus"]);
+        assert_eq!(
+            status_hooks_request(&Hooked(true), &words(&["--verbose"]), &flags),
+            StatusHooksRequest::Wanted
+        );
+    }
+
+    #[test]
+    fn a_settings_option_in_the_command_or_the_flags_refuses_the_file() {
+        let own = StatusHooksRequest::Refused(OWN_SETTINGS_OPTION_NOTE.to_owned());
+        for (fixed, flags) in [
+            (words(&["--settings", "x.json"]), words(&[])),
+            (words(&["--settings=x.json"]), words(&[])),
+            (words(&[]), words(&["--settings", "x.json"])),
+            (words(&[]), words(&["--settings={}"])),
+        ] {
+            assert_eq!(status_hooks_request(&Hooked(true), &fixed, &flags), own);
+        }
+        assert_eq!(
+            status_hooks_request(&Hooked(true), &words(&["--settings-extra"]), &[]),
+            StatusHooksRequest::Wanted
+        );
+    }
 }

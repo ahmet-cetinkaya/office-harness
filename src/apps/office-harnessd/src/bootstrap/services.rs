@@ -37,7 +37,8 @@ use super::{
     run_migrations,
 };
 use crate::bridges::{
-    AgentCalls, CallHelper, GateInputs, NeedsYouBridge, NotificationBridge, SystemClock,
+    AgentCalls, CallHelper, GateInputs, NeedsYouBridge, NotificationBridge, StatusHookFiles,
+    SystemClock,
 };
 use crate::config::Config;
 use crate::server::EventHub;
@@ -76,6 +77,13 @@ pub struct Services {
     /// The stored process identities, read for the sweep finding of
     /// `resume.plan` (0017/D8).
     pub session_processes: Arc<SessionProcessRepository>,
+    /// Takes the status-hook reports that passed the endpoint's checks
+    /// (0024) in place of the status bridge. Only a test sets it, before the
+    /// server binds.
+    /// Makes and removes the office settings files of `claude` sessions
+    /// (0024).
+    pub hook_files: StatusHookFiles,
+    pub hook_reports: Option<Arc<dyn crate::server::HookReportSink>>,
 }
 
 /// Runs each module's migrations, every module on its own ledger.
@@ -161,6 +169,14 @@ pub fn start_with(
     )?;
     let events = EventHub::new();
     let access = build_access_services(config)?;
+    let hook_files = StatusHookFiles::new(
+        config.hooks_folder_path(),
+        access.hook_secrets.clone(),
+        Arc::new(SettingsRepository::new(connection.clone())),
+        log.clone(),
+    );
+    // No session runs yet, so no file in the folder belongs to one.
+    hook_files.sweep_stale();
     let agent_calls = AgentCalls {
         store: access.agent_calls.clone(),
         helper: CallHelper {
@@ -170,6 +186,7 @@ pub fn start_with(
                 .to_string(),
             server_file: config.server_file_path().display().to_string(),
         },
+        hook_files: hook_files.clone(),
     };
     let agent = build_agent_services(
         &connection,
@@ -259,6 +276,8 @@ pub fn start_with(
         agent_bridge_store,
         orphan_sweep,
         session_processes,
+        hook_files,
+        hook_reports: None,
     };
     connect_sleep_gate(&services);
     Ok(services)
@@ -275,6 +294,7 @@ fn connect_sleep_gate(services: &Services) {
         directives: Arc::clone(&services.hierarchy.send_directive),
         person_input: services.terminal.person_input.clone(),
         runtime: Arc::clone(&services.terminal.runtime),
+        hooks: services.terminal.hook_sessions.clone(),
     });
 }
 

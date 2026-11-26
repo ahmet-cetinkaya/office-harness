@@ -21,4 +21,4 @@ pub use session_process::{
 };
 pub use session_view::SessionView;
 pub use sign_in::{SignIn, StatusCommand, StatusRun, StatusRunResult};
-pub use start_terminal::{PrepareLaunch, PreparedLaunch, StartTerminal};
+pub use start_terminal::{PrepareLaunch, PreparedLaunch, StartTerminal, StatusHooksRequest};

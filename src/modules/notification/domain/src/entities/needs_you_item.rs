@@ -46,7 +46,8 @@ impl NeedsYouItem {
             | AttentionKind::AutoHold
             | AttentionKind::ResumeHold
             | AttentionKind::LeftoverKept
-            | AttentionKind::Report => WAITING_GROUP,
+            | AttentionKind::Report
+            | AttentionKind::PermissionAsked => WAITING_GROUP,
             AttentionKind::Exited => EXITED_GROUP,
         }
     }

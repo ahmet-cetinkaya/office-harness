@@ -36,12 +36,14 @@ import {
   EVENT_AGENT_STATUS,
   EVENT_AGENT_TASK,
   EVENT_CLIENT_RESYNC,
+  EVENT_HOOK_CHANGED,
   EVENT_PROJECT_CHANGED,
   EVENT_STORAGE_ERROR,
   readActionRecorded,
   readAdditionsChanged,
   readAgentChanged,
   readAgentDeleted,
+  readHookEvent,
   readLineEvent,
   readStatusEvent,
   readTaskEvent,
@@ -49,6 +51,7 @@ import {
   namesLostNotifications,
   upsertAgent,
   withoutAgent,
+  withHook,
   withLine,
   withStatus,
   withTask,
@@ -296,6 +299,10 @@ export function createOfficeController(
       case EVENT_AGENT_TASK: {
         const { agentId, task } = readTaskEvent(event);
         return update({ agents: withTask(snapshot.agents, agentId, task) });
+      }
+      case EVENT_HOOK_CHANGED: {
+        const { agentId, hook } = readHookEvent(event);
+        return update({ agents: withHook(snapshot.agents, agentId, hook) });
       }
       case EVENT_AGENT_DELETED:
         return handleDeleted(event);

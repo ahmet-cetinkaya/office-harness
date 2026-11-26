@@ -4,6 +4,7 @@
 export type NeedsYouKind =
   | "failed"
   | "waiting_for_input"
+  | "permission_asked"
   | "bell"
   | "auto_hold"
   | "resume_hold"
@@ -52,6 +53,7 @@ export interface NeedsYouRow {
 const KINDS: readonly string[] = [
   "failed",
   "waiting_for_input",
+  "permission_asked",
   "bell",
   "auto_hold",
   "resume_hold",
@@ -115,6 +117,12 @@ export function readItems(value: unknown): NeedsYouItem[] {
   }));
 }
 
+/** The two details an exact session gives a waiting item in place of the quiet period (0024 D10). */
+const TURN_DETAIL_TEXT: ReadonlyMap<string, string> = new Map([
+  ["turn_stopped", "finished its turn"],
+  ["turn_failed", "its turn ended with an error"],
+]);
+
 function quietText(quietPeriodMs: string | null): string {
   const seconds = Number(quietPeriodMs) / MS_PER_SECOND;
   if (quietPeriodMs === null || !Number.isFinite(seconds) || seconds <= 0) {
@@ -127,12 +135,14 @@ function quietText(quietPeriodMs: string | null): string {
  * The event as the office saw it, as text. The desktop writes the words from
  * the kind and shows the server's detail as sent; it never reads the detail
  * for meaning (data model, "Stored detail per kind"). The waiting detail is
- * the one number, the quiet period in ms.
+ * the quiet period in ms, or one of the two turn words of an exact session.
  */
 export function eventText(item: NeedsYouItem): string {
   switch (item.kind) {
     case "waiting_for_input":
-      return quietText(item.detail);
+      return TURN_DETAIL_TEXT.get(item.detail ?? "") ?? quietText(item.detail);
+    case "permission_asked":
+      return "asks permission";
     case "failed":
       return item.detail === null ? "failed" : `failed: ${item.detail}`;
     case "auto_hold":

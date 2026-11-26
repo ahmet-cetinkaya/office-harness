@@ -22,10 +22,12 @@ pub enum AttentionKind {
     LeftoverKept,
     Exited,
     Report,
+    /// An exact `claude` session asked for permission (0024/FR-013).
+    PermissionAsked,
 }
 
 impl AttentionKind {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Failed,
         Self::WaitingForInput,
         Self::Bell,
@@ -34,6 +36,7 @@ impl AttentionKind {
         Self::LeftoverKept,
         Self::Exited,
         Self::Report,
+        Self::PermissionAsked,
     ];
 
     /// The stored and wire name.
@@ -48,6 +51,7 @@ impl AttentionKind {
             Self::LeftoverKept => "leftover_kept",
             Self::Exited => "exited",
             Self::Report => "report",
+            Self::PermissionAsked => "permission_asked",
         }
     }
 }
@@ -67,7 +71,7 @@ impl FromStr for AttentionKind {
             .find(|kind| kind.as_str() == text)
             .ok_or_else(|| {
                 NotificationError(format!(
-                    "attention kind is not one of failed, waiting_for_input, bell, auto_hold, resume_hold, leftover_kept, exited, report: {text}"
+                    "attention kind is not one of failed, waiting_for_input, bell, auto_hold, resume_hold, leftover_kept, exited, report, permission_asked: {text}"
                 ))
             })
     }

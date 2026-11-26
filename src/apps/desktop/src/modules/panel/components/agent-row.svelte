@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
-  import { shownStatusText, taskRowText, type Agent } from "../../agent";
+  import { listStatusText, taskRowText, type Agent } from "../../agent";
   import { AGENT_ON_HOLD_TEXT } from "../../hold";
   import { hierarchyText, type AgentHierarchy } from "../models/panel";
 
@@ -52,7 +52,7 @@
     [
       agent.name,
       ...(projectName !== null ? [`project ${projectName}`] : []),
-      shownStatusText(agent, isStopping),
+      listStatusText(agent, isStopping),
       ...(isOnHold ? [AGENT_ON_HOLD_TEXT] : []),
       ...(hierarchyLine === "" ? [] : [hierarchyLine]),
       ...(agent.last_line !== null ? [agent.last_line] : []),
@@ -77,7 +77,7 @@
       {#if projectName !== null}
         <span class="text-neutral-700">project {projectName}</span>
       {/if}
-      <span class="text-neutral-700">{shownStatusText(agent, isStopping)}</span>
+      <span class="text-neutral-700">{listStatusText(agent, isStopping)}</span>
       {#if isOnHold}
         <span class="font-medium text-neutral-900">{AGENT_ON_HOLD_TEXT}</span>
       {/if}
