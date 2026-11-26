@@ -6,4 +6,7 @@ pub const LEDGER_TABLE: &str = "schedule_schema_version";
 /// The forward-only migration scripts in order. Script `n` brings the module's
 /// tables to version `n`. A shipped script never changes; a new one is added
 /// at the end.
-pub const SCRIPTS: &[&str] = &[include_str!("0001_schedules.sql")];
+pub const SCRIPTS: &[&str] = &[
+    include_str!("0001_schedules.sql"),
+    include_str!("0002_schedule_checks.sql"),
+];

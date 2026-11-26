@@ -369,13 +369,140 @@ fn delete_removes_the_schedule_and_its_history() {
 #[test]
 fn a_damaged_row_is_a_storage_failure_not_a_schedule() {
     let repository = memory_repository();
-    repository.save(&hourly(1, "One"), cap(50)).expect("one");
+    let daily = Repeat::Daily {
+        time: time(8, 0, 0, 0),
+    };
+    repository
+        .save(&schedule(1, "One", daily), cap(50))
+        .expect("one");
+    // The checks refuse a missing column; a time that no HH:MM reads still
+    // reaches the decoder.
     repository
         .connection()
-        .execute("UPDATE schedule_schedules SET repeat_hours = NULL", [])
+        .execute(
+            "UPDATE schedule_schedules SET repeat_time = 'not a time'",
+            [],
+        )
         .expect("damage");
     assert!(matches!(
         repository.list(),
         Err(ScheduleApplicationError::Storage { .. })
     ));
+}
+
+const INSERT_DAILY: &str = "INSERT INTO schedule_schedules (id, name, name_key, text, \
+    target_agent_id, repeat_kind, repeat_time, switched_on, anchor, notified_since_success) \
+    VALUES ('s1', 'Nightly', 'nightly', 'go', 'a1', 'daily', '08:00', 1, 0, 0)";
+
+#[test]
+fn a_database_of_the_first_script_keeps_its_schedules_and_runs_through_the_checks() {
+    let connection = Connection::open_in_memory().expect("open");
+    connection
+        .execute_batch("PRAGMA foreign_keys = ON")
+        .expect("pragma");
+    connection.execute_batch(SCRIPTS[0]).expect("first script");
+    connection.execute_batch(INSERT_DAILY).expect("schedule");
+    connection
+        .execute_batch(
+            "INSERT INTO schedule_runs (schedule_id, due, started, via, result) \
+             VALUES ('s1', 1, 2, 'due', 'submitted'), ('s1', 3, 4, 'now', NULL)",
+        )
+        .expect("runs");
+
+    connection.execute_batch(SCRIPTS[1]).expect("second script");
+
+    let runs: Vec<(i64, i64, Option<String>)> = connection
+        .prepare("SELECT id, due, result FROM schedule_runs ORDER BY id")
+        .expect("prepare")
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .expect("query")
+        .map(|row| row.expect("row"))
+        .collect();
+    assert_eq!(
+        runs,
+        [(1, 1, Some("submitted".to_owned())), (2, 3, None)],
+        "the runs and their ids survive the rebuild"
+    );
+    connection
+        .execute_batch("DELETE FROM schedule_schedules WHERE id = 's1'")
+        .expect("delete");
+    let left: i64 = connection
+        .query_row("SELECT COUNT(*) FROM schedule_runs", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(left, 0, "the history still goes with its schedule");
+}
+
+#[test]
+fn the_checks_refuse_rows_that_the_rules_never_make() {
+    let connection = Connection::open_in_memory().expect("open");
+    for script in SCRIPTS {
+        connection.execute_batch(script).expect("migrate");
+    }
+    connection.execute_batch(INSERT_DAILY).expect("a good row");
+
+    let refused = [
+        ("name", "UPDATE schedule_schedules SET name = ''"),
+        (
+            "name length",
+            &format!("UPDATE schedule_schedules SET name = '{}'", "a".repeat(101)),
+        ),
+        ("text", "UPDATE schedule_schedules SET text = ''"),
+        (
+            "text length",
+            &format!(
+                "UPDATE schedule_schedules SET text = '{}'",
+                "a".repeat(8193)
+            ),
+        ),
+        (
+            "hours zero",
+            "UPDATE schedule_schedules SET repeat_kind = 'every_hours', repeat_time = NULL, \
+             repeat_hours = 0",
+        ),
+        (
+            "hours over the range",
+            "UPDATE schedule_schedules SET repeat_kind = 'every_hours', repeat_time = NULL, \
+             repeat_hours = 169",
+        ),
+        (
+            "a daily repeat without its time",
+            "UPDATE schedule_schedules SET repeat_time = NULL",
+        ),
+        (
+            "a weekly repeat without a day",
+            "UPDATE schedule_schedules SET repeat_kind = 'weekly', repeat_days = ''",
+        ),
+        (
+            "a once repeat without its date",
+            "UPDATE schedule_schedules SET repeat_kind = 'once'",
+        ),
+        (
+            "a run result that is none of the eight",
+            "INSERT INTO schedule_runs (schedule_id, due, started, via, result) \
+             VALUES ('s1', 1, 2, 'due', 'bogus')",
+        ),
+    ];
+    for (what, statement) in refused {
+        assert!(connection.execute_batch(statement).is_err(), "{what}");
+    }
+    connection
+        .execute_batch(
+            "UPDATE schedule_schedules SET name = 'x', repeat_kind = 'every_hours', \
+             repeat_time = NULL, repeat_hours = 168",
+        )
+        .expect("the limits themselves are allowed");
+}
+
+#[test]
+fn a_name_whose_lower_case_is_longer_than_the_name_is_stored() {
+    let repository = memory_repository();
+    // A capital I with a dot lower-cases to 2 code points, so the key of a
+    // name of 100 of them has 200.
+    let name = "\u{130}".repeat(100);
+
+    repository
+        .save(&hourly(1, &name), cap(50))
+        .expect("a valid name is never a storage failure");
+
+    assert_eq!(repository.list().expect("list")[0].name, name);
 }

@@ -50,6 +50,7 @@ fn rule_code(rule: Rule) -> &'static str {
         Rule::Blank => "blank",
         Rule::TooLong { .. } => "too_long",
         Rule::ControlCharacter => "control_character",
+        Rule::FormatCharacter => "format_character",
         Rule::NoDay => "no_day",
         Rule::HoursOutOfRange => "hours_out_of_range",
         Rule::NotInFuture => "not_in_future",

@@ -158,6 +158,24 @@ describe("form", () => {
     ]);
   });
 
+  test("a name with a zero-width or direction-changing character is refused, a text may keep a joiner", () => {
+    const invisible = draftProblems({
+      ...valid,
+      name: "Night\u200Bly",
+    });
+    expect(invisible.map(problemText)).toEqual([
+      "Name must not have invisible or direction-changing characters",
+    ]);
+    expect(
+      draftProblems({ ...valid, name: "Night\u202Ely" }).map(
+        (item) => item.rule,
+      ),
+    ).toEqual(["format_character"]);
+    expect(
+      draftProblems({ ...valid, text: "family \u{1F468}\u200D\u{1F469}" }),
+    ).toEqual([]);
+  });
+
   test("a name over 100 characters is too long", () => {
     const [problem] = draftProblems({ ...valid, name: "x".repeat(101) });
     expect(problem.rule).toBe("too_long");
