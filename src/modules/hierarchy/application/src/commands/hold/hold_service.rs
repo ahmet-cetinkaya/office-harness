@@ -244,6 +244,49 @@ impl HoldService {
             .map(|refusal| refusal.to_string())
     }
 
+    /// The reason a hold would refuse a schedule run on `target` now, or
+    /// `None`: the office hold, or a hold on the target or an ancestor. It
+    /// counts nothing, so the run start and the recheck of a waiting
+    /// scheduled directive can ask without using a slot of the schedule
+    /// window.
+    #[must_use]
+    pub fn scheduled_refusal(&self, target: AgentId, rows: &[TreeRow]) -> Option<String> {
+        hold_refusal(&self.locked().holds, rows, target, None).map(|refusal| refusal.to_string())
+    }
+
+    /// Checks one schedule-made action right before it enters the target's
+    /// queue (0025/FR-007): holds first, then, for a directive, the schedule
+    /// window of the target. A passed directive counts only in that window,
+    /// never in an agent's window. A refusal feeds no automatic hold and
+    /// starts none: a schedule is no agent, so only the caller journals it.
+    ///
+    /// # Errors
+    /// A `GuardRefusal` with the hold reason, or the limit and its value.
+    pub fn guard_scheduled(
+        &self,
+        action: AgentAction,
+        target: AgentId,
+        rows: &[TreeRow],
+    ) -> Result<(), GuardRefusal> {
+        let mut state = self.locked();
+        if let Some(refusal) = hold_refusal(&state.holds, rows, target, None) {
+            return Err(GuardRefusal {
+                reason: refusal.to_string(),
+            });
+        }
+        if !matches!(action, AgentAction::Directive { .. }) {
+            return Ok(());
+        }
+        let limits = self.limits.limits();
+        let now = self.clock.steady_now();
+        state
+            .windows
+            .try_take_scheduled(target, &limits, now)
+            .map_err(|limit| GuardRefusal {
+                reason: limit.to_string(),
+            })
+    }
+
     fn decide(
         &self,
         caller: AgentId,

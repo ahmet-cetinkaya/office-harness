@@ -68,7 +68,11 @@ fn outcome_of(body: &Map<String, Value>) -> Outcome {
             .and_then(Value::as_str)
             .unwrap_or_default()
     };
-    Err(ApiError::new(text("code"), text("message")))
+    // A `fields` array that does not read as field failures is left out.
+    let fields = error
+        .and_then(|error| error.get("fields"))
+        .and_then(|fields| serde_json::from_value(fields.clone()).ok());
+    Err(ApiError::new(text("code"), text("message")).with_fields(fields))
 }
 
 /// Serves the webview's requests and forwards the server's events until the

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use kernel::{Actor, AgentId, Timestamp};
+use kernel::{Actor, AgentId, ScheduleId, Timestamp};
 
 /// Whether the office may type a directive into a target now (0012/FR-002).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,6 +90,35 @@ pub trait DirectiveJournal: Send + Sync {
     /// Records the objective of a temporary agent once, in the temp's own
     /// record, with the creator as actor (0020/FR-001).
     fn record_objective(&self, creator: Actor, temp: AgentId);
+
+    /// Records what went wrong with a scheduled directive once, in the
+    /// target's record, with the schedule as actor: no record of a sender
+    /// exists (0025/FR-012). `failure` is the unsubmitted text or the
+    /// withdrawal with its reason. A host that keeps no schedule records
+    /// keeps the default, which writes nothing.
+    fn record_scheduled(
+        &self,
+        _schedule: ScheduleId,
+        _target: AgentId,
+        _text: &str,
+        _failure: &str,
+    ) {
+    }
+}
+
+/// How the queue settled a scheduled directive that had waited (0025/FR-009).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScheduledOutcome {
+    Submitted,
+    Unsubmitted(String),
+    Withdrawn(String),
+}
+
+/// Tells the schedule module what became of a scheduled directive that
+/// waited in a queue, keyed by the run it belongs to. The handler calls it
+/// once per entry, after the entry left the queue.
+pub trait ScheduledOutcomes: Send + Sync {
+    fn settled(&self, run_id: i64, outcome: ScheduledOutcome);
 }
 
 /// Tells the office that a target received a directive: the text is in its

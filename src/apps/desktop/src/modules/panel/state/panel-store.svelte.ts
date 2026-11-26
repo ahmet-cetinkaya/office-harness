@@ -18,6 +18,7 @@ import { createResumeController } from "../../resume";
 import { createSweepController } from "../../sweep";
 import { createSecretsController } from "../../secrets";
 import { createSleepController } from "../../sleep";
+import { createSchedulesController } from "../../schedule";
 import { createTempsController } from "../../temps";
 import { createTemplateController } from "../../template";
 import { createHookStatusController } from "../../hook-status";
@@ -54,6 +55,7 @@ export function createPanelStore(client: CoreClient) {
   const secrets = createSecretsController(client);
   const sleep = createSleepController(client);
   const temps = createTempsController(client);
+  const schedules = createSchedulesController(client);
   const worktreeDependencies = createWorktreeDependenciesController(client);
   const hookStatus = createHookStatusController(client);
   // The restore is the one reader of `last_view` and the only place the
@@ -186,6 +188,7 @@ export function createPanelStore(client: CoreClient) {
     secrets,
     sleep,
     temps,
+    schedules,
     worktreeDependencies,
     hookStatus,
     templates,

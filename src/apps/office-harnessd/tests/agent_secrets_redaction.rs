@@ -187,11 +187,31 @@ const AGENT_TEXT_COLUMNS: &[(&str, &str)] = &[
     ("notification_needs_you.report_kind", "derived"),
     ("hierarchy_holds.reason", "derived"),
     ("hierarchy_teams.name", "frame"),
+    // The refusal, skip, and failure texts of a run: hold reasons, the wake
+    // texts, and the queue answers, built from replaced names and fixed words
+    // (0025).
+    ("schedule_runs.reason", "derived"),
 ];
 
 /// Columns that hold ids, fixed words, paths, numbers as text, settings, and
 /// what the person typed: no agent-supplied text.
 const OTHER_TEXT_COLUMNS: &[&str] = &[
+    // What the person typed or set in a schedule, and its fixed words and ids (0025).
+    "audit_actions.actor_label",
+    "schedule_runs.queue_entry",
+    "schedule_runs.result",
+    "schedule_runs.schedule_id",
+    "schedule_runs.via",
+    "schedule_schedules.id",
+    "schedule_schedules.name",
+    "schedule_schedules.name_key",
+    "schedule_schedules.off_reason",
+    "schedule_schedules.repeat_date",
+    "schedule_schedules.repeat_days",
+    "schedule_schedules.repeat_kind",
+    "schedule_schedules.repeat_time",
+    "schedule_schedules.target_agent_id",
+    "schedule_schedules.text",
     "agent_agents.id",
     "agent_agents.machine_id",
     "agent_agents.parent_agent_id",

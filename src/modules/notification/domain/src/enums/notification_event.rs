@@ -27,10 +27,12 @@ pub enum NotificationEvent {
     TempEnded,
     /// An exact `claude` session asked for permission (0024/FR-013).
     PermissionAsked,
+    /// A schedule failed, was skipped, or missed runs (0025/FR-011).
+    Schedule,
 }
 
 impl NotificationEvent {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Exited,
         Self::Failed,
         Self::WaitingForInput,
@@ -41,6 +43,7 @@ impl NotificationEvent {
         Self::Report,
         Self::TempEnded,
         Self::PermissionAsked,
+        Self::Schedule,
     ];
 
     /// The stored and wire name.
@@ -57,6 +60,7 @@ impl NotificationEvent {
             Self::Report => "report",
             Self::TempEnded => "temp_ended",
             Self::PermissionAsked => "permission_asked",
+            Self::Schedule => "schedule",
         }
     }
 }
@@ -75,7 +79,7 @@ impl FromStr for NotificationEvent {
             .into_iter()
             .find(|event| event.as_str() == text)
             .ok_or_else(|| NotificationError(format!(
-                "notification event is not one of exited, failed, waiting_for_input, bell, auto_hold, resume_hold, leftover_kept, report, temp_ended, permission_asked: {text}"
+                "notification event is not one of exited, failed, waiting_for_input, bell, auto_hold, resume_hold, leftover_kept, report, temp_ended, permission_asked, schedule: {text}"
             )))
     }
 }

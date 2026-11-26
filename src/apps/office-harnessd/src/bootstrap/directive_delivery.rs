@@ -18,7 +18,7 @@ const DELIVERY_POLL: Duration = Duration::from_millis(250);
 const IDLE_CHECK: Duration = Duration::from_secs(1);
 
 /// The reason a normal stop records for each waiting directive (0012/FR-005).
-const SERVER_STOPPED: &str = "the office server stopped";
+pub const SERVER_STOPPED: &str = "the office server stopped";
 
 /// Starts the thread that types waiting directives once their target is
 /// ready and withdraws the ones that may no longer be typed. The record

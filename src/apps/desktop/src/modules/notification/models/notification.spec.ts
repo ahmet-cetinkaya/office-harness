@@ -7,6 +7,7 @@ import {
   isNeverReadOnArrival,
   isUnread,
   leftoverKeptBody,
+  opensSchedules,
   rowText,
   sortRows,
   unreadCount,
@@ -150,5 +151,36 @@ describe("notification rows", () => {
       "new-read",
       "old-read",
     ]);
+  });
+});
+
+describe("schedule notifications (0025)", () => {
+  const missed: NotificationRow = {
+    id: "m1",
+    agent_id: null,
+    agent_name: "2 schedules missed runs",
+    event: "schedule",
+    created_at: 1,
+    read_at: null,
+  };
+
+  test("a row without an agent reads as plain text and never as deleted", () => {
+    expect(rowText(missed, false)).toBe("2 schedules missed runs");
+    expect(announcementText(missed)).toBe("2 schedules missed runs");
+  });
+
+  test("a result row names the schedule and then the detail", () => {
+    const result = {
+      ...missed,
+      agent_id: "a1",
+      agent_name: "nightly",
+      detail: "Ana: skipped: stopped",
+    };
+    expect(rowText(result, true)).toBe("nightly, Ana: skipped: stopped");
+  });
+
+  test("a schedule row opens the schedules view", () => {
+    expect(opensSchedules(missed)).toBe(true);
+    expect(opensSchedules({ ...missed, event: "exited" })).toBe(false);
   });
 });

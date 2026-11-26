@@ -13,6 +13,7 @@ fn defaults_follow_the_data_model() {
     assert_eq!(settings.idle_sleep_minutes, 0);
     assert_eq!(settings.temp_cap, 8);
     assert_eq!(settings.temp_idle_minutes, 30);
+    assert_eq!(settings.schedule_cap, 50);
     assert!(settings.worktree_dependency_links);
     assert_eq!(settings.value_of(SettingKey::WorktreeDependencyLinks), "on");
 }
@@ -425,7 +426,7 @@ struct TempSettingCase {
     message: &'static str,
 }
 
-const TEMP_SETTINGS: [TempSettingCase; 2] = [
+const TEMP_SETTINGS: [TempSettingCase; 3] = [
     TempSettingCase {
         key: SettingKey::TempCap,
         name: "temp_cap",
@@ -439,6 +440,13 @@ const TEMP_SETTINGS: [TempSettingCase; 2] = [
         accepted: ["5", "1440"],
         refused: ["0", "4", "1441", "2.5", "-5", "abc", ""],
         message: "temp_idle_minutes is a whole number from 5 to 1440",
+    },
+    TempSettingCase {
+        key: SettingKey::ScheduleCap,
+        name: "schedule_cap",
+        accepted: ["1", "200"],
+        refused: ["0", "201", "-1", "2.5", "abc", "", " 5"],
+        message: "schedule_cap is a whole number from 1 to 200",
     },
 ];
 

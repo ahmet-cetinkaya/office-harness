@@ -11,7 +11,7 @@ const ACTION_RECORDED_EVENT: &str = "action.recorded";
 #[must_use]
 pub fn action_entry_json(entry: &ActionEntry) -> Value {
     let record = &entry.record;
-    json!({
+    let mut json = json!({
         "id": entry.id,
         "actor": actor_text(record.actor),
         "agent_id": record.target_agent_id.map(|agent_id| agent_id.to_string()),
@@ -19,7 +19,11 @@ pub fn action_entry_json(entry: &ActionEntry) -> Value {
         "result": record.result.as_text(),
         "detail": record.detail,
         "at": record.at.as_unix_millis(),
-    })
+    });
+    if let Some(label) = &record.actor_label {
+        json["actor_label"] = json!(label);
+    }
+    json
 }
 
 #[must_use]
@@ -34,6 +38,7 @@ fn actor_text(actor: Actor) -> String {
         Actor::User => "user".to_owned(),
         Actor::Office => "office".to_owned(),
         Actor::Agent(agent_id) => format!("agent:{agent_id}"),
+        Actor::Schedule(schedule_id) => format!("schedule:{schedule_id}"),
     }
 }
 

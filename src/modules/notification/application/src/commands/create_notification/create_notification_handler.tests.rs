@@ -25,7 +25,7 @@ fn read_handler(store: &Arc<MemoryNotifications>) -> ReadNotificationHandler {
 
 fn bell(agent_id: AgentId, at: Timestamp) -> CreateNotification {
     CreateNotification {
-        agent_id,
+        agent_id: Some(agent_id),
         agent_name: "Ana".to_owned(),
         event: NotificationEvent::Bell,
         at,
@@ -90,7 +90,7 @@ fn every_non_bell_event_creates_its_own_row() {
     for event in [NotificationEvent::Exited, NotificationEvent::Exited] {
         create
             .handle(CreateNotification {
-                agent_id: agent,
+                agent_id: Some(agent),
                 agent_name: "Ana".to_owned(),
                 event,
                 at: NOW,
@@ -104,7 +104,7 @@ fn every_non_bell_event_creates_its_own_row() {
 
 fn report(agent_id: AgentId, kind: &str) -> CreateNotification {
     CreateNotification {
-        agent_id,
+        agent_id: Some(agent_id),
         agent_name: "Ana".to_owned(),
         event: NotificationEvent::Report,
         at: NOW,
@@ -128,4 +128,49 @@ fn a_report_while_an_unread_report_exists_adds_nothing_but_a_bell_still_does() {
     assert_eq!(second, None);
     assert!(rang.is_some());
     assert_eq!(store.all().len(), 2);
+}
+
+#[test]
+fn a_notification_without_an_agent_is_stored_and_never_coalesced() {
+    let store = Arc::new(MemoryNotifications::default());
+    let create = create_handler(&store);
+    let request = || CreateNotification {
+        agent_id: None,
+        agent_name: "Nightly report".to_owned(),
+        event: NotificationEvent::Schedule,
+        at: NOW,
+        detail: Some("missed 2 runs".to_owned()),
+    };
+
+    create.handle(request()).expect("first");
+    create.handle(request()).expect("second");
+
+    let rows = store.all();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].agent_id, None);
+}
+
+#[test]
+fn an_amended_row_that_the_person_read_stays_read() {
+    let store = Arc::new(MemoryNotifications::default());
+    let create = create_handler(&store);
+    let read = read_handler(&store);
+    let mut stored = create
+        .handle(CreateNotification {
+            agent_id: None,
+            agent_name: "1 schedule missed runs".to_owned(),
+            event: NotificationEvent::Schedule,
+            at: NOW,
+            detail: None,
+        })
+        .expect("create")
+        .expect("stored");
+    read.handle(stored.id).expect("read");
+
+    stored.agent_name = "2 schedules missed runs".to_owned();
+    let amended = create.amend(&stored).expect("amend");
+
+    assert_eq!(amended.agent_name, "2 schedules missed runs");
+    assert!(!amended.is_unread());
+    assert!(!store.all()[0].is_unread());
 }

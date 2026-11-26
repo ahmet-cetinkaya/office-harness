@@ -8,6 +8,7 @@ export {
   toCoreRequestError,
 } from "./core-request-error";
 export type { ApiError } from "./generated/ApiError";
+export type { FieldFailure } from "./generated/FieldFailure";
 export type { ConnectionState } from "./generated/ConnectionState";
 export {
   createTauriCoreClient,

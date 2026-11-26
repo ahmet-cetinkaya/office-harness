@@ -709,3 +709,136 @@ fn a_wall_clock_step_stamps_the_hold_but_never_moves_a_rate_window() {
         START_MILLIS - HOUR_MILLIS + RATE_WINDOW_STEP_MILLIS
     );
 }
+
+fn scheduled_directive(fixture: &Fixture, target: u128) -> Result<(), GuardRefusal> {
+    fixture.service.guard_scheduled(
+        AgentAction::Directive { target: id(target) },
+        id(target),
+        &rows(),
+    )
+}
+
+fn scheduled_refusal_reason(fixture: &Fixture, target: u128) -> String {
+    scheduled_directive(fixture, target)
+        .expect_err("refused")
+        .reason
+}
+
+#[test]
+fn a_scheduled_directive_is_refused_under_an_office_hold_with_the_office_reason() {
+    let fixture = fixture();
+    fixture.service.set_hold(HoldScope::Office).expect("hold");
+
+    assert_eq!(
+        scheduled_refusal_reason(&fixture, MEMBER),
+        "the office is on hold"
+    );
+}
+
+#[test]
+fn a_scheduled_directive_is_refused_for_a_held_target_and_for_a_held_ancestor() {
+    let fixture = fixture();
+    fixture
+        .service
+        .set_hold(HoldScope::Agent(id(MEMBER)))
+        .expect("hold");
+    assert_eq!(
+        scheduled_refusal_reason(&fixture, MEMBER),
+        format!("the agent {} is on hold", id(MEMBER))
+    );
+
+    let fixture = self::fixture();
+    fixture
+        .service
+        .set_hold(HoldScope::Agent(id(LEAD)))
+        .expect("hold");
+    assert_eq!(
+        scheduled_refusal_reason(&fixture, MEMBER),
+        format!("the agent {} is on hold", id(LEAD))
+    );
+    assert_eq!(scheduled_directive(&fixture, CEO), Ok(()));
+}
+
+#[test]
+fn the_fourth_scheduled_directive_to_a_target_is_refused_naming_the_limit_and_its_value() {
+    let fixture = fixture();
+    for _ in 0..3 {
+        assert_eq!(scheduled_directive(&fixture, MEMBER), Ok(()));
+    }
+
+    assert_eq!(
+        scheduled_refusal_reason(&fixture, MEMBER),
+        "the limit \"directives sent to one target agent\" allows 3 per 60 seconds"
+    );
+    fixture.advance(60 * SPREAD_MILLIS);
+    assert_eq!(scheduled_directive(&fixture, MEMBER), Ok(()));
+}
+
+#[test]
+fn scheduled_refusals_never_count_toward_an_automatic_hold_or_a_notification() {
+    let fixture = fixture();
+    for _ in 0..3 {
+        scheduled_directive(&fixture, MEMBER).expect("within the limit");
+    }
+    for _ in 0..=AUTO_HOLD_REFUSAL_COUNT {
+        assert!(scheduled_directive(&fixture, MEMBER).is_err());
+    }
+
+    assert_eq!(fixture.service.list(), HoldsView::default());
+    assert_eq!(fixture.recorder.events(), []);
+    // The tracker saw nothing: the first agent refusal is still only a refusal.
+    for _ in 0..3 {
+        fixture
+            .directive(LEAD, MEMBER)
+            .expect("agent window is empty");
+    }
+    assert!(fixture.directive(LEAD, MEMBER).is_err());
+    assert_eq!(fixture.recorder.count(is_held), 0);
+}
+
+#[test]
+fn a_full_schedule_window_never_refuses_a_parent_directive_to_the_same_target() {
+    let fixture = fixture();
+    for _ in 0..3 {
+        scheduled_directive(&fixture, MEMBER).expect("within the limit");
+    }
+    assert!(scheduled_directive(&fixture, MEMBER).is_err());
+
+    for _ in 0..3 {
+        assert!(fixture.directive(LEAD, MEMBER).is_ok());
+    }
+}
+
+#[test]
+fn a_scheduled_directive_adds_nothing_to_the_windows_of_agents() {
+    let fixture = fixture();
+    for _ in 0..3 {
+        scheduled_directive(&fixture, MEMBER).expect("within the limit");
+    }
+
+    for _ in 0..3 {
+        assert!(fixture.directive(LEAD, MEMBER).is_ok());
+    }
+    assert!(fixture.directive(LEAD, MEMBER).is_err());
+}
+
+#[test]
+fn a_scheduled_refusal_check_counts_nothing_and_a_hold_refusal_takes_no_slot() {
+    let fixture = fixture();
+    fixture.service.set_hold(HoldScope::Office).expect("hold");
+    for _ in 0..4 {
+        assert!(scheduled_directive(&fixture, MEMBER).is_err());
+    }
+    assert_eq!(
+        fixture.service.scheduled_refusal(id(MEMBER), &rows()),
+        Some("the office is on hold".to_owned())
+    );
+    fixture
+        .service
+        .release_hold(HoldScope::Office)
+        .expect("release");
+
+    for _ in 0..3 {
+        assert_eq!(scheduled_directive(&fixture, MEMBER), Ok(()));
+    }
+}

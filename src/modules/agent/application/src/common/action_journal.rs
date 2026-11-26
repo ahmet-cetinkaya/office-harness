@@ -80,6 +80,7 @@ impl ActionJournal {
             action,
             failure: failure.map(str::to_owned),
             detail: detail.map(str::to_owned),
+            actor_label: ActorScope::label().map(|label| label.to_string()),
             at: self.clock.now(),
         })?;
         Ok(())

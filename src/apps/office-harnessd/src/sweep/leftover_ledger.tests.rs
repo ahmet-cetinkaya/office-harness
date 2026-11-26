@@ -39,6 +39,7 @@ fn record() -> ActionRecord {
         action: ActionKind::EndLeftover,
         result: ActionResult::Ok,
         detail: Some("identity 7: ended".to_owned()),
+        actor_label: None,
         at: Timestamp::from_unix_millis(1),
     }
 }

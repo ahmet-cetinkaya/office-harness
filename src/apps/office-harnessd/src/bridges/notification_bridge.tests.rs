@@ -106,7 +106,7 @@ impl NotificationStore for MemoryNotifications {
             .lock()
             .expect("lock")
             .iter()
-            .filter(|row| row.agent_id == agent_id && row.is_unread())
+            .filter(|row| row.agent_id == Some(agent_id) && row.is_unread())
             .cloned()
             .collect())
     }
@@ -327,6 +327,7 @@ fn bridge_over(
         needs_you,
         waits: crate::bridges::WaitTracker::default(),
         waiting_agents: Arc::default(),
+        missed_notice: Arc::default(),
         hub: hub.clone(),
         alerts: alerts.clone(),
         log,
@@ -639,6 +640,58 @@ fn a_resume_hold_row_carries_the_reason_as_its_detail_and_reaches_the_clients() 
         Some("the new session ended 2 s after it started")
     );
     assert!(published_events(&mut frames)[0].contains("resume_hold"));
+}
+
+const MINUTE_MILLIS: i64 = 60_000;
+
+#[test]
+fn a_schedule_result_row_names_the_schedule_and_the_target_and_adds_no_needs_you_item() {
+    let agent = agent_named("Ana");
+    let (bridge, store, _agents, hub) = bridge_for(&agent, None);
+    let mut frames = hub.subscribe();
+
+    bridge.record_schedule_result(
+        "nightly",
+        Some(agent.id),
+        "Ana: skipped: stopped".to_owned(),
+    );
+
+    let rows = store.all();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].event, NotificationEvent::Schedule);
+    assert_eq!(rows[0].agent_id, Some(agent.id));
+    assert_eq!(rows[0].agent_name, "nightly");
+    assert_eq!(rows[0].detail.as_deref(), Some("Ana: skipped: stopped"));
+    assert!(published_events(&mut frames)[0].contains("\"schedule\""));
+}
+
+#[test]
+fn the_missed_runs_of_one_minute_share_one_row_that_counts_their_schedules() {
+    let agent = agent_named("Ana");
+    let (bridge, store, _agents, _hub) = bridge_for(&agent, None);
+    let minute = Timestamp::from_unix_millis(10 * MINUTE_MILLIS + 5_000);
+    let later_in_the_minute = Timestamp::from_unix_millis(10 * MINUTE_MILLIS + 50_000);
+
+    bridge.record_missed_schedules(2, minute);
+    bridge.record_missed_schedules(1, later_in_the_minute);
+
+    let rows = store.all();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].agent_id, None);
+    assert_eq!(rows[0].agent_name, "3 schedules missed runs");
+    assert_eq!(rows[0].event, NotificationEvent::Schedule);
+}
+
+#[test]
+fn the_missed_runs_of_the_next_minute_get_a_row_of_their_own() {
+    let agent = agent_named("Ana");
+    let (bridge, store, _agents, _hub) = bridge_for(&agent, None);
+
+    bridge.record_missed_schedules(1, Timestamp::from_unix_millis(10 * MINUTE_MILLIS));
+    bridge.record_missed_schedules(1, Timestamp::from_unix_millis(11 * MINUTE_MILLIS));
+
+    let names: Vec<String> = store.all().into_iter().map(|row| row.agent_name).collect();
+    assert_eq!(names, ["1 schedule missed runs", "1 schedule missed runs"]);
 }
 
 #[test]

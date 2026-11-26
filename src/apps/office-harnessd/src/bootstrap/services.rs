@@ -16,6 +16,9 @@ use kernel::TextRedactor;
 use notification_infrastructure::persistence::{
     LEDGER_TABLE as NOTIFICATION_LEDGER_TABLE, SCRIPTS as NOTIFICATION_SCRIPTS,
 };
+use schedule_infrastructure::persistence::{
+    LEDGER_TABLE as SCHEDULE_LEDGER_TABLE, SCRIPTS as SCHEDULE_SCRIPTS,
+};
 use secret_application::SecretRedactor;
 use secret_infrastructure::persistence::{
     LEDGER_TABLE as SECRET_LEDGER_TABLE, SCRIPTS as SECRET_SCRIPTS,
@@ -27,10 +30,11 @@ use template_infrastructure::persistence::{
 use super::start_maintenance::clear_freed_text;
 use super::{
     AccessServices, AgentServices, HierarchyServices, LoginSetup, NotificationServices,
-    SecretServices, ServerLog, StartupError, StorageAlerts, TemplateServices, TerminalServices,
-    build_access_services, build_agent_services, build_hierarchy_services,
-    build_notification_services, build_secret_services, build_template_services,
-    build_terminal_services, open_database, refuse_memory_dumps, run_migrations,
+    ScheduleServices, SecretServices, ServerLog, StartupError, StorageAlerts, TemplateServices,
+    TerminalServices, build_access_services, build_agent_services, build_hierarchy_services,
+    build_notification_services, build_schedule_services, build_secret_services,
+    build_template_services, build_terminal_services, open_database, refuse_memory_dumps,
+    run_migrations,
 };
 use crate::bridges::{
     AgentCalls, CallHelper, GateInputs, NeedsYouBridge, NotificationBridge, StatusHookFiles,
@@ -56,6 +60,7 @@ pub struct Services {
     pub hierarchy: HierarchyServices,
     pub notification: NotificationServices,
     pub template: TemplateServices,
+    pub schedule: ScheduleServices,
     pub secret: SecretServices,
     /// Writes the notification rows; the hold notifier shares it with the
     /// status stream (0007 D7).
@@ -95,6 +100,7 @@ fn migrate_modules(connection: &mut rusqlite::Connection) -> Result<(), StartupE
         &[],
     )?;
     run_migrations(connection, TEMPLATE_LEDGER_TABLE, TEMPLATE_SCRIPTS, &[])?;
+    run_migrations(connection, SCHEDULE_LEDGER_TABLE, SCHEDULE_SCRIPTS, &[])?;
     run_migrations(connection, SECRET_LEDGER_TABLE, SECRET_SCRIPTS, &[])?;
     Ok(())
 }
@@ -249,6 +255,7 @@ pub fn start_with(
         redactor,
     );
     let session_processes = Arc::new(SessionProcessRepository::new(connection.clone()));
+    let schedule = build_schedule_services(&connection, Arc::clone(&agent.settings), log);
     let services = Services {
         machine,
         agents,
@@ -262,6 +269,7 @@ pub fn start_with(
         hierarchy,
         notification,
         template,
+        schedule,
         secret,
         notification_bridge,
         needs_you_bridge,

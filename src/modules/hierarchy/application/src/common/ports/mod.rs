@@ -11,7 +11,7 @@ pub use agent_creator_ports::{
 };
 pub use directive_ports::{
     Delivery, DirectiveClock, DirectiveJournal, DirectiveReceipt, DirectiveTarget, DirectiveWriter,
-    Readiness,
+    Readiness, ScheduledOutcome, ScheduledOutcomes,
 };
 pub use hold_ports::{HoldClock, HoldJournal, HoldNotifier, RateLimitSource};
 pub use report_ports::{PersonReports, ReportJournal};

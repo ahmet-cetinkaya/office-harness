@@ -185,6 +185,7 @@ fn a_stop_that_saved_the_status_but_not_yet_its_entry_still_names_its_actor() {
         action: ActionKind::Stop,
         result: ActionResult::Ok,
         detail: None,
+        actor_label: None,
         at: Timestamp::from_unix_millis(0),
     })
     .expect("append");

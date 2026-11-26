@@ -143,12 +143,20 @@ export function objectiveProblem(objective: string): string | null {
   return null;
 }
 
+const SCHEDULE_CREATOR_PREFIX = "schedule:";
+const SCHEDULE_ID_SHORT_LENGTH = 8;
+
 /** The creator of a temp as text: the person, the agent's name, or its id. */
 export function creatorText(
   creator: string,
   agents: readonly Pick<Agent, "id" | "name">[],
 ): string {
   if (creator === "user") return "the person";
+  if (creator === "office") return "the office";
+  if (creator.startsWith(SCHEDULE_CREATOR_PREFIX)) {
+    const id = creator.slice(SCHEDULE_CREATOR_PREFIX.length);
+    return `schedule ${id.slice(0, SCHEDULE_ID_SHORT_LENGTH)}`;
+  }
   return agents.find((agent) => agent.id === creator)?.name ?? creator;
 }
 

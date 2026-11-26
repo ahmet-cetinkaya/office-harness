@@ -33,6 +33,7 @@
     INITIAL_NOTIFICATIONS,
     NotificationDialog,
     NotificationLiveRegion,
+    opensSchedules,
     rowText,
     UnreadButton,
     unreadCount,
@@ -49,6 +50,7 @@
   import { interruptedCount, ResumeAction } from "../../resume";
   import { SweepStatus } from "../../sweep";
   import { IdleSleepDialog } from "../../sleep";
+  import { SchedulesDialog } from "../../schedule";
   import { TempsDialog } from "../../temps";
   import { HookStatusDialog } from "../../hook-status";
   import { WorktreeDependenciesDialog } from "../../worktree-dependencies";
@@ -189,6 +191,9 @@
   let isCreatingProject = $state(false);
   let isEditingIdleSleep = $state(false);
   let isShowingTemps = $state(false);
+  let isShowingSchedules = $state(false);
+  /** The schedule that a notification named, or null: its row scrolls into view. */
+  let highlightedScheduleName = $state<string | null>(null);
   let isEditingWorktreeDependencies = $state(false);
   let isEditingHookStatus = $state(false);
   let isSwitchingAgent = $state(false);
@@ -291,12 +296,24 @@
    * (FR-009). A deleted agent's row opens nothing, but the click still reads
    * it: the kept name tells the user what the row was about (edge case).
    */
+  function showSchedules(scheduleName: string | null): void {
+    highlightedScheduleName = scheduleName;
+    isShowingSchedules = true;
+  }
+
   function openNotification(notificationId: string): void {
     const row = notifications.rows.find((known) => known.id === notificationId);
     isShowingNotifications = false;
     if (row === undefined) return;
     void store.notifications.read(notificationId);
-    if (office.agents.some((agent) => agent.id === row.agent_id)) {
+    if (opensSchedules(row)) {
+      showSchedules(row.agent_name);
+      return;
+    }
+    if (
+      row.agent_id !== null &&
+      office.agents.some((agent) => agent.id === row.agent_id)
+    ) {
       openAgent(row.agent_id);
     }
   }
@@ -459,6 +476,9 @@
         </Button>
         <Button variant="secondary" onclick={() => (isShowingTemps = true)}>
           Temps ({tempCount})
+        </Button>
+        <Button variant="secondary" onclick={() => showSchedules(null)}>
+          Schedules
         </Button>
         <Button
           variant="secondary"
@@ -718,6 +738,14 @@
   <IdleSleepDialog
     controller={store.sleep}
     onclose={() => (isEditingIdleSleep = false)}
+  />
+{/if}
+{#if isShowingSchedules}
+  <SchedulesDialog
+    controller={store.schedules}
+    agents={office.agents}
+    highlightName={highlightedScheduleName}
+    onclose={() => (isShowingSchedules = false)}
   />
 {/if}
 {#if isShowingTemps}

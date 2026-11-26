@@ -2145,6 +2145,9 @@ dependencies = [
  "icu_properties",
  "icu_provider",
  "smallvec",
+ "utf16_iter",
+ "utf8_iter",
+ "write16",
  "zerovec",
 ]
 
@@ -2302,6 +2305,7 @@ checksum = "34e6d07feb763c647199bd9072192b9639da3b5ffde49afd73c08b1d5ceb1469"
 dependencies = [
  "jiff-core",
  "jiff-static",
+ "jiff-tzdb",
  "jiff-tzdb-platform",
  "log",
  "portable-atomic",
@@ -2428,6 +2432,7 @@ name = "kernel"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "uuid",
 ]
@@ -3190,6 +3195,7 @@ dependencies = [
  "hierarchy-domain",
  "hierarchy-infrastructure",
  "hierarchy-presentation",
+ "jiff",
  "kernel",
  "nix 0.28.0",
  "notification-application",
@@ -3198,6 +3204,10 @@ dependencies = [
  "notification-presentation",
  "private-fs",
  "rusqlite",
+ "schedule-application",
+ "schedule-domain",
+ "schedule-infrastructure",
+ "schedule-presentation",
  "secret-application",
  "secret-domain",
  "secret-infrastructure",
@@ -3908,6 +3918,50 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "schedule-application"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "kernel",
+ "schedule-domain",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "schedule-domain"
+version = "0.1.0"
+dependencies = [
+ "icu_normalizer",
+ "jiff",
+ "kernel",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "schedule-infrastructure"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "kernel",
+ "rusqlite",
+ "schedule-application",
+ "schedule-domain",
+ "tempfile",
+]
+
+[[package]]
+name = "schedule-presentation"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "kernel",
+ "schedule-application",
+ "schedule-domain",
+ "serde_json",
+ "wire",
 ]
 
 [[package]]
@@ -5550,6 +5604,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "utf16_iter"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8232dd3cdaed5356e0f716d285e4b40b932ac434100fe9b7e0e8e935b9e6246"
+
+[[package]]
 name = "utf8_iter"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6178,6 +6238,12 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
+
+[[package]]
+name = "write16"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1890f4022759daae28ed4fe62859b1236caebfc61ede2f63ed4e695f3f6d936"
 
 [[package]]
 name = "writeable"

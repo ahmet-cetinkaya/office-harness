@@ -82,6 +82,7 @@ Boundaries follow the spec entities. A new module is added when a change needs a
 | `audit` | Action record entries: actor, target, action, time, and result | 0001 (FR-011) |
 | `hierarchy` | Roles, teams, the parent tree, directives, and agent actors | 0002 |
 | `notification` | Status events that the user must see, and the read and unread state | 0003 |
+| `schedule` | The person's schedules: repeat and due-time rules, next due times, run history, and the schedule cap | 0025 |
 | (later) `machine` | Machines that join the office from another computer | R5 |
 | (later) `meeting` | Meetings with chosen agents and presets | R8 |
 
