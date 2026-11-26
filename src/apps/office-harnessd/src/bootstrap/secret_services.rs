@@ -14,14 +14,15 @@ use secret_infrastructure::{
 use crate::bridges::{AgentDirectoryBridge, SystemClock};
 use crate::config::Config;
 
-/// Cleared by tests so that a test office never writes to the developer's own
-/// OS keyring.
-static OS_KEYRING_ENABLED: AtomicBool = AtomicBool::new(true);
+/// Off until the server binary turns it on, so that a test office, which never
+/// does, never writes to the developer's own OS keyring.
+static OS_KEYRING_ENABLED: AtomicBool = AtomicBool::new(false);
 
-/// Makes every office that starts after this call keep its store key in the
-/// key file only. It is for tests, which must not touch the real keyring.
-pub fn disable_os_keyring() {
-    OS_KEYRING_ENABLED.store(false, Ordering::SeqCst);
+/// Lets every office that starts after this call keep its store key in the OS
+/// keyring. The server binary calls it at its start; without it the store key
+/// goes to the key file only.
+pub fn enable_os_keyring() {
+    OS_KEYRING_ENABLED.store(true, Ordering::SeqCst);
 }
 
 /// The secret services of the host (0026): the one service the gateway and

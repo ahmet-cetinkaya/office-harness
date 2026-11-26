@@ -10,7 +10,6 @@
 
 mod support;
 
-use office_harnessd::bootstrap::disable_os_keyring;
 use serde_json::json;
 use support::office_client::Office;
 use support::secret_agents::{
@@ -20,7 +19,6 @@ use support::secret_agents::{
 
 #[tokio::test]
 async fn a_granted_secret_reaches_a_running_agent_and_a_new_value_needs_no_restart() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     let (agent_id, caller) = running_agent(&office, &mut client, "worker").await;
@@ -59,7 +57,6 @@ async fn a_granted_secret_reaches_a_running_agent_and_a_new_value_needs_no_resta
 
 #[tokio::test]
 async fn the_helper_gives_the_value_alone_and_nothing_on_an_error() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     let (agent_id, caller) = running_agent(&office, &mut client, "worker").await;
@@ -92,7 +89,6 @@ async fn the_helper_gives_the_value_alone_and_nothing_on_an_error() {
 
 #[tokio::test]
 async fn an_agent_cannot_change_secrets_and_a_user_client_cannot_read_one() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     let (agent_id, caller) = running_agent(&office, &mut client, "worker").await;
@@ -113,7 +109,6 @@ async fn an_agent_cannot_change_secrets_and_a_user_client_cannot_read_one() {
 
 #[tokio::test]
 async fn a_read_a_refusal_and_a_change_are_recorded_without_the_value() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     let (agent_id, caller) = running_agent(&office, &mut client, "worker").await;
@@ -153,7 +148,6 @@ async fn a_read_a_refusal_and_a_change_are_recorded_without_the_value() {
 
 #[tokio::test]
 async fn the_reads_limit_and_a_hold_refuse_a_read_and_the_refusal_is_recorded() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     let (agent_id, caller) = running_agent(&office, &mut client, "worker").await;
@@ -192,7 +186,6 @@ async fn the_reads_limit_and_a_hold_refuse_a_read_and_the_refusal_is_recorded() 
 
 #[tokio::test]
 async fn the_clients_hear_of_a_change_by_name_and_the_grants_go_with_a_deleted_agent() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     let (agent_id, _caller) = running_agent(&office, &mut client, "worker").await;
@@ -228,7 +221,6 @@ async fn the_clients_hear_of_a_change_by_name_and_the_grants_go_with_a_deleted_a
 
 #[tokio::test]
 async fn no_file_of_the_office_holds_a_value() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     let (agent_id, caller) = running_agent(&office, &mut client, "worker").await;
