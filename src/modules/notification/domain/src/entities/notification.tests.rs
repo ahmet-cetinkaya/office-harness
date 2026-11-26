@@ -9,7 +9,7 @@ use crate::value_objects::NotificationId;
 fn unread(event: NotificationEvent, created_at: i64) -> Notification {
     Notification::new(
         NotificationId::generate(),
-        AgentId::generate(),
+        Some(AgentId::generate()),
         "Ana".to_owned(),
         event,
         Timestamp::from_unix_millis(created_at),
@@ -35,4 +35,13 @@ fn the_wire_names_of_the_four_events_round_trip() {
         assert_eq!(parsed, event);
     }
     assert!("urgent".parse::<NotificationEvent>().is_err());
+}
+
+#[test]
+fn the_schedule_event_has_its_own_wire_name() {
+    assert_eq!(NotificationEvent::Schedule.as_str(), "schedule");
+    assert_eq!(
+        "schedule".parse::<NotificationEvent>(),
+        Ok(NotificationEvent::Schedule)
+    );
 }

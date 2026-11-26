@@ -10,6 +10,7 @@
     LIMIT_MAX,
     LIMIT_MIN,
     LIMIT_SETTINGS,
+    SCHEDULE_SETTINGS,
     TEMP_SETTINGS,
   } from "../models/limits";
   import type { HoldController } from "../state/hold-controller";
@@ -80,6 +81,15 @@
       {/each}
       <h3 class="text-base font-semibold text-neutral-900">Temporary agents</h3>
       {#each TEMP_SETTINGS as setting (setting.key)}
+        <TextField
+          label={setting.label}
+          hint={`Default ${setting.defaultValue}. A whole number from ${setting.min} to ${setting.max}.`}
+          errorId={invalidKey === setting.key ? ERROR_ID : undefined}
+          bind:value={values[setting.key]}
+        />
+      {/each}
+      <h3 class="text-base font-semibold text-neutral-900">Schedules</h3>
+      {#each SCHEDULE_SETTINGS as setting (setting.key)}
         <TextField
           label={setting.label}
           hint={`Default ${setting.defaultValue}. A whole number from ${setting.min} to ${setting.max}.`}

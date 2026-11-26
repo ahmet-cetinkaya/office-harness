@@ -39,5 +39,9 @@ describe("creatorText", () => {
     expect(creatorText("user", agents)).toBe("the person");
     expect(creatorText("a1", agents)).toBe("Lead");
     expect(creatorText("a9", agents)).toBe("a9");
+    expect(creatorText("office", agents)).toBe("the office");
+    expect(creatorText("schedule:0a1b2c3d-1111", agents)).toBe(
+      "schedule 0a1b2c3d",
+    );
   });
 });

@@ -21,6 +21,7 @@ use super::hold_requests::HoldGateway;
 use super::notification_requests::NotificationGateway;
 use super::restart_signal::RestartSignal;
 use super::resume_requests::ResumeGateway;
+use super::schedule_requests::ScheduleGateway;
 use super::secret_requests::SecretGateway;
 use super::server_options::ServerOptions;
 use super::temp_requests::TempGateway;
@@ -72,6 +73,9 @@ pub struct ServerState {
     /// The user's `temp.*` requests, and the ender that the done report of a
     /// temp calls (0020). The agent connection never routes requests to it.
     pub temps: TempGateway,
+    /// The user's `schedule.*` requests (0025). The agent connection never
+    /// routes requests to it; the agent-call gateway refuses them.
+    pub schedules: ScheduleGateway,
     pub events: EventHub,
     /// Raised by `server.restart`.
     pub restart: RestartSignal,

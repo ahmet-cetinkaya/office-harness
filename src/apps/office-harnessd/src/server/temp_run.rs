@@ -226,6 +226,7 @@ impl TempWatcher {
                 .ok()
                 .flatten()
                 .map_or_else(|| agent_id.to_string(), |agent| agent.name.to_string()),
+            Actor::Schedule(schedule_id) => format!("schedule {schedule_id}"),
         }
     }
 

@@ -291,3 +291,75 @@ fn a_limit_of_zero_refuses_even_the_first_action() {
         })
     );
 }
+
+#[test]
+fn the_schedule_window_refuses_past_the_per_target_limit_naming_it() {
+    let limits = RateLimits {
+        directive_target: 3,
+        ..wide_limits()
+    };
+    let mut windows = RateWindows::default();
+    for _ in 0..3 {
+        assert_eq!(
+            windows.try_take_scheduled(id(TARGET), &limits, at_seconds(0)),
+            Ok(())
+        );
+    }
+    let refusal = windows
+        .try_take_scheduled(id(TARGET), &limits, at_seconds(0))
+        .expect_err("the fourth is refused");
+    assert_eq!(refusal.kind, LimitKind::DirectiveTarget);
+    assert_eq!(refusal.allowed, 3);
+}
+
+#[test]
+fn the_schedule_window_is_per_target_and_rolls_after_sixty_seconds() {
+    let limits = RateLimits {
+        directive_target: 1,
+        ..wide_limits()
+    };
+    let mut windows = RateWindows::default();
+    assert_eq!(
+        windows.try_take_scheduled(id(TARGET), &limits, at_seconds(0)),
+        Ok(())
+    );
+    assert_eq!(
+        windows.try_take_scheduled(id(OTHER_TARGET), &limits, at_seconds(0)),
+        Ok(())
+    );
+    assert!(
+        windows
+            .try_take_scheduled(id(TARGET), &limits, at_seconds(59))
+            .is_err()
+    );
+    assert_eq!(
+        windows.try_take_scheduled(id(TARGET), &limits, at_seconds(60)),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_full_schedule_window_never_refuses_an_agent_and_agents_never_fill_it() {
+    let limits = RateLimits {
+        directive_target: 1,
+        ..wide_limits()
+    };
+    let mut windows = RateWindows::default();
+    assert_eq!(
+        windows.try_take_scheduled(id(TARGET), &limits, at_seconds(0)),
+        Ok(())
+    );
+    assert_eq!(
+        windows.try_take(id(SENDER), directive_to(TARGET), &limits, at_seconds(0)),
+        Ok(())
+    );
+    let mut other = RateWindows::default();
+    assert_eq!(
+        other.try_take(id(SENDER), directive_to(TARGET), &limits, at_seconds(0)),
+        Ok(())
+    );
+    assert_eq!(
+        other.try_take_scheduled(id(TARGET), &limits, at_seconds(0)),
+        Ok(())
+    );
+}

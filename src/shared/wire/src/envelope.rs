@@ -55,6 +55,9 @@ pub enum Response {
         id: u32,
         code: ErrorCode,
         message: String,
+        /// The failing fields of an `invalid` answer, each with its rule;
+        /// left out of the frame when `None`.
+        fields: Option<Value>,
     },
 }
 
@@ -70,6 +73,23 @@ impl Response {
             id,
             code,
             message: message.into(),
+            fields: None,
+        }
+    }
+
+    /// A failure that also names the failing fields (`error.fields`).
+    #[must_use]
+    pub fn failure_with_fields(
+        id: u32,
+        code: ErrorCode,
+        message: impl Into<String>,
+        fields: Option<Value>,
+    ) -> Self {
+        Self::Failure {
+            id,
+            code,
+            message: message.into(),
+            fields,
         }
     }
 
@@ -78,11 +98,18 @@ impl Response {
     pub fn encode(&self) -> String {
         match self {
             Self::Success { id, result } => json!({"id": id, "ok": true, "result": result}),
-            Self::Failure { id, code, message } => json!({
-                "id": id,
-                "ok": false,
-                "error": {"code": code.as_str(), "message": message},
-            }),
+            Self::Failure {
+                id,
+                code,
+                message,
+                fields,
+            } => {
+                let mut error = json!({"code": code.as_str(), "message": message});
+                if let Some(fields) = fields {
+                    error["fields"] = fields.clone();
+                }
+                json!({"id": id, "ok": false, "error": error})
+            }
         }
         .to_string()
     }

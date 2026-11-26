@@ -17,13 +17,13 @@ use hierarchy_application::common::ports::{
     ReportJournal,
 };
 use hierarchy_domain::DIRECTIVE_MAX_CHARS;
-use kernel::{Actor, AgentId};
+use kernel::{Actor, AgentId, ScheduleId};
 use sha2::{Digest, Sha256};
 use terminal_application::common::interfaces::TerminalRuntime;
 use terminal_domain::services::{shows_open_question, shows_typed_text};
 use terminal_domain::value_objects::ScreenView;
 
-use super::{PersonInput, SleepingAgents, SystemClock};
+use super::{PersonInput, ScheduleLabels, SleepingAgents, SystemClock};
 use crate::bootstrap::StorageAlerts;
 use crate::server::EventHub;
 
@@ -282,12 +282,25 @@ impl DirectiveReceipt for DirectiveReceiptBridge {
 pub struct DirectiveJournalBridge {
     journal: ActionJournal,
     alerts: StorageAlerts,
+    /// The names of schedules, for the entries that name a schedule as actor.
+    schedule_labels: Option<ScheduleLabels>,
 }
 
 impl DirectiveJournalBridge {
     #[must_use]
     pub fn new(journal: ActionJournal, alerts: StorageAlerts) -> Self {
-        Self { journal, alerts }
+        Self {
+            journal,
+            alerts,
+            schedule_labels: None,
+        }
+    }
+
+    /// Names the schedule in the entries that have it as actor (0025 D7).
+    #[must_use]
+    pub fn with_schedule_labels(mut self, labels: ScheduleLabels) -> Self {
+        self.schedule_labels = Some(labels);
+        self
     }
 
     /// Records a request the agent-call gateway refused: the caller is the
@@ -321,12 +334,13 @@ impl DirectiveJournalBridge {
         failure: Option<&str>,
         detail: Option<&str>,
     ) {
-        self.record_as(Actor::Agent(actor), target, action, failure, detail);
+        self.record_as(Actor::Agent(actor), None, target, action, failure, detail);
     }
 
     fn record_as(
         &self,
         actor: Actor,
+        label: Option<Arc<str>>,
         target: AgentId,
         action: AgentAction,
         failure: Option<&str>,
@@ -334,7 +348,10 @@ impl DirectiveJournalBridge {
     ) {
         // The use cases share one journal and one request runs on one
         // thread, so the scope guard, not a parameter, names the actor.
-        let _actor = ActorScope::enter(actor);
+        let _actor = match label {
+            Some(label) => ActorScope::enter_labeled(actor, label),
+            None => ActorScope::enter(actor),
+        };
         if let Err(error) = self
             .journal
             .record_detailed(target, action, failure, detail)
@@ -359,7 +376,23 @@ impl DirectiveJournal for DirectiveJournalBridge {
     }
 
     fn record_objective(&self, creator: Actor, temp: AgentId) {
-        self.record_as(creator, temp, AgentAction::Directive, None, None);
+        self.record_as(creator, None, temp, AgentAction::Directive, None, None);
+    }
+
+    fn record_scheduled(&self, schedule: ScheduleId, target: AgentId, text: &str, failure: &str) {
+        let journaled = refused_attempt(failure, Some(text));
+        let label = self
+            .schedule_labels
+            .as_ref()
+            .and_then(|labels| labels.get(schedule));
+        self.record_as(
+            Actor::Schedule(schedule),
+            label,
+            target,
+            AgentAction::Directive,
+            Some(&journaled),
+            None,
+        );
     }
 }
 

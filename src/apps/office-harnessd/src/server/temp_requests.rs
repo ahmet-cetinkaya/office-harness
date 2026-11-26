@@ -277,6 +277,7 @@ fn creator_name(creator: Actor, agents: &[Agent]) -> Option<String> {
             .iter()
             .find(|agent| agent.id == agent_id)
             .map(|agent| agent.name.as_str().to_owned()),
+        Actor::Schedule(schedule_id) => Some(format!("schedule {schedule_id}")),
     }
 }
 

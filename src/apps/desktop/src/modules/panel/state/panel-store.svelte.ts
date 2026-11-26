@@ -18,6 +18,7 @@ import { createResumeController } from "../../resume";
 import { createSweepController } from "../../sweep";
 import { createSecretsController } from "../../secrets";
 import { createSleepController } from "../../sleep";
+import { createSchedulesController } from "../../schedule";
 import { createTempsController } from "../../temps";
 import { createTemplateController } from "../../template";
 import { createWorktreeDependenciesController } from "../../worktree-dependencies";
@@ -53,6 +54,7 @@ export function createPanelStore(client: CoreClient) {
   const secrets = createSecretsController(client);
   const sleep = createSleepController(client);
   const temps = createTempsController(client);
+  const schedules = createSchedulesController(client);
   const worktreeDependencies = createWorktreeDependenciesController(client);
   // The restore is the one reader of `last_view` and the only place the
   // stored view word is applied. The shell writes the last view only after
@@ -184,6 +186,7 @@ export function createPanelStore(client: CoreClient) {
     secrets,
     sleep,
     temps,
+    schedules,
     worktreeDependencies,
     templates,
     lastView,

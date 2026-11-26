@@ -17,6 +17,7 @@ use wire::{ErrorCode, Event, Request, Response};
 use super::agent_requests::AgentGateway;
 use super::event_hub::EventHub;
 use crate::bootstrap::StorageAlerts;
+use crate::bridges::ScheduleLabels;
 
 const RESUME_REQUEST: &str = "agent.resume";
 const WAKE_REQUEST: &str = "agent.wake";
@@ -27,6 +28,9 @@ const STATUS_EVENT: &str = "agent.status";
 /// is never matched with an answer.
 const OWN_REQUEST_ID: u32 = 0;
 const SPAWN_ERROR_PREFIX: &str = "spawn-error: ";
+/// What a waiting schedule run adds to two check periods before it gives up
+/// on the final wake result: the time of a hold write and the event delivery.
+const WAKE_WAIT_MARGIN: Duration = Duration::from_secs(10);
 
 /// What a bulk resume needs while it runs, after its request was answered.
 #[derive(Clone)]
@@ -40,6 +44,9 @@ pub struct ResumeContext {
     pub alerts: StorageAlerts,
     /// How long a start is watched for an end by itself (0013 A2).
     pub check_period: Duration,
+    /// The names of schedules, so the entry of a wake that a schedule makes
+    /// names it (0025 D7).
+    pub labels: ScheduleLabels,
 }
 
 /// The person action that a watch follows: the bulk resume of 0013 or the
@@ -242,22 +249,23 @@ pub async fn run_resume(context: ResumeContext, order: Vec<AgentId>) {
 }
 
 impl ResumeContext {
-    /// Wakes one asleep agent as the person (0018/FR-007): the first start
-    /// answers the request, and its watch runs on a task of its own with the
-    /// 0013 fallback and hold.
+    /// Wakes one asleep agent for `actor` (0018/FR-007): the person, or a
+    /// schedule run (0025/FR-010). The first start answers the request, and
+    /// its watch runs on a task of its own with the 0013 fallback and hold.
     ///
     /// # Errors
     /// The refusal of the first start, for example "the agent is no longer
     /// asleep".
-    pub async fn wake(&self, agent_id: AgentId) -> Result<Value, (ErrorCode, String)> {
+    pub async fn wake(
+        &self,
+        agent_id: AgentId,
+        actor: Actor,
+    ) -> Result<Value, (ErrorCode, String)> {
         // Subscribed before the start, so no status of this start is missed.
         let statuses = self.events.subscribe();
         let mut fields = Map::new();
         fields.insert("agent_id".to_owned(), json!(agent_id.to_string()));
-        match self
-            .ask(Flow::Wake.first_request(), fields, Actor::User)
-            .await
-        {
+        match self.ask(Flow::Wake.first_request(), fields, actor).await {
             Response::Success { result, .. } => {
                 let started = Started::from_answer(&result).ok_or_else(|| {
                     (
@@ -269,6 +277,35 @@ impl ResumeContext {
                 Ok(result)
             }
             Response::Failure { code, message, .. } => Err((code, message)),
+        }
+    }
+
+    /// Wakes the agent for `actor` and waits for the final `wake.result` of
+    /// its watch, so a schedule run goes on only when the agent runs again
+    /// (0025/FR-010). The wait ends with `Unfinished` when the watch gives no
+    /// final result within two check periods and a margin, or when events are
+    /// dropped.
+    pub async fn wake_and_wait(&self, agent_id: AgentId, actor: Actor) -> WakeResult {
+        // Subscribed before the wake, so no result of this wake is missed.
+        let mut results = self.events.subscribe();
+        if let Err((_, reason)) = self.wake(agent_id, actor).await {
+            return WakeResult::Refused(reason);
+        }
+        let deadline = Instant::now() + self.check_period * 2 + WAKE_WAIT_MARGIN;
+        loop {
+            match timeout_at(deadline, results.recv()).await {
+                Err(_elapsed) => return WakeResult::Unfinished,
+                Ok(Ok(event)) => {
+                    if let Some(result) = final_wake_result(&event, agent_id) {
+                        return result;
+                    }
+                }
+                // Events were dropped, and the final result may be one of
+                // them: the caller looks at the agent instead of waiting.
+                Ok(Err(RecvError::Lagged(_) | RecvError::Closed)) => {
+                    return WakeResult::Unfinished;
+                }
+            }
         }
     }
 
@@ -318,8 +355,15 @@ impl ResumeContext {
             kind: kind.to_owned(),
             fields,
         };
+        let label = match actor {
+            Actor::Schedule(schedule) => self.labels.get(schedule),
+            Actor::User | Actor::Office | Actor::Agent(_) => None,
+        };
         spawn_blocking(move || {
-            let _scope = ActorScope::enter(actor);
+            let _scope = match label {
+                Some(label) => ActorScope::enter_labeled(actor, label),
+                None => ActorScope::enter(actor),
+            };
             agents.run(&request)
         })
         .await
@@ -431,6 +475,45 @@ impl ResumeContext {
 
     fn publish(&self, flow: Flow, agent_id: AgentId, result: &ResumeResult) {
         self.events.publish(&result.event(flow, agent_id));
+    }
+}
+
+/// The last word of a wake that a schedule run waits for (0025/FR-010).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WakeResult {
+    /// The agent runs again with its session continued.
+    Continued,
+    /// The agent runs again in a new session.
+    NewSession,
+    /// The wake ended on hold (0013/FR-005) or the session did not start.
+    Held(String),
+    /// The wake's first start was refused, for example because the agent is no
+    /// longer asleep.
+    Refused(String),
+    /// The watch gave no final result in time, or the events that carry it
+    /// were dropped; the agent may be running.
+    Unfinished,
+}
+
+/// The final `wake.result` of this agent that the event frame carries.
+fn final_wake_result(event: &str, agent_id: AgentId) -> Option<WakeResult> {
+    let body: Value = serde_json::from_str(event).ok()?;
+    if body.get("type")?.as_str()? != WAKE_RESULT_EVENT
+        || body.get("agent_id")?.as_str()? != agent_id.to_string()
+        || !body.get("is_final")?.as_bool()?
+    {
+        return None;
+    }
+    let reason = body
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    match body.get("result")?.as_str()? {
+        "continued" => Some(WakeResult::Continued),
+        "new_session" => Some(WakeResult::NewSession),
+        "held" => Some(WakeResult::Held(reason)),
+        _ => Some(WakeResult::Refused(reason)),
     }
 }
 

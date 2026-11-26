@@ -81,3 +81,24 @@ describe("sweep entries", () => {
     expect(visibleDetail(escaped)).toBe(escaped);
   });
 });
+
+describe("actorText", () => {
+  const scheduleId = "0a1b2c3d-1111-2222-3333-444455556666";
+
+  test("the four kinds read as text", () => {
+    expect(actorText("user")).toBe("user");
+    expect(actorText("office")).toBe("the office");
+    expect(actorText("agent:a1")).toBe("agent:a1");
+    expect(actorText(`schedule:${scheduleId}`)).toBe("schedule 0a1b2c3d");
+  });
+
+  test("a schedule with a label shows the label and who made it", () => {
+    expect(actorText(`schedule:${scheduleId}`, "Morning sweep")).toBe(
+      "Morning sweep (schedule, made by the person)",
+    );
+  });
+
+  test("a schedule id is never read as an agent, even one that no agent has", () => {
+    expect(actorText("schedule:unknown-id-0000")).toBe("schedule unknown-");
+  });
+});

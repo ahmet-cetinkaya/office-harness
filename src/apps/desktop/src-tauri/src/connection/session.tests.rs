@@ -62,6 +62,24 @@ fn a_failure_keeps_the_code_and_the_message() {
 }
 
 #[test]
+fn a_failure_keeps_the_failing_fields() {
+    let inbound = classify_frame(
+        r#"{"id":4,"ok":false,"error":{"code":"invalid","message":"bad","fields":[{"field":"name","rule":"blank","message":"must not be blank"}]}}"#,
+    );
+
+    let Inbound::Response {
+        outcome: Err(error),
+        ..
+    } = inbound
+    else {
+        panic!("a failure is expected");
+    };
+    let fields = error.fields.expect("the fields are kept");
+    assert_eq!(fields[0].field, "name");
+    assert_eq!(fields[0].rule, "blank");
+}
+
+#[test]
 fn a_frame_without_an_id_is_an_event() {
     let inbound = classify_frame(r#"{"type":"agent.status","agent_id":"a"}"#);
 

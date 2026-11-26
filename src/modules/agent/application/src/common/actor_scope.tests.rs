@@ -97,3 +97,32 @@ fn a_dropped_scope_leaves_no_actor_on_a_reused_thread() {
 
     handle.join().expect("worker");
 }
+
+#[test]
+fn no_label_is_current_by_default_and_enter_clears_an_outer_label() {
+    assert_eq!(ActorScope::label(), None);
+    let _outer = ActorScope::enter_labeled(Actor::Office, "Nightly");
+    assert_eq!(ActorScope::label().as_deref(), Some("Nightly"));
+
+    let _inner = ActorScope::enter(Actor::User);
+
+    assert_eq!(ActorScope::label(), None);
+}
+
+#[test]
+fn nested_labeled_scopes_restore_the_previous_actor_and_label() {
+    let outer_schedule = kernel::ScheduleId::generate();
+    {
+        let _outer = ActorScope::enter_labeled(Actor::Schedule(outer_schedule), "Outer");
+        {
+            let _inner = ActorScope::enter_labeled(Actor::Office, "Inner");
+            assert_eq!(ActorScope::current(), Actor::Office);
+            assert_eq!(ActorScope::label().as_deref(), Some("Inner"));
+        }
+        assert_eq!(ActorScope::current(), Actor::Schedule(outer_schedule));
+        assert_eq!(ActorScope::label().as_deref(), Some("Outer"));
+    }
+
+    assert_eq!(ActorScope::current(), Actor::User);
+    assert_eq!(ActorScope::label(), None);
+}

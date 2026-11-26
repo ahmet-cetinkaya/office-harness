@@ -26,7 +26,8 @@ async fn main() -> ExitCode {
     if let Some((command, rest)) = cli::split_command(&arguments) {
         return cli::run(command, rest);
     }
-    match run().await {
+    // The start futures hold every service the server builds, which is large.
+    match Box::pin(run()).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("office-harnessd: {error}");
@@ -39,7 +40,7 @@ async fn run() -> Result<(), StartupError> {
     bootstrap::enable_os_keyring();
     let config = Config::load(env::args_os().skip(1))?;
     let log = bootstrap::open_log(&config)?;
-    let outcome = start_and_wait(&config, &log).await;
+    let outcome = Box::pin(start_and_wait(&config, &log)).await;
     if let Err(error) = &outcome {
         log.error(&error.to_string());
     }
