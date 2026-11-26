@@ -37,6 +37,8 @@ pub enum Rule {
     TooLong { max: usize },
     #[error("must not have control characters")]
     ControlCharacter,
+    #[error("must not have invisible or direction-changing characters")]
+    FormatCharacter,
     #[error("a weekly repeat needs at least one day")]
     NoDay,
     #[error("hours must be a whole number from {MIN_HOURS} to {MAX_HOURS}")]
@@ -75,6 +77,12 @@ pub fn validate_fields(
 ) -> Vec<FieldError> {
     let mut errors = Vec::new();
     check_text(NAME_FIELD, name, NAME_MAX_CHARS, &mut errors);
+    if !errors.iter().any(|error| error.field == NAME_FIELD) && name.chars().any(is_format_char) {
+        errors.push(FieldError {
+            field: NAME_FIELD,
+            rule: Rule::FormatCharacter,
+        });
+    }
     check_text(TEXT_FIELD, text, TEXT_MAX_CHARS, &mut errors);
     if let Some(rule) = repeat_rule(repeat, switched_on, now, zone) {
         errors.push(FieldError {
@@ -83,6 +91,34 @@ pub fn validate_fields(
         });
     }
     errors
+}
+
+/// The characters that show nothing or change the direction of the text around
+/// them, such as the zero-width space and the bidi controls. A name with one
+/// would look the same as another name, or reorder the name next to it. A
+/// directive's text may hold them (an emoji sequence needs the zero-width
+/// joiner), so only the name is checked.
+const FORMAT_RANGES: [(char, char); 14] = [
+    ('\u{00AD}', '\u{00AD}'),
+    ('\u{0600}', '\u{0605}'),
+    ('\u{061C}', '\u{061C}'),
+    ('\u{06DD}', '\u{06DD}'),
+    ('\u{070F}', '\u{070F}'),
+    ('\u{180E}', '\u{180E}'),
+    ('\u{200B}', '\u{200F}'),
+    ('\u{202A}', '\u{202E}'),
+    ('\u{2060}', '\u{2064}'),
+    ('\u{2066}', '\u{206F}'),
+    ('\u{FEFF}', '\u{FEFF}'),
+    ('\u{FFF9}', '\u{FFFB}'),
+    ('\u{E0001}', '\u{E0001}'),
+    ('\u{E0020}', '\u{E007F}'),
+];
+
+fn is_format_char(character: char) -> bool {
+    FORMAT_RANGES
+        .iter()
+        .any(|&(first, last)| (first..=last).contains(&character))
 }
 
 // A line break counts as a control character here, as in a directive's text.

@@ -318,6 +318,7 @@ export type FieldProblem = FieldFailure;
 const RULE_MESSAGES = {
   blank: "must not be blank",
   control_character: "must not have control characters",
+  format_character: "must not have invisible or direction-changing characters",
   no_day: "a weekly repeat needs at least one day",
   hours_out_of_range: `hours must be a whole number from ${MIN_HOURS} to ${MAX_HOURS}`,
   bad_time: "a time must be hours and minutes, HH:MM",
@@ -339,6 +340,10 @@ function problem(
 
 // A line break counts as a control character, as in a directive's text.
 const CONTROL_CHARACTER = /\p{Cc}/u;
+// The names the server refuses (0025 follow-up): zero-width and bidi format
+// characters. A directive's text may keep them (an emoji joiner).
+const FORMAT_CHARACTER =
+  /[\u00AD\u0600-\u0605\u061C\u06DD\u070F\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB\u{E0001}\u{E0020}-\u{E007F}]/u;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const WHOLE_NUMBER = /^\d+$/;
@@ -351,6 +356,9 @@ function textProblem(
   if (value.trim() === "") return problem(field, "blank");
   if ([...value].length > max) return problem(field, "too_long", max);
   if (CONTROL_CHARACTER.test(value)) return problem(field, "control_character");
+  if (field === "name" && FORMAT_CHARACTER.test(value)) {
+    return problem(field, "format_character");
+  }
   return null;
 }
 
