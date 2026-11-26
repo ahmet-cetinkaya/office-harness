@@ -492,3 +492,17 @@ fn the_checks_refuse_rows_that_the_rules_never_make() {
         )
         .expect("the limits themselves are allowed");
 }
+
+#[test]
+fn a_name_whose_lower_case_is_longer_than_the_name_is_stored() {
+    let repository = memory_repository();
+    // A capital I with a dot lower-cases to 2 code points, so the key of a
+    // name of 100 of them has 200.
+    let name = "\u{130}".repeat(100);
+
+    repository
+        .save(&hourly(1, &name), cap(50))
+        .expect("a valid name is never a storage failure");
+
+    assert_eq!(repository.list().expect("list")[0].name, name);
+}

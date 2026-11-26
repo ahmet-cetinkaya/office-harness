@@ -94,23 +94,37 @@ pub fn validate_fields(
 }
 
 /// The characters that show nothing or change the direction of the text around
-/// them, such as the zero-width space and the bidi controls. A name with one
+/// them: the format characters (Unicode category Cf) except the variation
+/// selectors, which emoji need, and the blanks that are no format characters
+/// (the Hangul fillers, the combining grapheme joiner, the braille blank). A name with one
 /// would look the same as another name, or reorder the name next to it. A
 /// directive's text may hold them (an emoji sequence needs the zero-width
 /// joiner), so only the name is checked.
-const FORMAT_RANGES: [(char, char); 14] = [
+const FORMAT_RANGES: [(char, char); 26] = [
     ('\u{00AD}', '\u{00AD}'),
+    ('\u{034F}', '\u{034F}'),
     ('\u{0600}', '\u{0605}'),
     ('\u{061C}', '\u{061C}'),
     ('\u{06DD}', '\u{06DD}'),
     ('\u{070F}', '\u{070F}'),
+    ('\u{0890}', '\u{0891}'),
+    ('\u{08E2}', '\u{08E2}'),
+    ('\u{115F}', '\u{1160}'),
     ('\u{180E}', '\u{180E}'),
     ('\u{200B}', '\u{200F}'),
     ('\u{202A}', '\u{202E}'),
     ('\u{2060}', '\u{2064}'),
     ('\u{2066}', '\u{206F}'),
+    ('\u{2800}', '\u{2800}'),
+    ('\u{3164}', '\u{3164}'),
     ('\u{FEFF}', '\u{FEFF}'),
+    ('\u{FFA0}', '\u{FFA0}'),
     ('\u{FFF9}', '\u{FFFB}'),
+    ('\u{110BD}', '\u{110BD}'),
+    ('\u{110CD}', '\u{110CD}'),
+    ('\u{13430}', '\u{1343F}'),
+    ('\u{1BCA0}', '\u{1BCA3}'),
+    ('\u{1D173}', '\u{1D17A}'),
     ('\u{E0001}', '\u{E0001}'),
     ('\u{E0020}', '\u{E007F}'),
 ];

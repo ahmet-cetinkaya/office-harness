@@ -11,8 +11,10 @@ DROP TABLE schedule_runs;
 CREATE TABLE schedule_schedules_checked (
     id                     TEXT PRIMARY KEY,
     name                   TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 100),
-    -- The lower-cased name, so a name is unique case-insensitively.
-    name_key               TEXT NOT NULL UNIQUE CHECK (length(name_key) BETWEEN 1 AND 100),
+    -- The lower-cased name, so a name is unique case-insensitively. Lower
+    -- casing can make a name longer (one capital letter gives 2 code points),
+    -- so it has no upper bound of its own.
+    name_key               TEXT NOT NULL UNIQUE CHECK (length(name_key) >= 1),
     text                   TEXT NOT NULL CHECK (length(text) BETWEEN 1 AND 8192),
     target_agent_id        TEXT NOT NULL,
     -- One of: once, daily, weekly, every_hours.
