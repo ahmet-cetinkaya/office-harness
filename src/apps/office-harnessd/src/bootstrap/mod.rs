@@ -29,7 +29,7 @@ pub use interrupt_agents::interrupt_running_agents;
 pub use migrations::run_migrations;
 pub use notification_services::{NotificationServices, build_notification_services};
 pub use process_hardening::refuse_memory_dumps;
-pub use secret_services::{SecretServices, build_secret_services, disable_os_keyring};
+pub use secret_services::{SecretServices, build_secret_services, enable_os_keyring};
 pub use server_log::{ServerLog, open_log};
 pub use services::{Services, start, start_with};
 pub use shutdown_signal::wait_for_shutdown_signal;

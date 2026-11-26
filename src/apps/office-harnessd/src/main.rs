@@ -36,6 +36,7 @@ async fn main() -> ExitCode {
 }
 
 async fn run() -> Result<(), StartupError> {
+    bootstrap::enable_os_keyring();
     let config = Config::load(env::args_os().skip(1))?;
     let log = bootstrap::open_log(&config)?;
     let outcome = start_and_wait(&config, &log).await;
