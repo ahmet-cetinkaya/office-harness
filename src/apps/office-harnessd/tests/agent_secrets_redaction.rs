@@ -10,7 +10,6 @@
 
 mod support;
 
-use office_harnessd::bootstrap::disable_os_keyring;
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use support::office_client::{Client, Office, wait_for};
@@ -60,7 +59,6 @@ fn data_folder(office: &Office) -> std::path::PathBuf {
 
 #[tokio::test]
 async fn a_value_an_agent_prints_whole_or_in_two_parts_is_stored_as_a_placeholder() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     let body = "printf 'before %s after\\n' \"$VALUE\"\n\
@@ -84,7 +82,6 @@ async fn a_value_an_agent_prints_whole_or_in_two_parts_is_stored_as_a_placeholde
 
 #[tokio::test]
 async fn a_helper_that_carries_the_value_in_its_command_line_is_stored_with_the_placeholder() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     let body = "sh -c 'sleep 40; true' \"$VALUE\" &\nsleep 40\n";
@@ -118,7 +115,6 @@ async fn a_helper_that_carries_the_value_in_its_command_line_is_stored_with_the_
 
 #[tokio::test]
 async fn a_report_a_refused_directive_and_a_field_name_carry_the_placeholder() {
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     let agent_id = agent_that_runs(&office, &mut client, "talker", "sleep 60\n").await;
@@ -344,7 +340,6 @@ async fn every_text_column_is_decided_to_hold_agent_text_or_not() {
 async fn output_that_ends_with_the_first_byte_of_a_value_is_not_held_back() {
     // The CLI outlives the wait below, so only the release after a pause, not
     // the end of the output, can store the last byte.
-    disable_os_keyring();
     let office = Office::open().await;
     let mut client = office.client().await;
     let body = "FIRST=$(printf %s \"$VALUE\" | cut -c1-1)\n\
