@@ -1,6 +1,6 @@
 ---
-status: draft
-spec: specs/changes/0025-scheduled-directives/SPEC.md
+status: completed
+spec: specs/changes/archive/0025-scheduled-directives/SPEC.md
 commits: per-task
 ---
 
@@ -27,7 +27,7 @@ A new `schedule` module keeps the person's schedules, their next due times, and 
 
 ## Goal
 
-Every FR and SC of `specs/changes/0025-scheduled-directives/SPEC.md`, proven by unit, wire, and e2e tests, with CI green on Linux, macOS, and Windows.
+Every FR and SC of `specs/changes/archive/0025-scheduled-directives/SPEC.md`, proven by unit, wire, and e2e tests, with CI green on Linux, macOS, and Windows.
 
 ## Context
 
