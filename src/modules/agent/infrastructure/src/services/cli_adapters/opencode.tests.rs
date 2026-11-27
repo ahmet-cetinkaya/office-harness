@@ -78,3 +78,28 @@ fn a_continue_passes_a_stored_id_of_the_older_shape_unchanged() {
 
     assert_eq!(command.arguments, ["--session", older_id]);
 }
+
+#[test]
+fn a_continue_after_a_restart_reuses_the_id_recorded_at_the_first_start() {
+    let first_start = SessionPlan {
+        fixed_arguments: &[],
+        flags: &[],
+        startup_prompt: None,
+        proposed_cli_session_id: SESSION_UUID,
+    };
+    let recorded = OpencodeAdapter
+        .new_session(&first_start)
+        .cli_session_id
+        .expect("an id is recorded");
+
+    // The later start brings a new proposed id and a later clock reading.
+    let later_start = SessionPlan {
+        proposed_cli_session_id: "0a7d9c21-1b3e-4f60-8a52-3d94e7c0b6f8",
+        ..first_start
+    };
+    let command = OpencodeAdapter
+        .continue_session(&later_start, &recorded)
+        .expect("opencode continues");
+
+    assert_eq!(command.arguments, ["--session", recorded.as_str()]);
+}
