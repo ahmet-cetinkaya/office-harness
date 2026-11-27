@@ -43,10 +43,9 @@ fn each_adapter_builds_its_documented_new_session_command_line() {
         new_session_arguments("gemini", Some("say hi")),
         ["--flag", "--session-id", "id-1"]
     );
-    assert_eq!(
-        new_session_arguments("opencode", Some("say hi")),
-        ["--flag", "--session", "ses_id1"]
-    );
+    let opencode = new_session_arguments("opencode", Some("say hi"));
+    assert_eq!(opencode[..2], ["--flag", "--session"]);
+    assert!(opencode[2].starts_with("ses_"), "{opencode:?}");
     assert_eq!(
         new_session_arguments("some-tool", Some("say hi")),
         ["--flag"]
@@ -55,8 +54,9 @@ fn each_adapter_builds_its_documented_new_session_command_line() {
 
 #[test]
 fn opencode_starts_and_records_a_session_id_in_its_own_ses_shape() {
-    // The session id shape that opencode 2.2.5 accepted in a hands-on run;
-    // a plain UUID stops it with "Expected a string starting with \"ses\"".
+    // A plain UUID stops it with "Expected a string starting with \"ses\"", and
+    // an id whose counter is not near the present time makes the free tier
+    // answer "Free usage limit reached" (2.2.5).
     let plan = SessionPlan {
         fixed_arguments: &[],
         flags: &[],
@@ -66,9 +66,14 @@ fn opencode_starts_and_records_a_session_id_in_its_own_ses_shape() {
 
     let command = registry().for_program("opencode").new_session(&plan);
 
-    let accepted_id = "ses_c54938ebc04e4ff7bd9c06f1c9375f91";
-    assert_eq!(command.arguments, ["--session", accepted_id]);
-    assert_eq!(command.cli_session_id.as_deref(), Some(accepted_id));
+    let recorded = command
+        .cli_session_id
+        .as_deref()
+        .expect("an id is recorded");
+    assert_eq!(command.arguments, ["--session", recorded]);
+    assert_eq!(recorded.len(), 4 + 26);
+    assert!(recorded.starts_with("ses_"));
+    assert!(recorded.ends_with("938ebc04e4ff7b"), "{recorded}");
 }
 
 #[test]
