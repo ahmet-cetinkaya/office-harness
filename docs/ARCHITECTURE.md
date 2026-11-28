@@ -63,7 +63,7 @@ Each business module is a set of separate Cargo crates, one for each Clean Archi
 | Layer | Crate name | Contents |
 | --- | --- | --- |
 | `domain` | `<module>-domain` | `entities/`, `value_objects/`, `enums/`, `events/`, `services/`, `errors/`, and invariants. No I/O. A module has the folders that it needs. |
-| `application` | `<module>-application` | `common/` (ports in `interfaces/`, `models/`, `errors/`), `commands/<use_case>/`, `queries/<use_case>/`, and `dtos/`. |
+| `application` | `<module>-application` | `common/` (ports in `interfaces/`, `models/`, `errors/`), `commands/<use_case>/`, and `queries/<use_case>/`. A module with no commands or no queries has no such folder, and `schedule` and `template` keep their use cases in `services/`. |
 | `infrastructure` | `<module>-infrastructure` | `persistence/` (`repositories/`, `migrations/`) and outbound adapters (PTY host, CLI adapters, git, file stores, the secret vault). |
 | `presentation` | `<module>-presentation` | `handlers/` (the protocol messages that the module answers), `contracts/` (request, response, and event bodies), `mappings/`, and the request prefixes that the module owns. |
 
@@ -122,8 +122,7 @@ office-harness/
     │   │   ├── application/src/
     │   │   │   ├── common/interfaces/          # ports: repositories, terminal_host.rs, cli_adapter.rs, action_recorder.rs, clock.rs
     │   │   │   ├── commands/                   # create_agent/, start_agent/, stop_agent/, sleep_agent/, resume_agent/, ...
-    │   │   │   ├── queries/
-    │   │   │   └── dtos/
+    │   │   │   └── queries/
     │   │   ├── infrastructure/src/
     │   │   │   ├── persistence/                # repositories/, migrations/
     │   │   │   └── services/                   # cli_adapters/, login_environment.rs, git_worktrees.rs, local_file_view.rs, status_command.rs, ...
@@ -149,7 +148,7 @@ office-harness/
         │       ├── server/                     # axum router, upgrade checks, auth gate, request gateways, event hub, hook route
         │       ├── bridges/                    # cross-module port adapters
         │       ├── sweep/                      # the leftover-process sweep after an unclean stop (0017)
-        │       └── cli/                        # register, unregister, version, agent calls
+        │       └── cli/                        # register, unregister, status, agent calls
         └── desktop/                            # the Tauri app
             ├── src-tauri/src/                  # Rust core: connection.rs, connection/, server_process.rs, commands.rs, channels.rs
             └── src/                            # Svelte 5 webview (see Frontend Folder Structure)
@@ -162,15 +161,15 @@ office-harness/
 | Solution | Cargo workspace (`Cargo.toml` at the root) |
 | Projects `X.Domain`, `X.Application`, `X.Infrastructure`, `X.Api` | Crates `<module>-domain`, `-application`, `-infrastructure`, `-presentation`, and the host `office-harnessd` |
 | `Common/Interfaces` (ports) | `common/interfaces/` in the application crate |
-| `Commands/<UseCase>` with command, handler, and validator | `commands/<use_case>/` with the same three files |
+| `Commands/<UseCase>` with command, handler, and validator | `commands/<use_case>/` with a handler and its tests. A use case with input rules may add a validator (`spawn_terminal/` has one). |
 | Controllers | `handlers/` in the presentation crate, plus the request gateways in `office-harnessd/src/server/` |
 | `Program.cs` | `main.rs`, `config/`, `bootstrap/` |
 
 ## File Organization Inside a Crate
 
 - **Group by kind inside a layer crate, with one folder per use case in `application`.** There is no `features/` level, because the module is already the feature boundary.
-- **One type per file**, named after the type in snake_case: `create_agent_command.rs` holds `CreateAgentCommand`.
-- **Every command has a validator.** Input rules live in the validator, not in the handler. A validation error names the field (the spec's edge cases).
+- **A file is named after its main type** in snake_case: `create_agent_handler.rs` holds `CreateAgentHandler` and the request and result types of that use case.
+- **Input rules** live in a validator where a use case has one, and otherwise in the handler or in the value objects. A validation error names the field (the spec's edge cases).
 - **Each folder's `mod.rs` is its public face.** It re-exports the folder's types, so consumers import from the folder.
 - **Tests:**
   - Unit tests sit beside the code in `<name>.tests.rs`, attached with `#[cfg(test)] #[path = "..."] mod tests;`.
@@ -262,7 +261,7 @@ Message bodies (`contracts/`) stay in each module's `presentation` crate. For th
 
 ## Composition Root and Request Flow
 
-`src/apps/office-harnessd/src/main.rs` is the only place that selects concrete implementations. It stays thin. It first checks for the two small command paths (the agent call used by the CLI helper, and `register`, `unregister`, and `version`), then loads the configuration, opens the log, builds the services, and serves. In outline:
+`src/apps/office-harnessd/src/main.rs` is the only place that selects concrete implementations. It stays thin. It first checks for the two small command paths (the agent call used by the CLI helper, and `register`, `unregister`, and `status`), then loads the configuration, opens the log, builds the services, and serves. In outline:
 
 ```rust
 async fn run() -> Result<(), StartupError> {
@@ -430,7 +429,7 @@ src/apps/desktop/src/
 2. **No cycles:** imports between modules go in one direction only.
 3. **Types:** the types of the desktop core's own errors and connection state are generated into `core/api/generated`. Nobody copies those by hand.
 4. **Enforcement:** `boundaries.spec.ts` fails on a deep import into another module, a cycle, or `shared/` importing `core/` or `modules/`.
-5. **File names** are kebab-case with a type suffix: `agent.service.ts`, `agents.store.svelte.ts`.
+5. **File names** are kebab-case with a type suffix: `agent-service.ts`, `office-controller.ts`. The two Svelte rune stores are `office.store.svelte.ts` and `connection.store.svelte.ts`.
 
 ## Desktop Core
 
@@ -465,9 +464,8 @@ Changing a crate rebuilds that crate and the crates that depend on it. Modules n
 
 | Level | Location | What it covers |
 | --- | --- | --- |
-| Unit | `<name>.tests.rs` beside the code, in every layer | Domain rules and the status machine with no I/O; commands and queries with in-memory port fakes; bridges and gateways of the host |
-| Infrastructure integration | `<module>-infrastructure/tests/` | Migrations, repositories on a temporary SQLite file, the PTY host with a test CLI, screen snapshots, the CLI adapters with fake CLIs on `PATH`, and the CLI configuration folders staying unchanged |
-| Presentation | `<module>-presentation/tests/` | Message decoding, error codes, and mappings with mocked services |
+| Unit | `<name>.tests.rs` beside the code, in every layer | Domain rules and the status machine with no I/O; handlers with in-memory port fakes; message decoding, error codes, and mappings of the presentation crates; bridges and gateways of the host |
+| Infrastructure integration | `<module>-infrastructure/tests/` (six of the nine modules) | Migrations, repositories on a temporary SQLite file, the PTY host with a test CLI, screen snapshots, the CLI adapters with fake CLIs on `PATH`, and the CLI configuration folders staying unchanged |
 | Server end to end | `office-harnessd/tests/` | The real binary, a temporary data folder, and a `wire` test client: auth, routing, events, terminal frames, and the hook route |
 | Webview | `bun test` beside `.ts` files, plus Playwright with `@axe-core/playwright` against the Vite build with a mocked core | Logic, import boundaries, views, and accessibility |
 | Real surface | By hand, per change, in its QA report | The real CLIs, login start, and the success criteria of each spec |
