@@ -1,17 +1,17 @@
 # Architecture Specification
 
-Status: draft for the owner's review · Date: 2026-11-15. Product scope is in [PRD.md](PRD.md). The behavior contracts are the change specs under [`specs/changes/`](../specs/changes/). The design of change 0001 is beside its spec: [research.md](../specs/changes/archive/0001-office-server-and-terminal/research.md), [data-model.md](../specs/changes/archive/0001-office-server-and-terminal/data-model.md), and [contracts/client-protocol.md](../specs/changes/archive/0001-office-server-and-terminal/contracts/client-protocol.md).
+Status: current with `main` · Date: 2026-11-28. Product scope is in [PRD.md](PRD.md). The behavior contracts are the living specs, one file for each capability under [`specs/`](../specs/), and the change specs under [`specs/changes/`](../specs/changes/). The first design of the server and the terminal is beside change 0001: [research.md](../specs/changes/archive/0001-office-server-and-terminal/research.md), [data-model.md](../specs/changes/archive/0001-office-server-and-terminal/data-model.md), and [contracts/client-protocol.md](../specs/changes/archive/0001-office-server-and-terminal/contracts/client-protocol.md). Each later change keeps its own design files beside its spec.
 
-Marks:
+This file describes the code as it is on `main`. When the code and this file differ, the code is right: fix this file.
+
+Mark:
 - **Decided** means that the owner made the decision.
-- **Proposed** means that this document makes the decision, and it waits for the owner's review.
-- **Unverified** means that the point is not confirmed yet. Check it before you rely on it.
 
 ## System Overview
 
 office-harness has two programs that run on the user's machine:
 
-- `office-harnessd` is the background server. It runs every agent CLI in its own pseudo-terminal (PTY), keeps the office state in one SQLite database, and serves clients over a loopback WebSocket. It runs while the user is logged in, whether or not a window is open.
+- `office-harnessd` is the background server. It runs every agent CLI in its own pseudo-terminal (PTY), keeps the office state in one SQLite database, and serves clients over a loopback WebSocket. It also takes the status reports of the CLI hooks on one loopback HTTP route. It runs while the user is logged in, whether or not a window is open.
 - `office-harness` is the desktop app, built with Tauri v2. Its Rust core is the only process that talks to the server. Its webview (Svelte 5) shows the office and the live terminals.
 
 Each program is a **modular monolith**: one Cargo workspace of small Rust crates, split by business module first and by Clean Architecture layer inside each module. The pattern follows one rule: modules never depend on one another, and the host app is the only place that wires them together.
@@ -24,14 +24,15 @@ flowchart LR
         ui <-->|"Tauri commands and channels<br/>(no token)"| core
     end
     subgraph server["office-harnessd (background server)"]
-        host["host app<br/>auth gate, dispatch, bridges"]
-        mods["modules<br/>access · agent · terminal · audit"]
+        host["host app<br/>auth gate, request gateways, bridges"]
+        mods["modules<br/>access · agent · terminal · audit · hierarchy<br/>notification · schedule · secret · template"]
         host --> mods
     end
     core <-->|"WebSocket on 127.0.0.1<br/>HMAC challenge-response"| host
     mods --> db[("SQLite<br/>office.db")]
     mods --> pty["PTY per agent"]
     pty --> cli["agent CLIs<br/>claude · codex · gemini · opencode"]
+    cli -.->|"status hook report<br/>POST 127.0.0.1, per-session secret<br/>(claude only)"| host
     login["OS login item<br/>systemd user / LaunchAgent / HKCU Run"] -->|starts| server
 ```
 
@@ -40,7 +41,7 @@ flowchart LR
 - Svelte with TypeScript for the webview;
 - the license, AGPL-3.0-or-later.
 
-**Proposed:** everything else in this document.
+Every other decision in this document was made while the product was built, and the code holds it.
 
 ## Architectural Style
 
@@ -53,46 +54,50 @@ flowchart LR
 | Database | One SQLite file. Each module owns the tables that carry its prefix, and each module runs its own migrations. |
 | Composition | Constructor injection at one composition root per program. |
 | Module boundary | The Cargo dependency graph enforces it, not a runtime registry. |
-| Clients | In 0001 the only client is the desktop app. Later clients (R5 remote machines) use the same protocol and the same token proof. |
+| Clients | The only client is the desktop app. A later client (R5 remote machines, parked as change 0006) would use the same protocol and the same token proof. |
 
 ## Module Pattern
 
-Each business module is a set of separate Cargo crates, one for each Clean Architecture layer that the module uses. A layer with no content gets no crate.
+Each business module is a set of separate Cargo crates, one for each Clean Architecture layer. All nine modules have all four layers.
 
 | Layer | Crate name | Contents |
 | --- | --- | --- |
-| `domain` | `<module>-domain` | `entities/`, `value_objects/`, `enums/`, `events/`, `services/`, `errors/`, and invariants. No I/O. |
+| `domain` | `<module>-domain` | `entities/`, `value_objects/`, `enums/`, `events/`, `services/`, `errors/`, and invariants. No I/O. A module has the folders that it needs. |
 | `application` | `<module>-application` | `common/` (ports in `interfaces/`, `models/`, `errors/`), `commands/<use_case>/`, `queries/<use_case>/`, and `dtos/`. |
-| `infrastructure` | `<module>-infrastructure` | `persistence/` (`repositories/`, `migrations/`) and `services/` (outbound adapters: PTY host, CLI adapters, file stores). |
-| `presentation` | `<module>-presentation` | `handlers/` (one per protocol message type), `contracts/` (request, response, and event bodies), `mappings/`, and a `handlers()` entry point. |
+| `infrastructure` | `<module>-infrastructure` | `persistence/` (`repositories/`, `migrations/`) and outbound adapters (PTY host, CLI adapters, git, file stores, the secret vault). |
+| `presentation` | `<module>-presentation` | `handlers/` (the protocol messages that the module answers), `contracts/` (request, response, and event bodies), `mappings/`, and the request prefixes that the module owns. |
 
 Package names use the form `<module>-<layer>`. The Rust import path is `<module>_<layer>`. For example, the package `agent-domain` is imported as `agent_domain`.
 
-Presentation here means the protocol surface, not a screen. A module's `presentation` crate declares which protocol messages it answers (`agent.*`, `project.*`, `terminal.*`, `token.*`). The host app owns the socket and dispatches each message to the module that owns its prefix.
+Presentation here means the protocol surface, not a screen. A module's `presentation` crate declares which protocol messages it answers. The host app owns the socket and sends each message to the module that owns its prefix.
 
 ### Modules
 
 Boundaries follow the spec entities. A new module is added when a change needs a new boundary.
 
-| Module | Owns | Change |
-| --- | --- | --- |
-| `access` | The office token, the challenge and proofs, token regeneration, and the owner-only file rules | 0001 (FR-007 to FR-010) |
-| `agent` | Agents, projects, office additions, sessions, the status state machine, and the CLI adapters (`claude`, `codex`, `gemini`, `opencode`, generic) | 0001 (FR-012 to FR-014, FR-020 to FR-025) |
-| `terminal` | PTY processes, the server-side screen emulator, the capped output store, terminal-query answers, attach, input, and resize | 0001 (FR-015 to FR-019) |
-| `audit` | Action record entries: actor, target, action, time, and result | 0001 (FR-011) |
-| `hierarchy` | Roles, teams, the parent tree, directives, and agent actors | 0002 |
-| `notification` | Status events that the user must see, and the read and unread state | 0003 |
-| `schedule` | The person's schedules: repeat and due-time rules, next due times, run history, and the schedule cap | 0025 |
-| (later) `machine` | Machines that join the office from another computer | R5 |
-| (later) `meeting` | Meetings with chosen agents and presets | R8 |
+| Module | Owns | Request prefixes | Change |
+| --- | --- | --- | --- |
+| `access` | The office token, the challenge and proofs, token regeneration, and the owner-only file rules | `token.` | 0001 |
+| `agent` | Agents, projects, office additions, sessions, the status state machine, settings, the CLI adapters (`claude`, `codex`, `gemini`, `opencode`, generic), own git worktrees and their dependency links, the read-only file view, and finished temps | `agent.`, `project.`, `session.`, `settings.` | 0001, 0010, 0011, 0016, 0018, 0019, 0020, 0021, 0024 |
+| `terminal` | PTY processes, the server-side screen emulator, the capped output store, terminal-query answers, attach, input, resize, and the process inspection that the sweep reads | `terminal.` | 0001, 0017 |
+| `audit` | Action record entries: actor, target, action, time, and result | `agent.actions` (one request) | 0001, 0007 |
+| `hierarchy` | Roles, teams, the parent tree, directives, upward reports, subtree reads, and the hold switch | `team.`, `hierarchy.` (and the agent-side `lead` and `subtree` calls) | 0002, 0007, 0012, 0014, 0015 |
+| `notification` | Notifications, their read state, and the Needs-you queue | `notification.`, `needs_you.` | 0003, 0008 |
+| `schedule` | The person's schedules: repeat and due-time rules, next due times, run history, and the schedule cap | `schedule.` | 0025 |
+| `secret` | Sealed secret values and their grants to agents; the store key lives in the OS keyring, with a key file as the fallback | `secret.` | 0026 |
+| `template` | Saved agent and team definitions | `template.` | 0009 |
+| (later) `machine` | Machines that join the office from another computer | | parked, 0006 |
+| (later) `meeting` | Meetings with chosen agents and presets | | parked, 0004 |
 
-The R7 office scene is a webview module that reads the same entities. It needs no server module of its own.
+The office scene (0005) is a webview module that reads the same entities. It needs no server module of its own.
 
 **Cross-module needs, resolved without a module dependency:**
 - **`agent` needs a running terminal.** `agent-application` declares a `TerminalHost` port (spawn, stop, and subscribe to exit and output activity). The host app implements it in `bridges/terminal_host.rs` by calling `terminal-application`. `agent` never names a `terminal` type.
-- **`agent` drives its status from terminal activity.** `terminal-application` emits plain events (first output, quiet period, exit code). The bridge turns them into `agent` status commands.
-- **Every module writes the action record.** Each writing module declares an `ActionRecorder` port in its own `application` crate. The host app implements it with `audit-application`.
-- **The CLI adapters are `agent` infrastructure.** They build command lines and read a CLI's session list without writing anything (FR-021). They know CLIs, not terminals.
+- **`agent` drives its status from terminal activity.** `terminal-application` emits plain events (first output, quiet period, exit code). The bridge turns them into `agent` status commands. For `claude` agents, the status hook reports drive the status instead (see Status Hook Route).
+- **Every module writes the action record.** Each writing module declares an `ActionRecorder` port in its own `application` crate. The host app implements it with `audit-application` (`bridges/action_recorder.rs`).
+- **Notifications and the Needs-you queue.** Modules that raise events declare their own ports. The bridges `notification_bridge.rs` and `needs_you_bridge.rs` turn the events into `notification` commands.
+- **Directives, holds, schedules, secrets, and temps cross modules the same way.** Each has bridges in the host app (`directive_bridges.rs`, `hold_bridges.rs`, `schedule_bridge.rs`, `secret_bridges.rs`, `temp_ender.rs`), and no module names another module's type.
+- **The CLI adapters are `agent` infrastructure.** They build command lines and read a CLI's session list without writing anything (0001/FR-021). They know CLIs, not terminals.
 
 ## Directory and Crate Structure
 
@@ -101,56 +106,52 @@ office-harness/
 ├── Cargo.toml                                  # workspace root
 ├── package.json, bun.lock                      # JavaScript workspace (desktop webview)
 ├── docs/                                       # PRD.md, ARCHITECTURE.md
-├── specs/changes/                              # change specs and their design
+├── scripts/                                    # check-boundaries.sh, lint-rust.sh, and others
+├── specs/                                      # living specs, one folder for each capability
+│   └── changes/                                # change specs: draft and approved, archive/, parked/
 └── src/
     ├── kernel/                                 # shared kernel (see Kernel)
     ├── modules/
-    │   ├── agent/                              # worked example
+    │   ├── agent/                              # largest module, shown as the example
     │   │   ├── domain/src/
-    │   │   │   ├── entities/                   # agent.rs, project.rs, session.rs
-    │   │   │   ├── value_objects/              # agent_name.rs, office_additions.rs, env_entry.rs
+    │   │   │   ├── entities/                   # agent.rs, project.rs, session.rs, machine.rs, finished_temp.rs
+    │   │   │   ├── value_objects/
     │   │   │   ├── enums/                      # agent_status.rs
     │   │   │   ├── services/                   # status_machine.rs
-    │   │   │   └── errors/                     # agent_error.rs
+    │   │   │   └── errors/
     │   │   ├── application/src/
-    │   │   │   ├── common/interfaces/          # agent_repository.rs, terminal_host.rs, cli_adapter.rs, action_recorder.rs, clock.rs
-    │   │   │   ├── commands/
-    │   │   │   │   ├── create_agent/           # create_agent_command.rs, _handler.rs, _validator.rs
-    │   │   │   │   ├── start_agent/
-    │   │   │   │   ├── stop_agent/
-    │   │   │   │   ├── start_new_task/
-    │   │   │   │   ├── continue_session/
-    │   │   │   │   └── set_office_additions/
-    │   │   │   ├── queries/                    # list_agents/, list_sessions/, get_office_additions/
+    │   │   │   ├── common/interfaces/          # ports: repositories, terminal_host.rs, cli_adapter.rs, action_recorder.rs, clock.rs
+    │   │   │   ├── commands/                   # create_agent/, start_agent/, stop_agent/, sleep_agent/, resume_agent/, ...
+    │   │   │   ├── queries/
     │   │   │   └── dtos/
     │   │   ├── infrastructure/src/
     │   │   │   ├── persistence/                # repositories/, migrations/
-    │   │   │   └── services/
-    │   │   │       ├── cli_adapters/           # claude.rs, codex.rs, gemini.rs, opencode.rs, generic.rs
-    │   │   │       └── login_environment.rs    # resolves the user's login shell environment (FR-020)
+    │   │   │   └── services/                   # cli_adapters/, login_environment.rs, git_worktrees.rs, local_file_view.rs, status_command.rs, ...
     │   │   └── presentation/src/
-    │   │       ├── handlers/                   # agent_create_handler.rs, session_continue_handler.rs, ...
+    │   │       ├── handlers/
     │   │       ├── contracts/                  # requests/, responses/, events/
     │   │       └── mappings/
     │   ├── terminal/                           # same shape; infrastructure/services/pty_host.rs, screen_emulator.rs, output_store.rs
-    │   ├── access/                             # same shape; infrastructure/services/token_store.rs
-    │   └── audit/                              # same shape
+    │   ├── access/  audit/  hierarchy/  notification/  schedule/  secret/  template/
+    │   └── ...                                 # each has domain, application, infrastructure, presentation
     │
     ├── shared/                                 # technical crates only (see Shared Technical Crates)
-    │   ├── wire/                               # envelope, frame codec, HMAC proof (server and desktop)
-    │   └── private-fs/                         # owner-only files and folders on Unix and Windows
+    │   ├── wire/                               # envelope, frame codec, HMAC proof, protocol constants
+    │   ├── private-fs/                         # owner-only files and folders on Unix and Windows
+    │   └── console-control/                    # Windows console control for stopping a child
     │
     └── apps/
         ├── office-harnessd/                    # the background server
         │   └── src/
         │       ├── main.rs                     # composition root, thin
-        │       ├── config/                     # data folder, settings defaults, flags
-        │       ├── bootstrap/                  # single-instance lock, migrations, interrupted sweep, services
-        │       ├── server/                     # axum router, upgrade checks, auth gate, dispatch, event fan-out
+        │       ├── config/                     # data folder and flags
+        │       ├── bootstrap/                  # single-instance lock, migrations, interrupted marking, services, log
+        │       ├── server/                     # axum router, upgrade checks, auth gate, request gateways, event hub, hook route
         │       ├── bridges/                    # cross-module port adapters
-        │       └── cli/                        # register, unregister, version
+        │       ├── sweep/                      # the leftover-process sweep after an unclean stop (0017)
+        │       └── cli/                        # register, unregister, version, agent calls
         └── desktop/                            # the Tauri app
-            ├── src-tauri/src/                  # Rust core: connection.rs, server_process.rs, commands/, channels/
+            ├── src-tauri/src/                  # Rust core: connection.rs, connection/, server_process.rs, commands.rs, channels.rs
             └── src/                            # Svelte 5 webview (see Frontend Folder Structure)
 ```
 
@@ -162,7 +163,7 @@ office-harness/
 | Projects `X.Domain`, `X.Application`, `X.Infrastructure`, `X.Api` | Crates `<module>-domain`, `-application`, `-infrastructure`, `-presentation`, and the host `office-harnessd` |
 | `Common/Interfaces` (ports) | `common/interfaces/` in the application crate |
 | `Commands/<UseCase>` with command, handler, and validator | `commands/<use_case>/` with the same three files |
-| Controllers | `handlers/`, one per protocol message type |
+| Controllers | `handlers/` in the presentation crate, plus the request gateways in `office-harnessd/src/server/` |
 | `Program.cs` | `main.rs`, `config/`, `bootstrap/` |
 
 ## File Organization Inside a Crate
@@ -200,10 +201,10 @@ license = "AGPL-3.0-or-later"
 publish = false
 ```
 
-- **Glob members:** Cargo rejects a glob that matches no folder. Keep each glob commented out until its first crate exists.
+- **Glob members:** Cargo rejects a glob that matches no folder. A glob stays out of the file until its first crate exists.
 - **Tests:** CI and every local check use `cargo test --workspace`. A plain `cargo test` only covers the default member.
-- **Versions:** exact versions are fixed in `[workspace.dependencies]` when T1 of the 0001 plan confirms them.
-- **Workspace lints:** `unsafe_code = "forbid"` everywhere except `src/shared/private-fs` and `terminal-infrastructure`, which need Windows API calls and say why. On top of that, clippy pedantic, plus deny for `unwrap_used`, `expect_used`, and `todo`.
+- **Versions:** third-party versions are fixed in `[workspace.dependencies]`, most of them with an exact `=` pin. A comment names the change that needed each one.
+- **Workspace lints:** `unsafe_code = "forbid"`. Three crates lower it to `deny` and allow `unsafe` in marked blocks, because they call Windows or system APIs: `private-fs`, `console-control`, and `terminal-infrastructure`. On top of that, clippy pedantic, plus deny for `unwrap_used`, `expect_used`, and `todo`. `scripts/lint-rust.sh` runs the format check and clippy with the pinned toolchain.
 
 ## Dependency Rules
 
@@ -222,10 +223,10 @@ flowchart LR
 | Crate | May depend on | Must never depend on |
 | --- | --- | --- |
 | `kernel` | `serde`, `uuid`, `thiserror` | Any module, any app, `tokio`, `axum`, `rusqlite` |
-| `<module>-domain` | `kernel`, `serde`, `thiserror`, `time` | Its own outer layers, I/O crates, any other module |
-| `<module>-application` | Its own `domain`, `kernel`, `serde`, `thiserror`, `async-trait` | Its own `infrastructure` and `presentation`, `axum`, `rusqlite`, `portable-pty`, any other module |
-| `<module>-infrastructure` | Its own `application` and `domain`, `kernel`, `rusqlite`, `portable-pty`, `vt100`, `tokio`, and `shared/*` | Its own `presentation`, `axum`, any other module |
-| `<module>-presentation` | Its own `application` and `domain`, `kernel`, `serde`, `shared/wire` | Its own `infrastructure`, `rusqlite`, `portable-pty`, any other module |
+| `<module>-domain` | `kernel`, `serde`, `serde_json`, `thiserror`, `uuid`, `jiff`, `hex`, `zeroize`, `icu_normalizer` (pure value helpers) | Its own outer layers, I/O crates, any other module |
+| `<module>-application` | Its own `domain`, `kernel`, `thiserror`, `jiff`, `sha2`, `zeroize` | Its own `infrastructure` and `presentation`, `axum`, `rusqlite`, `portable-pty`, `vt100`, `tokio`, any other module |
+| `<module>-infrastructure` | Its own `application` and `domain`, `kernel`, `rusqlite`, `portable-pty`, `vt100`, `tokio`, `sysinfo`, `keyring`, `chacha20poly1305`, and `shared/*` | Its own `presentation`, `axum`, any other module |
+| `<module>-presentation` | Its own `application` and `domain`, `kernel`, `serde`, `serde_json`, `uuid`, `jiff`, `base64`, `shared/wire` | Its own `infrastructure`, `rusqlite`, `portable-pty`, any other module |
 | `shared/*` | Third-party technical crates | `kernel`, any module, any app |
 | `office-harnessd` | Every module's `presentation`, `infrastructure`, and `application` (for port types while wiring), `kernel`, `shared/*`, `axum`, and `tokio` | Nothing; it is the outermost crate |
 | `desktop` (`src-tauri`) | `shared/wire`, `tauri` and its plugins, `tokio` | Every module crate, `rusqlite`, `portable-pty` |
@@ -234,9 +235,7 @@ The desktop app knows only the wire protocol. It never links server code, so a l
 
 ## Kernel
 
-`src/kernel` follows the Shared Kernel pattern: a small subset of the model that several modules agree to share.
-
-**Initial candidates:** `AgentId`, `Actor` (the user in 0001, an agent from 0002), and `Timestamp`. A type moves in only when a second module needs it.
+`src/kernel` follows the Shared Kernel pattern: a small subset of the model that several modules agree to share. It holds `AgentId`, `ProjectId`, `ScheduleId`, `Actor` (the user, or an agent), `Timestamp`, `VisibleText`, and `TextRedactor`. A type moves in only when a second module needs it.
 
 **Admission rule.** A type enters only when all three hold:
 1. At least two modules need it.
@@ -255,34 +254,36 @@ The desktop app knows only the wire protocol. It never links server code, so a l
 
 | Crate | Why it is shared | Users |
 | --- | --- | --- |
-| `wire` | The request, response, and event envelope, the binary terminal frame codec, the HMAC challenge-response proof, and the protocol version. Both ends of the socket must agree byte for byte. | `office-harnessd`, module `presentation` crates, `desktop` |
-| `private-fs` | Creates files and folders that only the owner can read: mode `0600`/`0700` on Unix, and a protected access list on Windows (FR-009) | `access-infrastructure`, `terminal-infrastructure`, `office-harnessd` bootstrap |
+| `wire` | The request, response, and event envelope, the binary terminal frame codec, the HMAC challenge-response proof, the protocol version, and the paths and limits of the socket and the hook route. Both ends of the socket must agree byte for byte. | `office-harnessd`, module `presentation` crates, `desktop` |
+| `private-fs` | Creates files and folders that only the owner can read: mode `0600`/`0700` on Unix, and a protected access list on Windows (0001/FR-009) | `access-infrastructure`, `terminal-infrastructure`, `office-harnessd` bootstrap |
+| `console-control` | The Windows console calls: turns Ctrl+C back on for the server so that a stop can reach its children, and the raw input mode of the terminal test fixture. Both are no-ops on other systems. | `office-harnessd`, `terminal-infrastructure` |
 
-Message bodies (`contracts/`) stay in each module's `presentation` crate. They are exported to TypeScript for the webview by a generator, so nobody copies API types by hand. The generator is open (Open Items).
+Message bodies (`contracts/`) stay in each module's `presentation` crate. For the webview, the desktop core generates the TypeScript types of its own error and connection-state types with `ts-rs` into `src/apps/desktop/src/core/api/generated/`. The request and response bodies of the modules reach the webview as typed wrappers in each webview module's `services/`, not as generated types.
 
 ## Composition Root and Request Flow
 
-`src/apps/office-harnessd/src/main.rs` is the only place that selects concrete implementations. It stays thin:
+`src/apps/office-harnessd/src/main.rs` is the only place that selects concrete implementations. It stays thin. It first checks for the two small command paths (the agent call used by the CLI helper, and `register`, `unregister`, and `version`), then loads the configuration, opens the log, builds the services, and serves. In outline:
 
 ```rust
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let config = config::load()?;
-    let _instance = bootstrap::acquire_single_instance(&config)?;
-    let services = bootstrap::start(&config).await?;
-    server::serve(services, &config).await
+async fn run() -> Result<(), StartupError> {
+    bootstrap::enable_os_keyring();
+    let config = Config::load(env::args_os().skip(1))?;
+    let log = bootstrap::open_log(&config)?;
+    start_and_wait(&config, &log).await
 }
 ```
 
 **Startup order:**
 1. Load the configuration and the data folder.
 2. Take the single-instance lock. A second server exits with a clear message.
-3. Run each module's migrations.
-4. Mark the agents of an unclean stop as `interrupted` (FR-004).
-5. Build the infrastructure adapters.
+3. Run each module's migrations, every module on its own ledger.
+4. Mark the agents of an unclean stop as `interrupted` (0001/FR-004).
+5. Build the infrastructure adapters, the office token, and the terminal runtime.
 6. Build the use-case services with the ports injected (the bridges included).
 7. Write `server.json`.
 8. Bind `127.0.0.1` on a free port and serve.
+
+The leftover-process sweep (0017) runs after the services exist. Requests that start a session wait on its gate until the sweep ends.
 
 ### Authentication context
 
@@ -296,6 +297,10 @@ The full rules are in [the client protocol](../specs/changes/archive/0001-office
 - **The token never crosses the socket and never enters the webview.** The desktop app's Rust core reads it from the owner-only data folder and proves knowledge of it.
 - **What the token protects against:** other OS users, and programs that do not run as the owner. It is not a sandbox against an agent CLI that runs as the same user (spec 0001 A7).
 
+### Request routing
+
+A connection reads each request and sends it by the prefix of its type. `terminal.` goes to the terminal gateway of the connection. Every other prefix goes to the gateway of the module that owns it (`AgentGateway`, `HierarchyGateway`, `HoldGateway`, `NotificationGateway`, `ResumeGateway`, `ScheduleGateway`, `SecretGateway`, `TempGateway`, `TemplateGateway`), and `token.` goes to `access`. The gateways live in `office-harnessd/src/server/*_requests.rs` and call the use cases of the module. An event reaches every connected client through the event hub (`server/event_hub.rs`).
+
 ### Request flow: start an agent
 
 ```mermaid
@@ -303,14 +308,14 @@ sequenceDiagram
     participant W as webview
     participant C as desktop core
     participant S as office-harnessd server/
-    participant H as agent-presentation handler
+    participant H as agent gateway and handler
     participant A as agent-application start_agent
     participant B as bridges::TerminalHost
     participant T as terminal-application
     participant P as PTY + CLI
     W->>C: invoke("agent_start", id)
     C->>S: {"type":"agent.start"} (authenticated socket)
-    S->>H: dispatch by prefix, with Actor
+    S->>H: route by prefix, with Actor
     H->>A: StartAgentCommand
     A->>A: resolve adapter, additions snapshot, new session
     A->>B: spawn(command line, env, folder)
@@ -332,12 +337,24 @@ sequenceDiagram
 4. Keys go back as `terminal.input`.
 5. The server answers the terminal's cursor-position and device-attribute queries itself, and the webview drops xterm.js's own automatic answers, so a CLI never gets two answers.
 
+### Status Hook Route
+
+For an agent whose CLI is `claude`, the status comes exactly from the hooks of the CLI, not from a guess on its output (0024).
+
+1. When the server starts a `claude` session, `bridges/status_hook_files.rs` writes an office settings file for the session in the `hooks/` folder of the data folder, and the CLI starts with it. The file holds report-only hooks and the session secret. It never touches the CLI's own configuration (0001/FR-021).
+2. A hook posts its event to `POST /v1/hook/{session}` on the loopback address (`server/router.rs`, `server/hook_requests.rs`). The route accepts a report only from the same machine, only with the secret of that session, at most 64 KB, and at most a fixed number of reports for each session in each second.
+3. `bridges/hook_status_bridge.rs` and `bridges/hook_sessions.rs` turn a report into a status change, an open permission ask, or a compaction. A session without a report falls back to the estimate from terminal output.
+4. When the session ends for any reason, the server revokes its secret and deletes its settings file.
+
+The route is the only HTTP route besides the health check and the WebSocket upgrade.
+
 ### Cross-cutting rules
 
-- **No CLI configuration is written (FR-021).** No crate writes into a CLI's configuration folders. Only `agent-infrastructure` reads them, and only for a session list. A test fixture checks that the folders do not change (plan 0001 T7).
-- **Login environment (FR-020).** An agent starts with the user's resolved login environment, plus its office additions, minus the server's own variables.
-- **No outside connections (FR-005).** No crate depends on an HTTP client. Only `desktop` opens a socket, and only to loopback.
-- **Logs** hold ids, status, and error kinds. They never hold the token, terminal output, prompts, or environment values.
+- **No CLI configuration is written (0001/FR-021).** No crate writes into a CLI's configuration folders. Only `agent-infrastructure` reads them, and only for a session list. A test fixture checks that the folders do not change.
+- **Login environment (0001/FR-020).** An agent starts with the user's resolved login environment, plus its office additions, minus the server's own variables.
+- **No outside connections (0001/FR-005).** No crate depends on an HTTP client. Only `desktop` opens a socket, and only to loopback.
+- **Secrets stay out of every store (0026).** A secret value is sealed with a store key from the OS keyring (or a key file), is cleared from memory when dropped, and is replaced by `[secret NAME]` in stored output and command lines.
+- **Logs** hold ids, status, and error kinds. They never hold the token, terminal output, prompts, secrets, or environment values.
 - **Error contract.** Every failed request returns `{"ok":false,"error":{"code","message"}}` with one of the codes `invalid`, `conflict`, `not_found`, `refused`, or `internal`. The message names the field or entry at fault.
 
 ## CQRS Organization
@@ -346,7 +363,7 @@ Commands (`commands/`) change state. Queries (`queries/`) only read, and they ma
 
 ## Data Folder and Database
 
-There is one data folder per OS user, chosen by the `directories` crate, with owner-only access:
+There is one data folder per OS user, chosen by the `directories` crate (or by `--data-folder`), with owner-only access:
 
 ```text
 <data folder>/
@@ -354,10 +371,15 @@ There is one data folder per OS user, chosen by the `directories` crate, with ow
 ├── token                # office token (access)
 ├── server.json          # port, pid, protocol, version, start nonce
 ├── server.lock          # held while the server runs
-└── output/<session>.log # capped recent output (terminal)
+├── server.log           # the server log
+├── secrets.key          # store key file, only where the OS keyring is not used (secret)
+├── secret-office-id     # names this office in the keyring (secret)
+├── output/<session>.log # capped recent output (terminal)
+├── hooks/               # office settings files of claude sessions, one for each session
+└── worktrees/           # own git worktrees of agents (agent)
 ```
 
-- **One database file, one owner per table.** Each module's tables carry its prefix (`agent_`, `terminal_`, `audit_`, `access_`). Each module has its own migration ledger table (`<module>_schema_version`) and its own forward-only migrations, so modules stay independent. SQLite has no schemas, so this replaces the per-module schema that a server database would use. A bridge never joins tables of two modules.
+- **One database file, one owner per table.** Each module's tables carry its prefix: `agent_`, `audit_`, `hierarchy_`, `notification_`, `schedule_`, `secret_`, `template_`. Each module has its own migration ledger table (`<module>_schema_version`) and its own forward-only migrations, so modules stay independent. SQLite has no schemas, so this replaces the per-module schema that a server database would use. A bridge never joins tables of two modules.
 - **Writes run in one transaction per command.** A full disk produces a `storage.error` event, and the agents keep running.
 - **Backup and removal:**
   - Stop the server, then copy the data folder to back it up.
@@ -368,8 +390,9 @@ There is one data folder per OS user, chosen by the `directories` crate, with ow
 
 - **Shell:** the webview is a Svelte 5 single-page app, built by Vite inside Tauri v2 (**Decided:** Svelte + TypeScript).
 - **Terminal:** `@xterm/xterm` with `addon-fit` and `addon-webgl`.
-- **Styling (Proposed):** Tailwind CSS 4 and shadcn-svelte components copied into the repository. They are widely used with Svelte 5.
+- **Styling:** Tailwind CSS 4 and shadcn-svelte components copied into the repository.
 - **Talking to the server:** the webview calls Tauri commands for requests and listens on Tauri channels for events and terminal frames. It holds no token and opens no socket.
+- **OS notifications:** the notification plugin of Tauri shows them (0003). The dialog plugin is used from Rust only, for the template files (0009).
 - **Accessibility:**
   - Every action works from the keyboard.
   - Focus is visible.
@@ -378,55 +401,53 @@ There is one data folder per OS user, chosen by the `directories` crate, with ow
 
 ## Frontend Folder Structure
 
-The webview is modular in the same way as the server. Its feature folders use the same names as the server modules.
+The webview is modular in the same way as the server. Its feature folders sit in `src/apps/desktop/src/modules/`. They follow the server modules and the screens of the capabilities:
 
 ```text
 src/apps/desktop/src/
 ├── boundaries.spec.ts          # import rules
 ├── app.svelte                  # shell: connection state, then the main view
+├── main.ts
 ├── modules/
-│   ├── agent/
-│   │   ├── index.ts            # public face for other modules
-│   │   ├── views/              # agents-view.svelte, agent-details-view.svelte
-│   │   ├── components/         # agent-list.svelte, agent-form.svelte, additions-editor.svelte, session-list.svelte
-│   │   ├── services/           # agent.service.ts (calls core/api)
-│   │   ├── state/              # agents.ts (logic, tested) + agents.store.svelte.ts (runes)
-│   │   └── models/             # agent-form.model.ts
-│   ├── terminal/               # terminal-view.svelte, terminal.ts (xterm wiring, query-reply filter)
-│   ├── access/                 # not-authorized view, token regeneration
-│   └── audit/                  # action-record.svelte
+│   ├── access/  audit/  agent/  terminal/  hierarchy/  notification/
+│   ├── panel/                  # the agent list and the main layout
+│   ├── needs-you/  hold/  office-scene/  template/  schedule/  secrets/
+│   ├── files/  worktree-dependencies/  temps/  sleep/  sweep/  resume/
+│   └── hook-status/            # each has index.ts and, as needed, views/, components/, services/, state/, models/
 ├── core/
 │   ├── api/                    # invoke() and channel wrappers, error mapping
-│   │   └── generated/          # TypeScript types generated from the Rust contracts
+│   │   └── generated/          # TypeScript types generated by ts-rs from the desktop core
 │   ├── connection/             # loading, not reachable, not authorized, version mismatch
 │   └── shortcuts/              # focus-leave shortcut and its setting
 ├── shared/
 │   ├── ui/                     # shadcn-svelte components
-│   └── components/             # empty-state.svelte, confirm-dialog.svelte
+│   └── utils.ts
 └── styles/app.css
 ```
 
 **Rules:**
 1. **Dependency direction:** a module imports `core/`, `shared/`, its own files, and other modules' `index.ts`. `core/` may import `shared/`. `shared/` imports neither `core/` nor `modules/`.
-1. **No cycles:** imports between modules go in one direction only.
-2. **Types come from `core/api/generated`.** Nobody copies an API type by hand.
-3. **Enforcement:** `boundaries.spec.ts` fails on a deep import into another module, a cycle, or `shared/` importing `core/` or `modules/`.
-4. **File names** are kebab-case with a type suffix: `agent.service.ts`, `agents.store.svelte.ts`.
+2. **No cycles:** imports between modules go in one direction only.
+3. **Types:** the types of the desktop core's own errors and connection state are generated into `core/api/generated`. Nobody copies those by hand.
+4. **Enforcement:** `boundaries.spec.ts` fails on a deep import into another module, a cycle, or `shared/` importing `core/` or `modules/`.
+5. **File names** are kebab-case with a type suffix: `agent.service.ts`, `agents.store.svelte.ts`.
 
 ## Desktop Core
 
 `src/apps/desktop/src-tauri` is the only bridge between the webview and the server.
 
-- **`connection.rs`:**
-  - reads `server.json` and the token;
-  - opens the socket and runs the proof;
-  - checks that the server proves itself;
-  - checks the protocol number and the version;
-  - reconnects with backoff;
-  - forwards requests and events.
+- **`connection.rs` and `connection/`:**
+  - read `server.json` and the token (`server_file.rs`, `data_folder.rs`);
+  - open the socket and run the proof (`socket.rs`, `session.rs`);
+  - check that the server proves itself;
+  - check the protocol number and the version;
+  - reconnect with backoff (`backoff.rs`);
+  - track the connection state and forward requests and events.
 - **`server_process.rs`:**
-  - starts the server through its login item, or as a detached process, so that the server outlives the app (FR-001, FR-026);
+  - starts the server through its login item, or as a detached process, so that the server outlives the app (0001/FR-001, 0001/FR-026);
   - runs `register` on first start.
+- **`commands.rs` and `channels.rs`:** the Tauri commands that the webview calls, and the channels for events and terminal frames.
+- **`template_files.rs`:** saves and opens template files through the dialog plugin.
 - **Capabilities** grant the webview only the commands and channels that it uses. A strict content security policy applies, and the webview renders no raw HTML.
 
 ## Incremental Build Isolation
@@ -444,37 +465,39 @@ Changing a crate rebuilds that crate and the crates that depend on it. Modules n
 
 | Level | Location | What it covers |
 | --- | --- | --- |
-| Domain unit | `<module>-domain` | The status machine, value objects, and validation. No I/O. |
-| Application unit | `<module>-application` | Commands and queries with in-memory port fakes, including `TerminalHost` and `CliAdapter` fakes |
+| Unit | `<name>.tests.rs` beside the code, in every layer | Domain rules and the status machine with no I/O; commands and queries with in-memory port fakes; bridges and gateways of the host |
 | Infrastructure integration | `<module>-infrastructure/tests/` | Migrations, repositories on a temporary SQLite file, the PTY host with a test CLI, screen snapshots, the CLI adapters with fake CLIs on `PATH`, and the CLI configuration folders staying unchanged |
 | Presentation | `<module>-presentation/tests/` | Message decoding, error codes, and mappings with mocked services |
-| Server end to end | `office-harnessd/tests/` | The real binary, a temporary data folder, and a `wire` test client: auth, dispatch, events, and terminal frames |
+| Server end to end | `office-harnessd/tests/` | The real binary, a temporary data folder, and a `wire` test client: auth, routing, events, terminal frames, and the hook route |
 | Webview | `bun test` beside `.ts` files, plus Playwright with `@axe-core/playwright` against the Vite build with a mocked core | Logic, import boundaries, views, and accessibility |
-| Real surface | By hand on Linux, macOS, and Windows | The four real CLIs, login start, and the 0001 success criteria |
+| Real surface | By hand, per change, in its QA report | The real CLIs, login start, and the success criteria of each spec |
 
-`cargo test --workspace` runs every Rust level. CI runs all levels on Linux, macOS, and Windows.
+`cargo test --workspace` runs every Rust level. CI runs on Linux, macOS, and Windows: the Rust format and lint check, the Rust tests, the boundary check, the webview lint and tests, Playwright, and a Tauri build. The Playwright step runs on Linux only. A change that touches only `specs/`, `docs/`, or Markdown files starts no CI run.
 
 **Boundary enforcement:**
 - The Cargo graph is the primary check: a forbidden dependency is a manifest error.
-- `scripts/check-boundaries.sh` (with `--self-test`) runs `cargo metadata` in CI and asserts all of these:
-  1. No `*-domain` or `*-application` crate lists `axum`, `rusqlite`, `portable-pty`, `vt100`, or `tokio::fs` users.
-  2. No `*-presentation` crate lists `rusqlite` or `portable-pty`.
-  3. No module crate lists another module's crate.
-  4. `kernel` and `shared/*` list no module crate.
-  5. `desktop` lists no module crate.
+- `scripts/check-boundaries.sh` (with `--self-test`) runs `cargo metadata` in CI and reports a violation of any of these rules:
+  1. No `*-domain` or `*-application` crate depends on `axum`, `rusqlite`, `portable-pty`, `vt100`, or `tokio`.
+  2. No `*-presentation` crate depends on `rusqlite` or `portable-pty`.
+  3. No module crate depends on another module's crate.
+  4. `kernel` and `shared/*` depend on no module crate and no app crate, and `shared/*` does not depend on `kernel`.
+  5. `desktop` depends on no module crate, `rusqlite`, or `portable-pty`.
+  6. A module crate does not depend on its own outer layer.
+  7. `kernel` depends on no `tokio`, `axum`, or `rusqlite`.
+  8. No `*-infrastructure` crate depends on `axum`.
+  9. No module crate depends on an app crate.
 
 ## Extension Points for Later Releases
 
-These are not built in 0001. The structure leaves room for them:
+Two changes are parked, so these stay unbuilt. The structure leaves room for them:
 
-- **R5 distributed machines:** a `machine` module, and a TLS listener in the host app next to the loopback one. Remote clients use the same `wire` protocol and the same token proof. Each agent already belongs to a machine (data model).
-- **R7 office scene:** a webview module that reads agents, roles, and statuses. It needs no server change.
-- **R8 meeting room:** a `meeting` module that sends each brief to a participant's terminal through the terminal port and reads terminal output through ports. It does not send 0002 directives: spec 0004 and its plan do not depend on 0002.
-- **Docker Compose:** the container runs `office-harnessd` and the agent CLIs. It needs the R5 listener first, because the 0001 server accepts loopback only.
+- **R5 distributed machines (0006, parked):** a `machine` module, and a TLS listener in the host app next to the loopback one. Remote clients use the same `wire` protocol and the same token proof. The `agent` module already holds a `machine` entity.
+- **R8 meeting room (0004, parked):** a `meeting` module that sends each brief to a participant's terminal through the terminal port and reads terminal output through ports. It does not send directives of the `hierarchy` module.
+- **Docker Compose:** the container runs `office-harnessd` and the agent CLIs. It needs the R5 listener first, because the server accepts loopback only.
+- **CLIs other than `claude` for the status hooks:** the hook route and the session secret are not specific to one CLI. Another CLI needs its own settings file writer in the host app, and the spec of 0024 names `claude` first.
 
 ## Open Items
 
-1. **TypeScript type generation from Rust contracts:** `ts-rs` or `specta`. Choose in plan T2. **Unverified:** which of them fits Tauri channels best.
-2. **Tailwind CSS 4 and shadcn-svelte:** **Proposed**, it is widely used with Svelte 5. The owner may choose plain CSS instead.
-3. **Module split:** `agent` owns sessions and the CLI adapters. If sessions grow (0002 directives, R8 meetings), a `session` module can split out behind the same ports.
-4. **Windows `unsafe` code:** it is limited to `private-fs` and `terminal-infrastructure`. Each block carries a safety comment and a test.
+1. **Module split:** `agent` owns sessions, the CLI adapters, own git worktrees, the file view, and finished temps. If it grows further, a `session` module can split out behind the same ports.
+2. **Unsafe code:** it is limited to `private-fs`, `console-control`, and `terminal-infrastructure`. Each block carries a safety comment and a test.
+3. **Request and response types for the webview:** the webview wraps each request by hand in its `services/` folder. A generator for the module contracts is not built.
