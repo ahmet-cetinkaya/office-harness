@@ -1,6 +1,6 @@
 # Contract: temp protocol (0020)
 
-Date: 2026-11-23. Extends the 0001 client protocol (`specs/changes/archive/0001-office-server-and-terminal/contracts/client-protocol.md`), the 0002 hierarchy contract (`specs/changes/archive/0002-agent-hierarchy/contracts/hierarchy-protocol.md`), the 0010 worktree contract (`specs/changes/0010-agent-worktree/contracts/worktree-protocol.md`), and the 0015 report contract (`specs/changes/archive/0015-upward-reports/contracts/report-protocol.md`). Error codes stay `invalid`, `conflict`, `not_found`, `refused`, `internal`. Times are Unix milliseconds, as `created_at` in 0001.
+Date: 2026-11-23. Extends the 0001 client protocol (`specs/changes/archive/0001-office-server-and-terminal/contracts/client-protocol.md`), the 0002 hierarchy contract (`specs/changes/archive/0002-agent-hierarchy/contracts/hierarchy-protocol.md`), the 0010 worktree contract (`specs/changes/archive/0010-agent-worktree/contracts/worktree-protocol.md`), and the 0015 report contract (`specs/changes/archive/0015-upward-reports/contracts/report-protocol.md`). Error codes stay `invalid`, `conflict`, `not_found`, `refused`, `internal`. Times are Unix milliseconds, as `created_at` in 0001.
 
 ## Changed shapes
 

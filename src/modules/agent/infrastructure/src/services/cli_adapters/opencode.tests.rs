@@ -5,9 +5,9 @@
 use super::*;
 
 const SESSION_UUID: &str = "c54938eb-c04e-4ff7-bd9c-06f1c9375f91";
-/// 2026-11-27 11:12:17 UTC. A real id from that second, `ses_de34b53aeffe...`,
-/// was made by the CLI itself.
-const NOW_MILLIS: u64 = 1_795_777_937_000;
+/// 2026-11-27 11:12:12.369 UTC. A real id from that millisecond, starting
+/// `ses_de34b53a`, was made by the CLI itself.
+const NOW_MILLIS: u64 = 1_795_777_932_369;
 
 #[test]
 fn an_id_has_the_prefix_twelve_counter_digits_and_fourteen_alphanumerics() {
@@ -20,12 +20,12 @@ fn an_id_has_the_prefix_twelve_counter_digits_and_fourteen_alphanumerics() {
 }
 
 #[test]
-fn the_counter_digits_match_the_ones_the_cli_made_in_the_same_second() {
+fn the_counter_digits_match_the_ones_the_cli_made_in_the_same_millisecond() {
     let id = opencode_session_id(SESSION_UUID, NOW_MILLIS);
 
-    // The CLI's own id of that second began `de34b5`; the slot number and the
-    // sub-second part only change the digits after it.
-    assert!(id.starts_with("ses_de34b"), "{id}");
+    // The CLI's own id of that millisecond began `de34b53a`; the slot number
+    // only changes the digits after it.
+    assert!(id.starts_with("ses_de34b53a"), "{id}");
 }
 
 #[test]

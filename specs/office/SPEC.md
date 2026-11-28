@@ -20,6 +20,10 @@ Archived change specs merged here:
 - [0003-panel-practicality](../changes/archive/0003-panel-practicality/SPEC.md)
 - [0005-office-scene](../changes/archive/0005-office-scene/SPEC.md)
 - [0007-hold-and-limits](../changes/archive/0007-hold-and-limits/SPEC.md)
+- [0008-needs-you-queue](../changes/archive/0008-needs-you-queue/SPEC.md)
+- [0009-agent-templates](../changes/archive/0009-agent-templates/SPEC.md)
+- [0010-agent-worktree](../changes/archive/0010-agent-worktree/SPEC.md)
+- [0011-task-line](../changes/archive/0011-task-line/SPEC.md)
 - [0012-safe-directive-delivery](../changes/archive/0012-safe-directive-delivery/SPEC.md)
 - [0013-bulk-resume](../changes/archive/0013-bulk-resume/SPEC.md)
 - [0014-subtree-status](../changes/archive/0014-subtree-status/SPEC.md)
@@ -36,7 +40,7 @@ Archived change specs merged here:
 - [0025-scheduled-directives](../changes/archive/0025-scheduled-directives/SPEC.md)
 - [0026-agent-secrets](../changes/archive/0026-agent-secrets/SPEC.md)
 
-Changes 0008 to 0011 merge in when they are archived. 0004 and 0006 are not merged.
+Parked changes, not merged: [0004-meeting-room](../changes/parked/0004-meeting-room/SPEC.md) and [0006-distributed-machines](../changes/parked/0006-distributed-machines/SPEC.md).
 
 ## How to read this file
 
@@ -44,15 +48,22 @@ Changes 0008 to 0011 merge in when they are archived. 0004 and 0006 are not merg
 - When a later change modified a requirement, this file keeps one entry under the original id with the final text, and a note names the change that modified it. The earlier text is not repeated.
 - A bare id inside a requirement text, such as `FR-001`, names a requirement of the same change as that entry.
 - Requirements removed by a later change: none.
-- Ids of 0001 keep the form `0001/FR-nnn`. The requirements of 0001 that a merged change modified are 0001/FR-014 and 0001/FR-017.
+- Ids of 0001 keep the form `0001/FR-nnn`. The requirements of 0001 that a merged change modified are 0001/FR-014, 0001/FR-017, and 0001/FR-020.
 
-Modified requirements (0008 is not merged yet: 0022 modified 0008/FR-001 and 0008/FR-005, and their final text is in the MODIFIED section of [0022](../changes/archive/0022-waiting-item-sleep/SPEC.md); 0024 modified 0008/FR-002, and its final text is in the MODIFIED section of [0024](../changes/archive/0024-cli-hook-status/SPEC.md)):
+Modified requirements:
 
 | Requirement | Modified by | Final text is under |
 |---|---|---|
 | 0001/FR-014 | 0018, 0024 | Change 0001, Requirements |
-| 0001/FR-017 | 0003 | Change 0001, Requirements |
+| 0001/FR-017 | 0003, 0008 | Change 0008, Requirements (the entry under Change 0001 is read with it) |
 | 0001/FR-020 | 0024 | Change 0001, Requirements |
+| 0008/FR-001 | 0022 | Change 0008, Requirements |
+| 0008/FR-002 | 0015, 0024 | Change 0008, Requirements |
+| 0008/FR-003 | 0015 | Change 0008, Requirements |
+| 0008/FR-005 | 0015, 0022 | Change 0008, Requirements |
+| 0009/FR-001 | 0010 | Change 0009, Requirements |
+| 0009/FR-003 | 0010 | Change 0009, Requirements |
+| 0003/FR-002 | 0011 | Change 0003, Requirements |
 | 0002/FR-008 | 0014, 0015, 0026 | Change 0002, Requirements |
 | 0002/FR-009 | 0007 | Change 0002, Requirements |
 | 0002/FR-010 | 0012 | Change 0002, Requirements |
@@ -98,7 +109,7 @@ The owner runs many AI coding agent CLIs and opens a separate terminal for each 
 - **0001/FR-014** (US1): THE SYSTEM SHALL show every agent of the office with its name and its status as text, where the status is one of `starting`, `working`, `waiting for input`, `exited`, `failed`, `stopped`, `interrupted`, or `asleep`; for an estimated or late session, `waiting for input` means that the CLI runs and produced no output during the quiet period; for an exact session it means that no turn runs and no compaction runs, or that a permission ask is open (0024/FR-011, 0024/FR-013); and `asleep` means that the office ended the CLI after an idle time and keeps its last session for a wake (0018/FR-003). (modified by 0018, 0024)
 - **0001/FR-015** (US1): THE SYSTEM SHALL run each agent CLI in its own pseudo-terminal, so that full-screen display, colors, cursor movement, and control keys behave as in the user's native terminal.
 - **0001/FR-016** (US1): WHEN the user attaches to an agent, THE SYSTEM SHALL show the agent's recent output followed by its live output.
-- **0001/FR-017** (US1): WHILE an agent's terminal has keyboard focus, THE SYSTEM SHALL send every key to the agent's CLI except the documented app shortcuts: the shortcut that moves focus back to the panel, the agent shortcuts, and the switcher shortcut (A1). (modified by 0003) Change 0007 widened this list by one shortcut. See the note after the success criteria of change 0007. Active change 0008 (needs you queue, not shipped yet) modifies 0001/FR-017 again: it adds the jump shortcut to the list.
+- **0001/FR-017** (US1): WHILE an agent's terminal has keyboard focus, THE SYSTEM SHALL send every key to the agent's CLI except the documented app shortcuts: the shortcut that moves focus back to the panel, the agent shortcuts, and the switcher shortcut (A1). (modified by 0003 and 0008; the final text is under Change 0008) Change 0007 widened this list by one shortcut. See the note after the success criteria of change 0007. Active change 0008 (needs you queue, not shipped yet) modifies 0001/FR-017 again: it adds the jump shortcut to the list.
 - **0001/FR-018** (US1): WHEN the user resizes the terminal view, THE SYSTEM SHALL resize the agent's terminal to the new size.
 - **0001/FR-019** (US1): WHEN the user detaches from a terminal or the desktop app closes, THE SYSTEM SHALL keep the agent running and keep recording its output.
 - **0001/FR-020** (US1, US2): THE SYSTEM SHALL start each agent CLI with the user's own home folder, login environment, and CLI configuration, changed only by that agent's office additions and, for `claude`, by the office settings file of 0024/FR-001, which only adds the status hooks. (modified by 0024)
@@ -205,7 +216,7 @@ The owner named switching and searching between agents as his main problem: othe
 ### Requirements
 
 - **0003/FR-001** (US1): THE SYSTEM SHALL show the agent list, the agent terminals, and the agent details in one window, without a separate window per agent or per project.
-- **0003/FR-002** (US1): THE SYSTEM SHALL show, in one list, the name, project, status, and last output line of every agent in every project.
+- **0003/FR-002** (US1): THE SYSTEM SHALL show, in one list, the name, project, status, last output line, and task line of every agent in every project. (modified by 0011)
 - **0003/FR-003** (US1): WHERE the office has a hierarchy from 0002, THE SYSTEM SHALL also show each agent's role and team in the agent list.
 - **0003/FR-004** (US1, R9 criterion 1): WHEN the user clicks an agent in the panel or presses that agent's keyboard shortcut, THE SYSTEM SHALL open that agent's live terminal.
 - **0003/FR-005** (US1, R9 criterion 3): WHEN the user picks one project or "All projects" in the project switcher, THE SYSTEM SHALL show only the agents of that choice.
@@ -358,6 +369,307 @@ The rate limits and their defaults, each counted over a rolling 60 seconds:
 | Starts, stops, and new tasks by one agent | 10 | One restart round of a 5-member team fits twice. |
 | Reports sent by one agent (added by 0015) | 5 | An agent reports each step of a short task, and a loop stops. |
 | Reads of secrets by one agent (added by 0026) | 20 | An agent reads each secret once per task, and a loop stops. |
+
+## Change 0008: Needs-you queue
+
+### Intent
+
+With 12 to 30 agents, the owner must find the agents that wait for him. Today 0003 gives him one notification per event, but a notification list is ordered by arrival, keeps items after the agent moved on, and has no key that takes him to the next agent that waits. This change adds one standing list in the panel, "Needs you", with one item per agent that waits for him, grouped by what happened and ordered by how long it has waited, and one key that opens the terminal of the agent at the top. Each item says what the office saw, not what the agent meant. This change amends the approved change 0003.
+
+### Terms
+
+| Term | Meaning |
+|---|---|
+| Agent, project, status, quiet period, desktop app | As defined in 0001. |
+| Panel, agent list, notification | As defined in 0003. |
+| Attention event | One of the events of 0003/FR-006 as modified by 0007: an agent changes from `working` to `waiting for input`, exits, fails, rings the terminal bell, or is put on hold automatically (0007/FR-008). |
+| Needs you | The list in the panel that this change adds. It holds at most one item per agent. |
+| Item | The entry of one agent in Needs you. |
+| Wait time | The time since the oldest attention event of the item that the user has not handled. |
+| Jump shortcut | The app shortcut that opens the terminal of the agent at the top of Needs you. |
+
+### Requirements
+
+- **0008/FR-001** (US1): WHEN an attention event occurs that 0003/FR-006 does not show as read on arrival, THE SYSTEM SHALL add an item for that agent to Needs you, or, if the agent already has an item, SHALL keep that one item and its wait time and record the new event as its latest event. A bell that 0003/FR-006 (a) coalesces still counts as an attention event for Needs you. An unprompted change to `waiting for input` is not an attention event for Needs you: THE SYSTEM SHALL NOT add an item for it and SHALL NOT change an existing item, its wait time, or its latest event because of it.
+- **0008/FR-002** (US1): THE SYSTEM SHALL show each item with the agent's name, project, latest event as the office saw it (for an exact session `finished its turn`, `its turn ended with an error`, or `asks permission`; otherwise quiet for the quiet period, bell, exit with its exit code, put on hold by the office with the limit it hit, or a report with its kind), and wait time, as text, and, while the item holds a report, the report's kind and its whole text in visible form.
+- **0008/FR-003** (US1): THE SYSTEM SHALL order the items in groups by their latest event, `failed` first, then `waiting for input`, bell, automatic hold (the resume hold of 0013 included), and report, then `exited`, and inside each group by wait time, longest first, and items with the same wait time by agent name.
+- **0008/FR-004** (US1, US3): WHEN the user opens an agent's terminal by any route, or dismisses the agent's item, THE SYSTEM SHALL remove that agent's item from Needs you.
+- **0008/FR-005** (US1): WHEN an agent with an item is deleted or changes to `stopped`, or, for an item that holds no report, changes to `starting`, makes a prompted change to `working`, gets a person input or office text in its terminal while it shows `working`, or has shown `working` without a break for longer than the work bound, or, for an item that holds no report and whose latest event is an automatic hold (the resume hold of 0013 included), has its hold released, THE SYSTEM SHALL remove that agent's item from Needs you; an unprompted change to `working` SHALL leave the item, its wait time, and its latest event unchanged while the stretch of `working` stays within the work bound.
+- **0008/FR-006** (US1): IF an attention event occurs while the desktop app is closed, THEN THE SYSTEM SHALL show its item in Needs you, with the wait time counted from the event, when the app opens.
+- **0008/FR-007** (US2): WHEN the user presses the jump shortcut and Needs you has items, THE SYSTEM SHALL open the terminal of the agent at the top of Needs you with keyboard focus.
+- **0008/FR-008** (US2): IF the user presses the jump shortcut while Needs you is empty, THEN THE SYSTEM SHALL keep the current view and say that no agent needs the user.
+- **0008/FR-009** (US3): WHILE Needs you has one or more items, THE SYSTEM SHALL show the number of items as text next to Needs you in the panel and in the desktop app's window title in either view.
+- **0008/FR-010** (US2): WHILE the office scene (0005) is open, WHEN the user presses the jump shortcut and Needs you has items, THE SYSTEM SHALL open the top agent's desk in the scene with keyboard focus, as 0005/FR-005 does, and SHALL leave the panel's project choice and selected agent unchanged (0005/FR-006).
+- **0001/FR-017** (as modified by 0003) (US2): WHILE an agent's terminal has keyboard focus, THE SYSTEM SHALL send every key to the agent's CLI except the documented app shortcuts that approved changes let out of a terminal (the focus, agent, and switcher shortcuts of 0003 A1, and any that another approved change adds, such as the 0007 office hold shortcut) and the jump shortcut.
+
+Modified by later changes: 0008/FR-001 (by 0022), 0008/FR-002 (by 0015, 0024), 0008/FR-003 (by 0015), 0008/FR-005 (by 0015, 0022). This change modified 0001/FR-017; its final text is the last entry above, and the entry under Change 0001 is to be read with it.
+
+### Preserved behaviors
+
+- **0008/PB-1:** Notifications keep their 0003 behavior: each attention event notifies once (0003/FR-006), unread notifications survive app closure (0003/FR-007), and opening a terminal marks them read (0003/FR-009). Needs you adds no OS notification and no repeated alert.
+- **0008/PB-2:** The office does not read CLI prompts and does not create, change, or delete anything in a CLI's configuration (0001/FR-021).
+- **0008/PB-3:** `stopped` and `interrupted` cause no attention event (0003/FR-006).
+- **0008/PB-4:** Every desktop app action, including the jump shortcut and dismiss, is available from the keyboard (0001/FR-028), and every status and event shows as text, never color alone (0001/FR-014).
+- **0008/PB-5:** No office data leaves the user's machine (0001/FR-005).
+
+### Key entities
+
+| Entity | Represents | Key attributes | Identity and relationships |
+|---|---|---|---|
+| Item | One agent that waits for the user. | agent, first unhandled event time, latest event (kind, exit code when it applies), latest event time | At most one per agent. Kept by the background server, so it survives app closure. |
+
+### Success criteria
+
+- **0008/SC-001:** With 30 agents running and 5 of them with items, Needs you lists exactly those 5 in the order of FR-003, and one press of the jump shortcut shows the top agent's live terminal with keyboard focus within 1 second.
+- **0008/SC-002:** With 5 items, 5 presses of the jump shortcut open the 5 agents' terminals in the order of FR-003, and Needs you is empty afterwards.
+- **0008/SC-003:** An item shows in Needs you, and the count in the window title changes, within 2 seconds after the attention event (for `waiting for input`, after the quiet period ends).
+- **0008/SC-004:** After the desktop app was closed while 3 attention events occurred, 100% of their items show in Needs you within 3 seconds after the app opens.
+- **0008/SC-005:** An agent that produces output at least once per quiet period, rings no bell, and does not exit never gets an item.
+
+### Notes from Deviations
+
+- **Name lookup port.** The notification module reads an agent's name through a port, `AgentNameLookup`, so that it does not depend on the agent module. The server adapter is in the background server's bridges.
+- **Two plan tasks in one commit.** The server hooks task and the protocol task landed in one commit.
+- **Text of a failed item.** The detail of a `failed` item is the status text that the server sends, such as "the command ended with exit code 2", not a text that the desktop builds from the exit code. The contract says so.
+- **Free key in the test.** The end-to-end test of a key that reaches the CLI uses `Control+Alt+F11`, because `Ctrl+Shift+F12` is the default focus shortcut and so is not free.
+- **Focus shortcut module moved.** `focus-shortcut.ts` moved from the desktop terminal module to `src/core/shortcuts/`, beside a new `focus-shortcut-state.ts`, so that the shared state loads the focus shortcut once at app start. A change of the setting applies at the next app start.
+- **Dismiss of an item that is gone.** A dismiss that the server answers with `not_found` is a success in the desktop, because the item is already gone.
+- **Jump focus for an agent that is not running.** The terminal of an agent that is not running is read-only and takes no keyboard focus. The jump then puts focus on the terminal view heading, whose accessible name names the agent ("Terminal, <agent name>"). This refines FR-007 for that case.
+- **Criteria that tests ran in a narrower form (QA report).** The 1 second bound of 0008/SC-001 is tested on a mock core only. The 3 second bound of 0008/SC-004 is not timed by a test. 0008/SC-005 is stated per quiet period, and its test uses a quiet period of 2000 ms with an agent that writes every 100 ms, watched for 3 seconds. The server runs use fake CLIs.
+- **Rows that no person has run.** A screen reader pass, 200 percent zoom, the real window title and the real jump key on a desktop environment, and a run with a real agent CLI are not run. macOS and Windows hands-on rows are waived, as for 0003, 0005, and 0007.
+- **Edge cases without a full test.** No test removes the title bar of the window, and no 0008 test targets the unreachable-server and rejected-token states of 0001.
+
+## Change 0009: Agent and team templates
+
+### Intent
+
+The person builds the same kinds of agents and teams again and again: a CEO, a lead with six members, the same CLI command and office additions each time. Without this change each agent is created by hand with every field (0001/FR-012, 0002/FR-002). This change lets the person save an agent definition as a template and create an agent from it in one step, save a team as a template and create a lead with its members in one action, and keep the templates in one plain file that can be exported and imported. Templates are copies: editing or deleting one changes no agent. Templates never carry environment values out of the office.
+
+### Terms
+
+| Term | Meaning |
+|---|---|
+| Agent, project, office additions, action record | As defined in 0001. |
+| Role, team, CEO, team lead, member | As defined in 0002. |
+| Agent template | A saved agent definition: template name, agent name pattern, CLI command, optional working folder, office additions, and optional role. |
+| Team template | A saved team definition: template name, one lead entry, and one or more member entries. Each entry is an agent template and, for members, a count. |
+| Name pattern | The text from which the office makes an agent's name. It can hold `{team}` (the team's name) and `{n}` (the lowest number that makes the name unique). |
+| Template file | One plain-text file that holds one or more templates and a format version. |
+
+### Requirements
+
+- **0009/FR-001** (US1): THE SYSTEM SHALL let the user save an agent template with a template name, an agent name pattern, a CLI command, an optional working folder, office additions, an optional role, and the own worktree choice (0010), either as a new template or as a copy of an existing agent's definition.
+- **0009/FR-002** (US1): WHEN the user creates an agent from an agent template at a place in the tree, with an optional project, THE SYSTEM SHALL create one agent with the template's values, a name from the name pattern that is unique in the office, and, when the template has no working folder, the project's folder as working folder.
+- **0009/FR-003** (US2): THE SYSTEM SHALL let the user save a team template with a template name, one lead entry, and one or more member entries, where each entry is an agent template, with its own worktree choice, and each member entry has a count.
+- **0009/FR-004** (US2): WHEN the user creates a team from a team template with a team name, an optional project, and a parent, THE SYSTEM SHALL create the team, its lead under the parent, and each member under the lead, in one action.
+- **0009/FR-005** (US1, US2): IF any agent or the team of a template creation cannot be created, THEN THE SYSTEM SHALL create none of them and SHALL name each reason.
+- **0009/FR-006** (US1, US2): WHEN the user edits or deletes a template, THE SYSTEM SHALL keep every agent and team created from it unchanged.
+- **0009/FR-007** (US3): WHEN the user exports templates, THE SYSTEM SHALL write them to one plain-text file with a format version, with every environment variable as its name and an empty value, and SHALL say before writing that flags and startup prompts are written as they are.
+- **0009/FR-008** (US3): WHEN the user imports a template file, THE SYSTEM SHALL show, as plain text, every template in it with its CLI commands, working folders, flags, environment variable names, startup prompts, and the name it will be saved under, and SHALL save the templates only after the user confirms.
+- **0009/FR-009** (US3): IF an imported file has an unknown format version, cannot be read as a template file, is larger than 256 KiB, or holds a team template with more than 50 agents, or holds a template that FR-001 or FR-003 would not let the user save (for example an empty CLI command or a member count below 1), THEN THE SYSTEM SHALL refuse the whole file, name the template and the reason, and save no template from it.
+- **0009/FR-010** (US2): IF a team template the user saves would create more than 50 agents, THEN THE SYSTEM SHALL refuse to save it and name the limit.
+- **0009/FR-011** (US3): WHEN a template holds an environment variable without a value, THE SYSTEM SHALL show that variable as 'no value' in the template and in creation from it, and SHALL not pass a variable without a value to the CLI, so the login environment's value stays in effect (0001/FR-020).
+
+Modified by later changes: 0009/FR-001 (by 0010), 0009/FR-003 (by 0010).
+
+### Preserved behaviors
+
+- **0009/PB-1:** Role placement keeps the rules of 0002: an agent or team created from a template gets a role only at a place that 0002/FR-001 allows, and a refusal names the allowed roles (0002/FR-003).
+- **0009/PB-2:** Each agent created from a template is recorded in the action record with the user as actor, like any create (0001/FR-011).
+- **0009/PB-3:** The office creates, changes, or deletes nothing in a CLI's configuration (0001/FR-021); a template holds only office-harness's own definitions.
+- **0009/PB-4:** No office data leaves the user's machine (0001/FR-005). An export writes only the file the user picks.
+- **0009/PB-5:** Every desktop app action that this change adds is available from the keyboard (0001/FR-028).
+
+### Key entities
+
+| Entity | Represents | Key attributes | Identity and relationships |
+|---|---|---|---|
+| Agent template | A saved agent definition. | template name, name pattern, CLI command, working folder (optional), office additions, role (optional) | Template name is unique among templates in the office. Not linked to the agents created from it. |
+| Team template | A saved team definition. | template name, lead entry, member entries (agent template, count) | Template name is unique among templates. Uses agent templates as entries. |
+| Template file | Templates outside the office. | format version, templates | Plain text the user owns. Holds no environment values. |
+
+### Success criteria
+
+- **0009/SC-001:** A user builds a 15-agent, 3-level tree (a CEO and two teams of a lead and 6 members) from two saved templates (one agent template, one team template used twice) in under 3 minutes and at most 3 create actions.
+- **0009/SC-002:** Exporting templates and importing the file into an empty office reproduces 100% of each template's values except environment values, and the file holds 0 environment values.
+- **0009/SC-003:** Each invalid file kind of FR-009 is refused with its named reason, and 0 templates are saved from it.
+- **0009/SC-004:** After a template is edited or deleted, 0 agents and 0 teams created from it change.
+- **0009/SC-005:** A team creation that fails at any agent leaves 0 new agents and 0 new teams.
+
+### Assumptions
+
+- **A1:** Creating from a template creates agents like the 0001 and 0002 create actions; it does not start them. The user starts them as in 0001.
+- **A6:** 0001 has no "secret" mark on environment variables, so export treats every environment value as possibly secret and leaves all of them empty. Inside the office, templates keep the values, as agents already do (0001/FR-022). An imported variable has no value until the user gives one (FR-011).
+- **A10:** Saving, editing, deleting, exporting and importing templates are not recorded in the action record; only the agents created from templates are (PB-2).
+
+### Notes from Deviations
+
+- **Own worktree choice (0010).** 0010 modified 0009/FR-001 and 0009/FR-003, and the final text above is the text of 0010. An agent template and each entry of a team template carry the own worktree choice as one optional value, off by default. The plan of 0009 had said that a build without 0010 refuses a template body that has this value; 0010 shipped, and the build accepts it.
+- **Tests beyond the plan.** A later task added tests for 0009/PB-3, A1, and A10 that the plan did not list: saving, creating an agent and a team, and exporting leave the CLI homes and the project folder as they were, every agent made from a template is stopped, and template changes write no row of the action record.
+- **Size.** The change has 11 requirements, more than the size rule of ten. It shipped as one change and the split was not done.
+- **Gaps stated as PARTIAL or NOT RUN in the QA report.** 0009/SC-001 is PARTIAL: a scripted run on a mock core builds the 15 agents in 3 create actions, and nobody timed the 3-minute run by hand. These hands-on rows were not run: the real file dialogs on KDE Plasma, macOS, and Windows, a screen reader pass, and 200 percent zoom.
+- **None of the notes defers or changes a requirement.**
+- **Edge cases, user stories, and the user experience** are in the archived spec.
+
+## Change 0010: Opt-in own worktree per agent
+
+### Intent
+
+The person runs several agents on one git repository. Without this change they share one working folder, so two agents that edit the same file overwrite each other's work. This change lets the person give an agent its own git branch and worktree when they create it in a git repository. The agent then works in its own folder on its own branch, and the person's own folder stays unchanged. The choice is off by default, so an agent still starts as the person's shell would. Deleting the agent never removes uncommitted work without a second confirmation.
+
+### Terms
+
+| Term | Meaning |
+|---|---|
+| Agent, project, working folder, action record | As defined in 0001. |
+| Git repository | A folder that git manages, with its history and branches. |
+| Worktree | A second checked-out folder of a git repository, on its own branch, that shares the repository's history. |
+| Own worktree | The choice, at agent creation, that gives the agent a new branch and a worktree of its own. |
+| Base | The branch or commit from which the agent's new branch starts. |
+| Uncommitted changes | Changed, added, deleted, or untracked files in a worktree that no commit holds. |
+
+### Requirements
+
+- **0010/FR-001** (US1): WHERE the working folder of a new agent is inside a git repository, THE SYSTEM SHALL offer an "own worktree" choice, off by default, that shows the base and the branch name it will create.
+- **0010/FR-002** (US1): WHEN the user creates an agent with own worktree on, THE SYSTEM SHALL create a new branch from the base and a worktree of that branch in a folder that office-harness owns outside the repository, and SHALL use that worktree, at the same subfolder as the chosen folder, as the agent's working folder.
+- **0010/FR-003** (US1): THE SYSTEM SHALL show the branch, the base, and the worktree folder in the details of each agent that has an own worktree.
+- **0010/FR-004** (US1): IF the office cannot create the branch or the worktree, THEN THE SYSTEM SHALL create no agent, leave no branch or folder behind, and say why.
+- **0010/FR-005** (US2): WHEN the user deletes one or more agents that have own worktrees, THE SYSTEM SHALL ask once whether to keep or remove those worktrees, with keep as the default, and SHALL list each worktree with whether it has uncommitted changes.
+- **0010/FR-006** (US2): IF the user chooses remove and a worktree has uncommitted changes, THEN THE SYSTEM SHALL name the number of changed files and remove that worktree only after a second confirmation.
+- **0010/FR-007** (US2): WHEN the office removes a worktree, THE SYSTEM SHALL remove its folder and the repository's record of it, SHALL delete the agent's branch only when the branch has no commits that its base lacks, and otherwise SHALL keep the branch and name it.
+- **0010/FR-008** (US1): IF an agent's worktree folder is missing when the agent starts, THEN THE SYSTEM SHALL NOT start the CLI, and SHALL say that the worktree folder is missing.
+- **0010/FR-009** (US1): WHEN the user creates an agent or a team from a template whose entry has own worktree on, THE SYSTEM SHALL create each such agent with its own branch and worktree as FR-002 does, from the base of the chosen folder; IF the folder is not inside a git repository, THEN THE SYSTEM SHALL create nothing (0009/FR-005) and say that own worktree needs a git repository.
+- **0009/FR-001** (US1): THE SYSTEM SHALL let the user save an agent template with a template name, an agent name pattern, a CLI command, an optional working folder, office additions, an optional role, and the own worktree choice (0010), either as a new template or as a copy of an existing agent's definition.
+- **0009/FR-003** (US2): THE SYSTEM SHALL let the user save a team template with a template name, one lead entry, and one or more member entries, where each entry is an agent template, with its own worktree choice, and each member entry has a count.
+
+Modified by later changes: none.
+
+This change modified 0009/FR-001 and 0009/FR-003; their final text is the last two entries above. 0009 is not in this file yet, so the fold of 0009 takes that text from here.
+
+### Preserved behaviors
+
+- **0010/PB-1:** An agent created without own worktree starts in its chosen folder as the user's shell would, as before (0001/FR-020).
+- **0010/PB-2:** The office creates, changes, or deletes nothing in a CLI's configuration (0001/FR-021), and nothing in the user's own repository folder; it adds only a branch and a worktree record to the repository's git data.
+- **0010/PB-3:** Deleting an agent with descendants still shows how many agents will be deleted and needs the user's confirmation (0002/FR-006).
+- **0010/PB-4:** Each create and delete is recorded in the action record with its actor (0001/FR-011).
+- **0010/PB-5:** The office keeps each agent's definition across restarts (0001/FR-003), including its branch, base, and worktree folder.
+
+### Key entities
+
+| Entity | Represents | Key attributes | Identity and relationships |
+|---|---|---|---|
+| Agent (extends 0001) | One agent CLI that office-harness runs. | own worktree (yes or no) | As in 0001. |
+| Agent worktree | The branch and folder of an agent with own worktree. | repository, base, branch name, worktree folder | Belongs to exactly one agent while the agent exists. A kept worktree belongs to no agent after the delete. |
+
+### Success criteria
+
+- **0010/SC-001:** Two agents with own worktrees on one repository change the same file; 0 changes of one show in the other's worktree, and the user's repository folder shows 0 changed files.
+- **0010/SC-002:** After the user deletes 10 agents with own worktrees and no uncommitted changes, choosing remove, 0 of their worktree folders, 0 worktree records, and 0 of their branches without own commits remain.
+- **0010/SC-003:** 0 worktrees with uncommitted changes are removed without the second confirmation.
+- **0010/SC-004:** In a folder that is not inside a git repository, "own worktree" is offered 0 times, and with the choice left at its default, 0 worktrees are created.
+- **0010/SC-005:** After a restart of the background server, 100% of agents with own worktrees show the same branch, base, and worktree folder in their details.
+
+### Assumptions
+
+The bare `A1` to `A9` in the text above and in the notes name these assumptions of 0010. Later changes cite A1, A4, A6, A7, A8, and A9 by id.
+
+- **A1:** The office-owned folder for worktrees is outside every repository, so the user's repository needs no ignore entry and the CLI's configuration is untouched.
+- **A2:** The base is the branch checked out in the chosen folder, or its commit when no branch is checked out. The user can pick another local branch in the create form. The base is never stored in a template; it is read from the chosen folder at creation (FR-009). The 0009 template file carries the own worktree choice as one more template value, so 0009 SC-002 covers its export and import.
+- **A3:** The branch name is `office-harness/<agent name>-<short id>`; when that name exists, the office uses the next free short id. Shipped differently, as the plan's D3 records (accepted in the plan review r2): the branch is `office-harness/<slug>` (the agent name lower-cased), or the lowest free `office-harness/<slug>-<n>` from 2, with no short id, because the form shows the name before the agent id exists. Characters that git does not allow in a branch name are replaced by `-`; the form shows the resulting name before create (FR-001).
+- **A4:** A new task and a continued session (0001/FR-024, 0001/FR-025) keep the same worktree and branch. The office does not commit, merge, push, or rebase anything.
+- **A5:** The choice exists only when an agent is created. Turning it on or off for an existing agent is out of scope.
+- **A6:** A kept worktree is no longer managed by the office after the delete: the office shows its folder and branch once, and the user owns them from then on.
+- **A7:** Only the user's own create offers the choice in this change. Agents that create agents under 0002 create them without own worktree. Later, 0020/FR-002 gives a temp an own worktree by default when its folder is in a git repository, unless its creator turns it off; an agent that is not a temp still gets none from another agent (0020/PB-1).
+- **A8:** Untracked files of the user's folder, such as local environment files, are not copied into a worktree; the create form says so.
+- **A9:** Files that git ignores are not counted as uncommitted changes and are removed with the worktree; the delete question says so (FR-005).
+
+### Out of scope
+
+- Merging branches, pull requests, rebasing, and conflict help.
+- Committing, pushing, or cleaning up an agent's work (A4).
+- Separate history per agent; worktrees share the repository's branches and commits.
+- Turning own worktree on or off for an existing agent (A5).
+- Own worktree for agents that agents create (A7). Temps are the exception that 0020/FR-002 adds.
+- Managing kept worktrees after the agent is deleted (A6).
+- Copying untracked files into a worktree (A8).
+- Version control systems other than git.
+
+### Notes from Deviations
+
+- **Branch name (A3).** `office-harness/<slug>`, then `-2`, `-3`, and so on, with no short id, because the form shows the name before the agent exists (plan D3).
+- **Delete answer.** `agent.delete` answers `{deleted_branches, kept_branches, kept_folders}` for every delete, also for an agent without a worktree (empty lists), instead of `null`.
+- **Delete refusal text.** A subtree delete passes the agent module's refusal through without a `conflict: ` prefix, so a changed worktree reads `the worktree of <name> changed; confirm again` on a single and on a subtree delete.
+- **Unknown own commits.** When git cannot count the branch's own commits, `own_commits` is `null` and the branch is kept.
+- **Hooks off (D1).** The plan named an empty `.no-hooks` folder in the data folder as `core.hooksPath`. An agent can write into that folder, so every command now uses the null device instead, and also switches off hooks that git's configuration names (`hook.<event>.enabled=false`).
+- **Stale subtree member (D6).** The plan kept a member whose worktree changed and deleted the others. A subtree delete now refuses as a whole and deletes nobody, so one confirmation still covers one known set; members already stopped stay stopped. The worktree protocol states this.
+- **Partial delete.** A delete that fails after some agents went names, in its error text, the branches it deleted and the branches and folders it kept for them. A single delete removes the agent's row before git touches its worktree. The branch is deleted with `update-ref -d` and the commit its own commits were counted at, so a commit made after the count keeps the branch.
+- **Template from an agent with its own worktree (FR-009).** `template.from_agent` copies the choice and writes the repository folder, with the agent's subfolder, as the working folder of the body, not the worktree folder that the office owns, because the base and the worktree are made again at each creation (A2).
+- **Empty repository folder after an undo.** A discard removes the agent's worktree folder and its branch. The empty per-repository folder in the worktrees folder stays, as it does after any discard.
+- **Repository of a linked worktree.** When the chosen folder is inside a linked worktree (for example another agent's), the stored repository is the main worktree, so the agent stays reachable after that linked worktree is removed.
+- **None of the notes defers or changes a requirement.**
+- **Edge cases, user stories, the user experience, and the Clarifications** are in the archived spec.
+
+## Change 0011: Task line per agent
+
+### Intent
+
+The PRD asks "what is each agent doing now?". The agent list of 0003 shows each agent's status and last output line, but not what the agent was asked to do. This change adds one short line per agent with the last task the office gave it: the text of the last directive it received, or a task text the user set, with how long ago it was given. The line comes only from text the office itself sent or the user typed, never from the CLI's output, so it is labelled as the task given, not as what the agent does now. This change amends the approved change 0003.
+
+### Terms
+
+| Term | Meaning |
+|---|---|
+| Agent, new task, action record | As defined in 0001. |
+| Directive | As defined in 0002. |
+| Agent list | As defined in 0003. |
+| Task text | The last task the office gave an agent: the text of the last directive it received, or the text the user set. |
+| Receives (a directive) | The office has entered the directive into the agent's terminal (0002/FR-010). A directive that the office refuses is not received. |
+| Task line | The task text as shown in the agent list: its first line, shortened, with its age. |
+
+### Requirements
+
+- **0011/FR-001** (US1): THE SYSTEM SHALL show, for each agent with a task text, a task line with the first line of the task text, up to 80 characters followed by an ellipsis when shortened, and the time since the task text was set, labelled as the task given.
+- **0011/FR-002** (US1): WHEN an agent receives a directive, THE SYSTEM SHALL set the agent's task text to the directive's text and its time to the time of the directive.
+  - Amended by 0012 (`specs/changes/archive/0012-safe-directive-delivery/SPEC.md`): an agent receives a directive when the office submits it, text and Enter. A directive that waits in the queue, is withdrawn, or is left unsubmitted does not set the task text (0012 PB-3).
+- **0011/FR-003** (US2): WHEN the user sets, edits, or clears an agent's task text in the agent's details, THE SYSTEM SHALL apply that text and record the change in the action record with the user as actor. IF the text has more than 8,192 characters, THEN THE SYSTEM SHALL refuse it and name the limit.
+- **0011/FR-004** (US1): WHEN a new task starts on an agent, THE SYSTEM SHALL clear the agent's task text.
+- **0011/FR-005** (US1): THE SYSTEM SHALL show the full task text in the agent's details.
+- **0011/FR-006** (US1): THE SYSTEM SHALL show the task line and the task text without applying any control character or terminal escape code in them.
+- **0011/FR-007** (US1): THE SYSTEM SHALL NOT change an agent's task text from the agent's terminal output or window title.
+
+This change modified: 0003/FR-002 (the list now shows the task line: "THE SYSTEM SHALL show, in one list, the name, project, status, last output line, and task line of every agent in every project."). The final text is under Change 0003, Requirements.
+
+Modified by later changes: none.
+
+### Preserved behaviors
+
+- **0011/PB-1:** A directive is entered into the target's terminal as before (0002/FR-010); the task text only shows it, and the office types nothing more into the CLI.
+- **0011/PB-2:** A new task starts a new CLI session as before (0001/FR-024), and continuing a previous session (0001/FR-025) keeps the task text.
+- **0011/PB-3:** The office reads no CLI prompt or title and writes nothing to a CLI's configuration (0001/FR-021).
+- **0011/PB-4:** Status and the last output line show as before (0003/FR-002, 0001/FR-014), as text, never color alone.
+- **0011/PB-5:** Every desktop app action that this change adds, including setting the task text, is available from the keyboard (0001/FR-028).
+
+### Key entities
+
+| Entity | Represents | Key attributes | Identity and relationships |
+|---|---|---|---|
+| Agent (extends 0001) | One agent CLI that office-harness runs. | task text, task text time, source (directive or user) | As in 0001. Kept across restarts (0001/FR-003). |
+
+### Success criteria
+
+- **0011/SC-001:** Within 2 seconds after a directive, the target's row shows the directive's first line, up to 80 characters, and its age.
+- **0011/SC-002:** While an agent prints output and changes its window title for 5 minutes, its task line changes 0 times except for its age.
+- **0011/SC-003:** A task text with newlines and terminal escape codes shows as one line in the row with 0 applied codes.
+- **0011/SC-004:** After a new task starts, 100% of affected agents show no task line until the next directive or user edit.
+- **0011/SC-005:** After a restart of the background server, 100% of task texts and their ages are the same as before.
+
+### Notes from Deviations
+
+- **Concurrency test size.** The test for two directives at once sends 3 directives, because the per-target limit is 3 per 60 seconds.
+- **Action record label.** The action record shows the `task_text` kind as "Changed the task text", in the style of the other labels.
+- **Control characters in `visibleText`.** The line feed is kept (it only breaks the line); `taskLine` cuts at it, and the details wrap it. The check for C0, DEL, and C1 uses the `\p{Cc}` property class, because the linter refuses control characters in a regular expression.
+- **One order for a stored text and its event.** A shared `TaskOrder` orders a directive's stored text and its `agent.task` event against a user edit, so clients see the events in the order the texts were stored (`agent.task.set` and `agent.new_task` take it too). A row runs its one-minute age clock only while it has a task. An open task editor says so when the task text changes under it; the draft stays and Save still replaces the new text.
+- **None of the notes defers or changes a requirement.**
 
 ## Change 0012: Safe directive delivery
 
@@ -514,7 +826,7 @@ Directives go down the tree (0002), and a parent can read its descendants' state
 - **0015/FR-009** (US1, US2, US3): THE SYSTEM SHALL add each accepted report to the action record with the sender as the actor, the kind, and the text in visible form, under the parent for a report to a parent and under the sender for a report for the person, and SHALL record each refusal in the sender's action record and, when the report had a parent, in the parent's.
 - **0015/FR-010** (US1): WHILE reports wait in a parent's queue, THE SYSTEM SHALL keep at most one waiting report per sender, replacing a sender's waiting report with its newer report in the same place and recording the replaced one as withdrawn, and SHALL keep at most 10 waiting reports per queue, refusing a further report with the reason that the parent's queue has no room for reports, and SHALL NOT count such a refusal toward any rate limit or automatic hold.
 
-This change modified: 0002/FR-008, 0003/FR-006, 0008/FR-002, 0008/FR-003, 0008/FR-005. The final text of 0002/FR-008 and 0003/FR-006 is under the change that owns each id. 0008 is not in this file yet: the final text of 0008/FR-002 and FR-003 is in the MODIFIED section of [0015](../changes/archive/0015-upward-reports/SPEC.md). Change 0022 modified 0008/FR-005 again, so its final text is in the MODIFIED section of [0022](../changes/archive/0022-waiting-item-sleep/SPEC.md). The fold of 0008 takes that text.
+This change modified: 0002/FR-008, 0003/FR-006, 0008/FR-002, 0008/FR-003, 0008/FR-005. The final text of 0002/FR-008 and 0003/FR-006 is under the change that owns each id. The final text of 0008/FR-002, 0008/FR-003, and 0008/FR-005 is under Change 0008.
 
 ### Preserved behaviors
 
@@ -920,7 +1232,7 @@ A hands-on run of idle sleep (0018) with a real `claude` showed two faults. Firs
 - **0022/FR-001** (US1): WHEN the system puts an agent that has a plain waiting item to sleep, THE SYSTEM SHALL keep that item in Needs you with its wait time and its latest event, SHALL record no event on it for the sleep, and SHALL remove it only as 0008/FR-004 and 0008/FR-005 say, for example when the person opens the agent's terminal, dismisses the item, or wakes the agent and it changes to `starting`.
 - **0022/FR-002** (US1): IF the system cannot read the screen of an agent that has a waiting item at a check of 0018/FR-002, THEN THE SYSTEM SHALL treat that item as not plain and SHALL NOT put the agent to sleep at that check.
 
-This change modified: 0003/FR-006, 0003/SC-004, 0008/FR-001, 0008/FR-005, 0018/FR-002, 0018/FR-009, and the 0018 Terms Idle and Idle since. The final text of 0003/FR-006, 0003/SC-004, 0018/FR-002, 0018/FR-009, and the Terms is under the change that owns each id, or under Terms below. 0008 is not in this file yet: the final text of 0008/FR-001 and 0008/FR-005 is in the MODIFIED section of [0022](../changes/archive/0022-waiting-item-sleep/SPEC.md), and the fold of 0008 takes that text.
+This change modified: 0003/FR-006, 0003/SC-004, 0008/FR-001, 0008/FR-005, 0018/FR-002, 0018/FR-009, and the 0018 Terms Idle and Idle since. The final text of 0003/FR-006, 0003/SC-004, 0018/FR-002, 0018/FR-009, and the Terms is under the change that owns each id, or under Terms below. The final text of 0008/FR-001 and 0008/FR-005 is under Change 0008.
 
 ### Preserved behaviors
 
@@ -1400,7 +1712,7 @@ The office guesses what an agent does from its terminal output: after a quiet pe
 - **0024/FR-024** (US3): THE SYSTEM SHALL let the person turn the hook status off for the whole office, with the default on. WHEN it is off, THE SYSTEM SHALL make no office settings file, and the change SHALL apply from the next session start and be said so in the setting, as in 0001/FR-023.
 - **0024/FR-025** (US2): THE SYSTEM SHALL NOT end a temp for its idle limit (0020/FR-004) WHILE a permission ask of an exact session of that temp is open, also when its item is gone.
 
-This change modified: 0001/FR-014, 0001/FR-020, 0008/FR-002, 0012/FR-002, 0018/FR-002, and Assumption A1 of 0001 and A3 of 0003 for `claude` sessions. The final text of 0001/FR-014, 0001/FR-020, 0012/FR-002, and 0018/FR-002 is under the change that owns each id. 0008 is not in this file yet: the final text of 0008/FR-002 is in the MODIFIED section of [0024](../changes/archive/0024-cli-hook-status/SPEC.md), and the fold of 0008 takes that text.
+This change modified: 0001/FR-014, 0001/FR-020, 0008/FR-002, 0012/FR-002, 0018/FR-002, and Assumption A1 of 0001 and A3 of 0003 for `claude` sessions. The final text of 0001/FR-014, 0001/FR-020, 0012/FR-002, and 0018/FR-002 is under the change that owns each id. The final text of 0008/FR-002 is under Change 0008.
 
 ### Preserved behaviors
 
@@ -1499,3 +1811,32 @@ The bare `A1` to `A10` in the text above name these assumptions of 0024.
 - **A command line that the host refuses only for the settings path starts without the hook arguments.** On Windows a `.cmd` command cannot receive some characters of a data folder path. The session starts as an estimated session with a note instead of a refused start; 0024/FR-004 and 0024/FR-019 keep their meaning (no file, no secret). A refusal that the agent's own arguments cause still refuses the start.
 - **Success criteria that the QA report marks PARTIAL.** 0024/SC-001, SC-003, SC-004, SC-005, SC-006, SC-007, SC-009, SC-011, and SC-014 were run on fewer cases than their counts (for example 3 turns of a real CLI, 1 real permission ask, 1 of 10 interrupts). 0024/SC-002 passed on the real CLI. The hands-on run is an ignored test that needs an account, so it does not run in CI.
 - **User stories, the user experience, edge cases, and the Clarifications** are in the archived spec.
+
+## History
+
+Each line is a change that was folded into this file, with the date its spec was archived (the four changes archived together on 2026-11-28 were folded then).
+
+- 0001-office-server-and-terminal - 2026-11-23
+- 0002-agent-hierarchy - 2026-11-23
+- 0003-panel-practicality - 2026-11-23
+- 0005-office-scene - 2026-11-23
+- 0007-hold-and-limits - 2026-11-23
+- 0008-needs-you-queue - 2026-11-28
+- 0009-agent-templates - 2026-11-28
+- 0010-agent-worktree - 2026-11-28
+- 0011-task-line - 2026-11-28
+- 0012-safe-directive-delivery - 2026-11-23
+- 0013-bulk-resume - 2026-11-23
+- 0014-subtree-status - 2026-11-23
+- 0015-upward-reports - 2026-11-23
+- 0016-agent-file-browser - 2026-11-23
+- 0017-orphan-sweep - 2026-11-23
+- 0018-idle-sleep - 2026-11-23
+- 0019-cli-sign-in-check - 2026-11-23
+- 0020-temporary-agents - 2026-11-23
+- 0021-worktree-dependencies - 2026-11-23
+- 0022-waiting-item-sleep - 2026-11-23
+- 0023-drop-ended-commands - 2026-11-23
+- 0024-cli-hook-status - 2026-11-26
+- 0025-scheduled-directives - 2026-11-26
+- 0026-agent-secrets - 2026-11-23
