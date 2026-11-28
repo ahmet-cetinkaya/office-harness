@@ -82,7 +82,7 @@ See `specs/changes/archive/0007-hold-and-limits/contracts/hold-protocol.md`.
 
 ## Additive change by 0008
 
-- The new requests `needs_you.list` and `needs_you.dismiss` and the event `needs_you.changed` are defined in `specs/changes/0008-needs-you-queue/contracts/needs-you-protocol.md`.
+- The new requests `needs_you.list` and `needs_you.dismiss` and the event `needs_you.changed` are defined in `specs/changes/archive/0008-needs-you-queue/contracts/needs-you-protocol.md`.
 - `notification.read` and `notification.read_agent` now also clear the matching needs-you items, and the server then sends `needs_you.changed`. Their requests and answers keep the shapes above.
 
 ## Additive change by 0015

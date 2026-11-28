@@ -52,7 +52,7 @@ If the stored `focus_shortcut` is `Ctrl+Shift+F11`, the focus shortcut keeps the
 
 A report from an agent shows its kind and text on the item; a long text shows its first three lines and a "Show the whole report" button. The item stays when the agent works again, and leaves when you open its terminal or dismiss it. Answer the agent in its terminal.
 
-A client reaches the list with the `needs_you.list` and `needs_you.dismiss` requests and the `needs_you.changed` event. The shapes are in [the needs-you protocol](specs/changes/0008-needs-you-queue/contracts/needs-you-protocol.md).
+A client reaches the list with the `needs_you.list` and `needs_you.dismiss` requests and the `needs_you.changed` event. The shapes are in [the needs-you protocol](specs/changes/archive/0008-needs-you-queue/contracts/needs-you-protocol.md).
 
 ## The agent hierarchy
 
@@ -94,7 +94,7 @@ Creation is all-or-nothing. If the team or any agent cannot be created, the offi
 
 **Environment variables without a value.** The values of an imported file are never saved: every imported environment variable is saved with no value. The template and the create dialog show it as `NAME: no value`. The details of an agent list it as `NAME: no value`. In the editor of the additions it is a bare `NAME` line, and a line `NAME=` is an empty value. The office does not pass a variable without a value to the CLI, so the value from your login environment stays in effect. A variable with an empty value is different: the office passes it as empty. Inside the office, templates keep the values that you type, as agents do. Only export and import leave them out.
 
-A template holds only definitions of office-harness. The office never writes the configuration of a CLI because of a template, and an export writes only the file that you pick. The shapes of the requests are in [the template protocol](specs/changes/0009-agent-templates/contracts/template-protocol.md). The behavior is in [the templates spec](specs/changes/0009-agent-templates/SPEC.md), and the QA status is in [the QA report](specs/changes/0009-agent-templates/qa-report.md).
+A template holds only definitions of office-harness. The office never writes the configuration of a CLI because of a template, and an export writes only the file that you pick. The shapes of the requests are in [the template protocol](specs/changes/archive/0009-agent-templates/contracts/template-protocol.md). The behavior is in [the templates spec](specs/changes/archive/0009-agent-templates/SPEC.md), and the QA status is in [the QA report](specs/changes/archive/0009-agent-templates/qa-report.md).
 
 ## Holding the office and limiting agents
 
@@ -140,7 +140,7 @@ Each agent row can show one more line under the last output line: the last task 
 
 **Safe display.** The row and the details show control characters and terminal escape codes as visible symbols (for example ESC shows as the symbol U+241B) and never apply them. The details show the full text. The scene's desks and the "Needs you" list do not show the task text.
 
-The shapes of the request and the event are in [the task protocol](specs/changes/0011-task-line/contracts/task-protocol.md).
+The shapes of the request and the event are in [the task protocol](specs/changes/archive/0011-task-line/contracts/task-protocol.md).
 
 ## Own worktree per agent
 
@@ -154,7 +154,7 @@ Two agents that work in one git repository folder change the same files. To keep
 - Untracked files, such as local environment files, are not copied into the worktree.
 - If the branch or the worktree cannot be made, no agent is created and no branch or folder is left.
 - The office runs git without hooks and without asking for credentials, and it writes no git configuration. Checkout filters that your repository configures, such as Git LFS, still run during the checkout, as in your own checkout, and can download files. Later reads, such as the change count before a delete, run no filter; a file that only a filter changes, such as a Git LFS file, can then count as changed.
-- Only you can turn the choice on. Agents that create agents never get an own worktree.
+- Only you can turn the choice on for an agent. An agent that another agent creates gets no own worktree, except a temp (an agent for one job), which gets one by default when its folder is in a git repository.
 
 **In the details.** The agent's details show its branch, its base, and the worktree folder. If the worktree folder is gone or no longer linked to its repository (for example after you moved the repository), the agent does not start and says why.
 
@@ -166,7 +166,7 @@ Two agents that work in one git repository folder change the same files. To keep
 
 The office never commits, merges, pushes, or rebases. Worktrees share the repository's history, so their branches and commits show in your repository too. To remove a kept worktree yourself, run `git worktree remove <folder>` in the repository and `git branch -D <branch>` if you no longer need the branch.
 
-The shapes of the requests are in [the worktree protocol](specs/changes/0010-agent-worktree/contracts/worktree-protocol.md).
+The shapes of the requests are in [the worktree protocol](specs/changes/archive/0010-agent-worktree/contracts/worktree-protocol.md).
 
 **Installed Node.js packages.** A new worktree has no `node_modules`, because git does not check out the files that it ignores. So that the agent can build and test without an install, the office shares the packages that you installed in your checkout:
 - At create, each `node_modules` folder of your checkout, at the top and beside each tracked `package.json`, gets a real `node_modules` folder at the same place in the worktree. That folder holds one link per package entry: every name that does not start with a dot, plus `.bin`, `.pnpm`, `.modules.yaml`, `.package-lock.json`, `.yarn-state.yml`, and `.bun`. Tool caches such as `.vite` and `.cache` are not linked, so each worktree keeps its own.
