@@ -26,7 +26,7 @@ The person works on the task board of 0027, 0028, and 0029. This change lets the
 | Role, CEO, team lead, member | As defined in 0002/FR-001. |
 | Hold, rate limit, agent-made action | As defined in 0007. Each kept board change by an agent is one agent-made action; a read of the board is not. |
 | Board agent | An agent whose role is CEO or team lead. Only a board agent may read or change the board. |
-| Card version | The way an agent shows what it saw (0028, Terms), as a window shows it by what it last displayed: a number that the office keeps for each card. It rises by one with each kept change to that card; a move of another card does not raise it. A read of the board gives the version of each card. |
+| Card version | The way an agent shows what it saw (0028, Terms), as a window shows it by what it last displayed: a number that the office keeps for each card. It rises by one with each kept change to that card by a window or an agent; a move of another card does not raise it, and neither does the office's clear of a gone assignee or project (0029/FR-003). A read of the board gives the version of each card. |
 | Changer | Who made the last change of a card: the person, a board agent by the name that it had at that change, or the office when it cleared an assignee or a project (0029/FR-003). A later rename or delete of the agent does not change it. A card that was made before this change shows the person. |
 | Board change | A new card, an edit, a move, or a delete of a card. A read is not a board change. |
 
@@ -87,7 +87,7 @@ A team lead deletes a card. Every open window announces that the lead deleted th
 - **FR-003** (US1): THE SYSTEM SHALL show each board change by a board agent in every open window within 2 seconds, with no reload, and without an announcement, except for a delete (FR-006).
 - **FR-004** (US1): IF a board change by an agent names a card version older than the current version of the card, or names a card that was deleted, THEN THE SYSTEM SHALL refuse the change with the reason that the card changed, or was deleted, and tell the agent in its answer.
 - **FR-005** (US1): THE SYSTEM SHALL record on each card the changer of its last change, and show it as text on the card in every window.
-- **FR-006** (US2): WHEN a board agent deletes a card, THE SYSTEM SHALL record the delete in the action record with the agent as actor, the card's title, and the time, show it in the agent's details, and announce once in every open window that the agent deleted the card, naming its title; this is the one announcement of an agent's delete, and 0029/FR-006 covers the delete by a window only.
+- **FR-006** (US2): WHEN a board agent deletes a card, THE SYSTEM SHALL record the delete in the action record with the agent as actor, the card's title, and the time, show it in the agent's details, and announce once in every open window that the agent deleted the card, naming its title; and move focus as 0029/FR-004 does; this is the one announcement of an agent's delete, and 0029/FR-006 covers the delete by a window only.
 
 ### MODIFIED
 
