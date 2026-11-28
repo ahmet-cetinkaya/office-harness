@@ -23,5 +23,5 @@ Spec: `specs/changes/0029-card-editing/SPEC.md` · Status: draft · Shape: full 
 
 ## Notes
 
-- **Size rule:** 9 ADDED requirements; 0 MODIFIED.
+- **Size rule:** 10 ADDED requirements; 0 MODIFIED.
 - **Owner decisions applied:** enrichment is after the first release; Undo, field-level merging, ordering inside a column, and the time of the last change are cut; delete uses a plain confirmation; the project switcher filters the board; CEO and team lead agents read and change the board and members cannot; a lead may change any card of the office; an agent's delete is recorded.
