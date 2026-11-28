@@ -35,6 +35,21 @@ const AGENTS: Agent[] = Array.from({ length: AGENT_COUNT }, (_, index) => ({
   last_line: null,
 }));
 
+/** The text that the mock core received as terminal input. */
+async function sentTerminalInputs(page: Page): Promise<string> {
+  const calls = await page.evaluate(() => window.__mockCore.calls);
+  return calls
+    .filter(
+      (call) =>
+        call.command === "send_request" && call.args.kind === "terminal.input",
+    )
+    .map((call) => {
+      const fields = call.args.fields as { data?: unknown } | undefined;
+      return Buffer.from(String(fields?.data ?? ""), "base64").toString();
+    })
+    .join("");
+}
+
 function rowName(index: number, status: string): string {
   const project = PROJECTS[Math.floor(index / AGENTS_PER_PROJECT)].name;
   return `${agentName(index)}, project ${project}, ${status}`;
@@ -126,5 +141,6 @@ test("the person finds the waiting agent among 30 and types within 10 seconds (S
   await expect(input).toBeFocused();
   await page.keyboard.type("y");
 
+  await expect.poll(() => sentTerminalInputs(page)).toBe("y");
   expect(Date.now() - started).toBeLessThan(FIND_AND_TYPE_LIMIT_MS);
 });
