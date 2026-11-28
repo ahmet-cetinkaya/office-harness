@@ -1,8 +1,9 @@
 ---
-status: draft
+status: approved
 shape: full
 capability: task-board
 plan:
+supersedes: 0002/FR-008 (as modified by 0014, 0015, and 0026), 0007/FR-007 (as modified by 0026), 0007/FR-009 (as modified by 0026), 0001/FR-011
 ---
 
 # 0030: Board agent access
@@ -171,6 +172,7 @@ The table of rate limits under Assumption A3 of 0007 gains one row: board change
 
 ### Session 2026-11-28 (owner decision)
 
+- Approval: the owner approved this spec on 2026-11-28. The approval covers the intent, not the risky operations that a plan may propose.
 - Q: Who may read and change the board? → A: The person, and agents whose role is CEO or team lead (0002/FR-001); a member agent cannot. Agent changes show in every window like the person's, and each card records who made its last change.
 - Q: Are an agent's deletes recorded? → A: Yes. A delete by an agent is recorded in the action record and shown to the person; an agent gets no confirmation.
 

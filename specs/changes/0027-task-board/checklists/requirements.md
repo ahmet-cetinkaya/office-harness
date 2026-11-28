@@ -1,6 +1,6 @@
 # Requirements checklist: 0027-task-board
 
-Spec: `specs/changes/0027-task-board/SPEC.md` · Status: draft · Shape: full · Date: 2026-11-28 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every cross-reference to a living spec under `specs/` was checked on this branch; ids of 0027 to 0030 point to the changes of this series, which ship in the order 0027, 0028, 0029, 0030.
+Spec: `specs/changes/0027-task-board/SPEC.md` · Status: approved · Shape: full · Date: 2026-11-28 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every cross-reference to a living spec under `specs/` was checked on this branch; ids of 0027 to 0030 point to the changes of this series, which ship in the order 0027, 0028, 0029, 0030.
 
 ## Checklist
 

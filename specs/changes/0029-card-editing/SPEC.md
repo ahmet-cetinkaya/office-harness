@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 shape: full
 capability: task-board
 plan:
@@ -164,6 +164,7 @@ The person deletes a card from its action list or with a key. The window asks to
 
 ### Session 2026-11-28 (owner decision)
 
+- Approval: the owner approved this spec on 2026-11-28. The approval covers the intent, not the risky operations that a plan may propose.
 - Q: Does the project switcher filter the board? → A: Yes. A picked project shows only the cards of that project; All projects shows all. Cards with no project show under All projects only.
 - Q: Undo of a delete? → A: Not in the first version; use a plain confirmation.
 

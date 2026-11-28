@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 shape: full
 capability: task-board
 plan:
@@ -123,6 +123,7 @@ None new. A card of 0027 is the entity; its state is what the office keeps.
 
 ### Session 2026-11-28 (owner decision)
 
+- Approval: the owner approved this spec on 2026-11-28. The approval covers the intent, not the risky operations that a plan may propose.
 - Q: How are two windows' changes handled? → A: A change to a card that changed since this window saw it is refused with the reason; there is no field-level merge in the first version.
 
 ## Out of scope

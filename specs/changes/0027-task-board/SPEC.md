@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 shape: full
 capability: task-board
 plan:
@@ -218,6 +218,7 @@ After a restart of the server and of the machine, the board shows the same cards
 
 ### Session 2026-11-28 (owner decision)
 
+- Approval: the owner approved this spec on 2026-11-28. The approval covers the intent, not the risky operations that a plan may propose.
 - Q: What does the first version of the task board hold? → A: Only a plain board, one per office, with the four columns To do, Doing, Blocked, and Done. No cost or token view, no meeting room, no work across machines, and no scheduled temps. Enrichment is after the first release (Out of scope).
 - Q: Does the spec fix the look of the board? → A: No. The spec gives behavior only; the owner picks a look from mockups later (A10).
 - Q: Which features wait? → A: Undo of a delete, field-level merging of two windows' changes, ordering of cards inside a column, and the time of the last change wait for a later change. The project filter came in 0029 by owner decision.
