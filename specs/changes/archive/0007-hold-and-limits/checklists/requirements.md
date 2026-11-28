@@ -33,7 +33,7 @@ Spec: `specs/changes/archive/0007-hold-and-limits/SPEC.md` · Status: approved b
 - SC-005 says "from any panel view", a focused terminal included: while a terminal has focus, keys go to the CLI except the documented app shortcuts (0003, MODIFIED 0001/FR-017). The hold shortcut `Ctrl+Shift+H` is one of them (shipped D9 = b, owner-decided 2026-11-19).
 - The 0002 out-of-scope line "Limits on how many agents an agent may create" stays true: this change limits the creation rate, not the count. The owner declined a size cap on 2026-11-19, so that line stays true.
 
-## Spec gate (Efe, round 1 at 51d1b5e)
+## Spec gate (round 1 at 51d1b5e)
 
 | Finding | Fix |
 |---|---|
@@ -47,5 +47,5 @@ Spec: `specs/changes/archive/0007-hold-and-limits/SPEC.md` · Status: approved b
 | LOW-5: stale PR body. | PR body updated. |
 | LOW-6: PB-1 cited the superseded 0001/FR-017. | PB-1 cites 0001/FR-017 as modified by 0003. |
 
-These are consistency fixes; scope is unchanged, so the owner's approval of 2026-11-19 stands (god, 2026-11-19).
+These are consistency fixes; scope is unchanged, so the owner's approval of 2026-11-19 stands (2026-11-19).
 

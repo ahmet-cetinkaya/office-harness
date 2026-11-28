@@ -118,5 +118,5 @@ No hands-on row has been run. All rows stay BLOCKED until a person runs them.
 
 ## Updates
 
-- 2026-11-23 (ACF-191): closed the gap "no unit test covers `withTask` and the controller's `saveTask` on their own". Commit 8536c55 added them: `D/src/modules/agent/state/office-events.spec.ts` (`withTask`) and `D/src/modules/agent/state/office-controller.spec.ts` (`saveTask`).
-- 2026-11-23 (ACF-191): the task line now adds the ellipsis when the task text has more lines with text after the first line, as US1 scenario 2 and FR-001 say. Before, it added it only for a first line over 80 graphemes. Tests: `task-text.spec.ts` and the e2e `an escape code shows as visible symbols on one line`, which now expects the ellipsis.
+- 2026-11-23: closed the gap "no unit test covers `withTask` and the controller's `saveTask` on their own". Commit 8536c55 added them: `D/src/modules/agent/state/office-events.spec.ts` (`withTask`) and `D/src/modules/agent/state/office-controller.spec.ts` (`saveTask`).
+- 2026-11-23: the task line now adds the ellipsis when the task text has more lines with text after the first line, as US1 scenario 2 and FR-001 say. Before, it added it only for a first line over 80 graphemes. Tests: `task-text.spec.ts` and the e2e `an escape code shows as visible symbols on one line`, which now expects the ellipsis.

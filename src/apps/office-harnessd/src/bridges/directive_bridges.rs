@@ -102,7 +102,7 @@ impl DirectiveTargetBridge {
 
 impl DirectiveTarget for DirectiveTargetBridge {
     fn is_running(&self, agent_id: AgentId) -> Result<bool, String> {
-        // A store failure is the error it is (Efe r2 LOW): the caller must
+        // A store failure is the error it is: the caller must
         // not read a broken store as a stopped member.
         self.agents
             .find(agent_id)
@@ -291,7 +291,7 @@ impl DirectiveReceipt for DirectiveReceiptBridge {
 /// directive in the target's), and owns a failed record write (the port's
 /// contract). A refusal keeps the text as it was sent, escaped and capped,
 /// so a hostile text can carry no control character into the record and
-/// cannot flood it (Efe r2).
+/// cannot flood it.
 #[derive(Clone)]
 pub struct DirectiveJournalBridge {
     journal: ActionJournal,
@@ -320,7 +320,7 @@ impl DirectiveJournalBridge {
     /// Records a request the agent-call gateway refused: the caller is the
     /// actor and the named agent, because no other agent is involved
     /// (FR-009). The reason may carry client text, so it goes through the
-    /// same escape and cap as a refused attempt (Efe, PR 35 MEDIUM-1).
+    /// same escape and cap as a refused attempt.
     pub fn refused(&self, caller: AgentId, reason: &str) {
         self.record_entry(
             caller,
@@ -382,7 +382,7 @@ impl DirectiveJournal for DirectiveJournalBridge {
         self.record_entry(sender, target, AgentAction::Directive, journaled.as_deref());
         if journaled.is_some() && sender != target {
             // The owner decided that a refusal shows in the sender's record
-            // too (ACF-168): the sender asked for it, and its details must
+            // too: the sender asked for it, and its details must
             // show what the office refused. An accepted directive stays
             // on the target's record only.
             self.record_entry(sender, sender, AgentAction::Directive, journaled.as_deref());

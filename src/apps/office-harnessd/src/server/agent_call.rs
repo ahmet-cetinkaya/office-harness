@@ -468,7 +468,7 @@ async fn answer_office_request(
     let caller = grant.agent_id;
     // The field allowlist runs before anything else: a frame the type does
     // not take is refused as `invalid` before any rule reads its fields
-    // (the same shape as `parse_directive`, PR 40 LOW).
+    // (the same shape as `parse_directive`).
     if let Err(message) = refuse_extra_fields(&request.kind, &request.fields) {
         let message = truncated(&message, MAX_REFUSAL_TEXT_CHARS);
         journal_refusal(state, caller, &message);
@@ -772,7 +772,7 @@ fn target_of(request: &Request, caller: AgentId) -> Result<AgentId, String> {
 
 /// The fields each office type takes, and no others: a field the type does
 /// not take is refused, not dropped — the same closed allowlist as
-/// `directive.send` (PR 40 LOW: a silently trimmed `include_descendants`
+/// `directive.send` (a silently trimmed `include_descendants`
 /// answered success while stopping the target alone). A create also takes
 /// the `role` object, which `allowed_fields_of` validates and replaces, so
 /// the allowlist is `CREATE_FIELDS` plus that one key.
@@ -849,7 +849,7 @@ fn allowed_fields_of(
 
 /// The fields the `role` object takes, and no others: a key outside this
 /// list is `invalid` before any place rule reads the role (the same closed
-/// allowlist the frame itself passes, PR 40 r2 LOW).
+/// allowlist the frame itself passes).
 const ROLE_FIELDS: [&str; 3] = ["kind", "parent_agent_id", "team_id"];
 
 /// Reads the client's `role` object as the triple the place rules decide on:

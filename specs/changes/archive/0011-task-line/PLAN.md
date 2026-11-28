@@ -4,7 +4,7 @@ spec: specs/changes/archive/0011-task-line/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (through Efe's review gate, PR #67, main 037b10f). Approved 2026-11-20 after Efe's plan review PASS (r3 at 4a0f66f); Efe gates the PR at its head sha. -->
+<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (through the review gate, PR #67, main 037b10f). Approved 2026-11-20 after the plan review PASS (r3 at 4a0f66f); the PR is gated at its head sha. -->
 
 # Plan: Task line per agent (0011)
 
@@ -32,7 +32,7 @@ Each agent row gets one more line: the last task the office gave the agent, with
 
 **Decisions made for you:** column storage in the agent module, the hook points, the request name and its rules, the new action kind, and the display helper.
 
-**Blockers:** none. The local build slot comes from god before each build or test run.
+**Blockers:** none. The local build slot is granted before each build or test run.
 
 ## Goal
 
@@ -62,7 +62,7 @@ Deliver spec 0011. Each agent row shows the task given (first line, at most 80 c
     - Model: `D/modules/agent/models/agent.ts:20-31`. Events: `office-events.ts:20` (`upsertAgent`).
     - E2e mock core: `e2e/support/mock-core.ts` (`createAgentRow` at `:390-402`).
   - Scene desks (`D/modules/office-scene/components/desk.svelte`) read only name, status, and last line, and stay untouched.
-- **Floor rules:** one build or test at a time (ask god; `CARGO_BUILD_JOBS=4`, `--test-threads=4`, the pinned toolchain, per-crate local runs). Efe reviews at the exact head sha; god merges. Nothing is pushed to `main`.
+- **Floor rules:** one build or test at a time (ask for it; `CARGO_BUILD_JOBS=4`, `--test-threads=4`, the pinned toolchain, per-crate local runs). Each PR is reviewed at its exact head sha before it merges. Nothing is pushed to `main`.
 
 ## Decisions
 
@@ -73,7 +73,7 @@ Deliver spec 0011. Each agent row shows the task given (first line, at most 80 c
   - A refused directive, or a failed terminal write, returns before this point and changes nothing.
   - Two directives at once: the handler holds one `Mutex<()>` from `writer.write` through `received`, so the order of writes is the order of receipts and the text is the one entered last. Today nothing orders them (`send_directive_handler.rs:112-121`, one `spawn_blocking` per request, `directive.send` not in `ORDERED_REQUESTS`).
   - No record entry is added, because the directive is already recorded (A4).
-- **D3 New task and continue** (FR-004, PB-2): only `agent.new_task` clears the task, decided by god under the owner's spec delegation on 2026-11-19 (spec Clarifications). `agent.start` also launches with `LaunchKind::NewTask` (`start_agent_handler.rs:42`) but keeps the text, so a text set on a stopped agent survives its first start.
+- **D3 New task and continue** (FR-004, PB-2): only `agent.new_task` clears the task, decided under the owner's spec delegation on 2026-11-19 (spec Clarifications). `agent.start` also launches with `LaunchKind::NewTask` (`start_agent_handler.rs:42`) but keeps the text, so a text set on a stopped agent survives its first start.
   - `StartNewTaskHandler::begin` clears the task when the launch succeeds, meaning `Ok` with `failure == None` (a command that cannot start answers `Ok` with `failure: Some(...)`, `session_launcher.rs:43,351`). A failed launch keeps it.
   - The outcome's agent carries the cleared task before the event is built, and the `agent.new_task` route adds the `agent.task` event to its events.
   - Continue and start do not touch the task.
@@ -176,7 +176,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 
 ## Dependencies
 
-T1 → T2 → T3 → T4 → T5. `Cargo.lock`, the migration ledger, and the e2e mock core belong to one running task at a time. Gate: this plan approved (Efe plan review PASS).
+T1 → T2 → T3 → T4 → T5. `Cargo.lock`, the migration ledger, and the e2e mock core belong to one running task at a time. Gate: this plan approved (plan review PASS).
 
 ## Commit strategy
 
@@ -192,8 +192,8 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 
 ## QA and evidence
 
-- **Per task:** fmt, clippy, per-crate `cargo test`, `scripts/check-boundaries.sh`, `bun test`, `svelte-check`, `eslint`, `prettier --check`, and Playwright with axe, as far as the task touches them. Ask god for the build slot first.
-- **PR:** CI green on the matrix; Efe's review at the head sha.
+- **Per task:** fmt, clippy, per-crate `cargo test`, `scripts/check-boundaries.sh`, `bun test`, `svelte-check`, `eslint`, `prettier --check`, and Playwright with axe, as far as the task touches them. Get the build slot first.
+- **PR:** CI green on the matrix; the review at the head sha.
 - **Security pass** (`secure-engineering`, light: the user text crosses the trust boundary):
   - The length cap is enforced on the server.
   - The text is never written to a terminal by `agent.task.set` (A2).

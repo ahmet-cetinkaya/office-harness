@@ -429,10 +429,9 @@ async fn a_hundred_directives_deliver_at_most_the_limit_and_every_refusal_is_rec
         .count();
     assert_eq!(refused, SC001_DIRECTIVES - DEFAULT_DIRECTIVE_LIMIT);
 
-    // FR-010: the sender's own record lists each limit and hold refusal too
-    // (ACF-168), with the same reasons as the answers. Withdrawals of
-    // waiting directives are recorded there as well (0012/FR-005) and are
-    // left out here, as above.
+    // FR-010: the sender's own record lists each limit and hold refusal too,
+    // with the same reasons as the answers. Withdrawals of waiting directives
+    // are recorded there as well (0012/FR-005) and are left out here, as above.
     let lead = setup.lead.clone();
     let sender_refusals: Vec<String> = setup
         .actions_of(&lead)

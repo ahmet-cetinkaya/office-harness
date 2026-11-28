@@ -337,7 +337,7 @@ The person sees every schedule in one view, with its next run and its last resul
 - Q: Can two runs of one schedule overlap? → A: No; a new run is skipped while the previous one has no result or its directive waits (FR-008).
 - Q: Can an agent make a schedule? → A: No; only the person, from the desktop app (FR-014).
 
-### Session 2026-11-23 (spec review r1)
+### Session 2026-11-23
 
 - Q: Does 0025 also start temps on a schedule? → A: No; the change is split. Scheduled temps go to a follow-up change that reuses the schedule, its actor, and its notifications (Out of scope).
 - Q: Who is the sender of a scheduled directive, and where are its unsubmitted and withdrawn results recorded? → A: The schedule itself, never the target and never an agent; each result is recorded once, in the target's action record, with the schedule as actor (FR-009, FR-012, MODIFIED 0012/FR-003 and 0012/FR-005, SC-019).

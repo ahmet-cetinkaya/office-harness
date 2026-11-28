@@ -141,8 +141,8 @@ After this change, the person saves a secret in a Secrets dialog, grants it to a
 - Gates, run by the lead on the final tree: `cargo fmt --all --check`, `bash scripts/check-boundaries.sh`, `cargo clippy --workspace --exclude office-harness-desktop --all-targets -- -D warnings`, `cargo test --workspace --exclude office-harness-desktop --no-fail-fast -- --test-threads=4`, and the desktop lint, type check, unit tests, and Playwright e2e for the Secrets dialog. Pass and fail counts are summed from the result lines.
 - Heavy builds follow the floor rules: free memory, at most 3 heavy jobs, `RUSTFLAGS='-Clinker-features=-lld'` locally.
 - Hands-on with a real CLI where one is signed in: save a secret, grant it, let the CLI read it inside a command, rotate it, check the stored output. Where none is signed in, stand-in CLIs carry it and the report says so.
-- The security review: Efe runs it against the spec and the diff (threat table T1 to T12).
+- The security review: A reviewer runs it against the spec and the diff (threat table T1 to T12).
 
 ## Final verification
 
-Run `/ac:verify` against this plan. Then CI must be green on the 3 OSes, and Efe's code gate runs at the exact head.
+Run `/ac:verify` against this plan. Then CI must be green on the 3 OSes, and the code gate runs at the exact head.

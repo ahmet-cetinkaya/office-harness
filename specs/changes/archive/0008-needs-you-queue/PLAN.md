@@ -4,7 +4,7 @@ spec: specs/changes/archive/0008-needs-you-queue/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (through Efe's review gate, PR #64, main dfd4611). Approved by god on 2026-11-19 after Efe's plan review PASS (r2 at 1e1af70); Efe gates each PR at its head sha. -->
+<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (through the review gate, PR #64, main dfd4611). Approved on 2026-11-19 after the plan review PASS (r2 at 1e1af70); each PR is gated at its head sha. -->
 
 # Plan: Needs-you queue (0008)
 
@@ -17,7 +17,7 @@ This change gives the owner one standing list, "Needs you", with one item per ag
 - The existing `NotificationBridge` feeds the items from the same events that create 0003 notifications. It also clears them on `starting`, `working`, `stopped`, delete, and the release of an automatic hold.
 - Requests `needs_you.list` and `needs_you.dismiss`, and the event `needs_you.changed`.
 - In the desktop app: a Needs you section above the agent list, the jump shortcut in the panel and the scene, the count in the window title in both views, and the count change announced in the live region.
-- ACF-160 rides along in the desktop task: the always-true `isTerminalShortcut` field is removed.
+- rides along in the desktop task: the always-true `isTerminalShortcut` field is removed.
 
 **Why this approach:**
 - The bridge already sees every attention event and every status frame (`H/bridges/notification_bridge.rs`). Hooking the items there adds no new detector (spec Context, PB-2).
@@ -34,7 +34,7 @@ This change gives the owner one standing list, "Needs you", with one item per ag
 
 **Decisions made for you:** item storage in `notification`, the read and clear hooks, the protocol names, the ordering in the domain, the stored detail per event, the jump handler placement, the collision rule, and the title command.
 
-**Blockers:** none. The local build slot comes from god before each build or test run.
+**Blockers:** none. The local build slot is granted before each build or test run.
 
 ## Goal
 
@@ -53,7 +53,7 @@ Deliver spec 0008. Needs you lists exactly the agents that wait for the user, in
   - Settings: `quiet_period_ms` (`M/agent/domain/src/value_objects/settings.rs:90`); `RESERVED_SHORTCUTS` has 11 entries (`:28`); `normalized_shortcut` (`:61`).
   - Desktop: `D/core/shortcuts/app-shortcuts.ts` (table at 48, kinds at 15); terminal passthrough `D/modules/terminal/views/terminal-view.svelte:143`; the only app key handler `D/modules/panel/views/panel-view.svelte:195`; the live region `:270`; the left column `:339`. The scene (`D/modules/office-scene/views/scene-view.svelte`) has no app key handler and is mounted instead of the panel (`D/app.svelte:158-179`); `openDesk` is at `:275`. The window title is fixed (`src-tauri/tauri.conf.json:15`); `src-tauri/capabilities/default.json` has no window permission. The e2e mock core is `src/apps/desktop/e2e/support/mock-core.ts` (`send_request` switch, invokes at 821-865).
   - Tests that use `Ctrl+Shift+F11` as a free key: `e2e/panel.spec.ts:412-430`, `core/shortcuts/app-shortcuts.spec.ts:53,84,133,148`, `modules/terminal/services/focus-shortcut.spec.ts:26`.
-- **Floor rules:** one build or test at a time on the floor (ask god; `CARGO_BUILD_JOBS=4`, `--test-threads=4`, the pinned 1.100.0 toolchain first in `PATH`, per-crate local Rust runs). Efe reviews each PR at its exact head sha; god merges. Nothing is pushed to `main`.
+- **Floor rules:** one build or test at a time on the floor (ask for it; `CARGO_BUILD_JOBS=4`, `--test-threads=4`, the pinned 1.100.0 toolchain first in `PATH`, per-crate local Rust runs). Each PR is reviewed at its exact head sha before it merges. Nothing is pushed to `main`.
 
 ## Decisions
 
@@ -80,10 +80,10 @@ Deliver spec 0008. Needs you lists exactly the agents that wait for the user, in
   - `needs_you.dismiss {agent_id}` returns the list. An agent without an item answers `not_found`.
   - Event `needs_you.changed {items}` carries the full ordered list after every change, as `hold.changed` does.
   - The desktop computes the wait time from `first_event_at`. T1 writes the contract.
-- **D5 Jump shortcut:** a 12th table entry `Ctrl+Shift+F11`, kind `jump`. With ACF-160 every entry leaves the terminal, so the `isTerminalShortcut` field and the `pressedTerminalShortcut` filter are removed, and the terminal passes every table key out (0001/FR-017 as modified by 0008).
+- **D5 Jump shortcut:** a 12th table entry `Ctrl+Shift+F11`, kind `jump`. With every entry leaves the terminal, so the `isTerminalShortcut` field and the `pressedTerminalShortcut` filter are removed, and the terminal passes every table key out (0001/FR-017 as modified by 0008).
   - Panel: `handleAppKeys` handles `jump` by opening the top item's agent through the same `openAgent` path as the 0003 switcher (A2).
   - Scene: a window keydown listener in `scene-view.svelte` handles only `jump`, by calling `openDesk(topAgentId)` (FR-010). Other app shortcuts in the scene stay as today.
-  - Focus (clarification by Efe, 2026-11-22, owner away): focus lands in the terminal when the agent runs, else on the terminal view heading, whose accessible name is "Terminal, <agent name>". A read-only terminal cannot take focus (0001).
+  - Focus (clarification, 2026-11-22, owner away): focus lands in the terminal when the agent runs, else on the terminal view heading, whose accessible name is "Terminal, <agent name>". A read-only terminal cannot take focus (0001).
   - Empty list: the view stays, and the live region says "No agent needs you" (FR-008).
   - Fast presses (US2: "Pressing it again goes to the next one"): after a jump the desktop removes the opened agent's item from its local list at once, so a second press before `needs_you.changed` comes back opens the next item.
   - The jump's per-OS fallback is not shipped yet, as `README.md:41` says for F1 to F10. A later release can move it into the 0003 fallback family with the agent shortcuts (A1).
@@ -104,13 +104,13 @@ Deliver spec 0008. Needs you lists exactly the agents that wait for the user, in
   - The desktop does not show, count, title, or announce an item whose origin notification it has just marked read on arrival. The server removes that item on the read (D2).
   - No new visuals beyond these controls (spec Design rule).
 - **D9 Accepted deviations (shipped; recorded 2026-11-22 from qa-report "Plan deviations"):**
-  - `AgentNameLookup` is a port in `M/notification/application/src/common/interfaces/agent_name_lookup.rs`, so the notification module reads an agent's name without a dependency on the agent module. The server adapter `AgentNames` lives in `H/bridges/needs_you_bridge.rs`. Accepted by Efe.
-  - T3 and T4 landed in one commit. Accepted by Efe.
-  - The `detail` of a `failed` item is the status text of the server, not a text built from the exit code in the desktop. Decided by god; the contract says so.
+  - `AgentNameLookup` is a port in `M/notification/application/src/common/interfaces/agent_name_lookup.rs`, so the notification module reads an agent's name without a dependency on the agent module. The server adapter `AgentNames` lives in `H/bridges/needs_you_bridge.rs`. Accepted.
+  - T3 and T4 landed in one commit. Accepted.
+  - The `detail` of a `failed` item is the status text of the server, not a text built from the exit code in the desktop. Decided; the contract says so.
   - The free key of the e2e test is `Control+Alt+F11`, not `Ctrl+Shift+F12` as T5 says: `Ctrl+Shift+F12` is the default focus shortcut, so it is not free (`D/e2e/panel.spec.ts`, `a key that is no table combination reaches the CLI`).
   - `focus-shortcut.ts` moved from `D/modules/terminal/services/` to `D/core/shortcuts/`, beside a new `focus-shortcut-state.ts`, so the shared state loads the focus shortcut once at app start. A change of the setting applies at the next app start. Every file name `D/modules/terminal/services/focus-shortcut*` in the Context and in T5 means the `D/core/shortcuts/` file.
   - A dismiss that answers `not_found` is a success in the desktop, because the item is already gone.
-  - The jump focus rule of D5 is the clarification of Efe of 2026-11-22 (focus on the terminal view heading for an agent that does not run).
+  - The jump focus rule of D5 is the clarification of 2026-11-22 (focus on the terminal view heading for an agent that does not run).
 - **Constitution check:**
   - Module boundaries hold: `notification` gains no dependency, bridges live in `H/bridges/`, and `scripts/check-boundaries.sh` passes.
   - No CLI configuration is touched (PB-2).
@@ -119,7 +119,7 @@ Deliver spec 0008. Needs you lists exactly the agents that wait for the user, in
 
 ## Scope
 
-**In:** FR-001 to FR-010, MODIFIED 0001/FR-017, PB-1 to PB-5, A1 to A6, SC-001 to SC-005, the spec's edge cases, ACF-160, the contract and README updates, a QA report.
+**In:** FR-001 to FR-010, MODIFIED 0001/FR-017, PB-1 to PB-5, A1 to A6, SC-001 to SC-005, the spec's edge cases, the field cleanup, the contract and README updates, a QA report.
 
 **Out:** everything in the spec's Out of scope, other app shortcuts in the scene, and the task line (0011).
 
@@ -130,7 +130,7 @@ Deliver spec 0008. Needs you lists exactly the agents that wait for the user, in
 | 1 Server | Items, hooks, protocol | T1 to T4 | `feat/0008-p1-server` (umbrella) | p1 → umbrella |
 | 2 Desktop and ship | Section, jump, title, collision, docs, QA | T5 to T7 | `feat/0008-p2-desktop` (umbrella after p1) | p2 → umbrella, then umbrella → `main` |
 
-The umbrella `feat/0008-needs-you-queue` is created from `main`. A single PR is the fallback if god prefers it; the tasks do not change.
+The umbrella `feat/0008-needs-you-queue` is created from `main`. A single PR is the fallback; the tasks do not change.
 
 ## Tasks
 
@@ -141,7 +141,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 - **Files:** `specs/changes/archive/0008-needs-you-queue/{data-model.md,contracts/needs-you-protocol.md}`.
 - **Work:** (a) the data model: the item table, the stored `detail` per kind (D3), the clear reasons (D2). (b) The contract: `needs_you.list`, `needs_you.dismiss`, `needs_you.changed`, codes and shapes in the style of `0007-hold-and-limits/contracts/hold-protocol.md`, and the 12th reserved shortcut.
 - **Depends on:** none.
-- **Acceptance:** every FR that touches the server names its message or column; Efe reviews it with the p1 PR.
+- **Acceptance:** every FR that touches the server names its message or column; it is reviewed with the p1 PR.
 
 ### T2: Item domain, store, service (FR-001 to FR-006 rules)
 
@@ -187,12 +187,12 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
   - An agent connection asking for `needs_you.list` is refused as not allowed.
   - fmt, clippy, per-crate tests, boundaries.
 
-### T5: Shortcut table, collision, ACF-160 (FR-007, MODIFIED 0001/FR-017, edge cases, A1)
+### T5: Shortcut table, collision, (FR-007, MODIFIED 0001/FR-017, edge cases, A1)
 
 - **Files:** `M/agent/domain/src/value_objects/settings.rs` (+ tests), `M/agent/infrastructure/src/persistence/repositories/settings_repository.rs`, `M/agent/infrastructure/tests/persistence.rs`, `D/core/shortcuts/{app-shortcuts.ts,app-shortcuts.spec.ts,index.ts}`, `D/modules/terminal/views/terminal-view.svelte`, `D/core/shortcuts/{focus-shortcut.ts,focus-shortcut.spec.ts}` (moved from `D/modules/terminal/services/`, D9), `src/apps/desktop/e2e/panel.spec.ts`.
 - **Work:**
   - The 12th reserved shortcut and the 12th table entry (D5).
-  - Remove `isTerminalShortcut` and `pressedTerminalShortcut`; the terminal checks `pressedAppShortcut` (ACF-160).
+  - Remove `isTerminalShortcut` and `pressedTerminalShortcut`; the terminal checks `pressedAppShortcut`.
   - The D6 load rule on the server and the desktop.
   - The free-key e2e test moves from `Ctrl+Shift+F11` to a free key. Shipped: `Control+Alt+F11`, because `Ctrl+Shift+F12` is the default focus shortcut (D9).
 - **Depends on:** T4 (lands in p2).
@@ -238,7 +238,7 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7.
 
 - **Parallel:** T5's server part (settings) can run beside T4, because they touch different crates. The desktop part waits for T4's contract.
 - **Exclusive:** `Cargo.lock`, the migration ledgers, `src/shared/wire`, and the e2e mock core belong to one running task at a time.
-- **Gate:** this plan approved by god.
+- **Gate:** this plan approved.
 
 ## Commit strategy
 
@@ -256,8 +256,8 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 
 ## QA and evidence
 
-- **Per task:** fmt, clippy, per-crate `cargo test`, `scripts/check-boundaries.sh`, `bun test`, `svelte-check`, `eslint`, `prettier --check`, and Playwright with axe, as far as the task touches them. Ask god for the build slot first.
-- **Per phase PR:** CI green on the matrix, and Efe's review at the head sha.
+- **Per task:** fmt, clippy, per-crate `cargo test`, `scripts/check-boundaries.sh`, `bun test`, `svelte-check`, `eslint`, `prettier --check`, and Playwright with axe, as far as the task touches them. Get the build slot first.
+- **Per phase PR:** CI green on the matrix, and the review at the head sha.
 - **Security pass** (`secure-engineering`, light; one new trust-boundary input):
   - `needs_you.dismiss` validates `agent_id` as an id.
   - The agent connection cannot reach `needs_you.*`.
@@ -301,4 +301,4 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 | SC-004 | T4 | disconnected-client run |
 | SC-005 | T4 | busy-agent run |
 | US1, US2, US3 | T2 to T6 | the T4 integration runs and the T6 Playwright runs |
-| ACF-160 | T5 | field removed; `bun test`, `svelte-check` |
+| | T5 | field removed; `bun test`, `svelte-check` |

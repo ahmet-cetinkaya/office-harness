@@ -307,7 +307,7 @@ async fn a_refused_directive_is_recorded_for_the_sender_and_for_the_target() {
     let outcome = send_directive(&token, &server_file, &request).await;
     assert!(!outcome.status.success(), "{outcome:?}");
 
-    // Both agents' records, read back, list the refusal once (ACF-168).
+    // Both agents' records, read back, list the refusal once.
     let mut client = office.client().await;
     for agent in [&lead, &stranger] {
         let entries = actions_of(&mut client, agent).await;

@@ -68,7 +68,7 @@ Every request is a JSON text frame `{"id":<u32>,"type":"<name>",...}`. The respo
 | `agent.changed` | agent | FR-012 |
 | `agent.task` | agent_id, task (`{text, set_at, source}` or `null`; no `last_line` and no `status`, so a client patches only the task). Sent after a directive is entered, after `agent.task.set`, and after `agent.new_task` with `null` | 0011/FR-002, FR-004 |
 | `agent.deleted` | agent_id (an attached client closes its terminal) | Edge cases |
-| `project.changed` | cause (`created` or `deleted`), project_id. Sent after a successful `project.create` or `project.delete`, to every client including the sender; a client reads `project.list` again (a project that another client made shows without a restart) | ACF-166 |
+| `project.changed` | cause (`created` or `deleted`), project_id. Sent after a successful `project.create` or `project.delete`, to every client including the sender; a client reads `project.list` again (a project that another client made shows without a restart) | |
 | `action.recorded` | entry | FR-011 |
 | `agent.additions.changed` | agent_id, additions (another client's open editor refreshes) | Edge cases |
 | `storage.error` | message (for example, disk full) | Edge cases |

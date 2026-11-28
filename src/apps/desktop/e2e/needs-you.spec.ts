@@ -83,7 +83,7 @@ function fiveItems(): NeedsYouItem[] {
 const FIVE_NAMES = ["Cy", "Ada", "Bo", "Di", "Ed"];
 /** Ed has exited: its read-only terminal cannot take focus (0001), so the
  * jump puts focus on the terminal view's heading, which names the agent
- * (0008 FR-007, Efe's decision of 2026-11-22). */
+ * (0008 FR-007, decision of 2026-11-22). */
 const NOT_RUNNING_NAMES = new Set(["Ed"]);
 
 /** The opened terminal view's focusable heading (terminal-view.svelte). */

@@ -6,7 +6,7 @@ commits: per-task
 
 **Blocked:** the spec is parked on 2026-11-17 (deferred after the MVP). This plan is not run until the spec is unparked and approved again.
 
-<!-- Drafted 2026-11-17. Status: draft. Build starts after the owner approves spec 0006; the spec is a draft awaiting owner approval. 0002 and 0003 are merged to `main` (re-checked 2026-11-22), so the build waits for the owner's approval only. The owner or god approves the plan before the build. A security review of this plan passes before the build starts. -->
+<!-- Drafted 2026-11-17. Status: draft. Build starts after the owner approves spec 0006; the spec is a draft awaiting owner approval. 0002 and 0003 are merged to `main` (re-checked 2026-11-22), so the build waits for the owner's approval only. The owner approves the plan before the build. A security review of this plan passes before the build starts. -->
 
 # Plan: distributed machines (0006)
 
@@ -57,7 +57,7 @@ Deliver spec 0006: the user turns on the listener, hands one join code to a seco
   - Composition: `src/apps/office-harnessd/src/bootstrap/` builds services per module and runs per-module migrations (`migrations.rs`); `src/apps/office-harnessd/src/bridges/` holds the cross-module adapters. `scripts/check-boundaries.sh` reads crate roles from manifest paths, so a new module needs no script change.
   - Desktop: `app.svelte` renders `OfficeView` after the connection states; the create flow is `modules/agent/components/agent-form-dialog.svelte`; requests go through `modules/agent/services/agent-service.ts`; state lives in `modules/agent/state/office-controller.ts`; the e2e mock core is `src/apps/desktop/e2e/support/mock-core.ts`.
   - Protocol surface: `specs/changes/archive/0001-office-server-and-terminal/contracts/client-protocol.md` fixes the message shapes, error codes, and close codes that this change extends.
-- **Floor rules:** one build or test at a time on the floor; ask god for the build slot before each local build or test run (`CARGO_BUILD_JOBS=4`, `--test-threads=4`, at most 30 minutes). Efe reviews each PR at its exact head sha; god merges. Nothing is pushed to `main`. No other project's name appears in any repository file.
+- **Floor rules:** one build or test at a time on the floor; get the build slot before each local build or test run (`CARGO_BUILD_JOBS=4`, `--test-threads=4`, at most 30 minutes). Each PR is reviewed at its exact head sha before it merges. Nothing is pushed to `main`. No other project's name appears in any repository file.
 - **Toolchain:** as 0001 to 0003 (cargo 1.100, bun 1.4.4, Node 24, Tauri v2, Svelte 5 with runes, Tailwind CSS 4, TypeScript). TLS rides rustls; no platform TLS API, so the three OSes share one code path.
 
 ## Decisions
@@ -77,7 +77,7 @@ Deliver spec 0006: the user turns on the listener, hands one join code to a seco
 - **D12 Desktop surface:** one new webview folder `src/apps/desktop/src/modules/machines/` with the machines view, the join code dialog (code, expiry, fingerprint, once), the listener toggle with its failure reasons, the remove confirmation naming the affected agent count, and the reset-identity confirmation naming the machines that must rejoin. The agent form dialog gains the machine picker (home machine or `online` machines) and the per-machine project folder field; the agent list and details show the machine name; `unreachable` rows open on the stored output and refuse key delivery (edge cases). All of it keyboard reachable, text status, focus visible (PB-5).
 - **D13 Tests:** Rust unit tests beside the code and integration tests in `tests/`; the join and link run on one machine as two processes over loopback TLS. Playwright with the mock core and axe for the desktop views at 1280 and 360 widths, as 0001 to 0005 did. The threat tests of T13 (traffic capture, forged fingerprint, 1000-address guessing, revoked credential, cross-machine access) are integration tests, not hands-on rows. Redaction tests live with the code they guard (T7).
 - **D14 Lint and boundaries:** `scripts/check-boundaries.sh` needs no change (it classifies by manifest path, so `machine-*` crates are covered at once); `boundaries.spec.ts` covers the new `machines` folder as any module. `unsafe_code` stays forbidden; rustls and rcgen need none.
-- **D15 Delivery and commits:** one umbrella branch `feat/0006-distributed-machines` created from `main` after the gates, three phase PRs, one local commit per verified task, Efe reviews each PR at its head sha, god merges (the 0003 procedure).
+- **D15 Delivery and commits:** one umbrella branch `feat/0006-distributed-machines` created from `main` after the gates, three phase PRs, one local commit per verified task, each PR is reviewed at its head sha, then it merges (the 0003 procedure).
 - **Constitution check:** the repository has no instruction file; `docs/ARCHITECTURE.md` is binding, and this plan adds the module row it already reserves and one webview folder its Frontend Folder Structure anticipates. The owner's global rules apply: clean code, no secrets in any file or log, explicit approval for remote actions.
 
 ## Scope
@@ -106,7 +106,7 @@ Deliver spec 0006: the user turns on the listener, hands one join code to a seco
 | 2 Machine link | Join mode, relay, unreachable and reconnect | T8, T9 | `feat/0006-p2-machine-link` (umbrella after p1) | p2 → umbrella |
 | 3 Desktop and ship | Machines view, picker, docs and amendments, QA and threat tests, security gate | T10 to T13 | `feat/0006-p3-desktop` (umbrella after p2) | p3 → umbrella, then umbrella → `main` |
 
-The umbrella `feat/0006-distributed-machines` is created from `main` after the owner approves the spec; it holds the approved spec and this plan (committed by the docs PR). Phases are sequential; each phase PR runs CI on three OSes and gets Efe's review at its head sha.
+The umbrella `feat/0006-distributed-machines` is created from `main` after the owner approves the spec; it holds the approved spec and this plan (committed by the docs PR). Phases are sequential; each phase PR runs CI on three OSes and gets the review at its head sha.
 
 ## Tasks
 
@@ -324,8 +324,8 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 
 ## QA and evidence
 
-- **Per task:** fmt, clippy, `cargo test --workspace` for the crates the task touches, `scripts/check-boundaries.sh`, `bun test`, `svelte-check`, `eslint`, `prettier --check`, Playwright with axe, each as far as the task touches it. Ask god for the build slot before each local build or test run.
-- **Per phase PR:** CI green on all three OSes, Efe's review at the head sha, evidence in the PR body.
+- **Per task:** fmt, clippy, `cargo test --workspace` for the crates the task touches, `scripts/check-boundaries.sh`, `bun test`, `svelte-check`, `eslint`, `prettier --check`, Playwright with axe, each as far as the task touches it. Get the build slot before each local build or test run.
+- **Per phase PR:** CI green on all three OSes, the review at the head sha, evidence in the PR body.
 - **Security pass:** the dedicated security review of this plan before the work starts, and on the whole umbrella diff before the merge (T13 f), on top of `secure-engineering` checks per phase: the listener default, the full-hash fingerprint comparison on every connection, the hashed storage of codes and credentials, the source lockout, the machine scoping at dispatch, and the redaction suite.
 - **Real surface:** the two-machine join of SC-001 on a real network, the screen reader pass over the machines view and dialogs, and the 200 percent zoom check are hands-on rows in the QA report; under the overnight directive they are recorded as BLOCKED (need a person), never PASS.
 - **Rollback:** each phase is a PR into the umbrella; a failed phase is reverted there. On a user's machine the listener is off by default, so an office that never turns it on behaves exactly as 0001 built it (PB-1). The new tables and the folder-per-machine migration are additive; reverting the code leaves an old server reading the same database, and removing a machine before a rollback leaves no live credential behind. The docs amendments of T12 are reverted with the same PR if the change is abandoned.

@@ -1165,7 +1165,7 @@ test.describe("T4: return and restore", () => {
     expect(await readAgentIds(page)).toEqual(["agent-cy"]);
   });
 
-  test("opening a desk in the scene reads that agent's rows (FR-009, LOW-2)", async ({
+  test("opening a desk in the scene reads that agent's rows (FR-009)", async ({
     page,
   }) => {
     await openScene(page, {
@@ -1214,7 +1214,7 @@ test.describe("T4: return and restore", () => {
       .toEqual(["agent-bo", "agent-bo"]);
   });
 
-  test("an event of the open desk's agent creates no unread row (FR-006 b, LOW-2)", async ({
+  test("an event of the open desk's agent creates no unread row (FR-006 b)", async ({
     page,
   }) => {
     await openScene(page);

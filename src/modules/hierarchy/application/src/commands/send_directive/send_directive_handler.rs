@@ -197,7 +197,7 @@ impl SendDirectiveHandler {
             return Err(self.journaled(sender, target, text, error.into()));
         }
         // A store failure behind the lookup is `Storage`, its own message:
-        // the target may run, but the office cannot say so (Efe r2 LOW).
+        // the target may run, but the office cannot say so.
         if !self
             .targets
             .is_running(target)

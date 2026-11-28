@@ -5,7 +5,7 @@ plan: specs/changes/archive/0017-orphan-sweep/PLAN.md
 supersedes: 0013/FR-008
 ---
 
-<!-- Approved for coding on 2026-11-23 through the review gate (Efe r2 at 350ff07), under the owner's spec delegation; shipped in PR #126. -->
+<!-- Approved for coding on 2026-11-23 through the review gate (review r2 at 350ff07), under the owner's spec delegation; shipped in PR #126. -->
 
 # 0017: End the processes left over from an unclean stop
 
@@ -232,7 +232,7 @@ The "Resume interrupted" list marks each agent of a `lost` session with what the
 
 ## Deviations
 
-Decided on 2026-11-23 by god under the owner's delegation, after `/ac:verify` found that the build differs from the text above.
+Decided on 2026-11-23 under the owner's delegation, after `/ac:verify` found that the build differs from the text above.
 
 - **FR-006 and A8, one notification per server start.** The server writes one `leftover_kept` notification for each agent with a leftover that could not be ended, because a notification refers to one agent (the Notification entity of the living spec) and each agent keeps its own Needs you item. The desktop app sends one OS notification per server start that names all those agents. It sends it when `office.sweep` says `done`, or 1.5 seconds after the first row for a client that connected during the sweep. A client that is not connected during the sweep shows the rows in its list, but no OS notification. See `contracts/sweep-protocol.md`.
 - **SC-001, platforms of the 60-process test.** The test with real stand-in processes (`src/apps/office-harnessd/tests/server_sweep.rs`) runs on Linux only, because it reads process start times from `/proc`. On macOS and Windows the cover is the process inspection tests of T1, which read the identity of real child processes and end them through the handle in CI on all three systems, and the sweep unit tests with a fake inspector. A port of the test to macOS is a separate follow-up; Windows stays as recorded here.

@@ -6,7 +6,7 @@ commits: per-task
 
 **Blocked:** the spec is parked on 2026-11-28 (post-MVP; approved, built after the MVP). This plan is not run until the spec is unparked and approved again.
 
-<!-- Drafted 2026-11-17; plan approved by god on 2026-11-17. Status: approved (post-MVP, built after the MVP). The build starts after the MVP is complete (0005 merged and accepted), or earlier if the owner asks. -->
+<!-- Drafted 2026-11-17; plan approved on 2026-11-17. Status: approved (post-MVP, built after the MVP). The build starts after the MVP is complete (0005 merged and accepted), or earlier if the owner asks. -->
 
 # Plan: meeting room (0004)
 
@@ -55,7 +55,7 @@ Deliver spec 0004: from the panel the user starts a meeting on a topic with 2 to
   - Persistence: `bootstrap/services.rs` opens one SQLite file and runs each module's migrations through `run_migrations(conn, ledger_table, scripts)`; the `agent` module's tables show the shape (prefix, ledger, `migrations/0001_...sql`). A new module adds crates under the existing workspace globs, so the root `Cargo.toml` needs no edit.
   - Desktop shell: `src/apps/desktop/src/app.svelte` renders the 0001 connection states and then one view; `modules/agent/state/office-controller.ts` applies events to one snapshot; `modules/terminal/` exports the embedded `TerminalView`; `core/api/generated/` holds the `ts-rs` types. `boundaries.spec.ts` enforces imports through each module's `index.ts`.
   - Tests today: Rust unit tests in `<name>.tests.rs`, integration tests in `tests/` with the fake CLI harness (`tests/support/fake_cli.rs`, `serve_office_with` injects a short quiet period); `bun test src`; Playwright with `@axe-core/playwright` and `e2e/support/mock-core.ts`, which seeds the office, pushes events, records every invoke call.
-- **Floor rules:** one build or test at a time on the floor; ask god for the build slot before each local build or test run (`CARGO_BUILD_JOBS=4`, `--test-threads=4`, at most 30 minutes). The desktop crate cannot build locally without GTK; CI covers it. Efe reviews each PR at its exact head sha; god merges. Nothing is pushed to `main`. No other project's name appears in any repository file.
+- **Floor rules:** one build or test at a time on the floor; get the build slot before each local build or test run (`CARGO_BUILD_JOBS=4`, `--test-threads=4`, at most 30 minutes). The desktop crate cannot build locally without GTK; CI covers it. Each PR is reviewed at its exact head sha before it merges. Nothing is pushed to `main`. No other project's name appears in any repository file.
 - **Toolchain:** as 0001 to 0003 (cargo 1.100, bun 1.4.4, Node 24, Tauri v2, Svelte 5 with runes, Tailwind CSS 4, TypeScript).
 
 ## Decisions
@@ -75,7 +75,7 @@ Deliver spec 0004: from the panel the user starts a meeting on a topic with 2 to
 - **D12 Record copy (FR-009):** a pure function `record-markdown.ts` renders a record as Markdown (template in `contracts/meeting-protocol.md`), tested with `bun test`; the copy action writes through `navigator.clipboard` and falls back to a focused read-only view of the text when the clipboard refuses, with a "copied" announcement either way. T1 R5 confirms the clipboard in all three webviews.
 - **D13 Accessibility (PB-3):** every control works from the keyboard with a visible focus mark; participant states and the outcome are text, never color alone; one polite live region announces participant state changes and the outcome change; pickers are dialogs that take and return focus; text contrast comes from the shared theme. Playwright with axe covers the room at 1280 and 360 widths, as 0001 did.
 - **D14 Tests:** Rust unit tests for the domain and the application with port fakes; integration tests through the real server and socket with the extended fake CLI harness; `bun test` for the webview logic; Playwright with the extended mock core for the views; hands-on rows for SC-001 and SC-007. `tests/support/fake_cli.rs` gains meeting CLIs: one that answers and returns to waiting, one that echoes the brief and then answers, one that stays silent (echoing the brief, replying nothing), one that echoes the brief, waits longer than a quiet period, and then answers, one that exits after the brief, one that redraws a full screen, and two that play the facilitator: one echoes whatever it receives (its result request with the answers) and then writes the result, and one echoes its result request and then stays silent (so an echo-only facilitator is covered); each fake echoes exactly what it receives, never less. A serve helper injects a short time limit, as it injects a short quiet period today.
-- **D15 Delivery and commits:** phased delivery into the umbrella `feat/0004-meeting-room`, per-task local commits, Efe gates each phase PR at its head sha, god merges (the 0003 procedure).
+- **D15 Delivery and commits:** phased delivery into the umbrella `feat/0004-meeting-room`, per-task local commits, each phase PR is gated at its head sha, then it merges (the 0003 procedure).
 - **Constitution check:** the repository has no instruction file; `docs/ARCHITECTURE.md` is binding, and this plan adds the module its Modules table already names for R8. The owner's global rules apply: clean code, no secrets, explicit approval for remote actions.
 
 ## Scope
@@ -102,7 +102,7 @@ Deliver spec 0004: from the panel the user starts a meeting on a topic with 2 to
 | 1 Server meetings | Meeting module, brief and capture, protocol, restart sweep, suppression | T1 to T5 | `feat/0004-p1-server` (umbrella) | p1 → umbrella |
 | 2 Desktop meeting room | Room view, records, copy, docs, QA | T6 to T9 | `feat/0004-p2-desktop` (umbrella after p1) | p2 → umbrella, then umbrella → `main` |
 
-The umbrella `feat/0004-meeting-room` is created from `main` after the MVP is complete (0005 merged and accepted), or earlier if the owner asks, and holds the approved spec and this plan (committed by the docs PR). Each phase PR runs CI on three OSes and gets Efe's review at its head sha.
+The umbrella `feat/0004-meeting-room` is created from `main` after the MVP is complete (0005 merged and accepted), or earlier if the owner asks, and holds the approved spec and this plan (committed by the docs PR). Each phase PR runs CI on three OSes and gets the review at its head sha.
 
 ## Tasks
 
@@ -252,8 +252,8 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 
 ## QA and evidence
 
-- **Per task:** fmt, clippy, `cargo test --workspace` for the crates the task touches, `scripts/check-boundaries.sh`, `bun test`, `svelte-check`, eslint, `prettier --check`, Playwright with axe, each as far as the task touches it. Ask god for the build slot before each local build or test run.
-- **Per phase PR:** CI green on all three OSes, Efe's review at the head sha, evidence in the PR body.
+- **Per task:** fmt, clippy, `cargo test --workspace` for the crates the task touches, `scripts/check-boundaries.sh`, `bun test`, `svelte-check`, eslint, `prettier --check`, Playwright with axe, each as far as the task touches it. Get the build slot before each local build or test run.
+- **Per phase PR:** CI green on all three OSes, the review at the head sha, evidence in the PR body.
 - **Security pass:** `secure-engineering` on T3 and T4: the meeting requests sit behind the office-token gate; the brief goes only to the participants' terminals (PB-1); no office data leaves the machine and records stay local (PB-2); answer text is bounded by the output limits; the refusal and event bodies carry no terminal output beyond the answers the spec saves.
 - **Real surface:** SC-001 against a real server and the four SC-007 readability rows (one per 0001 CLI) are hands-on rows in the QA report; under the overnight directive they are recorded as BLOCKED (need a person), never PASS.
 - **Rollback:** each phase is a PR into the umbrella; a failed phase is reverted there. On a user's machine the change adds meeting tables with their own ledger; a server built before this change ignores them, and an app built before it never sends a `meeting.` request. No existing table, setting, or CLI file changes.

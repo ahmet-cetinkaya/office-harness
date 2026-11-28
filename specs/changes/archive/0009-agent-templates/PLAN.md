@@ -4,7 +4,7 @@ spec: specs/changes/archive/0009-agent-templates/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (through Efe's review gate, PR #65, main 10df6cd). 0010 modifies 0009/FR-001 and FR-003 (own worktree choice); the 0010 plan owns that MODIFIED text. r2 (2026-11-19) applies Efe's plan review r1 (office-harness-plan-0009.md: 3 HIGH, 5 MEDIUM, 4 LOW) and god's decisions: every imported env value is dropped (spec A6), one shared create undo mode with 0010, and the D6 license check and workspace pin. Needs approval through Efe's plan review. -->
+<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (through the review gate, PR #65, main 10df6cd). 0010 modifies 0009/FR-001 and FR-003 (own worktree choice); the 0010 plan owns that MODIFIED text. r2 (2026-11-19) applies the plan review r1 (3 HIGH, 5 MEDIUM, 4 LOW) and the decisions: every imported env value is dropped (spec A6), one shared create undo mode with 0010, and the D6 license check and workspace pin. Needs approval through the plan review. -->
 
 # Plan: Agent and team templates (0009)
 
@@ -36,12 +36,12 @@ The owner saves an agent's definition as a template and creates agents from it. 
 **Main risks:**
 - **All-or-nothing over many agents.** The shipped code has no multi-agent rollback. D5 validates everything first and undoes created agents and the team row in reverse order. A fault-injection test fails the batch at each agent position, on the real SQLite hierarchy repository.
 - **A deadlock on the tree exclusion.** The exclusion is a plain mutex, and the shipped team writes take it again. D5 adds store variants that run under the held exclusion, as `place_agent` already does, and T4 tests the batch on the real repository, where a second take would hang.
-- **A new dependency.** `tauri-plugin-dialog` `=2.8.4`, the official Tauri plugin, is used only from Rust and pinned in the workspace. No dialog permission is given to the webview. God approved it on 2026-11-19 (decision D6). Its license and the license of every crate it adds are checked in T6.
+- **A new dependency.** `tauri-plugin-dialog` `=2.8.4`, the official Tauri plugin, is used only from Rust and pinned in the workspace. No dialog permission is given to the webview. It was approved on 2026-11-19 (decision D6). Its license and the license of every crate it adds are checked in T6.
 - **The shipped `team.create` bug.** The desktop sends a `lead` object that the server did not read. PR #81 fixes it. This plan does not depend on that fix: the template bridge builds its own team create.
 
 **Decisions made for you:** the module, the storage, the body shape, "no value" and its editor syntax, the name pattern rules, the create bridge and its undo, the file commands, the protocol, and the desktop placement.
 
-**Blockers:** none. T7 needs the 0011 `visibleText` helper on main (a gate, see Dependencies). The local build slot comes from god before each build or test run.
+**Blockers:** none. T7 needs the 0011 `visibleText` helper on main (a gate, see Dependencies). The local build slot is granted before each build or test run.
 
 ## Goal
 
@@ -79,8 +79,8 @@ Deliver spec 0009:
     - Tauri commands: `src-tauri/src/commands.rs`, `build.rs:7-16` (`WEBVIEW_COMMANDS`), `capabilities/default.json`. No dialog or fs plugin exists today.
     - Tauri pins: the root `Cargo.toml:47-50` `[workspace.dependencies]` holds `tauri = "=2.12.5"` and `tauri-plugin-notification = "=2.8.1"`.
   - `tauri-plugin-dialog` (crates.io, read 2026-11-19): `2.8.4` is the newest 2.x, published 2026-10-28, license `Apache-2.0 OR MIT`. It requires `tauri ^2.12`, so it fits `=2.12.5`. Its normal dependencies include `rfd ^0.17` and `tauri-plugin-fs ^2.7.1`. The 3.0 line is alpha and is not used.
-  - The 0011 plan adds a `visibleText` helper for control characters (`D/modules/agent/models/task-text.ts`). God's order builds 0011 before 0009, so the import preview reuses it.
-- **Floor rules:** one build or test at a time (ask god; `CARGO_BUILD_JOBS=4`, `--test-threads=4`, the pinned toolchain, per-crate local runs). Efe reviews at the exact head sha; god merges. Nothing is pushed to `main`.
+  - The 0011 plan adds a `visibleText` helper for control characters (`D/modules/agent/models/task-text.ts`). The build order puts 0011 before 0009, so the import preview reuses it.
+- **Floor rules:** one build or test at a time (ask for it; `CARGO_BUILD_JOBS=4`, `--test-threads=4`, the pinned toolchain, per-crate local runs). Each PR is reviewed at its exact head sha before it merges. Nothing is pushed to `main`.
 
 ## Decisions
 
@@ -93,7 +93,7 @@ Deliver spec 0009:
   - A team body is `{lead: <agent body>, members: [{entry: <agent body>, count}]}`. Entries are copies, so editing or deleting an agent template changes no team template (A5).
   - Rules on save: the name is unique case-insensitively; the command is not empty; the pattern is not empty and at most 64 characters after expansion; each member count is at least 1; a team has at least one member entry; and 1 + the sum of the counts is at most 50 (FR-010).
   - Unknown fields: a body or a file entry with a field this build does not know is refused, and the answer names the field. A build therefore never drops a field on save or import. 0010 adds `own_worktree: bool` (default false) by its MODIFIED text, which the 0010 plan owns; a 0009-only build would refuse a body that carries it. 0010 has shipped: the build accepts `own_worktree` (`M/template/domain/src/entities/agent_body.rs`), so no shipped build refuses it.
-- **D3 "No value"** (FR-011, A6, Efe's plan note):
+- **D3 "No value"** (FR-011, A6, a plan note):
   - `EnvEntry.value` becomes `Option<String>`. `None` is "no value"; `Some("")` stays a value the user typed on purpose.
   - Every text path in Context carries the option:
     - the stored JSON (`additions_document.rs`) writes and reads `null` for `None`. Older rows always have a string, so no migration is needed;
@@ -130,7 +130,7 @@ Deliver spec 0009:
   - **Partial state:** `snapshot` and `agent.list` do not take the tree exclusion, so another client can see an agent for a moment that is then rolled back. This is accepted: it is visible only during a failing batch, and the events above never announce it.
   - **Record:** each created agent is recorded by the existing create journal with the user as actor (PB-2).
   - Template changes are not recorded (A10).
-- **D6 File commands** (FR-007, FR-008, PB-4), **approved by god on 2026-11-19** with conditions (a) to (e):
+- **D6 File commands** (FR-007, FR-008, PB-4), **approved on 2026-11-19** with conditions (a) to (e):
   - Add `tauri-plugin-dialog`, the official plugin, used from Rust only.
   - Two new app commands. Neither takes a path argument, so each touches only the path the user picked in its own dialog (condition b):
     - `export_templates_file(contents: String)` opens a save dialog and writes `contents` to the picked path. It answers `saved`, `cancelled`, or a failure ("the file was not written: ...").
@@ -141,7 +141,7 @@ Deliver spec 0009:
   - The server also refuses a `text` field over 256 KiB on `template.import.preview` and `template.import.confirm`, because the webview supplies it (condition c).
   - The webview gets only `allow-export-templates-file` and `allow-import-templates-file`, with no dialog or fs permission. A Rust test reads `capabilities/default.json` and asserts that its permissions are exactly the `allow-*` entries of `WEBVIEW_COMMANDS` (`build.rs:7-16`) plus `notification:default`, with no `dialog:` or `fs:` entry (condition a).
   - Pin (condition d): `tauri-plugin-dialog = "=2.8.4"` in the root `Cargo.toml` `[workspace.dependencies]`, beside `tauri = "=2.12.5"`. `src-tauri/Cargo.toml` takes it with `workspace = true`. It fits `tauri ^2.12`.
-  - License (condition e): T6 lists every crate that the dependency adds to `Cargo.lock` with its license, from `cargo metadata`, and checks each for compatibility with AGPL-3.0-or-later. The plugin itself is `Apache-2.0 OR MIT`. An incompatible crate stops T6 and goes to god. The list goes into the QA report.
+  - License (condition e): T6 lists every crate that the dependency adds to `Cargo.lock` with its license, from `cargo metadata`, and checks each for compatibility with AGPL-3.0-or-later. The plugin itself is `Apache-2.0 OR MIT`. An incompatible crate stops T6 and stops for a decision. The list goes into the QA report.
   - Rejected: the plugin's JavaScript API plus a write-by-path command, which would let the webview write any path.
 - **D7 Protocol** (user clients only; not in the agent allowlist; the allowlist comment is updated):
   - `template.list` and `template.get {id}`.
@@ -171,7 +171,7 @@ Deliver spec 0009:
   - No other project's name is in the repository.
 - **D9 Shipped after the plan (recorded 2026-11-22):**
   - 0010 superseded the D2 rule that a body with `own_worktree` is refused. `own_worktree` is a known, optional field (default `false`) of an agent body and of every team entry; see `data-model.md`.
-  - ACF-183 added tests beyond the T4 list: `template_work_starts_no_agent_and_writes_no_cli_configuration` (PB-3, A1) and `template_changes_write_no_action_record` (A10), both in `H/tests/templates.rs`.
+  - added tests beyond the T4 list: `template_work_starts_no_agent_and_writes_no_cli_configuration` (PB-3, A1) and `template_changes_write_no_action_record` (A10), both in `H/tests/templates.rs`.
   - `qa-report.md` records no plan deviation of T1 to T8.
 
 ## Scope
@@ -293,7 +293,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
     - the write failure text.
   - A Rust test reads `capabilities/default.json` and asserts that its permissions equal the `allow-*` entries of `WEBVIEW_COMMANDS` plus `notification:default`, with no `dialog:` or `fs:` entry.
   - `tauri-plugin-dialog` is `=2.8.4` in the root `[workspace.dependencies]`, and `cargo tree -i tauri` shows one tauri version.
-  - The crate facts in Context are proven with the tools, not taken from this plan: `cargo metadata --format-version 1` gives the version `2.8.4` and the license `Apache-2.0 OR MIT` of `tauri-plugin-dialog`, and its `tauri` requirement (`^2.12`); `cargo tree -p tauri-plugin-dialog` lists what it adds. The output is saved in the QA report. A fact that differs stops T6 and goes to god.
+  - The crate facts in Context are proven with the tools, not taken from this plan: `cargo metadata --format-version 1` gives the version `2.8.4` and the license `Apache-2.0 OR MIT` of `tauri-plugin-dialog`, and its `tauri` requirement (`^2.12`); `cargo tree -p tauri-plugin-dialog` lists what it adds. The output is saved in the QA report. A fact that differs stops T6 and stops for a decision.
   - The license list of every crate the change adds to `Cargo.lock` is in the QA report, each compatible with AGPL-3.0-or-later.
   - fmt, clippy, `cargo test -p office-harness-desktop` (CI covers it; locally only if `libdbus` builds).
 
@@ -331,8 +331,8 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 T1 → T3; T2 → T3 → T4 → T5 → T6 → T7 → T8. T1 and T2 can run together. `Cargo.lock`, the migration ledgers, and the e2e mock core belong to one running task at a time.
 
 Gates:
-- this plan approved (Efe plan review PASS);
-- T7 starts only when the 0011 `visibleText` helper (`D/modules/agent/models/task-text.ts`) is on main. If it is not, T7 stops and reports to god; it does not copy the helper.
+- this plan approved (plan review PASS);
+- T7 starts only when the 0011 `visibleText` helper (`D/modules/agent/models/task-text.ts`) is on main. If it is not, T7 stops and reports; it does not copy the helper.
 
 ## Commit strategy
 
@@ -351,8 +351,8 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 
 ## QA and evidence
 
-- **Per task:** fmt, clippy, per-crate `cargo test`, `scripts/check-boundaries.sh`, `bun test`, `svelte-check`, `eslint`, `prettier --check`, and Playwright with axe, as far as the task touches them. Ask god for the build slot first.
-- **Per phase PR:** CI green on the matrix; Efe's review at the head sha.
+- **Per task:** fmt, clippy, per-crate `cargo test`, `scripts/check-boundaries.sh`, `bun test`, `svelte-check`, `eslint`, `prettier --check`, and Playwright with axe, as far as the task touches them. Get the build slot first.
+- **Per phase PR:** CI green on the matrix; the review at the head sha.
 - **Security pass** (`secure-engineering`, full: the import is untrusted input, and file I/O is new):
   - The server parses the import with size (256 KiB) and shape limits, and refuses unknown fields.
   - Nothing is saved before confirm, and no imported env value is ever saved.

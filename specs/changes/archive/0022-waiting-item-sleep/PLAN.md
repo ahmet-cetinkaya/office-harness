@@ -24,7 +24,7 @@ The server learns to tell a prompted change of an agent's status from an unpromp
 
 **Why this approach:**
 - All wait ends are already seen in the server process: `PersonInput` and the status bridge see them, and the terminal host sees session starts. One tracker beside `PersonInput` keeps the rule in one place, so the notification and the sleep code cannot disagree.
-- The tracker measures the work bound from the stored start of the stretch, not by polling (Efe, spec r2). A one-shot timer, armed with that start, only removes the item. The classification at the return reads the stored start again.
+- The tracker measures the work bound from the stored start of the stretch, not by polling. A one-shot timer, armed with that start, only removes the item. The classification at the return reads the stored start again.
 - The status machine and the terminal module do not change (spec Context, PB-5). The fix is on the consumer side.
 
 **Delivery:** one PR (#135, with the spec), 4 tasks, committed per task.
@@ -75,7 +75,7 @@ Ship every requirement of spec 0022 with automated evidence. Then repeat the 001
 - **D3: Work bound.** `work_bound = quiet_period + WORK_BOUND_EXTRA`, where `WORK_BOUND_EXTRA` is 10 s.
   - The quiet period is the startup value that the terminals use.
   - `ServerOptions` gets `work_bound_extra` so that tests can shorten it, as `minute` is shortened for idle sleep.
-  - Measured from the stored `working_since` (Efe, spec r2).
+  - Measured from the stored `working_since`.
 - **D4: The item leaves at the bound.**
   - On an unprompted change to `working`, the notification bridge arms one `tokio` sleep until `working_since + work_bound`, carrying the stretch's `working_since`.
   - When it fires, the item is removed with `ClearReason::Resumed`, but only if the tracker still shows the same `working_since` and the agent still shows `working`. `Resumed` keeps a report item (0015).
@@ -223,7 +223,7 @@ Ship every requirement of spec 0022 with automated evidence. Then repeat the 001
 
 ## Final verification
 
-Run `/ac:verify` against this plan. Every Traceability row needs its evidence, and CI must be green on the 3 OSes. Then Efe's code gate runs at the exact head.
+Run `/ac:verify` against this plan. Every Traceability row needs its evidence, and CI must be green on the 3 OSes. Then the code gate runs at the exact head.
 
 ## Result
 

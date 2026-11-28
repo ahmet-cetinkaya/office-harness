@@ -78,7 +78,7 @@ impl FileView for LocalFileView {
 /// True when the path or the old path of a rename is secret-looking, by
 /// name or, for a path on the disk, by the name it resolves to. Both go
 /// through the same containment, so a rename cannot name a file outside the
-/// root (review r1, C1). A path of a commit names a file of git's tree, not
+/// root. A path of a commit names a file of git's tree, not
 /// of the disk.
 fn has_secret_side(root: &Path, request: &DiffRequest) -> Result<bool, FileViewError> {
     for path in std::iter::once(&request.path).chain(request.old_path.as_ref()) {

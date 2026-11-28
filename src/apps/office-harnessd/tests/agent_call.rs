@@ -602,7 +602,7 @@ async fn a_ceo_creates_a_lead_through_agent_call_and_the_row_carries_the_team() 
 
     // The created row is placed with the team the CEO named: the role
     // column says lead, the parent is the CEO, and the team column carries
-    // the team (the gateway must not drop it, PR 40 r2 LOW).
+    // the team (the gateway must not drop it).
     let connection =
         rusqlite::Connection::open(office.serving.office.config.database_path()).expect("database");
     let (role, parent, row_team): (String, Option<String>, Option<String>) = connection
@@ -711,7 +711,7 @@ async fn a_second_lead_for_a_held_team_is_refused_and_recorded() {
 
 /// A CEO agent asking for a lead without its team is refused as `invalid`
 /// and recorded: the contract requires a lead's team, and the gateway must
-/// not answer success for a lead the tree cannot show (PR 40 r2 LOW).
+/// not answer success for a lead the tree cannot show.
 #[tokio::test]
 async fn a_ceo_creating_a_lead_without_a_team_is_refused_and_recorded() {
     let office = Office::open().await;
@@ -1071,7 +1071,7 @@ fn call_on_self_script(records: &Path, name: &str, kind: &str) -> String {
 }
 
 /// The self-target refusals start, `new_task`, and stop stay descendants
-/// only (FR-008, FR-009; PR 40 MEDIUM-2). Each test runs one kind: a lead
+/// only (FR-008, FR-009). Each test runs one kind: a lead
 /// asks its own id over agent-call, the gateway refuses before any use case
 /// runs, and the refusal is recorded with the lead as actor.
 async fn assert_an_agent_acting_on_itself_is_refused_and_recorded(kind: &str, name: &str) {
@@ -1123,7 +1123,7 @@ async fn assert_an_agent_acting_on_itself_is_refused_and_recorded(kind: &str, na
 
 /// An agent that asks to start itself over agent-call is refused and the
 /// refusal is recorded: start, `new_task`, and stop stay descendants only
-/// (FR-008, FR-009; PR 40 MEDIUM-2).
+/// (FR-008, FR-009).
 #[tokio::test]
 async fn an_agent_starting_itself_over_agent_call_is_refused_and_recorded() {
     assert_an_agent_acting_on_itself_is_refused_and_recorded("agent.start", "start").await;
@@ -1131,21 +1131,21 @@ async fn an_agent_starting_itself_over_agent_call_is_refused_and_recorded() {
 
 /// An agent that sends itself a new task over agent-call is refused and the
 /// refusal is recorded: `new_task` stays descendants only, like stop
-/// (FR-008, FR-009; PR 40 MEDIUM-2).
+/// (FR-008, FR-009).
 #[tokio::test]
 async fn an_agent_tasking_itself_over_agent_call_is_refused_and_recorded() {
     assert_an_agent_acting_on_itself_is_refused_and_recorded("agent.new_task", "new_task").await;
 }
 
 /// An agent that asks to stop itself over agent-call is refused and the
-/// refusal is recorded (FR-008, FR-009; PR 40 MEDIUM-2).
+/// refusal is recorded (FR-008, FR-009).
 #[tokio::test]
 async fn an_agent_stopping_itself_over_agent_call_is_refused_and_recorded() {
     assert_an_agent_acting_on_itself_is_refused_and_recorded("agent.stop", "stop").await;
 }
 
 /// A request with a field the type does not take is refused as `invalid`
-/// and recorded, not silently trimmed (PR 40 LOW).
+/// and recorded, not silently trimmed.
 #[tokio::test]
 async fn an_agent_stop_with_an_extra_field_is_refused_and_recorded() {
     let office = Office::open().await;

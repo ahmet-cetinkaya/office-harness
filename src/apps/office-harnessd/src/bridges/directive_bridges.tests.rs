@@ -276,7 +276,7 @@ fn a_running_member_going_to_sleep_is_asleep_and_not_running() {
 }
 
 /// A store that cannot read: the bridge surfaces its failure instead of
-/// dressing it as a stopped member (Efe r2 LOW).
+/// dressing it as a stopped member.
 struct BrokenStore;
 
 impl AgentStore for BrokenStore {
@@ -478,7 +478,7 @@ fn a_control_character_in_a_refused_text_is_escaped_in_the_journal() {
 
     journal.record(sender, target, "bell \u{7} inside", Some("refused"));
 
-    // A refusal is written for the target and for the sender (ACF-168);
+    // A refusal is written for the target and for the sender;
     // both entries carry the escaped text.
     let entries = recorder.entries();
     assert_eq!(entries.len(), 2);

@@ -294,7 +294,7 @@ When the person deletes a temp's parent, or a temp's parent is itself a temp tha
 - Q: Does a temp exit end it? → A: Yes, with the exit code as the reason (FR-005); the person learns of it through the end notice or one notification (FR-007).
 - Q: Does idle sleep (0018) apply to temps? → A: It may put a temp to sleep; the idle limit counts the sleep as quiet time and ends the temp (FR-004), so 0018 needs no change.
 
-### Session 2026-11-23 (spec review r1)
+### Session 2026-11-23
 
 - Q: Does a new task or a continued session on a temp end it? → A: No; the end is decided on the status under the office's order of status changes, so the stop and start inside those actions end nothing (FR-005, SC-012).
 - Q: Does the idle limit end a temp that waits on a person's question? → A: Not while its Needs you item stays; the quiet time counts from when the item leaves (FR-004, A12). The first draft ended it.

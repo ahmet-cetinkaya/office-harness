@@ -25,7 +25,7 @@ Spec: `specs/changes/archive/0009-agent-templates/SPEC.md` · Status: approved b
 - [x] At most three `[NEEDS CLARIFICATION]` markers; none inside an approved spec.
 - [x] No vague words ("works," "fast," "secure," "robust," "intuitive") and no placeholders without an observable.
 - [x] Terminology is consistent across stories, requirements, entities, and criteria.
-- [x] The spec meets the spec contract's Size rule, or Out of scope records the declined split. (More than ten FR entries; split not done, accepted by god 2026-11-23; see Notes.)
+- [x] The spec meets the spec contract's Size rule, or Out of scope records the declined split. (More than ten FR entries; split not done, accepted 2026-11-23; see Notes.)
 
 ## Passes
 
@@ -39,4 +39,4 @@ Spec: `specs/changes/archive/0009-agent-templates/SPEC.md` · Status: approved b
 
 - **Unauthorized inputs:** the office token cases of 0001 apply unchanged; the untrusted input of this change is the imported file, covered by FR-008, FR-009, and the control-character edge case.
 - **Limits:** the 50-agent limit per team template is a guard on one confirmation, not an office size cap, so 0002/FR-005 and the owner's 2026-11-19 "no size cap" answer on 0007 hold.
-- **Size rule:** 11 ADDED FRs (FR-001 to FR-011); FR-011 came with Efe's review edits (commit 6ea5646) after this file said "10 ADDED FRs, at the limit". That is one over the ten of the Size rule, and Out of scope records no declined split. The owner approved the spec as written on 2026-11-19; the missing `Split:` line was an open owner decision. Decision: more than ten FR entries; shipped as one feature, split not done, accepted by god 2026-11-23. The item is resolved; the rule text is unchanged.
+- **Size rule:** 11 ADDED FRs (FR-001 to FR-011); FR-011 came with review edits (commit 6ea5646) after this file said "10 ADDED FRs, at the limit". That is one over the ten of the Size rule, and Out of scope records no declined split. The owner approved the spec as written on 2026-11-19; the missing `Split:` line was an open owner decision. Decision: more than ten FR entries; shipped as one feature, split not done, accepted 2026-11-23. The item is resolved; the rule text is unchanged.

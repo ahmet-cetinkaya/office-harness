@@ -77,7 +77,7 @@
 | Tree changes between reads | PASS (automated) | `a_descendant_the_agents_no_longer_hold_is_left_out`; each read takes one snapshot. |
 | Storage read failure | PASS (automated) | `a_failed_read_answers_internal_raises_the_storage_alert_and_is_recorded`. |
 | Desktop sends the read | PASS (automated) | `the_desktop_connection_does_not_offer_the_read`. |
-| Lead placed before the CEO (spec A10) | PASS (automated, by ACF-197) | The 0002 A5 gap is closed: `H/tests/agent_subtree.rs`, `a_ceo_created_after_a_team_takes_the_team_lead_under_it` (the CEO's descendants include the earlier lead), and `H/tests/startup.rs`, `a_ceo_and_parentless_leads_from_before_the_fix_are_repaired_at_start`. This change reads the stored parent, so it lists that lead. |
+| Lead placed before the CEO (spec A10) | PASS (automated) | The 0002 A5 gap is closed: `H/tests/agent_subtree.rs`, `a_ceo_created_after_a_team_takes_the_team_lead_under_it` (the CEO's descendants include the earlier lead), and `H/tests/startup.rs`, `a_ceo_and_parentless_leads_from_before_the_fix_are_repaired_at_start`. This change reads the stored parent, so it lists that lead. |
 
 ## Deviations from the plan
 

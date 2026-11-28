@@ -130,8 +130,7 @@ struct TargetQueue {
 
 impl TargetQueue {
     /// The sender's waiting report that a newer one may replace: never the
-    /// head whose delivery is claimed, which a delivery may be typing
-    /// (0015 review r2 N1).
+    /// head whose delivery is claimed, which a delivery may be typing.
     fn replaceable_report_of(&self, sender: Sender) -> Option<usize> {
         let first_free = usize::from(self.delivering);
         self.waiting
@@ -243,8 +242,7 @@ impl DirectiveQueue {
     /// Puts a report in its parent's queue under one lock: it replaces the
     /// sender's waiting report in place, or joins the end when the queue and
     /// the report share have room (0015/FR-010). The replacement keeps the
-    /// place but its own acceptance time, so the wait limit counts from it
-    /// (0015 review r2 N2).
+    /// place but its own acceptance time, so the wait limit counts from it.
     pub fn push_report(&self, report: WaitingDirective) -> ReportPush {
         let mut queues = self.locked();
         if queues.closed {
