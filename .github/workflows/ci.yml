@@ -47,13 +47,25 @@ jobs:
             echo "web=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")"
+          # When in doubt, run the step: a failed diff or an empty list runs everything.
+          changed="$(git diff --no-renames --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")" || changed=""
           echo "$changed"
-          rust=false
-          web=false
-          # The workflow file itself counts for both areas.
-          if echo "$changed" | grep -qE '(\.rs|Cargo\.toml|Cargo\.lock|rust-toolchain\.toml)$|^scripts/|^src/apps/desktop/(src-tauri/|scripts/)|^\.github/workflows/ci\.yml$'; then rust=true; fi
-          if echo "$changed" | grep -qE '^src/apps/desktop/|^(package\.json|bun\.lock)$|^\.github/workflows/ci\.yml$'; then web=true; fi
+          rust=true
+          web=true
+          if [ -n "$changed" ]; then
+            rust=false
+            web=false
+            # Rust is everything under src/ outside the webview (this includes the SQL
+            # migrations that the code embeds), the Tauri crate, the sidecar script,
+            # the Rust tool configuration, and the workflow file itself.
+            outside_webview="$(grep -vE '^src/apps/desktop/' <<<"$changed" || true)"
+            rust_paths='^src/|(\.rs|Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|clippy\.toml|rustfmt\.toml|deny\.toml)$|^\.cargo/|^scripts/|^\.github/workflows/ci\.yml$'
+            web_paths='^src/apps/desktop/|^(package\.json|bun\.lock)$|^\.github/workflows/ci\.yml$'
+            # A here-string, not a pipe: grep -q stops at its first match, and a pipe
+            # would fail with pipefail once the list is larger than the pipe buffer.
+            if grep -qE "$rust_paths" <<<"$outside_webview" || grep -qE '^src/apps/desktop/(src-tauri|scripts)/' <<<"$changed"; then rust=true; fi
+            if grep -qE "$web_paths" <<<"$changed"; then web=true; fi
+          fi
           echo "rust=$rust" >> "$GITHUB_OUTPUT"
           echo "web=$web" >> "$GITHUB_OUTPUT"
 
