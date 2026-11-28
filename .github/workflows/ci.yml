@@ -4,7 +4,15 @@ name: ci
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'specs/**'
+      - 'docs/**'
+      - '**.md'
   pull_request:
+    paths-ignore:
+      - 'specs/**'
+      - 'docs/**'
+      - '**.md'
 
 permissions:
   contents: read
