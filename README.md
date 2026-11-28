@@ -473,7 +473,7 @@ On a machine without rustup, run the Rust lint gates with scripts/lint-rust.sh t
 nix-shell -p rustup --run "rustup run 1.100.0 scripts/lint-rust.sh -p <crate>"
 ```
 
-The `justfile` in the repository root runs every project command. Install [just](https://github.com/casey/just) with `cargo install just`, `brew install just`, `winget install Casey.Just`, or `scoop install just`. On NixOS, or anywhere with flakes, `nix develop` gives a shell that already has it, and `nix develop -c just check` runs a recipe without opening one. Run `just` to list the recipes:
+The `justfile` in the repository root runs every project command. Install [just](https://github.com/casey/just) with `cargo install just`, `brew install just`, `winget install Casey.Just`, or `scoop install just`. On NixOS, or anywhere with flakes, `nix develop` gives a shell that already has it, and `nix develop -c just check` runs a recipe without opening one. It needs just 1.38 or later. Run `just` to list the recipes:
 
 | Command | What it runs |
 |---|---|
@@ -490,7 +490,7 @@ The `justfile` in the repository root runs every project command. Install [just]
 
 Tauri needs the server program for the desktop app to exist, so the recipes that build or lint Rust build it first (`just sidecar`).
 
-CI runs the Rust tests on Linux, macOS, and Windows, and the other steps on Linux. The `justfile` sets PowerShell as the Windows shell. The commands are the same ones that `.github/workflows/ci.yml` runs.
+CI runs the Rust tests on Linux, macOS, and Windows, and the other steps on Linux. The `justfile` sets PowerShell as the Windows shell. Every recipe is written to run there, but CI does not run `just` on Windows. The boundary check runs through `bash`, which Git for Windows provides. The commands are the same ones that `.github/workflows/ci.yml` runs.
 
 `bun run tauri build` builds the installers for your OS. They appear under `target/release/bundle/`.
 

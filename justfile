@@ -61,8 +61,8 @@ lint-rust: sidecar
 
 # Check the module boundary rules
 boundaries:
-    scripts/check-boundaries.sh --self-test
-    scripts/check-boundaries.sh
+    bash scripts/check-boundaries.sh --self-test
+    bash scripts/check-boundaries.sh
 
 # Type-check, lint, and format-check the webview
 [working-directory: 'src/apps/desktop']
@@ -72,14 +72,25 @@ lint-web:
     bun run format:check
 
 # Format the Rust and webview code
-fmt:
+fmt: fmt-web
     cargo fmt --all
-    cd src/apps/desktop && bunx prettier --write .
+
+# Format the webview code
+[working-directory: 'src/apps/desktop']
+fmt-web:
+    bunx prettier --write .
 
 # Run everything the Linux CI job runs, in the order of ci.yml
 check: sidecar lint-rust test-rust boundaries setup lint-web test-web e2e-install e2e build
 
 # Remove build output
+[unix]
 clean:
     cargo clean
     rm -rf src/apps/desktop/dist src/apps/desktop/test-results src/apps/desktop/src-tauri/binaries
+
+# Remove build output
+[windows]
+clean:
+    cargo clean
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue src/apps/desktop/dist, src/apps/desktop/test-results, src/apps/desktop/src-tauri/binaries
