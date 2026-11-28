@@ -11,8 +11,8 @@
 </script>
 
 <!-- A screen-reader-only polite region that stays mounted. Each new text is a
-  new node: WebKitGTK sends an accessibility event for an inserted node, and
-  not for the text of an existing node that changed. -->
+  new node, the form that a screen reader is most likely to report. WebKitGTK
+  2.54 sent no event for this or for two other markups (see 0007 QA report). -->
 <p aria-live="polite" aria-atomic="true" {role} class="sr-only">
   {#key announcement}<span>{announcement ?? ""}</span>{/key}
 </p>

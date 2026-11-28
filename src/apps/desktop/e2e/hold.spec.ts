@@ -122,7 +122,7 @@ test.describe("office hold", () => {
     await expect(region).toHaveText("Office released from hold");
   });
 
-  test("each announcement is a new node, which WebKitGTK reports to a screen reader", async ({
+  test("each announcement is a new node of the live region", async ({
     page,
   }) => {
     await openPanel(page);
