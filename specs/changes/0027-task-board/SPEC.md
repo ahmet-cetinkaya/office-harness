@@ -215,7 +215,7 @@ The person moves a card while the background server is not reachable. The card g
 - **A6:** The card cap of 200 is four times the 50 cards per column that SC-004 measures, and keeps a mistake from filling the board without end. It is fixed, not a setting.
 - **A7:** The title limit of 200 characters keeps a card readable; the note limit of 8,192 characters matches the directive and task text limit (0011/FR-003). Characters are counted as Unicode code points, so one emoji can count as more than one character. A title refuses invisible format characters, so an emoji joined with a zero-width joiner is refused in a title.
 - **A8:** The board view is not part of the last view of 0003/FR-008; the desktop app still opens the panel or the scene. This keeps 0003 unchanged.
-- **A9:** The board shows every card of the office. The project switcher of the panel (0003/FR-005) does not filter the board; this stays open with the owner. A card has no project in this change.
+- **A9:** The board shows every card of the office. A card has no project in this change; 0028 adds the project and makes the project switcher of the panel (0003/FR-005) filter the board.
 - **A10:** The look of the board stays the existing plain style of the desktop app until the owner picks a look from mockups.
 - **A11:** The time of a card's last change is not shown. A fixed or relative time is an addition for a later change.
 - **A12:** Board changes add no entry to the action record, which holds the actions on agents (0001/FR-011).
@@ -227,7 +227,7 @@ The person moves a card while the background server is not reachable. The card g
 
 - Q: What does the first version of the task board hold? → A: Only a plain board, one per office, with the four columns To do, Doing, Blocked, and Done. No cost or token view, no meeting room, no work across machines, and no scheduled temps. Enrichment is after the first release (Out of scope).
 - Q: Does the spec fix the look of the board? → A: No. The spec gives behavior only; the owner picks a look from mockups later (A10).
-- Q: Which features wait? → A: Undo of a delete, field-level merging of two windows' changes, ordering of cards inside a column, the time of the last change, and the project filter wait for a later change.
+- Q: Which features wait? → A: Undo of a delete, field-level merging of two windows' changes, ordering of cards inside a column, the time of the last change, and the project filter wait for a later change (the project filter then came in 0028 by owner decision).
 
 ## Out of scope
 
@@ -238,7 +238,7 @@ The person moves a card while the background server is not reachable. The card g
 - More than one board per office, columns that the person names, adds, or removes, and limits per column.
 - Ordering cards inside a column, Undo of a delete, field-level merging of two windows' changes, and the time of the last change (A4, A5, A11).
 - Labels, due dates, priorities, sub-tasks, checklists, comments, attachments, and links between cards.
-- A card history, an archive of Done cards, and a search or filter of the board.
+- A card history, an archive of Done cards, and a search of the board. The filter by the project switcher is in 0028.
 - Import, export, and copying of the board.
 - Notifications and Needs you items for board changes (PB-2).
 - A visual design of the board beyond the existing elements of the desktop app (A10).

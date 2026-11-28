@@ -25,4 +25,4 @@ Spec: `specs/changes/0027-task-board/SPEC.md` · Status: draft · Shape: full ·
 
 - **Size rule:** 10 FR; the second draft held about 35 single behaviors, so editing, project, assignee, and delete moved to 0028 and agent access to 0029. The three specs ship in the order 0027, 0028, 0029; each merges its requirements into the living spec `task-board` when it ships.
 - **Owner decisions applied:** enrichment is after the first release; Undo, field-level merging, ordering inside a column, and the time of the last change are cut; delete uses a plain confirmation; CEO and team lead agents read and change the board, members cannot.
-- **Open with the owner:** whether the project switcher of the panel filters the board (0027, A9). The spec says it does not.
+- **Owner decision applied:** the project switcher of the panel filters the board (0028, FR-007); a card with no project shows under All projects only.

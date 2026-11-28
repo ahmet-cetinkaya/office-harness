@@ -125,6 +125,7 @@ A team lead agent reads the board, makes a card for one of its members, and move
 - **A2:** A board agent has no Undo; there is none for the person either (0028, A3). An agent that deletes a card by mistake makes the card again.
 - **A3:** A board agent may assign a card to any agent of the office and set any project of the office, as the person may; a lead is not limited to its own descendants.
 - **A4:** The changer is the person or the agent's name at the change, as text.
+- **A5:** The project filter of 0028 (FR-007) is a view of one window. A board agent reads and changes the whole board, whatever project the person picked.
 
 ## Clarifications
 

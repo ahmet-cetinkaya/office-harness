@@ -19,10 +19,10 @@ Spec: `specs/changes/0028-card-details/SPEC.md` · Status: draft · Shape: full 
 - [x] At most three `[NEEDS CLARIFICATION]` markers; none inside an approved spec.
 - [x] No vague words and no placeholders without an observable.
 - [x] Terminology is consistent across stories, requirements, entities, and criteria.
-- [x] The spec meets the spec contract's Size rule (6 FR; follows 0027).
+- [x] The spec meets the spec contract's Size rule (7 FR; follows 0027).
 
 ## Notes
 
-- **Size rule:** 6 FR; follows 0027. The three specs ship in the order 0027, 0028, 0029; each merges its requirements into the living spec `task-board` when it ships.
+- **Size rule:** 7 FR; follows 0027. The three specs ship in the order 0027, 0028, 0029; each merges its requirements into the living spec `task-board` when it ships.
 - **Owner decisions applied:** enrichment is after the first release; Undo, field-level merging, ordering inside a column, and the time of the last change are cut; delete uses a plain confirmation; CEO and team lead agents read and change the board, members cannot.
-- **Open with the owner:** whether the project switcher of the panel filters the board (0027, A9). The spec says it does not.
+- **Owner decision applied:** the project switcher of the panel filters the board (0028, FR-007); a card with no project shows under All projects only.
