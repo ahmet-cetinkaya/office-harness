@@ -35,6 +35,39 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      # A pull request runs only the steps that its changed files can affect.
+      # A push to main runs every step, so main is always fully checked.
+      - name: Find the changed areas
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "web=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # When in doubt, run the step: a failed diff or an empty list runs everything.
+          changed="$(git diff --no-renames --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")" || changed=""
+          echo "$changed"
+          rust=true
+          web=true
+          if [ -n "$changed" ]; then
+            rust=false
+            web=false
+            # Rust is everything under src/ outside the webview (this includes the SQL
+            # migrations that the code embeds), the Tauri crate, the sidecar script,
+            # the Rust tool configuration, and the workflow file itself.
+            outside_webview="$(grep -vE '^src/apps/desktop/' <<<"$changed" || true)"
+            rust_paths='^src/|(\.rs|Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|clippy\.toml|rustfmt\.toml|deny\.toml)$|^\.cargo/|^scripts/|^\.github/workflows/ci\.yml$'
+            web_paths='^src/apps/desktop/|^(package\.json|bun\.lock)$|^\.github/workflows/ci\.yml$'
+            # A here-string, not a pipe: grep -q stops at its first match, and a pipe
+            # would fail with pipefail once the list is larger than the pipe buffer.
+            if grep -qE "$rust_paths" <<<"$outside_webview" || grep -qE '^src/apps/desktop/(src-tauri|scripts)/' <<<"$changed"; then rust=true; fi
+            if grep -qE "$web_paths" <<<"$changed"; then web=true; fi
+          fi
+          echo "rust=$rust" >> "$GITHUB_OUTPUT"
+          echo "web=$web" >> "$GITHUB_OUTPUT"
 
       - name: Install Linux system packages for Tauri
         if: runner.os == 'Linux'
@@ -62,30 +95,32 @@ jobs:
 
       # Tauri checks that the sidecar exists, so it is built before any clippy or Tauri run.
       - name: Prepare sidecar
+        if: steps.changes.outputs.rust == 'true' || steps.changes.outputs.web == 'true'
         working-directory: src/apps/desktop
         run: bun scripts/prepare-sidecar.ts
 
       - name: Rust format and lint
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.changes.outputs.rust == 'true'
         run: |
           cargo fmt --all --check
           cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Rust tests
+        if: steps.changes.outputs.rust == 'true'
         run: cargo test --workspace
 
       - name: Boundaries
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.changes.outputs.rust == 'true'
         run: |
           scripts/check-boundaries.sh --self-test
           scripts/check-boundaries.sh
 
       - name: Install JavaScript dependencies
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && (steps.changes.outputs.rust == 'true' || steps.changes.outputs.web == 'true')
         run: bun install --frozen-lockfile
 
       - name: Webview lint
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.changes.outputs.web == 'true'
         working-directory: src/apps/desktop
         run: |
           bun run check
@@ -93,18 +128,18 @@ jobs:
           bun run format:check
 
       - name: Webview tests
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.changes.outputs.web == 'true'
         working-directory: src/apps/desktop
         run: bun test src
 
       - name: Playwright
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.changes.outputs.web == 'true'
         working-directory: src/apps/desktop
         run: |
           bunx playwright install --with-deps chromium
           bun run e2e
 
       - name: Tauri build
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && (steps.changes.outputs.rust == 'true' || steps.changes.outputs.web == 'true')
         working-directory: src/apps/desktop
         run: bun run tauri build --no-bundle
