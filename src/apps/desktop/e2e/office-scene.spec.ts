@@ -555,6 +555,32 @@ test("a pushed status change is announced with the agent's name", async ({
   await expect(region).toHaveText("Ada, waiting for input");
 });
 
+test("each scene announcement is a new node of the live region", async ({
+  page,
+}) => {
+  await openScene(page);
+  const region = page
+    .locator('[role="region"][aria-labelledby="scene-heading"]')
+    .getByRole("status")
+    .first();
+  const pushStatus = (status: string) =>
+    page.evaluate((next) => {
+      window.__mockCore.pushEvent({
+        type: "agent.status",
+        agent_id: "agent-ada",
+        status: next,
+      });
+    }, status);
+
+  await pushStatus("waiting_for_input");
+  await expect(region).toHaveText("Ada, waiting for input");
+  const first = await region.locator("span").elementHandle();
+  await pushStatus("working");
+  await expect(region).not.toHaveText("Ada, waiting for input");
+
+  expect(await first?.evaluate((node) => node.isConnected)).toBe(false);
+});
+
 test("deleting the focused desk's agent moves focus forward, back, or to the empty state", async ({
   page,
 }) => {
