@@ -9,13 +9,14 @@ plan:
 
 ## Intent
 
-The person keeps the plan of the office in their head or in another tool: which tasks wait, which run now, which are stuck, and which are finished. The office shows what each agent was told (0011), but not the list of tasks that the person wants done. This change adds one plain task board per office with four columns: To do, Doing, Blocked, and Done. The person makes, edits, moves, orders, and deletes cards, each with a title, an optional note, an optional project, and an optional agent of the office as assignee. The board is kept with the office, survives restarts, shows each change in every open window, and can be used with the keyboard alone and with a screen reader.
+The person keeps the plan of the office in their head or in another tool: which tasks wait, which run now, which are stuck, and which are finished. The office shows what each agent was told (0011), but not the list of tasks that the person wants done. This change adds one plain task board per office with four columns: To do, Doing, Blocked, and Done. The person makes, edits, moves, orders, and deletes cards, each with a title, an optional note, an optional project, and an optional agent of the office as assignee. A CEO agent or a team lead agent can also read the board and change its cards under the same rules as the person; a member agent cannot. The board is kept with the office, survives restarts, shows each change in every open window, records who made the last change of each card, and can be used with the keyboard alone and with a screen reader.
 
 ## Context
 
 - Source of truth: `docs/PRD.md` names no release item for a task board. The owner decided on 2026-11-28 that the first version is a plain board only (Clarifications).
 - This change makes the new capability `task-board`. No living spec exists for it, so the requirements are all ADDED; no existing requirement is modified or removed.
-- The change depends on 0001 (the office, projects, agents, the desktop app, the office token, the owner-only storage, durability, keyboard access, and the not-reachable and not-authorized states), 0003 (the panel), 0005 (the office scene), and 0020 (a temp is removed when it ends). Ids such as `0001/FR-007` point to requirements in the living specs under `specs/`.
+- The change depends on 0001 (the office, projects, agents, the desktop app, the office token, the owner-only storage, durability, keyboard access, and the not-reachable and not-authorized states), 0003 (the panel), 0005 (the office scene), 0020 (a temp is removed when it ends), 0002 (the roles CEO, team lead, and member, and the refusal of an agent request), and 0007 (the hold switch and the rate limits). Ids such as `0001/FR-007` point to requirements in the living specs under `specs/`.
+- The owner decided on 2026-11-28 that the board is read and changed by the person and by agents whose role is CEO or team lead; a member agent cannot (Clarifications).
 - The idea comes from issue boards in other tools that show an assignee and the time of the last change on each card. No code is taken from them; this spec describes behavior only.
 - The task line of 0011 is a different thing: it shows the last directive an agent received. The board does not read, set, or clear it, and the task line does not read the board.
 - The look of the board is not part of this change. The board uses the existing elements of the desktop app; the owner picks a look later from mockups (User experience).
@@ -26,16 +27,20 @@ The person keeps the plan of the office in their head or in another tool: which 
 | Term | Meaning |
 |---|---|
 | Person, office, project, agent, desktop app, background server, office token | As defined in 0001. The person is the user of 0001. |
+| Role, CEO, team lead, member | As defined in 0002/FR-001. |
+| Hold, rate limit | As defined in 0007. |
+| Board agent | An agent whose role is CEO or team lead. Only a board agent may read or change the board (FR-007). |
 | Panel | As defined in 0003. |
 | Office scene | As defined in 0005. |
 | Temp | As defined in 0020. A temp is an agent and can be an assignee. |
 | Board | The one task board of an office. It has four columns and holds the office's cards. |
 | Column | One of the four fixed lists of the board, in this order: To do, Doing, Blocked, Done. |
 | Status | The column of a card: `todo`, `doing`, `blocked`, or `done`, shown as To do, Doing, Blocked, and Done. |
-| Card | One task on the board, with a title, a note, a status, a place, a project, and an assignee. |
+| Card | One task on the board, with a title, a note, a status, a place, a project, an assignee, and the changer of its last change. |
 | Place | The position of a card inside its column, counted from 1 at the top. |
 | Assignee | The one agent of the office that the person names for a card, or none. |
-| Last change | The last time the person made, edited, moved, or ordered the card. An Undo keeps the last change that the card had before its delete. A change that the office makes (FR-008), or a move of another card, does not set it. |
+| Last change | The last time the person or a board agent made, edited, moved, or ordered the card. An Undo keeps the last change, and its changer, that the card had before its delete. A change that the office makes (FR-008), or a move of another card, does not set it. |
+| Changer | Who made the last change of a card: the person, or a board agent by the name that it had at that change. The card shows it as text. A later rename or delete of that agent does not change it. |
 | Board view | The desktop app view that shows the board (FR-001). |
 | Window | One open desktop app window. Each window shows the board as the office keeps it. |
 | Kept | The background server has stored the change, so it survives a restart. |
@@ -46,21 +51,23 @@ The person keeps the plan of the office in their head or in another tool: which 
 
 ## Data flow and trust boundary
 
-- **Boundary:** the person's desktop app connection, which presents the office token (0001/FR-007). The agent's connection (0002) gets no board request (PB-4).
-- **Into the office:** from the person, a new card, an edit, a move, an order change, a delete, and an Undo. The office checks every field when it receives the change (FR-002).
-- **Out of the office, to the person:** the board in every open window (FR-007).
+- **Boundary:** the person's desktop app connection, which presents the office token (0001/FR-007), and the connection of a board agent (0002). The connection of a member agent, or of an agent without a role, gets no board request (PB-4).
+- **Into the office:** from the person, a new card, an edit, a move, an order change, a delete, and an Undo; from a board agent, the same changes except Undo. The office checks the sender's role and every field when it receives the change (FR-002, FR-007).
+- **Out of the office, to the person:** the board in every open window (FR-007). **To a board agent:** the board, when it asks (FR-007).
 - **Kept by the background server:** the board and every card, readable only by the OS user who owns the office (FR-007, 0001/FR-009).
 - **Threats and controls:**
 
   | Threat | Control |
   |---|---|
-  | An agent reads or changes the board, for example to hide a blocked task. | The agent's connection has no board request; any such request is refused and recorded (PB-4). |
+  | A member agent, or an agent without a role, reads or changes the board, for example to hide a blocked task. | Only a board agent may; any other agent request is refused with the reason and recorded (FR-007, PB-4). |
+  | A board agent floods or loops over the board, or changes it while it or the office is on hold. | The hold and the rate limits of 0007 apply to its requests; a refused request is recorded (FR-007, 0002/FR-009). |
+  | An agent changes a card and the person cannot tell who did it. | Each card shows who made its last change (FR-001, FR-007). |
   | A title or note carries control characters or escape codes that change what the person sees. | The text rules refuse them when the office receives the change (FR-002); the board shows every text as plain text and applies nothing in it (FR-010). |
   | A text holds direction marks that reorder the text around it, so a card reads as something else. | The direction of one text never changes the order of another text (FR-010). |
-  | Two windows change one card at once, and one change is lost without a word. | A change based on a field that changed after the window showed it is refused with the reason (FR-006). |
+  | Two windows, or a window and an agent, change one card at once, and one change is lost without a word. | A change based on a field that changed after the sender last saw it is refused with the reason (FR-006). |
   | A move looks done in the window but the office did not keep it. | A change that is not kept puts the card back where it was and says why (FR-005). |
   | Other users of the machine read the card texts. | The board is kept readable only by the office owner (FR-007). |
-  | A loop or a mistake fills the board until the office slows down. | The card cap bounds the board at 1,000 cards (FR-002). |
+  | A loop, a mistake, or an agent fills the board until the office slows down. | The card cap bounds the board at 1,000 cards for every sender (FR-002). |
 
 ## User stories
 
@@ -133,27 +140,45 @@ The person deletes a card from its action list or with a key. The card leaves th
 5. Given the window offers Undo for card C1, When the person deletes card C2 in the same window, Then the window offers Undo for C2 only.
 6. Given another window shows the board, When the person deletes a card in one window, Then the other window shows the card gone within 2 seconds and does not offer Undo.
 
+### US5: A CEO or a team lead agent works on the board (Priority: P2)
+
+A team lead agent reads the board, makes a card "Review the build script" for one of its members, and moves it to Doing. The person sees the card appear and move in the open window, with the lead named as the changer. A member agent that asks for the board is refused with the reason, and the refusal is recorded.
+
+**Why this priority:** the person's own board (US1) already tracks tasks. Agent access lets the leads that run the work keep the board current, but the board stays useful without it.
+
+**Independent test:** with a team lead agent L and a member agent M in the office, L reads the board, makes a card assigned to M, and moves it to Doing. Within 2 seconds the open window shows the card in Doing with L as the changer, and it gives 0 announcements and 0 Needs you items. M asks to read the board and to make a card: both are refused with the reason that its role is member, and 2 refusals are recorded. The person puts L on hold, then L asks for the board: it is refused with the reason that it is on hold.
+
+**Scenarios:**
+
+1. Given a board agent, When it asks for the board, Then it gets every card with its fields and its changer, in the order of each column.
+2. Given a board agent, When it makes, edits, moves, orders, or deletes a card, Then the office applies the rules of FR-002, FR-003, and FR-006 as for the person, and shows the result in every open window within 2 seconds.
+3. Given a card that a board agent changed last, When the person looks at the card, Then the card shows that agent's name as the changer and the time since the change.
+4. Given a member agent, or an agent without a role, When it asks to read or change the board, Then the office refuses it, tells it the reason in the answer, and records the refusal; no card changes.
+5. Given a board agent is on hold, or the office is on hold, or it is beyond a rate limit, When it asks to read or change the board, Then the office refuses it with the reason and records the refusal.
+6. Given a board agent edits a card that the person moved after the agent last read it, When both change the same field, Then the office keeps the first change it receives and refuses the other with the reason that the card changed (FR-006); the agent gets the reason in its answer.
+7. Given a card that a board agent changed, When the agent is deleted, Then the card shows the name it had at the change.
+
 ## Requirements
 
 ### ADDED
 
-- **FR-001** (US1): THE SYSTEM SHALL keep one board per office with the four columns To do, Doing, Blocked, and Done in this fixed order; SHALL show it in one board view of the desktop app that the person opens from the panel and from the office scene, and leaves for the panel, with one action each, keyboard included; WHILE the board view waits for the board, THE SYSTEM SHALL say that it loads the board and show no column count; SHALL show each card in the column of its status at its place, with its title, its project name and its assignee's name when set, and the time since its last change, all as text; SHALL show each column with its name and its number of cards, and a column with no cards with the text that it has no cards; and WHEN the board has no cards, THE SYSTEM SHALL say that the board has no cards and offer New card.
-- **FR-002** (US1, US2, US3): WHEN the office receives a new or edited card, THE SYSTEM SHALL keep it only IF its title meets the text rules of a title, its note meets the text rules of a note, its status is one of the four, its project, when set, is a project of the office, its assignee, when set, is an agent of the office, and, for a new card, the board holds fewer cards than the card cap; IF any rule breaks, THEN THE SYSTEM SHALL keep nothing, name each failing field and its rule, or the card cap and its value, and leave an edited card as it was; and THE SYSTEM SHALL put a new card at the end of the column of its status.
-- **FR-003** (US1, US3): WHEN the person moves a card to another column or to another place in its column, by pointer or by keyboard, THE SYSTEM SHALL keep the new column as the card's status and the new place, keep the order of the other cards in both columns, and keep focus on the moved card; THE SYSTEM SHALL let the person, with the keyboard alone, move the focused card one place up or down, to the previous or the next column, and to any column from the card's action list, where a move to another column without a pointer, a change of status in the card's form included, puts the card at the end of that column; and IF a keyboard move would take a card past the first or last place, or past the first or last column, THEN THE SYSTEM SHALL change nothing and say that the card is already there.
-- **FR-004** (US1, US2): WHEN the office keeps or refuses a change that the person made in a window, or FR-005 reports it as not confirmed, THE SYSTEM SHALL announce it once to assistive technology in that window within 1 second: for a move, the card's title, its column, and its place as "n of m"; for a new card, a delete, or an Undo, the card's title and its column; for a refusal, the change and its reason; THE SYSTEM SHALL NOT announce changes made in other windows; and IF the focused card is deleted in another window, THEN THE SYSTEM SHALL move focus as a delete does (US4 scenario 1) and announce once that the card was deleted in another window; and IF the focused card is moved to another column in another window, THEN THE SYSTEM SHALL keep focus on the card and announce once its new column and its place as "n of m".
-- **FR-005** (US2): IF the office does not keep a new card, an edit, a move, an order change, a delete, or an Undo, because a rule of FR-002 refuses it, the card changed or was deleted in another window (FR-006), or the office could not store it, or IF the window gets no answer from the background server within 2 seconds after the person made the change, THEN THE SYSTEM SHALL, within those 2 seconds, show the card of that change in that window as it was before the change: in the column and place it had, not at all for a new card, and again for a delete; SHALL say in that window which change was not kept, or not confirmed, and why; SHALL keep the text that the person typed in an open form; and SHALL change no other card; and WHEN the window reaches the background server again, THE SYSTEM SHALL show the board as the office keeps it.
-- **FR-006** (US2): THE SYSTEM SHALL apply the changes to one board one at a time, in the order that the office receives them; IF a change sets a field of a card (the title, the note, the status and place together, the project, or the assignee) that a change from another window set after the sending window last showed that card, or the card was deleted, THEN THE SYSTEM SHALL refuse the change under FR-005 with the reason that the card changed, or was deleted, in another window; and THE SYSTEM SHALL keep a change that sets only fields that nobody else changed, also when another window changed other fields of the same card; a move of one card shifts the places of the cards after it but does not count as a change of those cards.
-- **FR-007** (US1, US2): THE SYSTEM SHALL show each kept change in every open window within 2 seconds, with no reload; SHALL keep the board, every card with its fields, and the order of every column across server and machine restarts, readable only by the OS user who owns the office (0001/FR-009); and SHALL let only a client that presents a valid office token (0001/FR-007) read or change the board.
-- **FR-008** (US3, US4): WHEN an agent that is the assignee of cards is deleted, or removed because it was a temp that ended (0020/FR-006), THE SYSTEM SHALL clear the assignee of those cards, and WHEN a project is deleted, THE SYSTEM SHALL clear the project of its cards, in both cases keeping every other field, the column, the place, and the last change, and showing the result in every window within 2 seconds; and THE SYSTEM SHALL show an assignee by the agent's current name and a project by its current name.
-- **FR-009** (US4): WHEN the person deletes a card, THE SYSTEM SHALL remove it at once with no confirmation, SHALL say in that window that the card was deleted, and SHALL offer Undo there, reachable from the keyboard and with no time limit, until the person deletes another card in that window or closes the window; WHEN the person presses Undo, THE SYSTEM SHALL restore the card with its title, note, status, project, assignee, and last change at its old place, or at the end of its column when the column holds fewer cards than that place, SHALL leave out an assignee or project that no longer exists and say which one; THE SYSTEM SHALL count an Undo as a new card for the card cap (FR-002); and IF the Undo is not kept, THEN THE SYSTEM SHALL handle it under FR-005 and keep offering Undo.
+- **FR-001** (US1, US5): THE SYSTEM SHALL keep one board per office with the four columns To do, Doing, Blocked, and Done in this fixed order; SHALL show it in one board view of the desktop app that the person opens from the panel and from the office scene, and leaves for the panel, with one action each, keyboard included; WHILE the board view waits for the board, THE SYSTEM SHALL say that it loads the board and show no column count; SHALL show each card in the column of its status at its place, with its title, its project name and its assignee's name when set, the time since its last change, and who made it (the changer), all as text; SHALL show each column with its name and its number of cards, and a column with no cards with the text that it has no cards; and WHEN the board has no cards, THE SYSTEM SHALL say that the board has no cards and offer New card.
+- **FR-002** (US1, US2, US3, US5): WHEN the office receives a new or edited card, THE SYSTEM SHALL keep it only IF its title meets the text rules of a title, its note meets the text rules of a note, its status is one of the four, its project, when set, is a project of the office, its assignee, when set, is an agent of the office, and, for a new card, the board holds fewer cards than the card cap; IF any rule breaks, THEN THE SYSTEM SHALL keep nothing, name each failing field and its rule, or the card cap and its value, and leave an edited card as it was; and THE SYSTEM SHALL put a new card at the end of the column of its status.
+- **FR-003** (US1, US3, US5): WHEN the person moves a card to another column or to another place in its column, by pointer or by keyboard, THE SYSTEM SHALL keep the new column as the card's status and the new place, keep the order of the other cards in both columns, and keep focus on the moved card; THE SYSTEM SHALL let the person, with the keyboard alone, move the focused card one place up or down, to the previous or the next column, and to any column from the card's action list, where a move to another column without a pointer, a change of status in the card's form included, puts the card at the end of that column; and IF a keyboard move would take a card past the first or last place, or past the first or last column, THEN THE SYSTEM SHALL change nothing and say that the card is already there.
+- **FR-004** (US1, US2): WHEN the office keeps or refuses a change that the person made in a window, or FR-005 reports it as not confirmed, THE SYSTEM SHALL announce it once to assistive technology in that window within 1 second: for a move, the card's title, its column, and its place as "n of m"; for a new card, a delete, or an Undo, the card's title and its column; for a refusal, the change and its reason; THE SYSTEM SHALL NOT announce changes made in other windows or by an agent; and IF the focused card is deleted in another window or by an agent, THEN THE SYSTEM SHALL move focus as a delete does (US4 scenario 1) and announce once that the card was deleted elsewhere; and IF the focused card is moved to another column in another window or by an agent, THEN THE SYSTEM SHALL keep focus on the card and announce once its new column and its place as "n of m".
+- **FR-005** (US2): IF the office does not keep a new card, an edit, a move, an order change, a delete, or an Undo, because a rule of FR-002 refuses it, the card changed or was deleted in another window or by an agent (FR-006), or the office could not store it, or IF the window gets no answer from the background server within 2 seconds after the person made the change, THEN THE SYSTEM SHALL, within those 2 seconds, show the card of that change in that window as it was before the change: in the column and place it had, not at all for a new card, and again for a delete; SHALL say in that window which change was not kept, or not confirmed, and why; SHALL keep the text that the person typed in an open form; and SHALL change no other card; and WHEN the window reaches the background server again, THE SYSTEM SHALL show the board as the office keeps it.
+- **FR-006** (US2, US5): THE SYSTEM SHALL apply the changes to one board one at a time, in the order that the office receives them, whether a window or a board agent sends them; IF a change sets a field of a card (the title, the note, the status and place together, the project, or the assignee) that a change from another window or from an agent set after the sender last saw that card, or the card was deleted, THEN THE SYSTEM SHALL refuse the change with the reason that the card changed, or was deleted, elsewhere, and for a window handle it under FR-005; and THE SYSTEM SHALL keep a change that sets only fields that nobody else changed, also when another window or an agent changed other fields of the same card; a move of one card shifts the places of the cards after it but does not count as a change of those cards.
+- **FR-007** (US1, US2, US5): THE SYSTEM SHALL show each kept change in every open window within 2 seconds, with no reload; SHALL keep the board, every card with its fields, and the order of every column across server and machine restarts, readable only by the OS user who owns the office (0001/FR-009); SHALL let only a client that presents a valid office token (0001/FR-007) read or change the board, and on an agent's connection only a board agent, which then reads the board and makes, edits, moves, orders, and deletes cards under the rules of FR-002, FR-003, and FR-006; IF an agent that is a member, or has no role, asks to read or change the board, or a board agent asks while it or the office is on hold or beyond a rate limit (0002/FR-009, 0007), THEN THE SYSTEM SHALL refuse the request, tell the agent the reason in its answer, record the refusal, and change no card; and SHALL record on each card the changer of its last change and show a change by a board agent in every open window like a change by the person.
+- **FR-008** (US3, US4): WHEN an agent that is the assignee of cards is deleted, or removed because it was a temp that ended (0020/FR-006), THE SYSTEM SHALL clear the assignee of those cards, and WHEN a project is deleted, THE SYSTEM SHALL clear the project of its cards, in both cases keeping every other field, the column, the place, the last change, and its changer, and showing the result in every window within 2 seconds; and THE SYSTEM SHALL show an assignee by the agent's current name and a project by its current name.
+- **FR-009** (US4): WHEN the person deletes a card, THE SYSTEM SHALL remove it at once with no confirmation, SHALL say in that window that the card was deleted, and SHALL offer Undo there, reachable from the keyboard and with no time limit, until the person deletes another card in that window or closes the window; WHEN the person presses Undo, THE SYSTEM SHALL restore the card with its title, note, status, project, assignee, last change, and changer at its old place, or at the end of its column when the column holds fewer cards than that place, SHALL leave out an assignee or project that no longer exists and say which one; THE SYSTEM SHALL count an Undo as a new card for the card cap (FR-002); and IF the Undo is not kept, THEN THE SYSTEM SHALL handle it under FR-005 and keep offering Undo.
 - **FR-010** (US1, US3): THE SYSTEM SHALL show every title and note exactly as kept, as plain text, without applying any control character, terminal escape code, or markup in it; SHALL keep the direction characters of one text from changing the order of any other text on the screen; SHALL wrap a long title, and a long word with no space, inside its card so that the board view does not scroll sideways at 360 px width or at 200% zoom; and SHALL show the full note in the card's details.
 
 ### PRESERVED
 
-- **PB-1:** The agent panel stays as before: the agent list shows the name, project, status, last output line, and task line of every agent (0003/FR-002), and the task line comes only from a received directive or the person's own edit (0011/FR-002, 0011/FR-003). A card, its assignee, or a move of it changes no task text and types nothing into any terminal.
-- **PB-2:** The Needs-you queue stays as before: it adds, orders, and removes items only for the attention events of 0008 (0008/FR-001 to 0008/FR-005). A board change adds no Needs you item and no notification (0003/FR-006).
+- **PB-1:** The agent panel stays as before: the agent list shows the name, project, status, last output line, and task line of every agent (0003/FR-002), and the task line comes only from a received directive or the person's own edit (0011/FR-002, 0011/FR-003). A card, its assignee, or a move of it, by the person or by a board agent, changes no task text and types nothing into any terminal.
+- **PB-2:** The Needs-you queue stays as before: it adds, orders, and removes items only for the attention events of 0008 (0008/FR-001 to 0008/FR-005). A board change, by the person or by an agent, adds no Needs you item and no notification (0003/FR-006).
 - **PB-3:** Scheduled directives stay as before: schedules, their runs, their holds and limits, and the schedules view (0025/FR-001 to 0025/FR-014) do not read or change the board, and a board change does not make, change, or run a schedule.
-- **PB-4:** The agent's connection to the office gets no new request. An agent request to read or change the board is refused and recorded as every request outside the allowlist is (0002/FR-009, 0025/PB-5).
+- **PB-4:** The agent's connection to the office gets no other new request than the board request of a board agent (FR-007). Every other agent request, and a board request of a member agent or of an agent without a role, is refused and recorded as every request outside the allowlist is (0002/FR-009, 0025/PB-5). The tree rules and the holds of 0002 and 0007 stay as before.
 - **PB-5:** office-harness sends no office data, the board included, outside the user's machine (0001/FR-005).
 - **PB-6:** Every desktop app action is available from the keyboard, the actions of this change included, and every status shows as text, never color alone (0001/FR-014, 0001/FR-028).
 - **PB-7:** When the desktop app opens, it opens the panel or the office scene as the last view says (0003/FR-008). The board view is not a last view (A9).
@@ -172,6 +197,11 @@ The person deletes a card from its action list or with a key. The card leaves th
 2. Without a pointer drag: the person gives the card focus and uses a key, or opens the card's action list and picks a column or a move up or down.
 3. The card shows at its new place; a screen reader says where it went.
 
+**Flow (a board agent changes a card):**
+
+1. The agent changes a card.
+2. The open window shows the card in its new place within 2 seconds, with the agent's name as the changer; the window announces nothing and moves no focus.
+
 **Flow (the person deletes a card):**
 
 1. The person deletes the focused card with a key or from its action list.
@@ -184,7 +214,7 @@ The person deletes a card from its action list or with a key. The card leaves th
 | Loading | The board view says that it loads the board; no column shows a count until the board arrives. | FR-001 |
 | Empty board | The four columns, each with the count 0 and the text that it has no cards; the board says that it has no cards and offers New card. | US1 scenario 1, FR-001 |
 | Empty column | The column's name, the count 0, and the text that it has no cards. | FR-001 |
-| Board with cards | Each card in its column with title, project, assignee, and the time since its last change, as text. | FR-001, US1 scenario 6 |
+| Board with cards | Each card in its column with title, project, assignee, the time since its last change, and its changer, as text. | FR-001, US1 scenario 6 |
 | Card details | The full title and the full note as plain text, with every field. | FR-010 |
 | Form refused | The form names each failing field and its rule, or the card cap and its value; the typed text stays. | FR-002, FR-005 |
 | Change not kept | The card is where it was before; the window says which change was not kept and why. | FR-005, US2 scenarios 1 and 2 |
@@ -192,6 +222,7 @@ The person deletes a card from its action list or with a key. The card leaves th
 | Already first or last | Nothing moves; the window and a screen reader say that the card is already there. | FR-003, US3 scenario 3 |
 | Card deleted | The card is gone; the window says so and offers Undo. | FR-009, US4 scenario 1 |
 | Undo restored part | The card is back; the window names the assignee or project that is gone. | FR-009, US4 scenario 4 |
+| Changed by an agent | The card shows the agent's name and the time since its change; the window announces nothing. | FR-001, FR-007, US5 scenario 3 |
 | Server not reachable or not authorized | The 0001 states show before the board view (0001/FR-026, 0001/FR-027); a change made while the server is lost is not kept and says why. | FR-005, US2 scenario 1 |
 
 **Design:** the board view is one new view of the desktop app, built from its existing list, form, and menu elements, and adds no new visual style. The look of the columns and cards is not fixed by this change; the owner picks one from mockups later. A look picked after approval is a spec change.
@@ -200,8 +231,8 @@ The person deletes a card from its action list or with a key. The card leaves th
 
 - The person can do every action from the keyboard, with a visible focus: open the board view, New card, edit, each move, delete, Undo, and the action list. Escape closes the form and the action list and changes nothing.
 - A drag is never the only way to move a card: the card's action list moves it with single actions (WCAG 2.2 success criterion 2.5.7).
-- Each column is a labelled group with its name and its count. A card's accessible name is its title; its accessible description holds its column, its place as "n of m", its project, its assignee, and the time since its last change.
-- Announcements follow FR-004: one per change made in that window, none for other windows, and no focus moves on its own except after a delete.
+- Each column is a labelled group with its name and its count. A card's accessible name is its title; its accessible description holds its column, its place as "n of m", its project, its assignee, its changer, and the time since its last change.
+- Announcements follow FR-004: one per change made in that window, none for other windows or agents, and no focus moves on its own except after a delete.
 - The status, the project, the assignee, and the time are text, never color or an icon alone.
 - Text meets WCAG 2.2 AA contrast (4.5:1 for normal text). At 360 px width and at 200% zoom the board view and the form reflow without sideways scrolling (FR-010).
 
@@ -210,7 +241,7 @@ The person deletes a card from its action list or with a key. The card leaves th
 | Entity | Represents | Key attributes | Identity and relationships |
 |---|---|---|---|
 | Board | The one task board of an office. | the four columns in fixed order, the order of the cards in each column | One per office. Kept with the office (FR-007). |
-| Card | One task on the board. | title, note (optional), status, place, project (optional), assignee (optional), last change | Unique id. Belongs to the board; in exactly one column at exactly one place. Refers to at most one project and at most one agent, each by id. The board holds at most 1,000 cards. |
+| Card | One task on the board. | title, note (optional), status, place, project (optional), assignee (optional), last change, changer of the last change | Unique id. Belongs to the board; in exactly one column at exactly one place. Refers to at most one project and at most one agent, each by id. The board holds at most 1,000 cards. |
 | Deleted card offered for Undo | The last card that one window deleted. | every field of the card as it was at the delete | At most one per window; gone when the window deletes another card or closes. |
 
 ## Success criteria
@@ -227,6 +258,8 @@ The person deletes a card from its action list or with a key. The card leaves th
 - **SC-010:** When the person deletes an agent that is the assignee of 3 cards, within 2 seconds the 3 cards show no assignee in every window, and 100% of their other fields, columns, and places are unchanged.
 - **SC-011:** The person assigns 10 cards to agents and moves them through the columns: the agents' terminals receive 0 inputs, their task texts change 0 times, and Needs you and the notifications get 0 new entries.
 - **SC-012:** With 1,000 cards on the board, a new card is refused with the card cap and its value, and 0 cards are added; a delete then lets 1 new card be kept.
+- **SC-013:** A board agent L reads the board and makes, edits, moves, orders, and deletes 1 card each, 5 of 5 kept under the rules of the person and shown in an open window within 2 seconds with L as the changer, 0 announcements, 0 Needs you items, and 0 inputs in any terminal.
+- **SC-014:** 5 of 5 requests of a member agent and 2 of 2 of an agent without a role to read or change the board are refused with the reason, and 7 refusals are recorded; 3 of 3 requests of a board agent while it, then the office, is on hold, and beyond a rate limit, are refused with the reason and recorded; 0 cards change.
 
 ## Edge cases
 
@@ -256,12 +289,17 @@ The person deletes a card from its action list or with a key. The card leaves th
 | The office cannot store a change, for example because the disk is full. | Failure | The same as above, with the reason that the office could not store it (FR-005). |
 | The background server stops without a clean stop. | Failure | At the next start, the board shows every kept change and none that was not kept (FR-007). |
 | A client without a valid office token asks for the board. | Unauthorized | Refused; the client gets no card (FR-007, 0001/FR-007). |
-| An agent asks the office to read or change the board. | Unauthorized | Refused and recorded (PB-4). |
+| A member agent, or an agent without a role, asks to read or change the board. | Unauthorized | Refused with the reason and recorded; no card changes (FR-007, PB-4). |
+| A board agent asks while it or the office is on hold, or beyond a rate limit. | Failure | Refused with the reason and recorded (FR-007). |
+| A board agent and a window change the same field of one card at once. | Concurrent | The first change that the office receives is kept; the other is refused with the reason (FR-006). |
+| The agent that made the last change is renamed or deleted. | Boundary | The card keeps the name it had at the change (A17). |
+| A board agent deletes a card that a window shows. | Concurrent | The window shows the card gone within 2 seconds, offers no Undo, and moves focus as after a delete (FR-004, FR-007). |
+| A role of an agent changes between two requests. | Boundary | Each request is judged by the role at that request (A15). |
 | The board holds many cards in one column. | Boundary | The column shows every card in its order, and scrolls only up and down (FR-001, FR-010). |
 
 ## Assumptions
 
-- **A1:** Only the person makes, edits, moves, orders, and deletes cards, through the desktop app. The first version is the person's own plan of the office, not an agent tool (Out of scope).
+- **A1:** The person makes, edits, moves, orders, and deletes cards through the desktop app. A board agent does the same except Undo, through its own connection, under the same rules; a member agent does not (FR-007).
 - **A2:** A card has a title, an optional note, a status that is one of the four columns, an optional project of the office, and an optional single assignee that is an agent of the office. The board does not check that the assignee belongs to the card's project, because a person can give a task of one project to an agent of another.
 - **A3:** The four columns are fixed in name, order, and count. Blocked has no reason field; the person writes the reason in the note.
 - **A4:** A card follows its project and its assignee by id. When the agent or project is deleted, the card keeps its text and loses only that link, because the task is still the person's even when its agent is gone. That clear is the office's change, so it does not set the last change.
@@ -274,6 +312,9 @@ The person deletes a card from its action list or with a key. The card leaves th
 - **A11:** The title limit of 200 characters keeps a card readable; the note limit of 8,192 characters matches the directive and task text limit (0011/FR-003, 0025 Terms). Characters are counted as Unicode code points, so one emoji can count as more than one character.
 - **A12:** The card cap of 1,000 is ten times the 100 cards that this change measures, and keeps a mistake from filling the board without end. It is fixed, not a setting.
 - **A13:** The look of the board stays the existing plain style of the desktop app until the owner picks a look from mockups.
+- **A15:** The refusal of a member agent follows 0002/FR-009: the agent gets the reason in its answer and the refusal is recorded. The role is the one the agent has when it asks; a later change of role changes what the agent may do at its next request.
+- **A16:** A board agent has no Undo. Undo is a button of one window for the person (A7); an agent that deletes a card by mistake makes the card again.
+- **A17:** A board agent may assign a card to any agent of the office and set any project of the office, as the person may (A2); the board does not limit a lead to its own descendants. The changer is kept as the agent's name at the change, as text, so a later rename or delete of the agent does not change it. The hold and the rate limits of 0007 are the same ones that bound the other agent actions; this change adds no new limit.
 - **A14:** The task line of 0011 is not related to the board and stays as it is (PB-1).
 
 ## Clarifications
@@ -281,11 +322,14 @@ The person deletes a card from its action list or with a key. The card leaves th
 ### Session 2026-11-28 (owner decision, given through the caller)
 
 - Q: What does the first version of the task board hold? → A: Only a plain board, one per office, with the four columns To do, Doing, Blocked, and Done. No cost or token view, no meeting room, no work across machines, and no scheduled temps (Out of scope).
+- Q: Who may read and change the board? → A: The person, and agents whose role is CEO or team lead (0002/FR-001); a member agent cannot. Agent changes show in every window like the person's, and each card records who made its last change. (Owner decision of 2026-11-28 relayed to the author; this replaces the first draft, which kept agents out.)
 - Q: Does the spec fix the look of the board? → A: No. The spec gives behavior only; the owner picks a look from mockups later (User experience, A13).
 
 ## Out of scope
 
-- Agents that read or change the board, and any agent request about it (PB-4). An agent that changes the board would need the tree rules, holds, and rate limits of 0002 and 0007, as schedules needed in 0025; the first version stays the person's own tool. A later change can add it.
+- Board access for a member agent or an agent without a role, and any agent action on the board other than reading it and making, editing, moving, ordering, and deleting cards (FR-007).
+- A tree rule for the board: a lead sees and changes the cards of the whole office, not only of its own descendants (A17).
+- Undo for an agent (A16).
 - A card that sends a directive, starts an agent, or sets an agent's task line (PB-1).
 - A cost or token view per card, the meeting room (0004), work across machines (0006), and scheduled temps.
 - More than one board per office, columns that the person names, adds, or removes, and limits per column.
@@ -295,7 +339,7 @@ The person deletes a card from its action list or with a key. The card leaves th
 - Import, export, and copying of the board.
 - Notifications and Needs you items for board changes (PB-2).
 - A visual design of the board beyond the existing elements of the desktop app (A13).
-- Size: 10 ADDED requirements, within the limit of 10; no split is proposed.
+- Size: 10 ADDED requirements, within the limit of 10; agent access is folded into FR-001, FR-006, and FR-007, and no split is proposed. A split of agent access into its own change is the fallback if the plan finds the 3 requirements too dense.
 
 ## Deviations
 

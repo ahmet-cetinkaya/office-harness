@@ -37,9 +37,9 @@ Spec: `specs/changes/0027-task-board/SPEC.md` · Status: draft · Shape: full ·
 
 ## Notes
 
-- **Size rule:** 10 ADDED requirements, at the limit of 10, and 0 MODIFIED or REMOVED. One capability, the task board. No split is proposed; Out of scope records the count.
-- **Shape:** `full`. The small shape does not apply: the spec has 4 user stories, 10 requirements, Key entities, and new user-interface states.
-- **New capability:** `task-board` has no living spec yet, so all requirements are ADDED. The 7 PRESERVED statements guard the agent panel and the task line (PB-1), the Needs-you queue (PB-2), scheduled directives (PB-3), the agent's connection (PB-4), local data (PB-5), keyboard and text status (PB-6), and the last view of 0003/FR-008 (PB-7).
+- **Size rule:** 10 ADDED requirements, at the limit of 10, and 0 MODIFIED or REMOVED. One capability, the task board. Agent access (owner decision of 2026-11-28) is folded into FR-001, FR-006, and FR-007 and adds user story US5 and SC-013 and SC-014. No split is proposed; Out of scope records the count and the fallback.
+- **Shape:** `full`. The small shape does not apply: the spec has 5 user stories, 10 requirements, Key entities, and new user-interface states.
+- **New capability:** `task-board` has no living spec yet, so all requirements are ADDED. The 7 PRESERVED statements guard the agent panel and the task line (PB-1), the Needs-you queue (PB-2), scheduled directives (PB-3), the agent's connection, now open only to board agents (PB-4), local data (PB-5), keyboard and text status (PB-6), and the last view of 0003/FR-008 (PB-7).
 - **Placeholder check:** `todo` in Terms is the name of a status value, not a placeholder.
 - **Text rules of the public repository:** 0 em dashes and 0 zero-width characters (`grep -P '[\x{2014}\x{200B}-\x{200D}\x{2060}\x{FEFF}]'`); no vendor, agent name, or office-internal word.
 - **Design:** no design exists; the owner picks a look from mockups later (User experience, A13). A design picked after approval is a spec change.
