@@ -167,6 +167,9 @@ test("a stopped agent shows its last output and takes no input", async ({
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Ada, stopped" }).click();
+  // As in openTerminal: below the fold xterm pauses its rendering, and the
+  // rows stay blank on a short viewport.
+  await page.locator(".xterm").scrollIntoViewIfNeeded();
 
   await expect(page.locator(RENDERED_ROWS)).toContainText("saved output");
   await page.getByLabel("Terminal of Ada", { exact: true }).press("x");
