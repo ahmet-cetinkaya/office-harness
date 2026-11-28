@@ -579,7 +579,7 @@ The bare `A1` to `A9` in the text above and in the notes name these assumptions 
 - **A4:** A new task and a continued session (0001/FR-024, 0001/FR-025) keep the same worktree and branch. The office does not commit, merge, push, or rebase anything.
 - **A5:** The choice exists only when an agent is created. Turning it on or off for an existing agent is out of scope.
 - **A6:** A kept worktree is no longer managed by the office after the delete: the office shows its folder and branch once, and the user owns them from then on.
-- **A7:** Only the user's own create offers the choice in this change. Agents that create agents under 0002 create them without own worktree.
+- **A7:** Only the user's own create offers the choice in this change. Agents that create agents under 0002 create them without own worktree. Later, 0020/FR-002 gives a temp an own worktree by default when its folder is in a git repository, unless its creator turns it off; an agent that is not a temp still gets none from another agent (0020/PB-1).
 - **A8:** Untracked files of the user's folder, such as local environment files, are not copied into a worktree; the create form says so.
 - **A9:** Files that git ignores are not counted as uncommitted changes and are removed with the worktree; the delete question says so (FR-005).
 
@@ -589,7 +589,7 @@ The bare `A1` to `A9` in the text above and in the notes name these assumptions 
 - Committing, pushing, or cleaning up an agent's work (A4).
 - Separate history per agent; worktrees share the repository's branches and commits.
 - Turning own worktree on or off for an existing agent (A5).
-- Own worktree for agents that agents create (A7).
+- Own worktree for agents that agents create (A7). Temps are the exception that 0020/FR-002 adds.
 - Managing kept worktrees after the agent is deleted (A6).
 - Copying untracked files into a worktree (A8).
 - Version control systems other than git.

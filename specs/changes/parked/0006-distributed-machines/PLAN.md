@@ -1,8 +1,10 @@
 ---
-status: draft
+status: blocked
 spec: specs/changes/parked/0006-distributed-machines/SPEC.md
 commits: per-task
 ---
+
+**Blocked:** the spec is parked on 2026-11-17 (deferred after the MVP). This plan is not run until the spec is unparked and approved again.
 
 <!-- Drafted 2026-11-17. Status: draft. Build starts after the owner approves spec 0006; the spec is a draft awaiting owner approval. 0002 and 0003 are merged to `main` (re-checked 2026-11-22), so the build waits for the owner's approval only. The owner or god approves the plan before the build. A security review of this plan passes before the build starts. -->
 

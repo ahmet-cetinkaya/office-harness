@@ -1,8 +1,10 @@
 ---
-status: approved
+status: blocked
 spec: specs/changes/parked/0004-meeting-room/SPEC.md
 commits: per-task
 ---
+
+**Blocked:** the spec is parked on 2026-11-28 (post-MVP; approved, built after the MVP). This plan is not run until the spec is unparked and approved again.
 
 <!-- Drafted 2026-11-17; plan approved by god on 2026-11-17. Status: approved (post-MVP, built after the MVP). The build starts after the MVP is complete (0005 merged and accepted), or earlier if the owner asks. -->
 
