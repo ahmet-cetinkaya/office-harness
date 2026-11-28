@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 spec: specs/changes/0027-task-board/SPEC.md
 also_spec: specs/changes/0028-safe-board-changes/SPEC.md
 commits: per-task
