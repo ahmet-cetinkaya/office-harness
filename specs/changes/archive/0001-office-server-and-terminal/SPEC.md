@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: server-and-terminal
 plan: .agents/work/office-server-and-terminal/plan.md
 supersedes:
 ---

@@ -1,6 +1,6 @@
 # Requirements checklist: 0023-drop-ended-commands
 
-Spec: `specs/changes/archive/0023-drop-ended-commands/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass (before r1: 16 of 16; no item changed state). No `[NEEDS CLARIFICATION]` marker. The two decisions in Clarifications are kept. Revised for spec review r1 of PR #136 (M1, L1). Every `0001/`, `0013/`, and `0017/` reference was checked against `specs/office/SPEC.md` and `specs/changes/archive/0017-orphan-sweep/SPEC.md` at 5272d6f.
+Spec: `specs/changes/archive/0023-drop-ended-commands/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass (before r1: 16 of 16; no item changed state). No `[NEEDS CLARIFICATION]` marker. The two decisions in Clarifications are kept. Revised for spec review r1 of PR #136 (M1, L1). Every `0001/`, `0013/`, and `0017/` reference was checked against `specs/office/SPEC.md` (since split into `specs/<capability>/SPEC.md`) and `specs/changes/archive/0017-orphan-sweep/SPEC.md` at 5272d6f.
 
 ## Content quality
 

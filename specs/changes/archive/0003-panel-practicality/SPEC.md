@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: agent-panel
 plan: none (delivered before plan files were kept)
 supersedes: 0001/FR-017
 ---

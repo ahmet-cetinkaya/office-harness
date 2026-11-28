@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: agent-reports
 plan: specs/changes/archive/0014-subtree-status/PLAN.md
 supersedes: 0002/FR-008
 ---

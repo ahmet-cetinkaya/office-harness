@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: worktree-dependencies
 plan: specs/changes/archive/0021-worktree-dependencies/PLAN.md
 ---
 

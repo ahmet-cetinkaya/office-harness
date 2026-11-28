@@ -1,7 +1,7 @@
 ---
 status: parked
 parked: 2026-11-17 - deferred by the owner after the MVP; the spec stays a draft
-capability: office
+capability: distributed-machines
 plan: specs/changes/parked/0006-distributed-machines/PLAN.md
 supersedes: 0001/FR-005 (in part), 0001/FR-008 (in part)
 ---

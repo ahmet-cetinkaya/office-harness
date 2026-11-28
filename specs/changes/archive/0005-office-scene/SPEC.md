@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: office-scene
 plan:
 supersedes: 0003/FR-008 (in part)
 ---

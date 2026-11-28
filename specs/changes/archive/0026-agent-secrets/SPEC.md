@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: agent-secrets
 plan: specs/changes/archive/0026-agent-secrets/PLAN.md
 supersedes: 0002/FR-008 (as modified by 0014 and 0015), 0007/FR-007, 0007/FR-009
 ---
@@ -13,7 +13,7 @@ Today the person gives an agent an API key as an environment variable in the age
 
 ## Context
 
-- Source of truth: `docs/PRD.md`. The living spec is `specs/office/SPEC.md`. Ids such as `0001/FR-023` point to requirements there.
+- Source of truth: `docs/PRD.md`. The living spec of this change is `specs/agent-secrets/SPEC.md`. Ids such as `0001/FR-023` point to requirements in the living specs under `specs/`.
 - This is row 15 of the gap list: "secrets reach running agents", approved by the owner on 2026-11-23. The gap list asks for the `secure-engineering` contract: threat model, who may read which secret, rotation, deletion.
 - The change depends on:
   - 0001: the office token, the owner-only storage (0001/FR-009), office additions (0001/FR-022, 0001/FR-023), the action record (0001/FR-011), recent output (0001/FR-003), and the keyboard rule (0001/FR-028).

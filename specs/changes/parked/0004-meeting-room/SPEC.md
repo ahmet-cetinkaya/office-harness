@@ -1,7 +1,7 @@
 ---
 status: parked
 parked: 2026-11-28 - post-MVP: approved, built after the MVP; no code yet
-capability: office
+capability: meeting-room
 plan: specs/changes/parked/0004-meeting-room/PLAN.md
 supersedes: 0003/FR-006 (in part)
 ---

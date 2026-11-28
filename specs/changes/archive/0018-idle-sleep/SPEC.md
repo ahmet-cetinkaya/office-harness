@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: idle-sleep
 plan: specs/changes/archive/0018-idle-sleep/PLAN.md
 supersedes: 0001/FR-014
 ---

@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: agent-panel
 plan: specs/changes/archive/0011-task-line/PLAN.md
 supersedes: 0003/FR-002
 ---

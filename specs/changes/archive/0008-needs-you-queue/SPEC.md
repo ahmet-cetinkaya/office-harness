@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: needs-you-queue
 plan: specs/changes/archive/0008-needs-you-queue/PLAN.md
 supersedes: 0001/FR-017 (as modified by 0003)
 ---

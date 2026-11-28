@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: agent-reports
 plan: specs/changes/archive/0015-upward-reports/PLAN.md
 supersedes: 0002/FR-008 (as modified by 0014), 0003/FR-006 (as modified by 0007), 0008/FR-002, 0008/FR-003, 0008/FR-005
 ---

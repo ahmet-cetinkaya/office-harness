@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: bulk-resume
 plan: specs/changes/archive/0013-bulk-resume/PLAN.md
 supersedes:
 ---
