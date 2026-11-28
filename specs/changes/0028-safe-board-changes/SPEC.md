@@ -14,6 +14,7 @@ The board of 0027 works for one person in one window with a server that always a
 ## Context
 
 - This change depends on 0027 (the board, the card, the columns, the text rules, the move, the announcements). Ids such as `0027/FR-006` point to the living spec `specs/task-board/SPEC.md` once 0027 ships. Terms of 0027 apply here.
+- 0027 and 0028 release together: 0027 alone has no handling of a change that the office did not keep, so a move could look done when it was not. The plan of 0027 does not ship before 0028 is ready.
 - It extends the capability `task-board`: all requirements below are ADDED; none of 0027 is modified. Changes of 0029 (edit and delete) and of 0030 (agents) use the rules of this change.
 - Field-level merging of two windows' changes, and Undo, stay out, as in 0027.
 - The requirements describe behavior only. The plan decides how to build them.
@@ -23,7 +24,7 @@ The board of 0027 works for one person in one window with a server that always a
 | Term | Meaning |
 |---|---|
 | Card, column, status, board view, window, kept, text rules | As defined in 0027. |
-| Saw | A window saw a card when it last showed that card as the office keeps it. |
+| Saw | A window saw a card when it last showed that card as the office keeps it. A card is changed by anyone when a window, an agent, or the office changes it (0029, 0030). |
 | Not kept | A change that the office refused, could not store, or did not answer within 2 seconds (FR-002). |
 
 ## Data flow and trust boundary
@@ -36,7 +37,7 @@ The board of 0027 works for one person in one window with a server that always a
   |---|---|
   | Two windows move one card at once, and one move is lost without a word. | A change to a card that changed after the window saw it is refused with the reason (FR-001). |
   | A move looks done in the window but the office did not keep it. | A change that is not kept puts the card back where it was and says why (FR-002). |
-  | A retry of a save makes a second card. | Saving the same new card again keeps one card (FR-004). |
+  | A retry of a save makes a second card. | Saving the same new card again keeps one card (FR-005). |
 
 ## User stories
 
@@ -60,11 +61,12 @@ The person moves a card while the background server is not reachable. The card g
 
 ### ADDED
 
-- **FR-001** (US1): THE SYSTEM SHALL apply the changes to one board one at a time, in the order that the office receives them; IF a change is to a card that another window changed after the sending window saw that card, THEN THE SYSTEM SHALL refuse the change with the reason that the card changed in another window, and THE SYSTEM SHALL NOT count a move of another card as a change of this card.
+- **FR-001** (US1): THE SYSTEM SHALL apply the changes to one board one at a time, in the order that the office receives them; IF a change is to a card that anyone (another window, an agent, or the office) changed after the sending window saw that card, THEN THE SYSTEM SHALL refuse the change with the reason that the card changed, and who changed it when it was not a window, and THE SYSTEM SHALL NOT count a move of another card as a change of this card.
 - **FR-002** (US1): IF the office does not keep a new card or a move, because a rule of 0027/FR-006 refuses it, the card changed in another window (FR-001), or the office could not store it, or IF the window gets no answer from the background server within 2 seconds after the person made the change, THEN THE SYSTEM SHALL, within those 2 seconds, show the card of that change as it was before, in its column and place, and not at all for a new card, and say in that window which change was not kept, or not confirmed, and why.
 - **FR-003** (US1): IF a change is not kept, THEN THE SYSTEM SHALL keep the text that the person typed in an open form and change no other card.
-- **FR-004** (US1): WHEN the window reaches the background server again after a change that was not confirmed, THE SYSTEM SHALL show the board as the office keeps it, and WHEN the person saves the same new card form again, THE SYSTEM SHALL keep one card for it, not two.
-- **FR-005** (US1): WHEN the office refuses a change or FR-002 reports one as not confirmed, THE SYSTEM SHALL announce it once to assistive technology in that window within 1 second with the change and its reason, and SHALL NOT announce it in other windows.
+- **FR-004** (US1): WHEN the window reaches the background server again after a change that was not confirmed, THE SYSTEM SHALL show the board as the office keeps it.
+- **FR-005** (US1): WHEN the person saves again the same new card form after a save that was not confirmed, THE SYSTEM SHALL keep one card for it, not two.
+- **FR-006** (US1): WHEN the office refuses a change or FR-002 reports one as not confirmed, THE SYSTEM SHALL announce it once to assistive technology in that window within 1 second with the change and its reason, and SHALL NOT announce it in other windows.
 
 ### PRESERVED
 
@@ -86,7 +88,7 @@ The person moves a card while the background server is not reachable. The card g
 
 **Design:** the messages use the existing elements of the desktop app and add no new visual style (0027, A10).
 
-**Accessibility:** a refusal is announced once with its reason (FR-005); the message is text, never color or an icon alone; focus stays on the card or in the form.
+**Accessibility:** a refusal is announced once with its reason (FR-006); the message is text, never color or an icon alone; focus stays on the card or in the form.
 
 ## Key entities
 
@@ -106,16 +108,16 @@ None new. A card of 0027 is the entity; its state is what the office keeps.
 |---|---|---|
 | Two windows move the same card at once. | Concurrent | The first move that the office receives is kept; the other is refused with the reason; both windows show the kept column (FR-001). |
 | Two windows move different cards into one column at once. | Concurrent | Both are kept, one after the other, in the order that the office receives them; every window shows the same order within 2 seconds; no card is lost or doubled (FR-001, 0027/FR-009). |
-| The window gets no answer for a new card, and the person saves again. | Failure | The board holds one card with that title (FR-004). |
+| The window gets no answer for a new card, and the person saves again. | Failure | The board holds one card with that title (FR-005). |
 | The background server is not reachable, or stops during a change. | Failure | With no answer within 2 seconds, the card shows where it was before and the window says that the change was not confirmed and why; when the server is back, the window shows the board as the office keeps it (FR-002, FR-004). |
 | The office cannot store a change, for example because the disk is full. | Failure | The same as above, with the reason that the office could not store it (FR-002). |
 | A refused change while a form is open. | Invalid | The form keeps the typed text (FR-003). |
 
 ## Assumptions
 
-- **A1:** A change to a card is refused when the card changed after the window saw it; moving another card does not change this card. This is one rule for the whole card, not per field.
+- **A1:** A change to a card is refused when anyone (another window, an agent, or the office) changed the card after the window saw it; moving another card does not change this card. This is one rule for the whole card, not per field.
 - **A2:** The window that gets no answer treats the change as not confirmed; the office may have kept it, and the window shows the truth when the server is back (FR-004).
-- **A3:** "The same new card form" is one save action of one form; the office recognizes a repeat of it, so a retry never makes a second card.
+- **A3:** "The same new card form" is one save action of one form; the office recognizes a repeat of it, so a retry never makes a second card. A title that the person retyped or edited after the failed save is a new save, and makes a second card.
 
 ## Clarifications
 

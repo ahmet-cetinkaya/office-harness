@@ -19,6 +19,7 @@ This is the first of four changes that ship in this order: 0027 the board, 0028 
 - This change makes the new capability `task-board`. No living spec exists for it, so all requirements are ADDED; no existing requirement is modified or removed.
 - The change depends on 0001 (the office, the desktop app, the office token, the owner-only storage, keyboard access, and the not-reachable and not-authorized states), 0003 (the panel), and 0005 (the office scene). Ids such as `0001/FR-007` point to requirements in the living specs under `specs/`.
 - The task line of 0011 is a different thing: it shows the last directive an agent received. The board does not read, set, or clear it.
+- 0027 and 0028 release together: this change alone has no handling of a change that the office did not keep, so a move could look done when it was not. The plan of 0027 does not ship before 0028 is ready.
 - The look of the board is not part of this change. The board uses the existing elements of the desktop app; the owner picks a look later from mockups (User experience).
 - The requirements below describe behavior only. The plan decides how to build them.
 

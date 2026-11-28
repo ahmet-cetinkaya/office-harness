@@ -24,9 +24,9 @@ The person works on the task board of 0027, 0028, and 0029. This change lets the
 |---|---|
 | Board, card, window, kept, board view | As defined in 0027. |
 | Role, CEO, team lead, member | As defined in 0002/FR-001. |
-| Hold, rate limit, agent-made action | As defined in 0007. |
+| Hold, rate limit, agent-made action | As defined in 0007. Each kept board change by an agent is one agent-made action; a read of the board is not. |
 | Board agent | An agent whose role is CEO or team lead. Only a board agent may read or change the board. |
-| Card version | A number that the office keeps for each card. It rises by one with each kept change to that card; a move of another card does not raise it. A read of the board gives the version of each card. |
+| Card version | The way an agent shows what it saw (0028, Terms), as a window shows it by what it last displayed: a number that the office keeps for each card. It rises by one with each kept change to that card; a move of another card does not raise it. A read of the board gives the version of each card. |
 | Changer | Who made the last change of a card: the person, a board agent by the name that it had at that change, or the office when it cleared an assignee or a project (0029/FR-003). A later rename or delete of the agent does not change it. A card that was made before this change shows the person. |
 | Board change | A new card, an edit, a move, or a delete of a card. A read is not a board change. |
 
@@ -40,7 +40,7 @@ The person works on the task board of 0027, 0028, and 0029. This change lets the
   | Threat | Control |
   |---|---|
   | A member agent, or an agent without a role, reads or changes the board, for example to hide a blocked task. | Refused with the reason and recorded (FR-002). |
-  | A board agent loops over the board, or acts while it or the office is on hold. | The hold and a rate limit for board changes apply; the refusal is recorded (FR-002, FR-002). |
+  | A board agent loops over the board, or acts while it or the office is on hold. | The hold and a rate limit for board changes apply; the refusal is recorded (FR-002). |
   | An agent changes a card from an old view of it and overwrites a newer change. | A board change that names an older card version is refused with the reason (FR-004). |
   | An agent changes a card and the person cannot tell who did it. | Each card records and shows the changer (FR-005). |
   | An agent deletes a card and leaves no trace. | A delete by an agent is recorded in the action record and announced in every open window (FR-006). |
@@ -83,7 +83,7 @@ A team lead deletes a card. Every open window announces that the lead deleted th
 ### ADDED
 
 - **FR-001** (US1): THE SYSTEM SHALL let an agent whose role is CEO or team lead read the board, with the version of each card, and make, edit, move, and delete cards on its own connection, under the rules of 0027, 0028, and 0029, without the confirmation of a delete that the person gets.
-- **FR-002** (US1): IF an agent whose role is member, or that has no role, asks to read or change the board, or IF a board agent asks while it or the office is on hold, or asks for a board change beyond the rate limit for board changes (0007/FR-007), THEN THE SYSTEM SHALL refuse the request, tell the agent the reason in its answer, record the refusal (0002/FR-009), and change no card; and THE SYSTEM SHALL count each kept board change by an agent as one agent-made action for the hold and the rate limits of 0007, and SHALL NOT count a read of the board.
+- **FR-002** (US1): IF an agent whose role is member, or that has no role, asks to read or change the board, or IF a board agent asks while it or the office is on hold, or asks for a board change beyond the rate limit for board changes (0007/FR-007), THEN THE SYSTEM SHALL refuse the request, tell the agent the reason in its answer, record the refusal (0002/FR-009), and change no card.
 - **FR-003** (US1): THE SYSTEM SHALL show each board change by a board agent in every open window within 2 seconds, with no reload, and without an announcement, except for a delete (FR-006).
 - **FR-004** (US1): IF a board change by an agent names a card version older than the current version of the card, or names a card that was deleted, THEN THE SYSTEM SHALL refuse the change with the reason that the card changed, or was deleted, and tell the agent in its answer.
 - **FR-005** (US1): THE SYSTEM SHALL record on each card the changer of its last change, and show it as text on the card in every window.
@@ -92,7 +92,7 @@ A team lead deletes a card. Every open window announces that the lead deleted th
 ### MODIFIED
 
 - **0002/FR-008** (as modified by 0014, 0015, and 0026) (US1): THE SYSTEM SHALL let a running agent, from inside its own session, create, start, and stop agents, start new tasks, send directives, and read the state of agents only within its own descendants and only for the roles that 0002/FR-001 allows, send reports only to its own parent or to the person, read only the secrets that the person granted to that agent, and, for an agent whose role is CEO or team lead, read the board and make, edit, move, and delete cards of the board of the office (0030/FR-001).
-- **0007/FR-007** (as modified by 0026) (US1): IF an agent's agent-made action would exceed one of the rate limits in the table under Assumption A3 of 0007, with the row added by 0015, the row added by 0026, and the row added by 0030, THEN THE SYSTEM SHALL refuse the action with a reason that names the limit and its value.
+- **0007/FR-007** (as modified by 0026) (US1): IF an agent's agent-made action would exceed one of the rate limits in the table under Assumption A3 of 0007, with the row added by 0015, the row added by 0026, and the row added by 0030, THEN THE SYSTEM SHALL refuse the action with a reason that names the limit and its value, counting each kept board change by an agent as one action and a read of the board as none.
 - **0007/FR-009** (as modified by 0026) (US1): THE SYSTEM SHALL let the user change each rate limit in the office settings, the limit of reads of secrets by one agent (`limit_secret_reads_per_agent`) and the limit of board changes by one agent (`limit_board_changes_per_agent`) included, and SHALL apply a changed value to the next agent-made action.
 - **0001/FR-011** (US2): THE SYSTEM SHALL record each create, start, stop, and delete action with its actor, its target agent, and its time, and each delete of a board card by an agent with the agent as actor, the card's title, and its time, and SHALL show these entries in the details of the target agent, or of the actor agent for a card.
 
@@ -100,7 +100,7 @@ The table of rate limits under Assumption A3 of 0007 gains one row: board change
 
 ### PRESERVED
 
-- **PB-1:** The board of 0027, 0028, and 0029 stays as before for the person: every requirement there works as it did (0027/FR-001 to 0027/FR-010, 0028/FR-001 to 0028/FR-005, 0029/FR-001 to 0029/FR-007).
+- **PB-1:** The board of 0027, 0028, and 0029 stays as before for the person: every requirement there works as it did (0027/FR-001 to 0027/FR-010, 0028/FR-001 to 0028/FR-006, 0029/FR-001 to 0029/FR-009).
 - **PB-2:** The tree rules, the holds, and the rate limits of 0002 and 0007 stay as before for every other action: a third refusal within 60 seconds puts the agent on hold (0007/FR-008). The agent panel, the Needs-you queue, and scheduled directives stay as before (0027/PB-1 to 0027/PB-3).
 - **PB-3:** An agent request other than the board request of a board agent is refused and recorded as before (0002/FR-009, 0025/PB-5). A board change by an agent types nothing into any terminal and sets no task text.
 - **PB-4:** office-harness sends no office data, the board included, outside the user's machine (0001/FR-005).
@@ -162,6 +162,9 @@ The table of rate limits under Assumption A3 of 0007 gains one row: board change
 - **A5:** The project filter of 0029 (FR-007) is a view of one window. A board agent reads and changes the whole board, whatever project the person picked.
 - **A6:** An agent's change shows on the card and does not interrupt a screen reader user, so that a lead that changes many cards does not flood the person; a delete is announced because the card leaves the board and the person could not otherwise find it.
 - **A7:** The rate limit of 20 board changes per rolling 60 seconds is a default that the person can change in the office settings, as the other limits of 0007.
+- **A9:** A lead that deletes many cards gives one announcement per card in each window; the limit of 20 board changes per 60 seconds bounds it, and the person accepts it as the price of seeing every agent delete.
+- **A10:** The action record entry of a delete stays in the action record kept with the office after the agent is deleted; the details of the agent are gone, so it shows only while the agent exists.
+- **A11:** The conflict rule is one rule for windows and agents: a change is refused when anyone changed the card after the sender saw it (0028/FR-001). A window shows what it saw by what it displayed, an agent by the card version it read.
 - **A8:** An agent names the card version that it read; an agent that makes a new card names no version.
 
 ## Clarifications
