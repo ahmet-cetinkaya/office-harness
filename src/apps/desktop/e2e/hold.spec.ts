@@ -122,6 +122,22 @@ test.describe("office hold", () => {
     await expect(region).toHaveText("Office released from hold");
   });
 
+  test("each announcement is a new node of the live region", async ({
+    page,
+  }) => {
+    await openPanel(page);
+    const region = page.locator("p.sr-only[aria-live='polite']");
+    await pressByKeyboard(page, "Hold office");
+    await expect(region).toHaveText(OFFICE_ON_HOLD);
+    const first = await region.locator("span").elementHandle();
+
+    await pressByKeyboard(page, "Release office");
+    await expect(region).toHaveText("Office released from hold");
+
+    expect(await first?.evaluate((node) => node.isConnected)).toBe(false);
+    await expect(region).toHaveAttribute("aria-atomic", "true");
+  });
+
   test("one key press, Ctrl+Shift+H, holds the office from the panel (SC-005)", async ({
     page,
   }) => {
