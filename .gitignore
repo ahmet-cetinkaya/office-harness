@@ -10,3 +10,6 @@ src/apps/desktop/src-tauri/bindings/
 # Empty sandbox mount targets that tools create under src/
 src/**/.claude/
 src/**/.mcp.json
+
+# direnv cache
+.direnv/
