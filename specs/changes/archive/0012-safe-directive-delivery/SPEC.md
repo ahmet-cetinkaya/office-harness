@@ -179,7 +179,7 @@ The sender's answer says whether the directive was submitted, waits (with its pl
 - **A2:** The question check knows the common shapes: a yes-or-no choice such as `(y/n)` or `[Y/n]`, a numbered choice list with a selection mark, and words that ask for permission or approval. A question drawn in another shape may not be recognised; the input-line check is the second guard.
 - **A3:** A false match of the question check only delays a directive: it is withdrawn after 10 minutes with the reason, and the sender can send it again.
 - **A4:** Waiting directives live in the background server's memory. A normal stop withdraws and records them (FR-005); a crash drops them without a withdrawal entry, and their acceptance stays in the target's record.
-- **A5:** Any person input counts as typing for 30 seconds, also a key that answers a question or a paste. Besides that pause, the office reads unsent person text from the person's keys: typed characters add to it, an erase key takes one off, and Enter outside a paste or a line-clearing key (Ctrl+C, Ctrl+U) empties it. A key whose effect it cannot follow (an arrow, a lone Escape, a word erase) keeps the line held until Enter or a line-clearing key. While unsent person text waits, directives wait with no time limit of their own; the office never sends Escape and never clears the line. A new session starts with an empty line. Decided by god and Efe under the owner's spec delegation, 2026-11-23; before, a half-typed line held directives for 30 seconds only.
+- **A5:** Any person input counts as typing for 30 seconds, also a key that answers a question or a paste. Besides that pause, the office reads unsent person text from the person's keys: typed characters add to it, an erase key takes one off, and Enter outside a paste or a line-clearing key (Ctrl+C, Ctrl+U) empties it. A key whose effect it cannot follow (an arrow, a lone Escape, a word erase) keeps the line held until Enter or a line-clearing key. While unsent person text waits, directives wait with no time limit of their own; the office never sends Escape and never clears the line. A new session starts with an empty line. Decided under the owner's spec delegation, 2026-11-23; before, a half-typed line held directives for 30 seconds only.
 - **A6:** Rate limits (0007) count a directive when the office accepts it, not when it is typed. A queue-full refusal is not a rate-limit refusal: it does not count toward a limit and not toward the automatic hold (0007/FR-008). The hold check runs at sending and again before typing.
 - **A7:** The queue has no view and no request of its own. The sender learns the place from the answer; the user withdraws waiting directives by stopping the target or by a hold (FR-005), and clears an unsubmitted text in the terminal like any typed text; that input also lets the queue go on (A11).
 - **A8:** The 30-second typing pause, the 2-second wait for the input line, the 10-minute limit, and the 20-directive queue size are fixed in this change, not settings.
@@ -204,7 +204,7 @@ What this change does not cover, stated plainly:
 
 - Q: Is the question check enough to keep an Enter out of a prompt? → A: No; a quiet CLI with an unrecognised prompt reads as waiting for input. The office types the text, confirms that it shows at the input line, and only then presses Enter; otherwise it holds the Enter (FR-003). The residual risk is stated in its own section.
 
-### Session 2026-11-23 (review r1)
+### Session 2026-11-23
 
 - Q: Can a directive's Enter submit a startup prompt the person has not reviewed? → A: No; a pasted startup prompt holds directives until a person input reaches the terminal after it (FR-002, A11).
 - Q: Does a CLI's paste placeholder count as the text showing? → A: Yes, a new placeholder at the input line counts (FR-003, A9).
@@ -213,9 +213,9 @@ What this change does not cover, stated plainly:
 
 ### Session 2026-11-23 (decision after review r4)
 
-- Q: May a directive be typed after a person's half-typed line once 30 seconds have passed? → A: No; delivery holds until that text is sent or cleared, and the office never sends Escape or clears the line (A5, FR-002). Decided by god and Efe under the owner's spec delegation.
+- Q: May a directive be typed after a person's half-typed line once 30 seconds have passed? → A: No; delivery holds until that text is sent or cleared, and the office never sends Escape or clears the line (A5, FR-002). Decided under the owner's spec delegation.
 
-### Session 2026-11-23 (review r2)
+### Session 2026-11-23
 
 - Q: After a directive is left unsubmitted, can the next one's Enter submit both? → A: No; any text the office typed without Enter, a startup prompt or an unsubmitted directive, holds the queue until a person input reaches the terminal after it or the session ends (FR-002, A11).
 

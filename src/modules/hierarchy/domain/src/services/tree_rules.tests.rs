@@ -147,7 +147,7 @@ fn a_second_lead_for_a_held_team_is_refused_and_names_the_seated_lead() {
 #[test]
 fn a_second_ceo_refusal_names_the_stored_ceo_not_its_id() {
     // The row carries the office's name for the CEO; the refusal shows that
-    // name, not the id text (Efe, PR 36 r2 LOW). An empty name falls back
+    // name, not the id text. An empty name falls back
     // to the id, the only text the store guarantees.
     let ids = fixed_ids();
     let fresh = AgentId::from_u128(9);

@@ -161,7 +161,7 @@ The user sets or edits an agent's task text in its details, for agents that get 
 - Q: Is the user's task text limited in length? → A: Yes, to 8,192 characters, the same bound as a directive (FR-003).
 - Q: Does the office scene show the task line? → A: No; the desks keep name, status, and last output line (Out of scope).
 - Q: When does an agent receive a directive? → A: When the office has entered it into the agent's terminal; a refused directive is not received (Terms).
-- Q: Does starting a stopped agent (`agent.start`, which also starts a new session) clear the task text? → A: No; only the new-task action (`agent.new_task`) clears it, so a text set on a stopped agent survives its first start (FR-004). Decided by god under the owner's spec delegation, 2026-11-19.
+- Q: Does starting a stopped agent (`agent.start`, which also starts a new session) clear the task text? → A: No; only the new-task action (`agent.new_task`) clears it, so a text set on a stopped agent survives its first start (FR-004). Decided under the owner's spec delegation, 2026-11-19.
 
 ## Out of scope
 

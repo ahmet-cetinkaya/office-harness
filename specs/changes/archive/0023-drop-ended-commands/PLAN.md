@@ -6,7 +6,7 @@ commits: per-task
 
 # Plan: Keep no command lines of ended sessions (0023)
 
-<!-- Pre-approved by god on 2026-11-23: a plan that follows the spec and Efe's two notes from spec review r2. -->
+<!-- Pre-approved on 2026-11-23: a plan that follows the spec and the two notes from spec review r2. -->
 
 ## Summary
 
@@ -17,7 +17,7 @@ After this change, the office deletes the stored process identities of a session
 - **Removal at a normal session end.** The session end deletes the session's identities instead of marking them ended (0017/FR-008 modified).
 - **Removal when a new session is stored.** Storing a new session deletes the ended identities of the agent's earlier `lost` sessions (FR-001).
 - **Cleanup at each server start.** After open sessions are marked `lost`, a cleanup deletes the leftover rows (FR-002). Then `PRAGMA wal_checkpoint(TRUNCATE)` runs. A busy result counts as not finished: the server logs it and tries again at the next start (FR-004, FR-006).
-- **One rebuild at the first start of this build.** `VACUUM` runs once, followed by a TRUNCATE checkpoint. A stored mark records that this finished, so a failed or busy run is tried again (FR-005, FR-006, Efe r2).
+- **One rebuild at the first start of this build.** `VACUUM` runs once, followed by a TRUNCATE checkpoint. A stored mark records that this finished, so a failed or busy run is tried again (FR-005, FR-006).
 
 **Why this approach:**
 - Secure delete is one pragma, with negligible cost at this database size, and it covers every way a text leaves the store, including the running-session cases of M1.
@@ -52,7 +52,7 @@ After this change, the office deletes the stored process identities of a session
 - **D5: FR-005, the one-time rebuild.**
   - Migration `0010_agent_maintenance.sql` adds `agent_maintenance (task TEXT PRIMARY KEY, done_at INTEGER NOT NULL)`.
   - At start, after D4: when no row `freed_text_cleared` exists, run `VACUUM`, then `PRAGMA wal_checkpoint(TRUNCATE)`. Insert the row only when both finished, which means no error and no busy result.
-  - Otherwise, write the reason to the log and try again at the next start (Efe r2).
+  - Otherwise, write the reason to the log and try again at the next start.
   - `VACUUM` needs no open transaction and no other connection writing, so it runs before the server takes requests.
   - As built (T2): D4 and D5 share one TRUNCATE checkpoint, run after the `VACUUM` when the rebuild is pending. Two checkpoints would log a busy result twice on the first start; one checkpoint after the rebuild still leaves the write log empty, because the rebuild's old pages stay in the log until it is truncated.
 - **D6: No other change.** The sweep, the match, the finding, the action record text and the wire protocol stay as they are (PB-1 to PB-6).
@@ -136,7 +136,7 @@ After this change, the office deletes the stored process identities of a session
 
 ## Final verification
 
-Run `/ac:verify` against this plan. Then CI must be green on the 3 OSes, and Efe's code gate runs at the exact head.
+Run `/ac:verify` against this plan. Then CI must be green on the 3 OSes, and the code gate runs at the exact head.
 
 ## Result
 

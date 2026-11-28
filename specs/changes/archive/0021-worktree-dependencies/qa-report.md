@@ -47,7 +47,7 @@ A snapshot of this branch, committed as a new repository with `bun install --fro
 | `git status --porcelain --untracked-files=all` in the new worktree | empty |
 | `bun test src` in the worktree's `src/apps/desktop`, no install before it | 421 passed, 0 failed |
 | `bun run build` (Vite) in the worktree's `src/apps/desktop` | passed; the worktree's `node_modules/.vite` is not a link |
-| The checkout's `src/apps/desktop/node_modules/.vite` (with a marker file made before the create) | unchanged (review r1 N1) |
+| The checkout's `src/apps/desktop/node_modules/.vite` (with a marker file made before the create) | unchanged |
 | `git status` in the worktree after the test and the build | empty |
 | `agent.worktree_status` | `changed_files: 0` |
 | `agent.delete` with remove | ok; the branch deleted, the worktree folder gone |

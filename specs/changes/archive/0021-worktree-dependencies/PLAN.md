@@ -41,7 +41,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 
 ## Decisions
 
-- **D1 Link shape.** At each place, `<worktree>/<place>/node_modules` is a real folder that the office makes with `create_dir` (never `create_dir_all`: the parent must already exist in the checkout). Inside it, one symbolic link per package entry of `<repository>/<place>/node_modules` (spec Terms): a name without a leading dot, or one of `.bin`, `.pnpm`, `.modules.yaml`, `.package-lock.json`, `.yarn-state.yml`, `.bun`. Each link has the absolute target `<repository>/<place>/node_modules/<entry>`. Tool caches such as `.vite` and `.cache` get no link, so each worktree's tools write their own cache (review r1 M1).
+- **D1 Link shape.** At each place, `<worktree>/<place>/node_modules` is a real folder that the office makes with `create_dir` (never `create_dir_all`: the parent must already exist in the checkout). Inside it, one symbolic link per package entry of `<repository>/<place>/node_modules` (spec Terms): a name without a leading dot, or one of `.bin`, `.pnpm`, `.modules.yaml`, `.package-lock.json`, `.yarn-state.yml`, `.bun`. Each link has the absolute target `<repository>/<place>/node_modules/<entry>`. Tool caches such as `.vite` and `.cache` get no link, so each worktree's tools write their own cache.
 - **D2 Places.** `git ls-files -z -- ':(glob)**/package.json'` in the new worktree (reads the index; runs no filter or hook). A place is the folder of each path, plus the top. A place with a `node_modules` part is dropped (a package inside a tracked dependency folder). The list is deduplicated and sorted.
 - **D3 Checks per place** (FR-003), in this order; a failed check skips the place and changes nothing:
   1. `<worktree>/<place>/node_modules` does not exist, not even as a broken link (`symlink_metadata` is `NotFound`) (f).
@@ -84,7 +84,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 ### T4: Docs and QA (commit 4)
 
 - README "Own worktree per agent": a short paragraph on shared packages, the setting, and Windows.
-- `specs/changes/archive/0021-worktree-dependencies/qa-report.md` with one row per FR and SC, and the hands-on rows: a real agent in a worktree of this repository runs `bun test` in the desktop folder without an install, and a Vite build in that worktree leaves the checkout's `node_modules/.vite` unchanged (review r1 N1).
+- `specs/changes/archive/0021-worktree-dependencies/qa-report.md` with one row per FR and SC, and the hands-on rows: a real agent in a worktree of this repository runs `bun test` in the desktop folder without an install, and a Vite build in that worktree leaves the checkout's `node_modules/.vite` unchanged.
 - SPEC Deviations for anything shipped differently.
 - **Acceptance:** links in the docs resolve; no other product is named; no zero-width character in added lines.
 

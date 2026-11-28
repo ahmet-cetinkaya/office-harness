@@ -4,7 +4,7 @@ spec: specs/changes/archive/0005-office-scene/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-17; plan approved by god on 2026-11-17. Status: approved (in the MVP, built after 0003). The build starts after change 0003 (panel practicality) merges to `main`. -->
+<!-- Drafted 2026-11-17; plan approved on 2026-11-17. Status: approved (in the MVP, built after 0003). The build starts after change 0003 (panel practicality) merges to `main`. -->
 
 # Plan: office scene (0005)
 
@@ -53,7 +53,7 @@ Deliver spec 0005: from the panel the user opens a flat picture of the office in
   - Accessibility today: rows are buttons with a hand-set accessible name, `focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700` for the focus mark, headings with `tabindex="-1"` as focus targets, and `role="status"` for loading text (`views/office-view.svelte`, `components/agent-list.svelte`).
   - Tests today: `bun test src` beside the `.ts` files; `boundaries.spec.ts` enforces module imports through `index.ts` only; Playwright with `@axe-core/playwright` against the Vite build with `e2e/support/mock-core.ts`, which seeds agents and projects, pushes events and terminal frames, records every invoke call, and answers `settings.get` with the focus shortcut. Project `chromium` only.
   - What does not change: no server crate, no wire type, no Tauri command, no new npm dependency, so `scripts/check-boundaries.sh`, the Cargo graph, `src-tauri/`, and `package.json` dependencies are untouched.
-- **Floor rules:** one build or test at a time on the floor; ask god for the build slot before each local build or test run (bun, at most 30 minutes). Efe reviews each PR at its exact head sha; god merges. Nothing is pushed to `main`. No other project's name appears in any repository file.
+- **Floor rules:** one build or test at a time on the floor; get the build slot before each local build or test run (bun, at most 30 minutes). Each PR is reviewed at its exact head sha before it merges. Nothing is pushed to `main`. No other project's name appears in any repository file.
 - **Toolchain:** as 0001 to 0003 (cargo 1.100, bun 1.4.4, Node 24, Tauri v2, Svelte 5 with runes, Tailwind CSS 4, TypeScript).
 
 ## Decisions
@@ -72,7 +72,7 @@ Deliver spec 0005: from the panel the user opens a flat picture of the office in
 - **D11 Scale (SC-004):** every desk renders as plain DOM at a fixed readable size and the page scrolls; nothing shrinks or virtualizes at 100 agents. The 2-second open and the 15-second find-and-open are measured in Playwright with 100 agents in 10 projects seeded in the mock core; the find-and-open measurement uses the scene search to locate the named desk, then opens it.
 - **D12 Tests:** `bun test` for `floor-groups.ts`; Playwright with the mock core and axe for the views at 1280 and 360 widths, as 0001 and 0003 did; the timing measurements for SC-002, SC-003, SC-004, and SC-006 and the keyboard-only run for SC-005 in the same e2e suite; `e2e/support/mock-core.ts` gains role and team fields on seeded agents and a `settings.set` recorder. The screen reader pass and the 200% zoom check are hands-on rows.
 - **D13 Lint and boundaries:** unchanged. The new folder passes `boundaries.spec.ts` as any module does; `scripts/check-boundaries.sh` is untouched because no Rust crate changes.
-- **D14 Delivery and commits:** one phase PR into `feat/0005-office-scene`, per-task local commits, Efe gates the PR at its head sha, god merges (the 0003 procedure).
+- **D14 Delivery and commits:** one phase PR into `feat/0005-office-scene`, per-task local commits, the PR is gated at its head sha, then it merges (the 0003 procedure).
 - **Constitution check:** the repository has no instruction file; `docs/ARCHITECTURE.md` is binding, and this plan adds one webview module folder that its Frontend Folder Structure already anticipates. The owner's global rules apply: clean code, no secrets, explicit approval for remote actions.
 
 ## Scope
@@ -98,7 +98,7 @@ Deliver spec 0005: from the panel the user opens a flat picture of the office in
 |---|---|---|---|---|
 | 1 Office scene | The scene view, desk terminals, view switching and restore, keyboard and motion work, docs, QA | T1 to T7 | `feat/0005-office-scene` (`main` after 0003 merges) | `feat/0005-office-scene` → `main` |
 
-The branch is created from `main` after 0003 merges and holds the approved spec and this plan (committed by the docs PR). The PR runs CI on three OSes and gets Efe's review at its head sha.
+The branch is created from `main` after 0003 merges and holds the approved spec and this plan (committed by the docs PR). The PR runs CI on three OSes and gets the review at its head sha.
 
 ## Tasks
 
@@ -220,8 +220,8 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 
 ## QA and evidence
 
-- **Per task:** `bun test`, `svelte-check`, `eslint`, `prettier --check`, Playwright with axe, each as far as the task touches it. Ask god for the build slot before each local build or test run. No Rust crate changes, so the cargo checks are unaffected; `cargo test --workspace` and `scripts/check-boundaries.sh` run once at T7 to prove it.
-- **Phase PR:** CI green on all three OSes, Efe's review at the head sha, evidence in the PR body.
+- **Per task:** `bun test`, `svelte-check`, `eslint`, `prettier --check`, Playwright with axe, each as far as the task touches it. Get the build slot before each local build or test run. No Rust crate changes, so the cargo checks are unaffected; `cargo test --workspace` and `scripts/check-boundaries.sh` run once at T7 to prove it.
+- **Phase PR:** CI green on all three OSes, the review at the head sha, evidence in the PR body.
 - **Security pass:** `secure-engineering` on T4: the `last_view` value is validated JSON, never evaluated; the scene adds no request type, no event, and no outbound call (PB-5); it writes no file (PB-6).
 - **Real surface:** SC-001 against a real server with 12 agents, a screen reader pass over the scene, and the 200% zoom check are hands-on rows in the QA report; under the overnight directive they are recorded as BLOCKED (need a person), never PASS.
 - **Rollback:** one PR into `feat/0005-office-scene`; a failed change is reverted there. On a user's machine the change adds one JSON field to an existing settings value; a value written after this change restores on an app built before it if the 0003 validator ignores the unknown `view` key, which T1 R1 verifies (otherwise the rollback limit is that the stored view is dropped and the panel opens). No table, no migration, no CLI file.

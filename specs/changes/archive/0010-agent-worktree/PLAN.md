@@ -4,7 +4,7 @@ spec: specs/changes/archive/0010-agent-worktree/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (through Efe's review gate, PR #66, main b6d2cb9). Builds after 0009 (god's order 0008, 0011, 0009, 0010); T6 needs 0009 merged. r2 (2026-11-19) applies Efe's plan review r1 (office-harness-plan-0010.md: 4 HIGH, 8 MEDIUM, 3 LOW) and god's decision of one shared create undo mode with 0009. Needs approval through Efe's plan review. -->
+<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (through the review gate, PR #66, main b6d2cb9). Builds after 0009 (order 0008, 0011, 0009, 0010); T6 needs 0009 merged. r2 (2026-11-19) applies the plan review r1 (4 HIGH, 8 MEDIUM, 3 LOW) and the decision of one shared create undo mode with 0009. Needs approval through the plan review. -->
 
 # Plan: Opt-in own worktree per agent (0010)
 
@@ -38,7 +38,7 @@ When the owner creates an agent in a git repository, he can turn on "own worktre
 
 **Decisions made for you:** the git CLI, the runner and its environment, hooks off, the columns, the folder layout, the branch name rule, the requests, the delete order and protocol, the create undo mode, and the template hook.
 
-**Blockers:** none. T6 waits for 0009 to merge. The local build slot comes from god before each build or test run.
+**Blockers:** none. T6 waits for 0009 to merge. The local build slot is granted before each build or test run.
 
 ## Goal
 
@@ -65,7 +65,7 @@ Deliver spec 0010. In a git repository the owner can give a new agent its own br
     - Model: `D/modules/agent/models/agent.ts:20-31,69-74`.
     - Wiring: `D/modules/panel/views/panel-view.svelte`, `D/modules/agent/state/office-controller.ts`, `D/modules/hierarchy/state/hierarchy-controller.ts`.
   - **Templates:** the 0009 plan (branch `docs/0009-plan`, `specs/changes/archive/0009-agent-templates/PLAN.md`, D2 and D5) refuses unknown body fields, creates batches in `TemplateCreateBridge`, and undoes them with `AgentCreator::remove` in the shared create undo mode.
-- **Floor rules:** one build or test at a time (ask god; `CARGO_BUILD_JOBS=4`, `--test-threads=4`, the pinned toolchain, per-crate local runs). Efe reviews at the exact head sha; god merges. Nothing is pushed to `main`.
+- **Floor rules:** one build or test at a time (ask for it; `CARGO_BUILD_JOBS=4`, `--test-threads=4`, the pinned toolchain, per-crate local runs). Each PR is reviewed at its exact head sha before it merges. Nothing is pushed to `main`.
 
 ## Decisions
 
@@ -92,7 +92,7 @@ Deliver spec 0010. In a git repository the owner can give a new agent its own br
   - The branch name is `office-harness/<slug>`, where the slug is the agent name lower-cased, with every character outside `[a-z0-9-]` replaced by `-`, runs of `-` collapsed, leading and trailing `-` trimmed, and the length capped at 40. An empty slug becomes `agent`. This rules out `..`, `@{`, `/.`, `.lock`, `//`, a `/` in the name, non-ASCII names, and names that differ only by case.
   - When `office-harness/<slug>` exists, the lowest free `office-harness/<slug>-<n>` (n from 2) is used.
   - The full name is then checked with `git check-ref-format --branch`; a refused name is `invalid`.
-  - **Deviation from spec A3** (recorded 2026-11-19, Efe's plan review r2): A3 says the branch is `<agent name>-<short id>`. This plan uses `office-harness/<slug>` or `office-harness/<slug>-<n>` with no short id, because the form must show the branch name before the agent exists, and the agent id (and so its short id) is made only at create (Efe r1 MEDIUM-2). The name still says which agent owns the branch and stays unique. The QA report records this as a planned deviation, not a fail.
+  - **Deviation from spec A3** (recorded 2026-11-19, the plan review r2): A3 says the branch is `<agent name>-<short id>`. This plan uses `office-harness/<slug>` or `office-harness/<slug>-<n>` with no short id, because the form must show the branch name before the agent exists, and the agent id (and so its short id) is made only at create. The name still says which agent owns the branch and stays unique. The QA report records this as a planned deviation, not a fail.
 - **D4 Info request:** `agent.worktree_info {folder?, project_id?, name}`, where the folder or the project's folder is resolved on the server.
   - It returns `{in_repository: false}`, or `{in_repository: true, base, base_is_branch, branches: [local branch names], branch_name}`. `branch_name` is the D3 name that will be created; it does not depend on the agent id, so the form can show it before the agent exists.
   - With no git program, or git older than 2.22, it answers `in_repository: false`.
@@ -270,7 +270,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 
 ## Dependencies
 
-T1 → T2 → T3 → T4 → T5 → T7, and T4 + 0009 merged → T6 → T7. `Cargo.lock`, the migration ledger, and the e2e mock core belong to one running task at a time. Gate: this plan approved (Efe plan review PASS).
+T1 → T2 → T3 → T4 → T5 → T7, and T4 + 0009 merged → T6 → T7. `Cargo.lock`, the migration ledger, and the e2e mock core belong to one running task at a time. Gate: this plan approved (plan review PASS).
 
 ## Commit strategy
 
@@ -288,8 +288,8 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 
 ## QA and evidence
 
-- **Per task:** fmt, clippy, per-crate `cargo test`, `scripts/check-boundaries.sh`, `bun test`, `svelte-check`, `eslint`, `prettier --check`, and Playwright with axe, as far as the task touches them. Ask god for the build slot first.
-- **Per phase PR:** CI green on the matrix (git tests on three OSes); Efe's review at the head sha.
+- **Per task:** fmt, clippy, per-crate `cargo test`, `scripts/check-boundaries.sh`, `bun test`, `svelte-check`, `eslint`, `prettier --check`, and Playwright with axe, as far as the task touches them. Get the build slot first.
+- **Per phase PR:** CI green on the matrix (git tests on three OSes); the review at the head sha.
 - **Security pass** (`secure-engineering`: process execution and file deletion):
   - No shell; arguments as a list.
   - Branch names follow the D3 slug rule and pass `check-ref-format`. `base` is one of the listed refs, passed as `refs/heads/<name>` or a full commit id. Path arguments follow `--`.

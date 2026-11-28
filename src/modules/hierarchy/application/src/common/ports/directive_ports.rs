@@ -25,7 +25,7 @@ pub enum Delivery {
 }
 
 /// Whether a target agent's session can take input right now. A store
-/// failure is its own error (Efe r2 LOW): a silent "not running" would
+/// failure is its own error: a silent "not running" would
 /// dress a broken store as a stopped member.
 pub trait DirectiveTarget: Send + Sync {
     /// # Errors

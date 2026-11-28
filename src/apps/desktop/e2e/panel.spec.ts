@@ -538,7 +538,7 @@ test.describe("the agent switcher", () => {
     await page.keyboard.press("Control+Shift+F10");
     const dialog = page.getByRole("dialog", { name: "Find an agent" });
     // The option reads as the row does while the stop is open, not as the
-    // status the server still holds (LOW-2).
+    // status the server still holds.
     await expect(
       dialog.getByRole("button", { name: "Ada, project Site, Stopping" }),
     ).toBeVisible();

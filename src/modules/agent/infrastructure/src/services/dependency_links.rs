@@ -23,7 +23,7 @@ const OUTSIDE: &str = "it leads outside the base checkout or to nothing";
 const HIDDEN_PREFIX: &str = ".";
 /// The entries with a leading dot that package managers make; every other
 /// one, such as the tool caches `.vite` and `.cache`, stays unlinked so no
-/// two builds write one cache (spec Terms, review r1 M1).
+/// two builds write one cache (spec Terms).
 const PACKAGE_MANAGER_ENTRIES: [&str; 6] = [
     ".bin",
     ".pnpm",

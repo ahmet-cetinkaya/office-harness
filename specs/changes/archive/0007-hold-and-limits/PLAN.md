@@ -1,10 +1,10 @@
 ---
-status: approved (god, 2026-11-19; Efe gate)
+status: approved (2026-11-19; review gate)
 spec: specs/changes/archive/0007-hold-and-limits/SPEC.md
 commits: per-task
 ---
 
-<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19 (ACF-144). Approved by god on 2026-11-19 (build p1 started); Efe gates each PR at its head sha. D9 stays open for T7's shortcut step. -->
+<!-- Drafted 2026-11-19 from the spec approved by the owner on 2026-11-19. Approved on 2026-11-19 (build p1 started); each PR is gated at its head sha. D9 stays open for T7's shortcut step. -->
 
 # Plan: hold switch and agent action limits (0007)
 
@@ -31,11 +31,11 @@ This change gives the owner a brake on agent-made actions. One action holds the 
 **Main risks:**
 - A gate bug could refuse the owner's own actions. Mitigated: the gate lives only on the agent connection; the user client's dispatcher never calls it (PB-1), and an integration test sends the same five actions as the user while the office is on hold.
 - The office has no actor or target today for an office-level record entry (`ActionRecord.target_agent_id` is required, `Actor` has only `User` and `Agent`). Mitigated: T2 adds `Actor::Office` and an optional target through an additive audit migration with an upgrade test.
-- SC-005 asks for one key "from any panel view". While a terminal has focus, keys go to the CLI except the documented app shortcuts (0003's MODIFIED 0001/FR-017). See D9: the default keeps the terminal untouched and needs god's or the owner's yes or no.
+- SC-005 asks for one key "from any panel view". While a terminal has focus, keys go to the CLI except the documented app shortcuts (0003's MODIFIED 0001/FR-017). See D9: the default keeps the terminal untouched and needs the owner's yes or no.
 
 **Decisions made for you:** the gate order, the hold table shape, in-memory rolling windows, the four setting keys, `Actor::Office`, the optional record target, the `hold.*` protocol, `Ctrl+Shift+H` as the hold shortcut outside the terminal, and the limits dialog.
 
-**Blockers:** D9 needs a yes or no before T7's shortcut step (every other task proceeds). The local build slot comes from god before each build or test run.
+**Blockers:** D9 needs a yes or no before T7's shortcut step (every other task proceeds). The local build slot is granted before each build or test run.
 
 ## Goal
 
@@ -53,8 +53,8 @@ Deliver spec 0007: the owner holds and releases the office or one agent with one
   - Notifications: `M/notification/domain/src/enums/notification_event.rs` (`Exited`, `Failed`, `WaitingForInput`, `Bell`); host bridge `H/bridges/notification_bridge.rs`.
   - Desktop: shortcuts `D/core/shortcuts/app-shortcuts.ts`; panel `D/modules/panel/components/agent-row.svelte`; details `D/modules/agent/components/agent-details.svelte`; record `D/modules/audit/components/action-record.svelte`; notifications `D/modules/notification/`; e2e mock core `src/apps/desktop/e2e/support/mock-core.ts`. The app has no settings screen today (README: the focus shortcut is set by `settings.set`).
   - Contracts: `specs/changes/archive/0001-office-server-and-terminal/contracts/client-protocol.md`, `specs/changes/archive/0002-agent-hierarchy/contracts/hierarchy-protocol.md`, `specs/changes/archive/0003-panel-practicality/contracts/panel-protocol.md`.
-- **0004 overlap (Efe LOW-7 on #63):** 0004 also modifies 0003/FR-006 (no `waiting for input` notification for meeting participants). The two changes are compatible; T6's notification code keeps 0004's exception when 0004 is built, and 0004's plan starts from the 0007 wording of 0003/FR-006.
-- **Floor rules:** one build or test at a time on the floor; ask god for the build slot (`CARGO_BUILD_JOBS=4`, `--test-threads=4`). Local lint needs the pinned toolchain (`$HOME/.rustup/toolchains/1.100.0-x86_64-unknown-linux-gnu/bin` first in `PATH`); workspace-wide runs fail locally on `libdbus-sys` (desktop crate), so local Rust checks run per crate (`-p office-harnessd -p hierarchy-* -p agent-* -p audit-* -p notification-* -p kernel`) and CI covers the workspace. Efe reviews each PR at its exact head sha; god merges. Nothing is pushed to `main`.
+- **0004 overlap (on #63):** 0004 also modifies 0003/FR-006 (no `waiting for input` notification for meeting participants). The two changes are compatible; T6's notification code keeps 0004's exception when 0004 is built, and 0004's plan starts from the 0007 wording of 0003/FR-006.
+- **Floor rules:** one build or test at a time on the floor; get the build slot (`CARGO_BUILD_JOBS=4`, `--test-threads=4`). Local lint needs the pinned toolchain (`$HOME/.rustup/toolchains/1.100.0-x86_64-unknown-linux-gnu/bin` first in `PATH`); workspace-wide runs fail locally on `libdbus-sys` (desktop crate), so local Rust checks run per crate (`-p office-harnessd -p hierarchy-* -p agent-* -p audit-* -p notification-* -p kernel`) and CI covers the workspace. Each PR is reviewed at its exact head sha before it merges. Nothing is pushed to `main`.
 
 ## Decisions
 
@@ -85,7 +85,7 @@ Deliver spec 0007: the owner holds and releases the office or one agent with one
 | 1 Server | Holds, limits, automatic hold, record, notification, protocol | T1 to T6 | `feat/0007-p1-server` (umbrella) | p1 → umbrella |
 | 2 Desktop and ship | Panel controls, limits dialog, docs, QA | T7, T8 | `feat/0007-p2-desktop` (umbrella after p1) | p2 → umbrella, then umbrella → `main` |
 
-The umbrella `feat/0007-hold-and-limits` is created from `main` after PR #63 merges. A single PR is the fallback if god prefers it; the tasks do not change.
+The umbrella `feat/0007-hold-and-limits` is created from `main` after PR #63 merges. A single PR is the fallback; the tasks do not change.
 
 ## Tasks
 
@@ -96,7 +96,7 @@ Paths: `M/` = `src/modules/`, `D/` = `src/apps/desktop/src/`, `H/` = `src/apps/o
 - **Files:** `specs/changes/archive/0007-hold-and-limits/{data-model.md,contracts/hold-protocol.md}`.
 - **Work:** (a) data model: the hold table, the audit migration (nullable target, `office` actor), the four setting keys, the notification event. (b) Contract: `hold.set`, `hold.release`, `hold.list`, `hold.changed`, the refusal reasons of D3 and D2 as agent-call answers, `office.actions` (no fields), the new setting keys.
 - **Depends on:** none.
-- **Acceptance:** every FR has its message or table named; the contract lists codes and shapes in the style of `hierarchy-protocol.md`; Efe can review it with the p1 PR.
+- **Acceptance:** every FR has its message or table named; the contract lists codes and shapes in the style of `hierarchy-protocol.md`; it can be reviewed with the p1 PR.
 
 ### T2: Office actor, hold kinds, optional target (FR-010)
 
@@ -153,7 +153,7 @@ T1 → T2 → T4; T1 → T3 → T4; T4 → T5 → T6 → T7 → T8.
 
 - **Parallel:** T2 and T3 touch different crates and can run together.
 - **Exclusive:** `Cargo.lock`, the migration ledgers, `src/shared/wire`, and the e2e mock core belong to one running task at a time.
-- **Gate:** PR #63 merged (325cca8) and this plan approved by god (2026-11-19).
+- **Gate:** PR #63 merged (325cca8) and this plan approved (2026-11-19).
 
 ## Commit strategy
 
@@ -172,8 +172,8 @@ One local commit per verified task, staged by explicit path (never `git add -A`;
 
 ## QA and evidence
 
-- **Per task:** fmt, clippy, per-crate `cargo test`, `scripts/check-boundaries.sh`, `bun test`, `svelte-check`, `eslint`, `prettier --check`, Playwright with axe, as far as the task touches them. Ask god for the build slot first.
-- **Per phase PR:** CI green on the slim matrix (ubuntu all steps; macOS and Windows Rust tests), Efe's review at the head sha.
+- **Per task:** fmt, clippy, per-crate `cargo test`, `scripts/check-boundaries.sh`, `bun test`, `svelte-check`, `eslint`, `prettier --check`, Playwright with axe, as far as the task touches them. Get the build slot first.
+- **Per phase PR:** CI green on the slim matrix (ubuntu all steps; macOS and Windows Rust tests), the review at the head sha.
 - **Security pass:** `secure-engineering` checks on the gate: the agent connection cannot reach `hold.*` or `settings.*`; refusal text stays truncated (`MAX_REFUSAL_TEXT_CHARS`); the user path never calls the gate.
 - **Real surface:** a real CLI that loops on `agent-call directive.send`, the screen reader pass, and the 200 percent zoom check are hands-on rows in the QA report.
 - **Rollback:** each phase PR is reverted in the umbrella. Migrations are forward-only: a reverted binary refuses an upgraded database (`run_migrations` returns `DatabaseTooNew`), and an old binary could not read `office` actors, `hold`/`release` kinds, or NULL targets anyway. A rollback on a user's machine is therefore the reverted binary together with the database backup taken before the upgrade (the data folder's `office.db`), restored as one step; the README section of T8 says so. With no hold set and default limits, a normal team's actions pass as before.

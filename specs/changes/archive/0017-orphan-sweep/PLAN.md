@@ -114,7 +114,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 - Migration, repository, launcher change, recorder task, `end_for_session` in the session end path.
 - **Acceptance:** repository unit tests (insert, unique, `update_command`, `drop_helper`, end one, end all of a session, open identities of `lost` sessions only, the 1,000-character check); migration test counts updated; an integration test with a fake CLI that starts a helper and detaches it shows both identities stored within 10 seconds, the helper kept after it leaves the tree, and every identity `ended` after a normal stop and after a clean `server.restart` (SC-006 part). The office database file mode test on Unix passes.
 - **Exec (M3):** a fake CLI whose child replaces itself with another program (`exec`) while the session runs: the stored row for that pid and start time takes the new hash and display text, is not marked ended, and no insert fails on the unique key; after a forced kill of the server the sweep ends it (SC-009).
-- **Helper limit (M2, SC-008):** a fake CLI that starts 500 long-lived helpers leaves 200 open helper rows, one `helper_limit` entry, and after a forced kill of the server the finding is `may_run`; short-lived helpers are dropped and do not count.
+- **Helper limit (SC-008):** a fake CLI that starts 500 long-lived helpers leaves 200 open helper rows, one `helper_limit` entry, and after a forced kill of the server the finding is `may_run`; short-lived helpers are dropped and do not count.
 - **Command text (M2):** a helper with a 2 MB argument and control and bidirectional characters stores a 1,000-character display text and the hash of the whole line; the action record detail has no raw control character.
 
 ### T3 Sweep and gate (D5 to D7) - depends on T2
@@ -226,7 +226,7 @@ Abbreviations: `M/` = `src/modules`, `H/` = `src/apps/office-harnessd/src`, `D/`
 
 ## Review log
 
-r1 (Efe, fa44fb0): M1 to M3, L1, L2 resolved as below. r2 (Efe, 350ff07): PASS for coding; N1 (macOS FR-011 residual under A10) is checked in the code review.
+Review r1 (fa44fb0): findings resolved as below. Review r2 (350ff07): PASS for coding; one note (macOS FR-011 residual under A10) is checked in the code review.
 
 - M1: handle-based end in D1 (crates and APIs), D2 (`ProcessHandle`, 100 ns Windows start time), D6 (pidfd, Windows handle, macOS and old-kernel fallback), Summary and Main risks; tests in T1 and T3; `research.md` accepted risk is now macOS and old Linux only.
 - M2: D2 and D3 (hash plus capped display text), D4 (helper limit of 200), D6 (visible form), D9; spec FR-001, FR-004 to FR-006, FR-010, key entities, edge cases, SC-004 and SC-008; tests in T2 and T5.

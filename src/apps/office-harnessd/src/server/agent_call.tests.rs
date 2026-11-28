@@ -538,7 +538,7 @@ fn office_request(fields: &[(&str, Value)]) -> serde_json::Map<String, Value> {
 #[test]
 fn an_office_request_with_an_extra_field_is_refused_not_dropped() {
     // A stop that smuggles `include_descendants`: dropped silently, it
-    // would answer success while stopping the target alone (PR 40 LOW).
+    // would answer success while stopping the target alone.
     let fields = office_request(&[("agent_id", json!(AgentId::generate().as_uuid_text()))]);
     let mut padded = fields.clone();
     padded.insert("include_descendants".to_owned(), json!(true));

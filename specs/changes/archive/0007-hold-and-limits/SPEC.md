@@ -5,7 +5,7 @@ plan: specs/changes/archive/0007-hold-and-limits/PLAN.md
 supersedes: 0002/FR-009, 0003/FR-006 (in part)
 ---
 
-<!-- Approved by the owner on 2026-11-19 (ACF-144). -->
+<!-- Approved by the owner on 2026-11-19. -->
 
 # 0007: Hold switch and agent action limits
 
@@ -201,7 +201,7 @@ An agent that sends directives or creates agents faster than a set limit gets it
 
 - Q: Should this change add a size cap on agent-created agents (for example 50 per office, 12 per parent), modifying 0002/FR-005? → A: No. 0002/FR-005 stays unchanged; the creation rate limit (A3) and the automatic hold (FR-008) cover runaway creation.
 - Q: Does an agent hold also refuse actions on the held agent by agents outside its subtree (its parent and the CEO)? → A: Yes, as FR-004 says. The user's own actions are never refused (PB-1).
-- Q: Where is a refused directive recorded, in the sender's action record or the target's? → A: In both, one entry each, one entry when they are the same agent (owner decision, ACF-168, relayed by god on 2026-11-20).
+- Q: Where is a refused directive recorded, in the sender's action record or the target's? → A: In both, one entry each, one entry when they are the same agent (owner decision, 2026-11-20).
 
 ## Out of scope
 

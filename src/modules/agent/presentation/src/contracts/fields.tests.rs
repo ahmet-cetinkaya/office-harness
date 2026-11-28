@@ -45,7 +45,7 @@ fn an_optional_field_may_be_absent_or_null() {
 
 /// The `role` object of `agent.create` reads into its three fields, and a
 /// `role` the request never carries stays absent, the exact 0001 behavior
-/// (PB-1, HIGH-1 of Efe's PR 36 review: the field used to be dropped).
+/// (PB-1: the field used to be dropped).
 #[test]
 fn the_role_object_reads_whole_or_is_absent() {
     use super::super::agent_requests::CreateAgentRequest;

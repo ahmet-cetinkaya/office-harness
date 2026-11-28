@@ -267,7 +267,7 @@ A report is short, its control and bidirectional characters show as visible symb
 - Q: Are control characters refused, as in a directive? → A: No; they are shown as visible symbols, line breaks included, so a report never fails for a stray character and never acts on a terminal (FR-003, A3).
 - Q: Do holds and rate limits apply? → A: Yes; a report is an agent-made action with its own limit (FR-006, A5).
 
-### Session 2026-11-23 (spec review r1)
+### Session 2026-11-23
 
 - Q: Can a parent's children lock its queue against directives from above? → A: No; one waiting report per sender (a newer one replaces it, recorded) and at most 10 waiting reports per queue, so directives keep at least 10 of the 20 places (FR-010, SC-011).
 - Q: Does each report for the person notify? → A: Only while no report notification of that agent is unread, like the bell rule (0003/FR-006 as modified, SC-012).

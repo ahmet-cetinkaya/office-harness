@@ -98,7 +98,7 @@ When the user opens the desktop app, the panel shows the project, agent, and ter
 
 FR-002 states R9 criterion 2. FR-006 notifies only for the four events it lists: a status change that the user caused (`stopped`) and `interrupted` after a server restart notify nobody.
 
-Later additions to the shortcuts and the events (recorded 2026-11-23, ACF-106 archive; no requirement of this spec changed). The fixed shortcuts are `Ctrl+Shift+F1` to `Ctrl+Shift+F10` here. Change 0008 added `Ctrl+Shift+F11` (jump to the agent that needs you), and change 0007 added `Ctrl+Shift+H` (the office hold). The server holds 12 reserved shortcuts in all (`src/modules/agent/domain/src/value_objects/settings.rs:33`). Change 0007 (FR-008) added the notification event `auto_hold` to the four events of FR-006, so the server knows five (`src/modules/notification/domain/src/enums/notification_event.rs:21`). Change 0008 added the Needs you queue. It is a separate queue with its own requests and event, not a notification event.
+Later additions to the shortcuts and the events (recorded 2026-11-23; no requirement of this spec changed). The fixed shortcuts are `Ctrl+Shift+F1` to `Ctrl+Shift+F10` here. Change 0008 added `Ctrl+Shift+F11` (jump to the agent that needs you), and change 0007 added `Ctrl+Shift+H` (the office hold). The server holds 12 reserved shortcuts in all (`src/modules/agent/domain/src/value_objects/settings.rs:33`). Change 0007 (FR-008) added the notification event `auto_hold` to the four events of FR-006, so the server knows five (`src/modules/notification/domain/src/enums/notification_event.rs:21`). Change 0008 added the Needs you queue. It is a separate queue with its own requests and event, not a notification event.
 
 ### MODIFIED
 
@@ -209,12 +209,12 @@ Decisions with reversible defaults, so that the plan can start. The owner may am
 - Q: Does the user get an OS notification for the agent that he looks at? → A: No (A7).
 - Q: How does the last output line stay current for 30 agents? → A: The plan decides. The requirement is SC-001: each status or last-line change shows within 2 seconds.
 
-The two entries below sharpen the shortcut decisions of 2026-11-17 with the `research.md` R1 findings. They add no requirement and change none. Approved by the owner on 2026-11-19 (ACF-143).
+The two entries below sharpen the shortcut decisions of 2026-11-17 with the `research.md` R1 findings. They add no requirement and change none. Approved by the owner on 2026-11-19.
 
 - Q: What does the office document for macOS in its default media-key mode? → A: In the default mode the top-row keys send media and brightness commands, and macOS hands F1 to F12 to the app only while Fn (or Globe) is held or "Use F1, F2, etc. keys as standard function keys" is turned on (`research.md` R1). `Ctrl+Shift+F1` to `Ctrl+Shift+F10` can therefore be unusable out of the box on macOS. The README keeps the Fn note and records the fallback table below, so the user who cannot change the setting switches the macOS build to the `Cmd+Alt` family instead.
 - Q: Are `Ctrl+Shift+F1` to `Ctrl+Shift+F10` verified on KDE Plasma? → A: Not yet. The primary Plasma documentation binds no `Ctrl+Shift+F1` to `Ctrl+Shift+F12`, but a secondary source names the family among Plasma "standard" bindings, so the evidence that the keys are free is one-sided (`research.md` R1). Until the hands-on QA pass checks Plasma live, the office treats the defaults as unverified on KDE; when a distribution binds the family globally, the fallback is the table below's last row.
 
-The fallback table from `research.md` R1 (recorded, approved with the entries above, ACF-143):
+The fallback table from `research.md` R1 (recorded, approved with the entries above):
 
 | Default | Where it fails | Fallback |
 |---|---|---|
