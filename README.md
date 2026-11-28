@@ -473,38 +473,24 @@ On a machine without rustup, run the Rust lint gates with scripts/lint-rust.sh t
 nix-shell -p rustup --run "rustup run 1.100.0 scripts/lint-rust.sh -p <crate>"
 ```
 
-Install the JavaScript dependencies from the repository root:
+The `justfile` in the repository root runs every project command. Install [just](https://github.com/casey/just) with `cargo install just`, `brew install just`, `winget install Casey.Just`, or `scoop install just`. On NixOS, or anywhere with flakes, `nix develop` gives a shell that already has it, and `nix develop -c just check` runs a recipe without opening one. It needs just 1.38 or later. Run `just` to list the recipes:
 
-```sh
-bun install --frozen-lockfile
-```
+| Command | What it runs |
+|---|---|
+| `just setup` | `bun install --frozen-lockfile` |
+| `just dev` | builds the sidecar, then `bun run tauri dev` |
+| `just build` | `bun run tauri build --no-bundle` |
+| `just test` | the Rust tests and the webview unit tests |
+| `just e2e-install` | installs Chromium and its system packages for Playwright (it calls `sudo`, so it does not work on NixOS) |
+| `just e2e` | Playwright |
+| `just lint` | the Rust format and clippy checks, the boundary check, and the webview checks |
+| `just fmt` | `cargo fmt --all` and Prettier on the webview |
+| `just check` | every step of the Linux CI job, in its order |
+| `just clean` | removes the build output |
 
-Run the checks. CI runs these on Linux, macOS, and Windows. Build the server program for the desktop app first, because Tauri needs it to exist:
+Tauri needs the server program for the desktop app to exist, so the recipes that build or lint Rust build it first (`just sidecar`).
 
-```sh
-cd src/apps/desktop
-bun scripts/prepare-sidecar.ts
-cd ../../..
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-scripts/check-boundaries.sh --self-test
-scripts/check-boundaries.sh
-cd src/apps/desktop
-bun run check
-bun run lint
-bun run format:check
-bun test src
-bunx playwright install --with-deps chromium
-bun run e2e
-bun run tauri build --no-bundle
-```
-
-Run the desktop app in development mode from `src/apps/desktop`:
-
-```sh
-bun run tauri dev
-```
+CI runs the Rust tests on Linux, macOS, and Windows, and the other steps on Linux. The `justfile` sets PowerShell as the Windows shell. Every recipe is written to run there, but CI does not run `just` on Windows. The boundary check runs through `bash`, which Git for Windows provides. The commands are the same ones that `.github/workflows/ci.yml` runs.
 
 `bun run tauri build` builds the installers for your OS. They appear under `target/release/bundle/`.
 

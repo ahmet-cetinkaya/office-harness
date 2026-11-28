@@ -43,7 +43,7 @@
           ];
         in
         pkgs.mkShell {
-          packages = [ rustToolchain pkgs.bun pkgs.nodejs_24 ]
+          packages = [ rustToolchain pkgs.bun pkgs.nodejs_24 pkgs.just ]
             ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux ([ pkgs.pkg-config ] ++ tauriLibraries);
 
           shellHook = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
