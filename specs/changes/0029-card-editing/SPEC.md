@@ -5,7 +5,7 @@ capability: task-board
 plan:
 ---
 
-# 0028: Card details
+# 0029: Card editing
 
 ## Intent
 
@@ -13,8 +13,8 @@ The task board of 0027 holds cards with a title, an optional note, and a status.
 
 ## Context
 
-- This change depends on 0027 (the board, the card, the columns, the text rules, the conflict refusal, the not-kept handling, and the announcements) and on 0001 and 0020 (agents, projects, and a temp that ends). The requirements of 0027 are in the living spec `specs/task-board/SPEC.md` once 0027 ships; ids such as `0027/FR-008` point to them. Terms of 0027 apply here.
-- It extends the capability `task-board`: all requirements below are ADDED; none of 0027 is modified. The conflict rule of 0027/FR-008 and the not-kept handling of 0027/FR-009 apply to every change below.
+- This change depends on 0027 (the board, the card, the columns, the text rules, the card details, and the announcements) and on 0028 (the conflict refusal and the not-kept handling) and on 0001 and 0020 (agents, projects, and a temp that ends). The requirements of 0027 are in the living spec `specs/task-board/SPEC.md` once 0027 ships; ids such as `0028/FR-001` point to them. Terms of 0027 apply here.
+- It extends the capability `task-board`: all requirements below are ADDED; none of 0027 is modified. The conflict rule of 0028/FR-001 and the not-kept handling of 0028/FR-002 apply to every change below.
 - Undo of a delete, ordering inside a column, and a time of the last change stay out, as in 0027. The project switcher of the panel (0003/FR-005) filters the board, by owner decision of 2026-11-28 (FR-007).
 - The requirements describe behavior only. The plan decides how to build them.
 
@@ -22,7 +22,8 @@ The task board of 0027 holds cards with a title, an optional note, and a status.
 
 | Term | Meaning |
 |---|---|
-| Card, column, status, board view, window, saw, kept, text rules of a title, text rules of a note | As defined in 0027. |
+| Card, column, status, board view, window, kept, text rules of a title, text rules of a note, card details | As defined in 0027. |
+| Saw | As defined in 0028. |
 | Project, agent, temp | As defined in 0001 and 0020. A temp is an agent and can be an assignee. |
 | Assignee | The one agent of the office that the person names for a card, or none. |
 | Card project | The one project of the office that the person names for a card, or none. |
@@ -31,7 +32,7 @@ The task board of 0027 holds cards with a title, an optional note, and a status.
 
 ## Data flow and trust boundary
 
-- **Boundary:** the person's desktop app connection with the office token (0001/FR-007), as in 0027. The agent's connection gets no board request (0027/PB-4).
+- **Boundary:** the person's desktop app connection with the office token (0001/FR-007), as in 0027. The agent's connection gets no board request (0027/PB-4), until 0030 ships.
 - **Into the office:** from the person, an edit of a card, a project, an assignee, a status, and a delete. The office checks every field when it receives the change (FR-001, FR-002).
 - **Threats and controls:**
 
@@ -39,7 +40,7 @@ The task board of 0027 holds cards with a title, an optional note, and a status.
   |---|---|
   | A card names a project or an agent that does not exist, or one that went away. | The office checks that they exist when it receives the change, and clears them when they go away (FR-002, FR-003). |
   | A delete by one wrong key loses a card. | A delete asks the person to confirm it (FR-004). |
-  | An edit overwrites what another window just changed. | The conflict rule of 0027/FR-008 refuses it with the reason (FR-005). |
+  | An edit overwrites what another window just changed. | The conflict rule of 0028/FR-001 refuses it with the reason (FR-005). |
 
 ## User stories
 
@@ -57,7 +58,7 @@ The person opens a card, changes its title and note, picks a project and an agen
 2. Given a title or note that breaks its text rules, When the person saves, Then the office keeps nothing, names the field and its rule, and the form keeps the typed text.
 3. Given agent A1 is the assignee of 3 cards, When the person deletes A1, or A1 is a temp that ends and is removed, Then the 3 cards have no assignee and every other field, column, and place stays.
 4. Given project P1 is the project of a card, When the person deletes P1, Then the card has no project and every other field stays.
-5. Given the assignee or project is deleted while the form that sets it is open, When the person saves, Then the office refuses the save with the field and the reason that it no longer exists, and the other typed text stays.
+5. Given the assignee or project is deleted while the form is open, When the person saves a changed assignee or project that no longer exists, Then the office refuses the save with the field and the reason that it no longer exists, and the other typed text stays; when the person did not change that field, the card keeps none for it and the save goes on.
 6. Given another window changed the card after this window saw it, When the person saves an edit, Then the office refuses it with the reason that the card changed in another window.
 7. Given the project choice is project P1, When the board view shows the board, Then it shows only the cards of P1, a card with no project is hidden, and each column count and each place "n of m" counts only the visible cards; with All projects it shows every card.
 8. Given the project choice is P1, When the person makes a card, Then its project starts as P1; when the person saves it with another project or none, the office keeps it and the window says that the card is kept but not visible under P1.
@@ -81,18 +82,18 @@ The person deletes a card from its action list or with a key. The window asks to
 ### ADDED
 
 - **FR-001** (US1): WHEN the person saves an edit of a card, THE SYSTEM SHALL keep the new title, note, and status only IF they meet the text rules and the four columns, put a card whose status changed at the last place of the new column, and, IF a rule breaks, THEN THE SYSTEM SHALL keep nothing, name each failing field and its rule, and leave the card as it was.
-- **FR-002** (US1): WHEN the person saves a card with a project or an assignee, THE SYSTEM SHALL keep it only IF the project is a project of the office and the assignee is an agent of the office; IF one does not exist, THEN THE SYSTEM SHALL keep nothing and name the field and the reason that it does not exist; and THE SYSTEM SHALL show the project and the assignee by their current names, as text, on the card.
+- **FR-002** (US1): WHEN the person saves a card with a project or an assignee that the person changed, THE SYSTEM SHALL keep it only IF the project is a project of the office and the assignee is an agent of the office; IF one does not exist, THEN THE SYSTEM SHALL keep nothing and name the field and the reason that it does not exist; for a project or an assignee that the person did not change and that no longer exists, THE SYSTEM SHALL keep the card with none for that field; and THE SYSTEM SHALL show the project and the assignee by their current names, as text, on the card.
 - **FR-003** (US1): WHEN an agent that is the assignee of cards is deleted, or removed because it was a temp that ended (0020/FR-006), THE SYSTEM SHALL clear the assignee of those cards, and WHEN a project is deleted, THE SYSTEM SHALL clear the project of its cards, in both cases keeping every other field, the column, and the place, and showing the result in every window within 2 seconds.
 - **FR-004** (US2): WHEN the person deletes a card, THE SYSTEM SHALL ask the person to confirm, naming the card, and change nothing on Escape or Cancel; WHEN the person confirms, THE SYSTEM SHALL remove the card and move focus to the next card of the column, or the previous one, or the column's New card.
-- **FR-005** (US1, US2): IF a change of this spec is to a card that another window changed or deleted after the sending window saw it, THEN THE SYSTEM SHALL refuse it with the reason that the card changed, or was deleted, in another window, under 0027/FR-008 and 0027/FR-009.
+- **FR-005** (US1, US2): IF a change of this spec is to a card that another window changed or deleted after the sending window saw it, THEN THE SYSTEM SHALL refuse it with the reason that the card changed, or was deleted, in another window, under 0028/FR-001 and 0028/FR-002.
 - **FR-007** (US1): WHEN the project choice is one project, THE SYSTEM SHALL show in the board view only the cards of that project, and hide the cards with no project; WHEN it is All projects, THE SYSTEM SHALL show every card; AND THE SYSTEM SHALL count only the visible cards in each column count and in each place "n of m", start the project of a new card as the picked project, and, WHEN a card that the person saves, or a change in another window or by an agent, takes a card out of the project choice, say in that window that the card is kept but not visible under this project, and keep it kept.
 - **FR-006** (US1, US2): WHEN the office keeps, refuses, or does not confirm an edit or a delete that the person made in a window, THE SYSTEM SHALL announce it once to assistive technology in that window within 1 second with the card's title and the change, or the reason for a refusal; IF the focused card is deleted in another window, THEN THE SYSTEM SHALL move focus as FR-004 does and announce once that the card was deleted in another window.
 
 ### PRESERVED
 
-- **PB-1:** The living spec `task-board` of 0027 stays as before: the board, the move, the conflict refusal, the not-kept handling, and the announcements work as they do (0027/FR-001 to 0027/FR-010).
+- **PB-1:** The living spec `task-board` of 0027 stays as before: the board, the move, the card details, the conflict refusal, the not-kept handling, and the announcements work as they do (0027/FR-001 to 0027/FR-010, 0028/FR-001 to 0028/FR-005).
 - **PB-2:** The agent panel, the Needs-you queue, and scheduled directives stay as before (0027/PB-1 to 0027/PB-3). An assignee or a project on a card changes no task text, types nothing into any terminal, and adds no Needs you item.
-- **PB-3:** The agent's connection gets no board request (0027/PB-4); office-harness sends no board data off the machine (0027/PB-5).
+- **PB-3:** The agent's connection gets no board request (0027/PB-4), until 0030 ships; office-harness sends no board data off the machine (0027/PB-5).
 - **PB-4:** Every action of this change is available from the keyboard, and the project and the assignee show as text (0001/FR-028).
 
 ## User experience
@@ -144,7 +145,7 @@ The person deletes a card from its action list or with a key. The window asks to
 | The person presses delete twice, fast. | Boundary | One confirmation shows; one card is deleted after the person confirms (FR-004). |
 | A card's project is deleted while the project choice is that project. | Boundary | The card has no project and leaves the visible cards; the window says it is kept but not visible (FR-003, FR-007). |
 | The project choice is a project with no cards. | Empty | Every column shows the count 0 and the text that it has no cards (0027/FR-002). |
-| The server is not reachable during an edit or a delete. | Failure | The card stays as it was; the window says the change was not kept (0027/FR-009). |
+| The server is not reachable during an edit or a delete. | Failure | The card stays as it was; the window says the change was not kept (0028/FR-002). |
 
 ## Assumptions
 
@@ -164,7 +165,7 @@ The person deletes a card from its action list or with a key. The window asks to
 ## Out of scope
 
 - Undo of a delete, and ordering of cards inside a column (0027).
-- Agent access to the board (0029).
+- Agent access to the board (0030).
 - Labels, due dates, priorities, sub-tasks, comments, and links between cards.
 - A visual design of the form or the board beyond the existing elements.
 
