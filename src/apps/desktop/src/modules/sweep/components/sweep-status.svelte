@@ -22,5 +22,6 @@
   the end of the sweep. The end is spoken only (sr-only): nothing shows when
   no sweep runs. -->
 <div role="status" class={snapshot.phase === "running" ? "" : "sr-only"}>
-  <span class="text-sm font-medium text-neutral-900">{text}</span>
+  {#key text}<span class="text-sm font-medium text-neutral-900">{text}</span
+    >{/key}
 </div>

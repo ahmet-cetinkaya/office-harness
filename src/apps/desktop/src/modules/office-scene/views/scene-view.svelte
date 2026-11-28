@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
   import { tick } from "svelte";
+  import Announcer from "$shared/ui/announcer.svelte";
   import { shownStatusText, isActive, type OfficeStore } from "../../agent";
   import { INITIAL_HIERARCHY, type HierarchyController } from "../../hierarchy";
   import {
@@ -347,7 +348,7 @@
 
   <!-- One polite region for the whole scene; the newest message wins, which
     coalesces a burst of changes into the last one (D9, research R4). -->
-  <p role="status" class="sr-only">{announcement}</p>
+  <Announcer role="status" {announcement} />
 
   {#if office.notice !== null}
     <FailureMessage lead={office.notice.lead} message={office.notice.message} />
