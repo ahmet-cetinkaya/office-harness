@@ -470,7 +470,7 @@ Changing a crate rebuilds that crate and the crates that depend on it. Modules n
 | Webview | `bun test` beside `.ts` files, plus Playwright with `@axe-core/playwright` against the Vite build with a mocked core | Logic, import boundaries, views, and accessibility |
 | Real surface | By hand, per change, in its QA report | The real CLIs, login start, and the success criteria of each spec |
 
-`cargo test --workspace` runs every Rust level. CI runs on Linux, macOS, and Windows: the Rust format and lint check, the Rust tests, the boundary check, the webview lint and tests, Playwright, and a Tauri build. The Playwright step runs on Linux only. A change that touches only `specs/`, `docs/`, or Markdown files starts no CI run.
+`cargo test --workspace` runs every Rust level. CI runs on Linux, macOS, and Windows: the Rust format and lint check, the Rust tests, the boundary check, the webview lint and tests, Playwright, and a Tauri build. The Playwright step runs on Linux only. A change that touches only `specs/`, `docs/`, or Markdown files starts no CI run. A pull request runs only the steps that its changed files can affect: the Rust format, lint, tests, and boundary check run when Rust, Cargo, script, or Tauri files change, and the webview install, lint, tests, and Playwright run when files under `src/apps/desktop` (outside `src-tauri`), `package.json`, or `bun.lock` change. The Tauri build runs when either group changes. A change to the workflow file counts for both. A push to main runs every step.
 
 **Boundary enforcement:**
 - The Cargo graph is the primary check: a forbidden dependency is a manifest error.
