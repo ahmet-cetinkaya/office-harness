@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: agent-hierarchy
 plan:
 supersedes:
 ---

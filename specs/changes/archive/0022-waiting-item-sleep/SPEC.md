@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: idle-sleep
 plan: specs/changes/archive/0022-waiting-item-sleep/PLAN.md
 supersedes: 0003/FR-006 (in part), 0003/SC-004, 0008/FR-001, 0008/FR-005 (as modified by 0015), 0018/FR-002, 0018/FR-009, 0018 Terms (Idle, Idle since)
 ---

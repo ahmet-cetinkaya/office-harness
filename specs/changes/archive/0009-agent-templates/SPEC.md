@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: agent-templates
 plan: specs/changes/archive/0009-agent-templates/PLAN.md
 supersedes:
 ---

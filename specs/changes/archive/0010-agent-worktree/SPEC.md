@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: agent-worktree
 plan: specs/changes/archive/0010-agent-worktree/PLAN.md
 supersedes: 0009/FR-001, 0009/FR-003
 ---

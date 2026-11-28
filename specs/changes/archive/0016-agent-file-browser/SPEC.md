@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: file-browser
 plan: specs/changes/archive/0016-agent-file-browser/PLAN.md
 supersedes:
 ---

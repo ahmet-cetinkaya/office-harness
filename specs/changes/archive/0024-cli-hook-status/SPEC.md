@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: agent-status
 plan: specs/changes/archive/0024-cli-hook-status/PLAN.md
 supersedes: 0001/FR-014 (in part), 0001/FR-020, 0008/FR-002 (event names), 0012/FR-002 (in part), 0018/FR-002 (in part), 0001 A1 and 0003 A3 (for `claude` sessions)
 ---

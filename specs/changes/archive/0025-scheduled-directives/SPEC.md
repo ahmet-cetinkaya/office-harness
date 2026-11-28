@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: scheduled-directives
 plan: specs/changes/archive/0025-scheduled-directives/PLAN.md
 supersedes: 0003 Key entities Notification, 0007/FR-010, 0012/FR-003, 0012/FR-005, 0018/FR-004
 ---

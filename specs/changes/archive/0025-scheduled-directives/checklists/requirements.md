@@ -1,6 +1,6 @@
 # Requirements checklist: 0025-scheduled-directives
 
-Spec: `specs/changes/archive/0025-scheduled-directives/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0003/`, `0007/`, `0012/`, `0013/`, `0017/`, `0018/`, `0019/`, and `0020/` reference was checked against `specs/office/SPEC.md` and the archived change specs on this branch. The MODIFIED texts of 0007/FR-010, 0012/FR-003, 0012/FR-005, and 0018/FR-004 start from the living text in `specs/office/SPEC.md`; the 0003 Notification entity starts from its row in the same file.
+Spec: `specs/changes/archive/0025-scheduled-directives/SPEC.md` · Status: shipped · Date: 2026-11-23 · Result: 16 of 16 items pass. No `[NEEDS CLARIFICATION]` marker. Every `0001/`, `0002/`, `0003/`, `0007/`, `0012/`, `0013/`, `0017/`, `0018/`, `0019/`, and `0020/` reference was checked against `specs/office/SPEC.md` (since split into `specs/<capability>/SPEC.md`) and the archived change specs on this branch. The MODIFIED texts of 0007/FR-010, 0012/FR-003, 0012/FR-005, and 0018/FR-004 start from the living text in `specs/office/SPEC.md` (since split into `specs/<capability>/SPEC.md`); the 0003 Notification entity starts from its row in the same file.
 
 ## Content quality
 

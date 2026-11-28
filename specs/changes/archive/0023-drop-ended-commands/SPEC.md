@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: process-cleanup
 plan: specs/changes/archive/0023-drop-ended-commands/PLAN.md
 supersedes: 0017/FR-008
 ---
@@ -15,7 +15,7 @@ Change 0017 stores the identity of each session process: its process id, its sta
 
 ## Context
 
-- Source of truth: `docs/PRD.md`. The living spec is `specs/office/SPEC.md`; 0017 is folded into it under "Change 0017". References such as `0017/FR-008` point to requirements there.
+- Source of truth: `docs/PRD.md`. The living spec is `specs/process-cleanup/SPEC.md`; 0017 is folded into it under "Change 0017". References such as `0017/FR-008` point to requirements there.
 - The problem comes from the review of PR #126 (0017), note N-d. The reviewer did not block on it, because the office database is readable only by its owner (0017/FR-001, 0001/FR-009), and asked for a follow-up.
 - This change depends on 0001 (sessions, the stop, the clean server stop, the action record), 0013 (the `lost` session end, the last session, the "Resume interrupted" list), and 0017 (stored process identities, the sweep, the sweep finding).
 - Readers and writers of the stored identities on main at 5272d6f:

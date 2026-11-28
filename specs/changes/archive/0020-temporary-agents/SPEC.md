@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: temporary-agents
 plan: specs/changes/archive/0020-temporary-agents/PLAN.md
 supersedes: 0015/FR-005
 ---

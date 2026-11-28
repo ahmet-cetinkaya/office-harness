@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: cli-sign-in-check
 plan: specs/changes/archive/0019-cli-sign-in-check/PLAN.md
 supersedes:
 ---
@@ -15,7 +15,7 @@ When an agent's CLI is not signed in, a start today looks like a success: the ag
 
 ## Context
 
-- Source of truth: `docs/PRD.md`. References such as `0001/FR-021` point to requirements of approved changes; the living spec is `specs/office/SPEC.md`.
+- Source of truth: `docs/PRD.md`. References such as `0001/FR-021` point to requirements of approved changes; the living specs are the files `specs/<capability>/SPEC.md`; this change lives in `specs/cli-sign-in-check/SPEC.md`.
 - This change depends on 0001 (starts, sessions, statuses, the action record, no change to CLI configuration), 0002 (agent-made starts), 0003 (notifications), 0011 (the visible form of a text), 0012 (the bottom rows of a screen that the office reads), and 0013 (bulk resume).
 - Research (`research.md`) found the read-only status command of each supported CLI (R1), that a CLI's own program can write its own files when it runs (R2), how long a status command takes (R3), and the words of each sign-in screen (R4).
 - The idea comes from an MIT-licensed reference office app; the pull request names it. No code is taken from it; this spec describes behavior only.

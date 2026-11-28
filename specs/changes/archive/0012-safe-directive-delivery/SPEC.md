@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: agent-hierarchy
 plan: specs/changes/archive/0012-safe-directive-delivery/PLAN.md
 supersedes: 0002/FR-010
 ---

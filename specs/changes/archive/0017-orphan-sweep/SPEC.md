@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: process-cleanup
 plan: specs/changes/archive/0017-orphan-sweep/PLAN.md
 supersedes: 0013/FR-008
 ---
@@ -15,7 +15,7 @@ When the background server stops uncleanly (SIGKILL, a crash, or a power loss of
 
 ## Context
 
-- Source of truth: `docs/PRD.md`. References such as `0001/FR-004` point to requirements of the approved changes. The living spec is `specs/office/SPEC.md`. 0013 is not merged into it yet, so this change refers to `0013/FR-008` in `specs/changes/archive/0013-bulk-resume/SPEC.md`.
+- Source of truth: `docs/PRD.md`. References such as `0001/FR-004` point to requirements of the approved changes. The living specs are the files `specs/<capability>/SPEC.md`; this change lives in `specs/process-cleanup/SPEC.md`. 0013 is not merged into it yet, so this change refers to `0013/FR-008` in `specs/changes/archive/0013-bulk-resume/SPEC.md`.
 - This change depends on 0001 (sessions, the stop and its grace period, the action record, the storage alert), 0003 (notifications), 0007 (the office as an actor), and 0013 (the unclean stop, the `lost` session end, and the "Resume interrupted" action).
 - Research R1 of 0013 (`specs/changes/archive/0013-bulk-resume/research.md`) killed the server with SIGKILL. A CLI that ignores the terminal hang-up kept running, and the next server start did not see it. Research R3 found that the background service of `opencode` keeps running in a session of its own after the hang-up. 0013 only warns about such leftovers (0013/FR-008, 0013 A5). This change finds and ends them.
 - The idea comes from an MIT-licensed reference office app; the pull request names it. No code is taken from it; this spec describes behavior only.

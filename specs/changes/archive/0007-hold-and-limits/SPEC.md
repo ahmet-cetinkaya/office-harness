@@ -1,6 +1,6 @@
 ---
 status: shipped
-capability: office
+capability: hold-and-limits
 plan: specs/changes/archive/0007-hold-and-limits/PLAN.md
 supersedes: 0002/FR-009, 0003/FR-006 (in part)
 ---
